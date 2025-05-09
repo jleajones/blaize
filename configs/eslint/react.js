@@ -1,4 +1,4 @@
-// eslint/react.js
+// @ts-nocheck
 import baseConfig from "./base.js";
 
 export default [

@@ -3,27 +3,45 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "./base.js",
+  "types": "./index.d.ts",
   "description": "Shared eslint configurations for the BlaizeJS monorepo",
   "license": "MIT",
   "publishConfig": {
     "access": "restricted"
   },
   "exports": {
-    "./base": "./base.js",
-    "./node": "./node.js",
-    "./react": "./react.js",
-    "./next": "./next.js",
-    "./test": "./test.js"
+    ".": {
+      "import": "./base.js",
+      "types": "./index.d.ts"
+    },
+    "./base": {
+      "import": "./base.js",
+      "types": "./index.d.ts"
+    },
+    "./node": {
+      "import": "./node.js",
+      "types": "./index.d.ts"
+    },
+    "./react": {
+      "import": "./react.js",
+      "types": "./index.d.ts"
+    },
+    "./typescript": {
+      "import": "./typescript.js",
+      "types": "./index.d.ts"
+    }
   },
   "files": [
-    "*.js"
+    "*.js",
+    "index.d.ts"
   ],
   "dependencies": {
     "@next/eslint-plugin-next": "^14.0.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-jsx-a11y": "^6.8.0",
     "eslint-plugin-n": "^16.6.0",
     "eslint-plugin-promise": "^6.1.1",
@@ -32,7 +50,8 @@
     "eslint-plugin-security": "^2.1.0",
     "eslint-plugin-sonarjs": "^0.23.0",
     "eslint-plugin-unicorn": "^51.0.1",
-    "eslint-plugin-vitest": "^0.3.21"
+    "eslint-plugin-vitest": "^0.3.21",
+    "typescript-eslint": "^8.32.0"
   },
   "peerDependencies": {
     "eslint": ">=9.0.0",
@@ -42,5 +61,8 @@
     "eslint",
     "eslintconfig",
     "blaizejs"
-  ]
+  ],
+  "devDependencies": {
+    "eslint-import-resolver-typescript": "^4.3.4"
+  }
 }

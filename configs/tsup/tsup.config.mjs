@@ -29,7 +29,12 @@ export function createTsupConfig(options = {}) {
     format: ['esm'],
 
     // Generate .d.ts files
-    dts: true,
+
+    dts: {
+      compilerOptions: {
+        composite: false,
+      },
+    },
 
     // Clean output directory before build
     clean: true,

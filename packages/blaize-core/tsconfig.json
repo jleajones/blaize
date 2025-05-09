@@ -1,0 +1,10 @@
+{
+  "extends": "@blaizejs/tsconfig/library.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "node_modules", "dist", "examples"]
+}

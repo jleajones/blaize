@@ -1,7 +1,13 @@
-// eslint/base.js
+// @ts-nocheck
 import js from '@eslint/js';
-import { typescript as tseslint } from 'typescript-eslint';
+import tseslint from 'typescript-eslint';
 import prettierConfig from 'eslint-config-prettier';
+
+// Import plugins as objects
+import importPlugin from 'eslint-plugin-import';
+import unicornPlugin from 'eslint-plugin-unicorn';
+import promisePlugin from 'eslint-plugin-promise';
+import sonarjsPlugin from 'eslint-plugin-sonarjs';
 
 // Create a merged configuration array that can be extended
 export default [
@@ -12,7 +18,14 @@ export default [
 
   // Our custom base configuration
   {
-    plugins: ['@typescript-eslint', 'import', 'unicorn', 'promise', 'sonarjs'],
+    // Use plugin objects in flat config format
+    plugins: {
+      '@typescript-eslint': tseslint.plugin,
+      import: importPlugin,
+      unicorn: unicornPlugin,
+      promise: promisePlugin,
+      sonarjs: sonarjsPlugin,
+    },
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
@@ -84,7 +97,7 @@ export default [
       'promise/no-return-wrap': 'error',
 
       // SonarJS - code quality rules
-      'sonarjs/no-duplicate-string': ['warn', 5],
+      'sonarjs/no-duplicate-string': ['warn', { threshold: 5 }],
       'sonarjs/cognitive-complexity': ['warn', 15],
       'sonarjs/no-identical-functions': 'warn',
 

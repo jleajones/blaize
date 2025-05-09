@@ -8,6 +8,10 @@
     "declarationMap": true,
     "sourceMap": true,
     "stripInternal": true,
-    "noEmitOnError": true
+    "noEmitOnError": true,
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "verbatimModuleSyntax": false,
+    "emitDeclarationOnly": true
   }
 }

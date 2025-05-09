@@ -5,16 +5,18 @@
   "description": "Shared tsup configurations for the BlaizeJS monorepo",
   "type": "module",
   "main": "tsup.config.mjs",
+  "types": "index.d.ts",
   "exports": {
-    ".": "./tsup.config.mjs"
+    ".": {
+      "import": "./tsup.config.mjs",
+      "types": "./index.d.ts"
+    }
   },
   "license": "MIT",
   "files": [
-    "tsup.config.mjs"
+    "tsup.config.mjs",
+    "index.d.ts"
   ],
-  "scripts": {
-    "lint": "eslint ."
-  },
   "dependencies": {
     "tsup": "^8.4.0"
   },
