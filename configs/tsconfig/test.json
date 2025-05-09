@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "BlaizeJS Test",
+  "extends": "./node.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"],
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "resolveJsonModule": true,
+    "sourceMap": false,
+    "inlineSourceMap": true,
+    "noEmitOnError": false
+  },
+  "include": ["src/**/*", "test/**/*"]
+}
