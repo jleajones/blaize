@@ -1,0 +1,27 @@
+{
+  "name": "@blaizejs/tsup-config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared tsup configurations for the BlaizeJS monorepo",
+  "type": "module",
+  "main": "tsup.config.mjs",
+  "exports": {
+    ".": "./tsup.config.mjs"
+  },
+  "license": "MIT",
+  "files": [
+    "tsup.config.mjs"
+  ],
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "tsup": "^8.4.0"
+  },
+  "devDependencies": {
+    "@blaizejs/tsconfig": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.8.0"
+  }
+}
