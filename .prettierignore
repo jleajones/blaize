@@ -1,0 +1,34 @@
+# Build directories
+dist/
+build/
+.next/
+out/
+coverage/
+storybook-static/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Package manager files
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Cache
+.turbo/
+.cache/
+.eslintcache
+
+# Misc
+.git/
+.github/
+.husky/
+.vscode/
+
+# Root scripts that shouldn't be formatted
+scripts/
+
+# Generated files
+*.min.js
+*.log

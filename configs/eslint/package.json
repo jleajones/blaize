@@ -1,0 +1,33 @@
+{
+  "name": "@blaizejs/eslint-config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./base": "./base.js",
+    "./node": "./node.js",
+    "./react": "./react.js",
+    "./next": "./next.js",
+    "./test": "./test.js"
+  },
+  "dependencies": {
+    "@next/eslint-plugin-next": "^14.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint-plugin-n": "^16.6.0",
+    "eslint-plugin-promise": "^6.1.1",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-security": "^2.1.0",
+    "eslint-plugin-sonarjs": "^0.23.0",
+    "eslint-plugin-unicorn": "^51.0.1",
+    "eslint-plugin-vitest": "^0.3.21"
+  },
+  "peerDependencies": {
+    "eslint": ">=9.0.0",
+    "typescript": ">=5.8.0"
+  }
+}
