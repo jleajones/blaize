@@ -16,7 +16,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsup --watch",
+    "dev": "tsup --watch --onSuccess \"node examples/basic.ts\"",
     "build": "tsup",
     "build:watch": "tsup --watch",
     "type-check": "tsc --noEmit",
