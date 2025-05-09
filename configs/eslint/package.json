@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Shared eslint configurations for the BlaizeJS monorepo",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "restricted"
+  },
   "exports": {
     "./base": "./base.js",
     "./node": "./node.js",
@@ -10,6 +15,9 @@
     "./next": "./next.js",
     "./test": "./test.js"
   },
+  "files": [
+    "*.js"
+  ],
   "dependencies": {
     "@next/eslint-plugin-next": "^14.0.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
@@ -29,5 +37,10 @@
   "peerDependencies": {
     "eslint": ">=9.0.0",
     "typescript": ">=5.8.0"
-  }
+  },
+  "keywords": [
+    "eslint",
+    "eslintconfig",
+    "blaizejs"
+  ]
 }
