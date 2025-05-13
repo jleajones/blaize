@@ -7,9 +7,9 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import http from 'node:http';
 import http2 from 'node:http2';
 
-import { Context } from '../context';
+import { Context, createContext, runWithContext } from '../context';
 
-import type { Middleware } from '../middleware';
+import type { compose, Middleware } from '../middleware';
 import type { Plugin } from '../plugins';
 import type { EventEmitter } from 'node:events';
 
@@ -135,4 +135,16 @@ export interface Server {
 
   /** Context storage system */
   context: AsyncLocalStorage<Context>;
+}
+
+export type RequestHandler = (
+  req: http.IncomingMessage | http2.Http2ServerRequest,
+  res: http.ServerResponse | http2.Http2ServerResponse
+) => Promise<void>;
+
+// Dependencies interface for better testability
+export interface RequestHandlerDependencies {
+  createContext: typeof createContext;
+  runWithContext: typeof runWithContext;
+  compose: typeof compose;
 }

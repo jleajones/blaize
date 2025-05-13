@@ -8,11 +8,10 @@
  */
 
 // Explicit imports to avoid using values without importing
-import { Context } from './context';
-import { createMiddleware, compose } from './middleware';
+import { create as createMiddleware, compose } from './middleware';
 import { createPlugin } from './plugins';
 import { createRoute } from './router';
-import { createServer } from './server';
+import { create as createServer } from './server';
 
 // Re-export everything
 // Server module exports
@@ -28,8 +27,7 @@ export { createMiddleware, compose };
 export type { Middleware, NextFunction } from './middleware';
 
 // Context module exports
-export { Context };
-export type { Request, Response } from './context';
+export type { ContextRequest, ContextResponse, Context } from './context';
 
 // Plugins module exports
 export { createPlugin };
@@ -58,9 +56,6 @@ const Blaize = {
   Router: RouterAPI,
   Middleware: MiddlewareAPI,
   Plugins: PluginsAPI,
-
-  // Classes
-  Context,
 
   // Constants
   VERSION,

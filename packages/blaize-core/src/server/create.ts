@@ -3,9 +3,9 @@ import EventEmitter from 'node:events';
 
 import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
-import { validateServerOptions } from './validation';
-import { Context } from '../context';
 import { Server, ServerOptionsInput, ServerOptions, StopOptions } from './types';
+import { validateServerOptions } from './validation';
+import { Context } from '../context/types';
 import { Middleware } from '../middleware';
 import { Plugin } from '../plugins';
 
@@ -161,7 +161,7 @@ function validatePlugin(plugin: unknown): asserts plugin is Plugin {
 /**
  * Creates a BlaizeJS server instance
  */
-export function createServer(options: ServerOptionsInput = {}): Server {
+export function create(options: ServerOptionsInput = {}): Server {
   // Create and validate options
   const mergedOptions = createServerOptions(options);
 

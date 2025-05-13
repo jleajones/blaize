@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import * as http2 from 'node:http2';
 
 import { generateDevCertificates } from './dev-certificate';
+import { createRequestHandler } from './request-handler';
 import { Http2Options, Server, ServerOptions } from './types';
 
 // Extract certificate handling to a separate function
@@ -67,14 +68,6 @@ function createServerInstance(
   return http2.createSecureServer(http2ServerOptions);
 }
 
-// Configure basic request handling
-function configureRequestHandling(server: http.Server | http2.Http2SecureServer): void {
-  server.on('request', (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ message: 'BlaizeJS server running' }));
-  });
-}
-
 // Start listening on the specified port and host
 function listenOnPort(
   server: http.Server | http2.Http2SecureServer,
@@ -96,6 +89,14 @@ function listenOnPort(
   });
 }
 
+async function initializePlugins(serverInstance: Server): Promise<void> {
+  for (const plugin of serverInstance.plugins) {
+    if (typeof plugin.initialize === 'function') {
+      await plugin.initialize(serverInstance);
+    }
+  }
+}
+
 // Main server start function - now with much lower complexity
 export async function startServer(
   serverInstance: Server,
@@ -112,11 +113,7 @@ export async function startServer(
     const host = serverOptions.host;
 
     // Initialize all registered plugins
-    for (const plugin of serverInstance.plugins) {
-      if (typeof plugin.initialize === 'function') {
-        await plugin.initialize(serverInstance);
-      }
-    }
+    await initializePlugins(serverInstance);
 
     // Determine if using HTTP/2
     const http2Options = serverOptions.http2 || { enabled: true };
@@ -142,7 +139,8 @@ export async function startServer(
     serverInstance.host = host;
 
     // Configure request handling
-    configureRequestHandling(server);
+    const requestHandler = createRequestHandler(serverInstance);
+    server.on('request', requestHandler);
 
     // Start listening
     await listenOnPort(server, port, host, isHttp2);

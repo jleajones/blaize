@@ -47,14 +47,10 @@ function parseRequestUrl(req: UnifiedRequest): {
 } {
   const originalUrl = (req as any).url || '/';
 
-  console.log('Original req:', req);
-
   // Construct full URL for parsing
   const host = req.headers.host || 'localhost';
   const protocol = req.socket && (req.socket as any).encrypted ? 'https' : 'http';
   const fullUrl = `${protocol}://${host}${originalUrl.startsWith('/') ? '' : '/'}${originalUrl}`;
-
-  console.log('Full Url:', fullUrl);
   try {
     const url = new URL(fullUrl);
 
