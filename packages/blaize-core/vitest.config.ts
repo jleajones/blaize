@@ -26,6 +26,14 @@ export default defineConfig({
     // Custom coverage thresholds
     coverage: {
       reportsDirectory: './coverage',
+      exclude: [
+        '**/node_modules/**',
+        '**/test/**',
+        '**/*.d.ts',
+        '**/index.ts',
+        '**/*.config.*',
+        '**/examples/**',
+      ],
       // Use the thresholds property for coverage targets
       thresholds: {
         lines: 80,
