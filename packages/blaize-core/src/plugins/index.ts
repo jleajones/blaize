@@ -4,7 +4,7 @@
  * Provides the plugin system for extending framework functionality.
  */
 
-import type { Server } from '../server';
+import type { Server } from '../server/types';
 
 /**
  * Plugin options
@@ -22,10 +22,10 @@ export interface PluginHooks {
   register: (app: Server) => void | Promise<void>;
 
   /** Called when the server is initialized */
-  initialize?: (app: Server) => void | Promise<void>;
+  initialize?: (app?: Server) => void | Promise<void>;
 
   /** Called when the server is terminated */
-  terminate?: (app: Server) => void | Promise<void>;
+  terminate?: (app?: Server) => void | Promise<void>;
 
   /** Called when the server starts */
   onServerStart?: (server: any) => void | Promise<void>;
