@@ -42,89 +42,62 @@ export interface State {
   [key: string]: unknown;
 }
 
+export interface ContextResponse<S extends State = State> {
+  raw: UnifiedResponse;
+
+  // State
+  sent: boolean;
+
+  // Status and headers
+  status: (code: number) => Context<S>;
+  header: (name: string, value: string) => Context<S>;
+  headers: (headers: Record<string, string>) => Context<S>;
+  type: (contentType: string) => Context<S>;
+
+  // Response methods
+  json: (body: unknown, status?: number) => void;
+  text: (body: string, status?: number) => void;
+  html: (body: string, status?: number) => void;
+  redirect: (url: string, status?: number) => void;
+  stream: (readable: NodeJS.ReadableStream, options?: StreamOptions) => void;
+}
+
+export interface ContextRequest {
+  // Original objects
+  raw: UnifiedRequest;
+
+  // Essential properties
+  method: string;
+  path: string;
+  url: URL | null;
+  query: QueryParams;
+  params: RequestParams;
+  protocol: string;
+  isHttp2: boolean;
+
+  // Accessors
+  header: (name: string) => string | undefined;
+  headers: (names?: string[]) => Record<string, string | undefined>;
+}
+
 /**
  * Context object representing a request/response cycle
  */
 export interface Context<S extends State = State> {
   /**
-   * Original request object (HTTP/1.1 or HTTP/2)
+   * Request information
    */
-  request: UnifiedRequest;
+  request: ContextRequest;
 
   /**
-   * Original response object (HTTP/1.1 or HTTP/2)
+   * Response handling
    */
-  response: UnifiedResponse;
-
-  /**
-   * Route parameters extracted from URL path
-   */
-  params: RequestParams;
-
-  /**
-   * Query parameters from URL
-   */
-  query: QueryParams;
+  response: ContextResponse;
 
   /**
    * Request-scoped state for storing data during the request lifecycle
    */
   state: S;
-
-  /**
-   * Request path
-   */
-  path: string;
-
-  /**
-   * HTTP method (GET, POST, etc.)
-   */
-  method: string;
-
-  /**
-   * Whether the request is HTTP/2
-   */
-  isHttp2: boolean;
-
-  /**
-   * Send a JSON response
-   */
-  json: (body: unknown, status?: number) => void;
-
-  /**
-   * Send a plain text response
-   */
-  text: (body: string, status?: number) => void;
-
-  /**
-   * Send an HTML response
-   */
-  html: (body: string, status?: number) => void;
-
-  /**
-   * Send a redirect response
-   */
-  redirect: (url: string, status?: number) => void;
-
-  /**
-   * Send a streaming response
-   */
-  stream: (readable: NodeJS.ReadableStream, options?: StreamOptions) => void;
-
-  /**
-   * Set response status code
-   */
-  status: (code: number) => Context<S>;
-
-  /**
-   * Set a response header
-   */
-  header: (name: string, value: string) => Context<S>;
-
-  /**
-   * Get a request header
-   */
-  get: (name: string) => string | undefined;
 }
 
 /**

@@ -38,22 +38,32 @@ describe('Context Store', () => {
   beforeEach(() => {
     // Create a mock context for testing
     mockContext = {
-      request: {} as any,
-      response: {} as any,
-      params: {},
-      query: {},
+      request: {
+        raw: {} as any,
+        method: 'GET',
+        path: '/test',
+        url: null,
+        query: {},
+        params: {},
+        protocol: 'http',
+        isHttp2: false,
+        header: vi.fn(),
+        headers: vi.fn().mockReturnValue({}),
+      },
+      response: {
+        raw: {} as any,
+        sent: false,
+        status: vi.fn().mockReturnThis(),
+        header: vi.fn().mockReturnThis(),
+        headers: vi.fn().mockReturnThis(),
+        type: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+        text: vi.fn(),
+        html: vi.fn(),
+        redirect: vi.fn(),
+        stream: vi.fn(),
+      },
       state: {},
-      path: '/test',
-      method: 'GET',
-      isHttp2: false,
-      json: vi.fn(),
-      text: vi.fn(),
-      html: vi.fn(),
-      redirect: vi.fn(),
-      stream: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-      header: vi.fn().mockReturnThis(),
-      get: vi.fn(),
     };
 
     // Reset any previously set context
