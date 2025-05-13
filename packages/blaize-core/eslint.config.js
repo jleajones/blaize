@@ -3,9 +3,6 @@ import baseConfig from '@blaizejs/eslint-config/node';
 export default [
   ...baseConfig,
   {
-    ignores: ['dist/**'],
-  },
-  {
     // Package-specific overrides
     files: ['src/**/*.ts'],
     rules: {

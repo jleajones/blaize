@@ -9,7 +9,8 @@ import type { ZodSchema } from 'zod';
 /**
  * Extract type from schema
  */
-export type InferSchemaType<T extends ZodSchema<any>> = T extends ZodSchema<infer U> ? U : never;
+export type InferSchemaType<T extends ZodSchema<unknown>> =
+  T extends ZodSchema<infer U> ? U : never;
 
 /**
  * Convert path pattern to type (e.g., '/users/:id' => { id: string })
@@ -27,7 +28,7 @@ export type PathParams<T extends string> = T extends `${string}:${infer Param}/$
 /**
  * Route parameter types
  */
-export type RouteParams<T extends string | Record<string, any>> = T extends string
+export type RouteParams<T extends string | Record<string, unknown>> = T extends string
   ? PathParams<T>
   : T;
 
@@ -83,3 +84,13 @@ export enum ContentType {
   Javascript = 'application/javascript',
   EventStream = 'text/event-stream',
 }
+
+/**
+ * Type representing unknown function
+ *
+ * This is a generic function type that can accept any number of arguments
+ * and return any type of value. It is used for type inference in various
+ * contexts where the specific function signature is not known or not
+ * important.
+ */
+export type UnknownFunction = (...args: unknown[]) => unknown;

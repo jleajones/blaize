@@ -17,7 +17,7 @@ import { createServer } from './server';
 // Re-export everything
 // Server module exports
 export { createServer };
-export type { Server, ServerOptions } from './server';
+export type { Server, ServerOptions } from './server/types';
 
 // Router module exports
 export { createRoute };

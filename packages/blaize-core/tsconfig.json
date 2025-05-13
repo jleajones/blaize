@@ -5,6 +5,6 @@
     "rootDir": "./src",
     "tsBuildInfoFile": "./.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts", "node_modules", "dist", "examples"]
+  "include": ["src/**/*.ts", "src/server/start.test.ts.bak"],
+  "exclude": ["node_modules", "dist", "examples"]
 }

@@ -40,8 +40,11 @@
     },
     "test": {
       "dependsOn": ["build"],
-      "outputs": ["coverage/**"],
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]
+    },
+    "test:coverage": {
+      "outputs": ["coverage/**"],
+      "dependsOn": ["^build"]
     }
   }
 }

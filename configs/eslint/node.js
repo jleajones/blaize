@@ -6,6 +6,9 @@ import securityPlugin from 'eslint-plugin-security';
 export default [
   ...baseConfig,
   {
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
+  },
+  {
     plugins: {
       n: nPlugin,
       security: securityPlugin,

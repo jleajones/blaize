@@ -16,12 +16,13 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
     },
+    globals: true,
 
     // Longer timeout for complex tests
     testTimeout: 10000,
 
     // override the include pattern
-    include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}', './test/utils.ts'],
+    include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}', './tests/utils.ts'],
     // Custom coverage thresholds
     coverage: {
       reportsDirectory: './coverage',
