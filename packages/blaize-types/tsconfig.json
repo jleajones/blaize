@@ -1,0 +1,19 @@
+{
+  "extends": "@blaizejs/tsconfig/library.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./.tsbuildinfo",
+    "emitDeclarationOnly": true,
+    "declarationDir": "./dist"
+  },
+  "include": [
+    "src/index.ts",
+    "src/server.ts",
+    "src/context.ts",
+    "src/middleware.ts",
+    "src/plugins.ts",
+    "src/router.ts"
+  ],
+  "exclude": ["node_modules", "dist/*.d.ts"]
+}

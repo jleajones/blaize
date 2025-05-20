@@ -1,0 +1,29 @@
+{
+  "name": "@blaizejs/types",
+  "version": "0.1.0",
+  "description": "Type definitions for BlaizeJS framework",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsup",
+    "build": "tsup",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@blaizejs/eslint-config": "workspace:*",
+    "@blaizejs/tsconfig": "workspace:*",
+    "@blaizejs/tsup-config": "workspace:*",
+    "@types/node": "^22.15.17",
+    "zod": "^3.24.4"
+  }
+}

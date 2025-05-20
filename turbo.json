@@ -3,7 +3,7 @@
   "globalDependencies": ["**/.env.*local", "tsconfig.json"],
   "tasks": {
     "build": {
-      "dependsOn": ["^build", "lint"],
+      "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
       "inputs": ["src/**", "package.json", "tsconfig.json"]
     },
@@ -39,12 +39,15 @@
       "cache": false
     },
     "test": {
-      "dependsOn": ["build"],
-      "inputs": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]
+      "dependsOn": [],
+      "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+      "cache": false
     },
     "test:coverage": {
+      "dependsOn": [],
       "outputs": ["coverage/**"],
-      "dependsOn": ["^build"]
+      "cache": false,
+      "persistent": true
     }
   }
 }

@@ -49,10 +49,10 @@ export interface ContextResponse<S extends State = State> {
   sent: boolean;
 
   // Status and headers
-  status: (code: number) => Context<S>;
-  header: (name: string, value: string) => Context<S>;
-  headers: (headers: Record<string, string>) => Context<S>;
-  type: (contentType: string) => Context<S>;
+  status: (code: number) => ContextResponse<S>;
+  header: (name: string, value: string) => ContextResponse<S>;
+  headers: (headers: Record<string, string>) => ContextResponse<S>;
+  type: (contentType: string) => ContextResponse<S>;
 
   // Response methods
   json: (body: unknown, status?: number) => void;
@@ -62,7 +62,7 @@ export interface ContextResponse<S extends State = State> {
   stream: (readable: NodeJS.ReadableStream, options?: StreamOptions) => void;
 }
 
-export interface ContextRequest {
+export interface ContextRequest<TBody = unknown> {
   // Original objects
   raw: UnifiedRequest;
 
@@ -74,6 +74,7 @@ export interface ContextRequest {
   params: RequestParams;
   protocol: string;
   isHttp2: boolean;
+  body?: TBody;
 
   // Accessors
   header: (name: string) => string | undefined;
@@ -83,16 +84,19 @@ export interface ContextRequest {
 /**
  * Context object representing a request/response cycle
  */
-export interface Context<S extends State = State> {
+export interface Context<S extends State = State, TBody = unknown, TQuery = QueryParams> {
   /**
    * Request information
    */
-  request: ContextRequest;
+  request: Omit<ContextRequest, 'body' | 'query'> & {
+    body: TBody;
+    query: TQuery;
+  };
 
   /**
    * Response handling
    */
-  response: ContextResponse;
+  response: ContextResponse<S>;
 
   /**
    * Request-scoped state for storing data during the request lifecycle
@@ -128,3 +132,13 @@ export type CreateContextFn = (
   res: UnifiedResponse,
   options?: ContextOptions
 ) => Promise<Context>;
+
+/**
+ * Type representing unknown function
+ *
+ * This is a generic function type that can accept any number of arguments
+ * and return any type of value. It is used for type inference in various
+ * contexts where the specific function signature is not known or not
+ * important.
+ */
+export type UnknownFunction = (...args: unknown[]) => unknown;

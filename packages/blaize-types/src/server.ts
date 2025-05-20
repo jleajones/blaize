@@ -7,10 +7,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import http from 'node:http';
 import http2 from 'node:http2';
 
-import { Context, createContext, runWithContext } from '../context';
-
-import type { compose, Middleware } from '../middleware';
-import type { Plugin } from '../plugins';
+import type { Context } from './context';
+import type { Middleware } from './middleware';
+import type { Plugin } from './plugins';
+import type { Router } from './router';
 import type { EventEmitter } from 'node:events';
 
 export interface Http2Options {
@@ -64,7 +64,7 @@ export interface ServerOptionsInput {
 }
 
 /**
- * Server options a BlaizeJS server
+ * Configuration for a BlaizeJS server
  */
 export interface ServerOptions {
   /** Port to listen on (default: 3000) */
@@ -131,7 +131,7 @@ export interface Server {
   register: (plugin: Plugin) => Promise<Server>;
 
   /** Access to the routing system */
-  routes: Record<string, any>;
+  router: Router;
 
   /** Context storage system */
   context: AsyncLocalStorage<Context>;
@@ -141,10 +141,3 @@ export type RequestHandler = (
   req: http.IncomingMessage | http2.Http2ServerRequest,
   res: http.ServerResponse | http2.Http2ServerResponse
 ) => Promise<void>;
-
-// Dependencies interface for better testability
-export interface RequestHandlerDependencies {
-  createContext: typeof createContext;
-  runWithContext: typeof runWithContext;
-  compose: typeof compose;
-}

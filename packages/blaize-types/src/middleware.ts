@@ -1,4 +1,4 @@
-import { Context } from '../context/types';
+import type { Context } from './context';
 
 /**
  * Function to pass control to the next middleware
@@ -34,5 +34,5 @@ export interface Middleware {
   name: string;
   execute: MiddlewareFunction;
   skip?: ((ctx: Context) => boolean) | undefined;
-  debug?: boolean;
+  debug?: boolean | undefined;
 }

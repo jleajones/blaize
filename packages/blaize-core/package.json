@@ -16,7 +16,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "NODE_ENV=development tsup --watch --onSuccess \"node examples/basic.ts\"",
+    "dev": "NODE_ENV=development concurrently \"tsup --watch\" \"nodemon --watch src -e ts --exec 'node src/examples/basic.ts'\"",
     "build": "tsup",
     "build:watch": "tsup --watch",
     "type-check": "tsc --noEmit",
@@ -27,13 +27,16 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "chokidar": "^4.0.3",
     "selfsigned": "^2.4.1",
-    "zod": "^3.22.4"
+    "zod": "^3.24.4"
   },
   "devDependencies": {
     "@blaizejs/eslint-config": "workspace:*",
+    "@blaizejs/testing-utils": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
     "@blaizejs/tsup-config": "workspace:*",
+    "@blaizejs/types": "workspace:*",
     "@blaizejs/vitest-config": "workspace:*",
     "@types/node": "^22.15.17",
     "@types/selfsigned": "^2.1.0",
