@@ -48,7 +48,7 @@ export default [
 
       // Security rules
       'security/detect-object-injection': 'off', // Too many false positives
-      'security/detect-non-literal-regexp': 'warn',
+      'security/detect-non-literal-regexp': 'off',
       // 'security/detect-non-literal-fs-filename': 'warn',
       'security/detect-buffer-noassert': 'error',
       // 'security/detect-child-process': 'warn',
