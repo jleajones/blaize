@@ -1,0 +1,21 @@
+{
+  "name": "@blaizejs/playground",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Development playground for BlaizeJS",
+  "scripts": {
+    "dev": "NODE_ENV=development tsup --watch --onSuccess \"node dist/index.js\"",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "blaizejs": "workspace:*",
+    "zod": "^3.24.4"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@blaizejs/eslint-config": "workspace:*",
+    "@blaizejs/tsconfig": "workspace:*",
+    "@blaizejs/tsup-config": "workspace:*"
+  }
+}
