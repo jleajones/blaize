@@ -22,7 +22,7 @@ export default defineConfig({
     testTimeout: 10000,
 
     // override the include pattern
-    include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}', './tests/utils.ts'],
+    include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     // Custom coverage thresholds
     coverage: {
       reportsDirectory: './coverage',
@@ -30,6 +30,7 @@ export default defineConfig({
         '**/node_modules/**',
         '**/test/**',
         '**/*.d.ts',
+        'index.ts',
         '**/index.ts',
         '**/*.config.*',
         '**/examples/**',
