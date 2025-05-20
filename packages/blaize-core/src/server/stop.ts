@@ -1,4 +1,4 @@
-import { Server, StopOptions } from "./types";
+import { Server, StopOptions } from '@blaizejs/types';
 
 export async function stopServer(serverInstance: Server, options: StopOptions = {}): Promise<void> {
   // Get the HTTP server from the server instance

@@ -1,10 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
-import { createServer, DEFAULT_OPTIONS } from './create';
+import { Server, ServerOptionsInput } from '@blaizejs/types';
+
+import { create, DEFAULT_OPTIONS } from './create';
 import * as startModule from './start';
 import * as stopModule from './stop';
-import { Server, ServerOptionsInput } from './types';
 import * as validationModule from './validation';
 
 // Mock the modules we depend on
@@ -23,7 +24,7 @@ vi.mock('./validation', () => ({
   validateServerOptions: vi.fn(options => options),
 }));
 
-describe('createServer', () => {
+describe('create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -33,7 +34,7 @@ describe('createServer', () => {
   });
 
   test('should create a server with default options', () => {
-    const server = createServer();
+    const server = create();
 
     expect(server).toBeDefined();
     expect(server.port).toBe(DEFAULT_OPTIONS.port);
@@ -58,7 +59,7 @@ describe('createServer', () => {
       },
     };
 
-    const server = createServer(customOptions);
+    const server = create(customOptions);
 
     expect(server.port).toBe(customOptions.port);
     expect(server.host).toBe(customOptions.host);
@@ -77,11 +78,11 @@ describe('createServer', () => {
       throw new Error('Validation error');
     });
 
-    expect(() => createServer()).toThrow('Failed to create server: Validation error');
+    expect(() => create()).toThrow('Failed to create server: Validation error');
   });
 
   test('should add middleware with use method', () => {
-    const server = createServer();
+    const server = create();
     const middleware1 = vi.fn();
     const middleware2 = vi.fn();
 
@@ -93,7 +94,7 @@ describe('createServer', () => {
   });
 
   test('should register plugin with register method', async () => {
-    const server = createServer();
+    const server = create();
     const plugin = {
       register: vi.fn().mockResolvedValue(undefined),
       name: 'test-plugin',
@@ -107,7 +108,7 @@ describe('createServer', () => {
   });
 
   test('should throw error when registering invalid plugin', async () => {
-    const server = createServer();
+    const server = create();
     const invalidPlugin = {} as any;
 
     await expect(server.register(invalidPlugin)).rejects.toThrow(
@@ -119,7 +120,7 @@ describe('createServer', () => {
     let server: Server;
 
     beforeEach(() => {
-      server = createServer();
+      server = create();
     });
 
     test('should start the server and setup lifecycle', async () => {
@@ -138,7 +139,7 @@ describe('createServer', () => {
         version: '1.0.0',
       };
 
-      const customServer = createServer({
+      const customServer = create({
         middleware: [middleware],
         plugins: [plugin],
       });
@@ -161,7 +162,7 @@ describe('createServer', () => {
     let server: Server;
 
     beforeEach(async () => {
-      server = createServer();
+      server = create();
       server.server = {} as any; // Mock the server existing
       await server.listen();
       vi.mocked(stopModule.stopServer).mockClear();
@@ -185,7 +186,7 @@ describe('createServer', () => {
     });
 
     test('should do nothing if server is not initialized', async () => {
-      const newServer = createServer();
+      const newServer = create();
       newServer.server = undefined;
 
       await newServer.close();
@@ -208,7 +209,7 @@ describe('createServer', () => {
       register: vi.fn().mockResolvedValue(undefined),
     };
 
-    const server = createServer({
+    const server = create({
       middleware: [middleware1, middleware2],
       plugins: [plugin1, plugin2],
     });
@@ -230,7 +231,7 @@ describe('createServer', () => {
       register: vi.fn().mockRejectedValue(new Error('Plugin initialization failed')),
     };
 
-    const server = createServer({ plugins: [plugin] });
+    const server = create({ plugins: [plugin] });
 
     await expect(server.listen()).rejects.toThrow();
   });

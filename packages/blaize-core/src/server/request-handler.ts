@@ -1,4 +1,5 @@
-import { RequestHandler, Server } from './types';
+import { RequestHandler, Server } from '@blaizejs/types';
+
 import { createContext } from '../context/create';
 import { runWithContext } from '../context/store';
 import { compose } from '../middleware/compose';
@@ -19,9 +20,16 @@ export function createRequestHandler(serverInstance: Server): RequestHandler {
         try {
           // Execute the middleware chain
           await handler(context, async () => {
-            // This is the final handler if no middleware responds
             if (!context.response.sent) {
-              context.response.json({ message: 'BlaizeJS server running' }, 200);
+              // Let the router handle the request
+              await serverInstance.router.handleRequest(context);
+              // If router didn't handle it either, send a 404
+              if (!context.response.sent) {
+                context.response.status(404).json({
+                  error: 'Not Found',
+                  message: `Route not found: ${context.request.method} ${context.request.path}`,
+                });
+              }
             }
           });
         } catch (error) {

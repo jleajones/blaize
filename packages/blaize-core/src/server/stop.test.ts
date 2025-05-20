@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 
+import { Plugin, Server } from '@blaizejs/types';
+
 import { stopServer, registerSignalHandlers } from './stop';
-import { Server } from './types';
-import { Plugin } from '../plugins';
 
 describe('Server Module', () => {
   // Setup mocks
@@ -48,7 +48,11 @@ describe('Server Module', () => {
       close: vi.fn(),
       use: vi.fn().mockReturnThis(),
       register: vi.fn().mockResolvedValue({}),
-      routes: {},
+      router: {
+        handleRequest: vi.fn().mockResolvedValue(undefined),
+        getRoutes: vi.fn().mockReturnValue([]),
+        addRoute: vi.fn(),
+      },
       context: { getStore: vi.fn() } as any,
     };
   });

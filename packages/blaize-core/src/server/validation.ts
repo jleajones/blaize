@@ -1,14 +1,18 @@
 import { z } from 'zod';
 
-import { ServerOptions, ServerOptionsInput } from './types';
-
-import type { Middleware } from '../middleware';
-import type { Plugin } from '../plugins';
+import { ServerOptions, ServerOptionsInput, Middleware, Plugin } from '@blaizejs/types';
 
 // Create a more flexible validation for the middleware function type
-const middlewareSchema = z.custom<Middleware>(data => typeof data === 'function', {
-  message: 'Expected a valid middleware function',
-});
+const middlewareSchema = z.custom<Middleware>(
+  data =>
+    data !== null &&
+    typeof data === 'object' &&
+    'execute' in data &&
+    typeof data.execute === 'function',
+  {
+    message: 'Expected middleware to have an execute function',
+  }
+);
 
 // Create a schema for plugins
 const pluginSchema = z.custom<Plugin>(

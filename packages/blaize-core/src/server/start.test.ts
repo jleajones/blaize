@@ -3,9 +3,10 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as http2 from 'node:http2';
 
+import { Server, ServerOptions } from '@blaizejs/types';
+
 import { generateDevCertificates } from './dev-certificate';
 import { startServer } from './start';
-import { Server, ServerOptions } from './types';
 
 // Mock the dependencies
 vi.mock('node:fs');
@@ -13,7 +14,7 @@ vi.mock('node:http');
 vi.mock('node:http2');
 vi.mock('./dev-certificate');
 
-describe('Server:Start Module', () => {
+describe('Server Module', () => {
   // Setup mocks
   const mockServer = {
     listen: vi.fn((_port, _host, cb) => {
@@ -77,7 +78,11 @@ describe('Server:Start Module', () => {
       close: vi.fn(),
       use: vi.fn().mockReturnThis(),
       register: vi.fn().mockResolvedValue({}),
-      routes: {},
+      router: {
+        handleRequest: vi.fn().mockResolvedValue(undefined),
+        getRoutes: vi.fn().mockReturnValue([]),
+        addRoute: vi.fn(),
+      },
       context: { getStore: vi.fn() } as any,
     };
 

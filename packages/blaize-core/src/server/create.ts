@@ -1,13 +1,20 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
+import {
+  Context,
+  Middleware,
+  Plugin,
+  Server,
+  ServerOptions,
+  ServerOptionsInput,
+  StopOptions,
+} from '@blaizejs/types';
+
 import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
-import { Server, ServerOptionsInput, ServerOptions, StopOptions } from './types';
 import { validateServerOptions } from './validation';
-import { Context } from '../context/types';
-import { Middleware } from '../middleware';
-import { Plugin } from '../plugins';
+import { createRouter } from '../router';
 
 export const DEFAULT_OPTIONS: ServerOptions = {
   port: 3000,
@@ -182,6 +189,10 @@ export function create(options: ServerOptionsInput = {}): Server {
 
   // Initialize core server components
   const contextStorage = new AsyncLocalStorage<Context>();
+  const router = createRouter({
+    routesDir: validatedOptions.routesDir,
+    watchMode: process.env.NODE_ENV === 'development',
+  });
   const events = new EventEmitter();
 
   // Create server instance with minimal properties
@@ -191,7 +202,6 @@ export function create(options: ServerOptionsInput = {}): Server {
     host,
     context: contextStorage,
     events,
-    routes: {},
     plugins: [],
     middleware: [],
     _signalHandlers: { unregister: () => {} },
@@ -199,6 +209,7 @@ export function create(options: ServerOptionsInput = {}): Server {
     register: async () => serverInstance,
     listen: async () => serverInstance,
     close: async () => {},
+    router,
   };
 
   // Add methods to the server instance

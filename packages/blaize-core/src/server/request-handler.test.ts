@@ -1,16 +1,14 @@
+import { Context, NextFunction, Server } from '@blaizejs/types';
+
 import { createRequestHandler } from './request-handler';
-import { Context } from '../context';
 import { createContext } from '../context/create';
 import { runWithContext } from '../context/store';
-import { compose } from '../middleware';
-import { NextFunction } from '../middleware/types';
-
-import type { Server } from './types';
+import { compose } from '../middleware/compose';
 
 // Mock the dependencies
 vi.mock('../context/create');
 vi.mock('../context/store');
-vi.mock('../middleware');
+vi.mock('../middleware/compose');
 
 describe('createRequestHandler', () => {
   // Test setup variables
@@ -26,7 +24,15 @@ describe('createRequestHandler', () => {
 
     // Set up test doubles
     mockServer = {
-      middleware: [vi.fn(), vi.fn()],
+      middleware: [
+        { name: 'test-middleware', execute: vi.fn() },
+        { name: 'test-middleware-2', execute: vi.fn() },
+      ],
+      router: {
+        handleRequest: vi.fn().mockResolvedValue(undefined),
+        getRoutes: vi.fn().mockReturnValue([]),
+        addRoute: vi.fn(),
+      },
     } as unknown as Server;
 
     mockReq = {
@@ -45,6 +51,7 @@ describe('createRequestHandler', () => {
       response: {
         sent: false,
         json: vi.fn(),
+        status: vi.fn().mockReturnThis(),
       },
     };
 
@@ -77,7 +84,7 @@ describe('createRequestHandler', () => {
   it('should compose middleware from server instance', async () => {
     const handler = createRequestHandler(mockServer);
     await handler(mockReq, mockRes);
-
+    expect(compose).toHaveBeenCalled();
     expect(compose).toHaveBeenCalledWith(mockServer.middleware);
   });
 
@@ -102,10 +109,11 @@ describe('createRequestHandler', () => {
     const handler = createRequestHandler(mockServer);
     await handler(mockReq, mockRes);
 
-    expect(mockContext.response.json).toHaveBeenCalledWith(
-      { message: 'BlaizeJS server running' },
-      200
-    );
+    expect(mockContext.response.status).toHaveBeenCalledWith(404);
+    expect(mockContext.response.json).toHaveBeenCalledWith({
+      message: 'Route not found: GET undefined',
+      error: 'Not Found',
+    });
   });
 
   it('should not send default response if middleware already sent a response', async () => {
