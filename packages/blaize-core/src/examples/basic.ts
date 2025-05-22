@@ -5,22 +5,30 @@
  * Currently, it will throw an error since the implementation is not complete.
  */
 
-import Blaize from '../dist/index.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import Blaize from '../../dist/index.js';
+
+// Get the directory name of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Eventually this example will create and start a simple server
 try {
   console.log(`BlaizeJS version: ${Blaize.VERSION}`);
+  // Resolve the routes directory path relative to this file
+  const routesDir = path.resolve(__dirname, './routes/');
 
   // This will throw an error since the implementation is not yet available
   const app = Blaize.createServer({
     port: 3000,
     host: 'localhost',
+    routesDir,
   });
 
   // Start the server
-  await app.listen(); 
-  console.log('Server started on http://localhost:3000');
+  await app.listen();
 } catch (err) {
-  console.error('Error:', err.message);
-  console.log('Note: This is expected until the implementation is complete.');
+  console.error('Error:', err);
 }

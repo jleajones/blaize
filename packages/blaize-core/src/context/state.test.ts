@@ -1,3 +1,5 @@
+import { Context, UnifiedRequest, UnifiedResponse } from '@blaizejs/types';
+
 import {
   getState,
   setState,
@@ -8,7 +10,6 @@ import {
   createTypedState,
 } from './state';
 import { getContext } from './store';
-import { Context, UnifiedRequest, UnifiedResponse } from './types';
 
 class MockContextError extends Error {
   constructor(message: string = 'Mock context is not defined') {
@@ -39,6 +40,7 @@ describe('State Management', () => {
         query: {},
         params: {},
         protocol: 'http:',
+        body: {},
         isHttp2: false,
         header: vi.fn().mockReturnValue(undefined),
         headers: vi.fn().mockReturnValue({}),

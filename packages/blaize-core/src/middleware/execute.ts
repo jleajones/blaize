@@ -1,5 +1,4 @@
-import { Middleware, NextFunction } from './types';
-import { Context } from '../context/types';
+import { Context, Middleware, NextFunction } from '@blaizejs/types';
 
 /**
  * Execute a single middleware, handling both function and object forms

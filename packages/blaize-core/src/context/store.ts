@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import { Context, State, GetContextFn } from './types';
-import { UnknownFunction } from '../types';
+import { Context, QueryParams, State, UnknownFunction } from '@blaizejs/types';
 
 /**
  * AsyncLocalStorage instance for storing request context
@@ -11,10 +10,11 @@ export const contextStorage = new AsyncLocalStorage<Context>();
 /**
  * Returns the current context from AsyncLocalStorage
  */
-export const getContext: GetContextFn = <S extends State = State>(): Context<S> | undefined => {
-  const context = contextStorage.getStore() as Context<S> | undefined;
-  return context;
-};
+export function getContext<S extends State = State, TBody = unknown, TQuery = QueryParams>():
+  | Context<S, TBody, TQuery>
+  | undefined {
+  return contextStorage.getStore() as Context<S, TBody, TQuery> | undefined;
+}
 
 /**
  * Wraps a callback function with a context

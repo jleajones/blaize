@@ -1,3 +1,5 @@
+import { Context } from '@blaizejs/types';
+
 import {
   contextStorage,
   getContext,
@@ -6,7 +8,6 @@ import {
   hasContext,
   bindContext,
 } from './store';
-import { Context } from './types';
 
 // Mock AsyncLocalStorage for better test control
 vi.mock('node:async_hooks', () => {
@@ -46,6 +47,7 @@ describe('Context Store', () => {
         query: {},
         params: {},
         protocol: 'http',
+        body: {},
         isHttp2: false,
         header: vi.fn(),
         headers: vi.fn().mockReturnValue({}),

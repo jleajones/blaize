@@ -1,4 +1,4 @@
-import { Middleware, MiddlewareFunction, MiddlewareOptions } from './types';
+import { Middleware, MiddlewareFunction, MiddlewareOptions } from '@blaizejs/types';
 
 /**
  * Create a middleware

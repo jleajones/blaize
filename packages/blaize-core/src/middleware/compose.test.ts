@@ -1,6 +1,7 @@
+import { createMockMiddleware } from '@blaizejs/testing-utils';
+import { Context, Middleware, NextFunction } from '@blaizejs/types';
+
 import { compose } from './compose';
-import { Middleware, NextFunction } from './types';
-import { Context } from '../context/types';
 
 // Mock the execute function
 vi.mock('./execute', () => ({
@@ -37,14 +38,14 @@ describe('compose middleware function', () => {
   });
 
   it('should execute a single middleware correctly', async () => {
-    const middleware: Middleware = {
+    const middleware: Middleware = createMockMiddleware({
       name: 'test-middleware',
       execute: async (ctx, next) => {
         executionOrder.push('before');
         await next();
         executionOrder.push('after');
       },
-    };
+    });
 
     const composed = compose([middleware]);
     await composed(context, finalHandler);

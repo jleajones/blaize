@@ -1,41 +1,23 @@
-import { hasContext, getContext } from './store';
 import {
-  QueryParams,
   Context,
   ContextOptions,
+  QueryParams,
+  RequestParams,
+  State,
+  StreamOptions,
   UnifiedRequest,
   UnifiedResponse,
-  RequestParams,
-  StreamOptions,
-  State,
-} from './types';
+} from '@blaizejs/types';
+
+import {
+  ParseUrlError,
+  ResponseSentContentError,
+  ResponseSentError,
+  ResponseSentHeaderError,
+} from './errors';
+import { hasContext, getContext } from './store';
 
 const CONTENT_TYPE_HEADER = 'Content-Type';
-
-class ResponseSentError extends Error {
-  constructor(message: string = 'Response has already been sent') {
-    super(message);
-    this.name = 'ResponseSentError';
-  }
-}
-
-class ResponseSentHeaderError extends ResponseSentError {
-  constructor(message: string = 'Cannot set header after response has been sent') {
-    super(message);
-  }
-}
-
-class ResponseSentContentError extends ResponseSentError {
-  constructor(message: string = 'Cannot set content type after response has been sent') {
-    super(message);
-  }
-}
-
-class ParseUrlError extends ResponseSentError {
-  constructor(message: string = 'Invalide URL') {
-    super(message);
-  }
-}
 
 /**
  * Parse URL and extract path and query parameters using modern URL API
@@ -114,11 +96,11 @@ function getProtocol(req: UnifiedRequest): string {
 /**
  * Create a new context object for a request/response cycle
  */
-export async function createContext(
+export async function createContext<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
   res: UnifiedResponse,
   options: ContextOptions = {}
-): Promise<Context> {
+): Promise<Context<State, TBody, TQuery>> {
   // Extract basic request information
   const { path, url, query } = parseRequestUrl(req);
   const method = req.method || 'GET';
@@ -133,9 +115,17 @@ export async function createContext(
   const responseState = { sent: false };
 
   // Create the context object with its components
-  const ctx: Context<typeof state> = {
-    request: createRequestObject(req, { path, url, query, params, method, isHttp2, protocol }),
-    response: {} as Context['response'],
+  const ctx: Context<State, TBody, TQuery> = {
+    request: createRequestObject<TBody, TQuery>(req, {
+      path,
+      url,
+      query: query as TQuery,
+      params,
+      method,
+      isHttp2,
+      protocol,
+    }),
+    response: {} as Context<State, TBody, TQuery>['response'],
     state,
   };
 
@@ -143,7 +133,7 @@ export async function createContext(
 
   // Parse body if requested
   if (options.parseBody) {
-    await parseBodyIfNeeded(req, ctx, options);
+    await parseBodyIfNeeded(req, ctx);
   }
 
   return ctx;
@@ -152,23 +142,24 @@ export async function createContext(
 /**
  * Create the request object portion of the context
  */
-function createRequestObject(
+function createRequestObject<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
   info: {
     path: string;
     url: URL | null;
-    query: QueryParams;
+    query: TQuery;
     params: RequestParams;
     method: string;
     isHttp2: boolean;
     protocol: string;
   }
-): Context['request'] {
+): Context<State, TBody, TQuery>['request'] {
   return {
     raw: req,
     ...info,
     header: createRequestHeaderGetter(req),
     headers: createRequestHeadersGetter(req),
+    body: undefined as unknown as TBody,
   };
 }
 
@@ -212,11 +203,11 @@ function createRequestHeadersGetter(req: UnifiedRequest) {
 /**
  * Create the response object portion of the context
  */
-function createResponseObject(
+function createResponseObject<S extends State = State, TBody = unknown, TQuery = QueryParams>(
   res: UnifiedResponse,
   responseState: { sent: boolean },
-  ctx: Context
-): Context['response'] {
+  ctx: Context<S, TBody, TQuery>
+): Context<S, TBody, TQuery>['response'] {
   return {
     raw: res,
 
@@ -240,33 +231,45 @@ function createResponseObject(
 /**
  * Create a function to set response status
  */
-function createStatusSetter(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context) {
-  return function statusSetter(code: number): Context {
+function createStatusSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  ctx: Context<S, TBody, TQuery>
+) {
+  return function statusSetter(code: number): Context['response'] {
     if (responseState.sent) {
       throw new ResponseSentError();
     }
     res.statusCode = code;
-    return ctx;
+    return ctx.response;
   };
 }
 
 /**
  * Create a function to set a response header
  */
-function createHeaderSetter(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context) {
+function createHeaderSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  ctx: Context<S, TBody, TQuery>
+) {
   return function headerSetter(name: string, value: string) {
     if (responseState.sent) {
       throw new ResponseSentHeaderError();
     }
     res.setHeader(name, value);
-    return ctx;
+    return ctx.response;
   };
 }
 
 /**
  * Create a function to set multiple response headers
  */
-function createHeadersSetter(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context) {
+function createHeadersSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  ctx: Context<S, TBody, TQuery>
+) {
   return function headersSetter(headers: Record<string, string>) {
     if (responseState.sent) {
       throw new ResponseSentHeaderError();
@@ -274,24 +277,24 @@ function createHeadersSetter(res: UnifiedResponse, responseState: { sent: boolea
     for (const [name, value] of Object.entries(headers)) {
       res.setHeader(name, value);
     }
-    return ctx;
+    return ctx.response;
   };
 }
 
 /**
  * Create a function to set content type header
  */
-function createContentTypeSetter(
+function createContentTypeSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
   res: UnifiedResponse,
   responseState: { sent: boolean },
-  ctx: Context
+  ctx: Context<S, TBody, TQuery>
 ) {
   return function typeSetter(type: string) {
     if (responseState.sent) {
       throw new ResponseSentContentError();
     }
     res.setHeader(CONTENT_TYPE_HEADER, type);
-    return ctx;
+    return ctx.response;
   };
 }
 
@@ -414,20 +417,182 @@ function createStreamResponder(res: UnifiedResponse, responseState: { sent: bool
 /**
  * Parse request body if enabled in options
  */
-async function parseBodyIfNeeded(
-  _req: UnifiedRequest,
-  _ctx: Context,
-  _options: ContextOptions
+async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
+  req: UnifiedRequest,
+  ctx: Context<State, TBody, TQuery>
 ): Promise<void> {
-  // Body parsing implementation would go here
-  // This is a placeholder for future implementation
+  // Skip parsing for methods that typically don't have bodies
+  if (shouldSkipParsing(req.method)) {
+    return;
+  }
+
+  const contentType = req.headers['content-type'] || '';
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+
+  // Skip if no content or very large (can be handled by dedicated middleware)
+  if (contentLength === 0 || contentLength > 1048576) {
+    // 1MB limit for built-in parser
+    return;
+  }
+
+  try {
+    await parseBodyByContentType(req, ctx, contentType);
+  } catch (error) {
+    setBodyError(ctx, 'body_read_error', 'Error reading request body', error);
+  }
+}
+
+/**
+ * Determine if body parsing should be skipped based on HTTP method
+ */
+function shouldSkipParsing(method?: string): boolean {
+  const skipMethods = ['GET', 'HEAD', 'OPTIONS'];
+  return skipMethods.includes(method || 'GET');
+}
+
+/**
+ * Parse the body based on content type
+ */
+async function parseBodyByContentType<TBody = unknown, TQuery = QueryParams>(
+  req: UnifiedRequest,
+  ctx: Context<State, TBody, TQuery>,
+  contentType: string
+): Promise<void> {
+  if (contentType.includes('application/json')) {
+    await parseJsonBody(req, ctx);
+  } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    await parseFormUrlEncodedBody(req, ctx);
+  } else if (contentType.includes('text/')) {
+    await parseTextBody(req, ctx);
+  }
+  // For other content types, do nothing (let specialized middleware handle it)
+}
+
+/**
+ * Parse JSON request body
+ */
+async function parseJsonBody<TBody = unknown, TQuery = QueryParams>(
+  req: UnifiedRequest,
+  ctx: Context<State, TBody, TQuery>
+): Promise<void> {
+  const body = await readRequestBody(req);
+
+  if (!body) {
+    console.warn('Empty body, skipping JSON parsing');
+    return;
+  }
+
+  // Check if the body is actually "null" string
+  if (body.trim() === 'null') {
+    console.warn('Body is the string "null"');
+    ctx.request.body = null as TBody;
+    return;
+  }
+
+  try {
+    const json = JSON.parse(body);
+    ctx.request.body = json as TBody;
+  } catch (error) {
+    ctx.request.body = null as TBody;
+    setBodyError(ctx, 'json_parse_error', 'Invalid JSON in request body', error);
+  }
+}
+
+/**
+ * Parse URL-encoded form data
+ */
+async function parseFormUrlEncodedBody<TBody = unknown, TQuery = QueryParams>(
+  req: UnifiedRequest,
+  ctx: Context<State, TBody, TQuery>
+): Promise<void> {
+  const body = await readRequestBody(req);
+  if (!body) return;
+
+  try {
+    ctx.request.body = parseUrlEncodedData(body) as TBody;
+  } catch (error) {
+    ctx.request.body = null as TBody;
+    setBodyError(ctx, 'form_parse_error', 'Invalid form data in request body', error);
+  }
+}
+
+/**
+ * Parse URL-encoded data into an object
+ */
+function parseUrlEncodedData(body: string): Record<string, string | string[]> {
+  const params = new URLSearchParams(body);
+  const formData: Record<string, string | string[]> = {};
+
+  params.forEach((value, key) => {
+    if (formData[key] !== undefined) {
+      if (Array.isArray(formData[key])) {
+        (formData[key] as string[]).push(value);
+      } else {
+        formData[key] = [formData[key] as string, value];
+      }
+    } else {
+      formData[key] = value;
+    }
+  });
+
+  return formData;
+}
+
+/**
+ * Parse plain text body
+ */
+async function parseTextBody<TBody = null, TQuery = QueryParams>(
+  req: UnifiedRequest,
+  ctx: Context<State, TBody, TQuery>
+): Promise<void> {
+  const body = await readRequestBody(req);
+  if (body) {
+    ctx.request.body = body as TBody;
+  }
+}
+
+/**
+ * Set body parsing error in context state
+ */
+function setBodyError<TBody = unknown, TQuery = QueryParams>(
+  ctx: Context<State, TBody, TQuery>,
+  type: string,
+  message: string,
+  error: unknown
+): void {
+  ctx.state._bodyError = { type, message, error };
+}
+
+/**
+ * Read the entire request body as a string
+ */
+async function readRequestBody(req: UnifiedRequest): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+
+    req.on('data', (chunk: Buffer | string) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    req.on('end', () => {
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+
+    req.on('error', err => {
+      reject(err);
+    });
+  });
 }
 
 /**
  * Get the current context or throw an error if none exists
  */
-export function getCurrentContext<S extends State = State>(): Context<S> {
-  const ctx = getContext<S>();
+export function getCurrentContext<
+  S extends State = State,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(): Context<S, TBody, TQuery> {
+  const ctx = getContext<S, TBody, TQuery>();
   if (!ctx) {
     throw new Error(
       'No context found. Ensure this function is called within a request handler, ' +

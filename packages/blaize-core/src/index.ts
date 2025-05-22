@@ -9,29 +9,22 @@
 
 // Explicit imports to avoid using values without importing
 import { create as createMiddleware, compose } from './middleware';
-import { createPlugin } from './plugins';
-import { createRoute } from './router';
+import { create as createPlugin } from './plugins';
+import { create as createRoute } from './router/';
 import { create as createServer } from './server';
 
 // Re-export everything
 // Server module exports
 export { createServer };
-export type { Server, ServerOptions } from './server/types';
 
 // Router module exports
 export { createRoute };
-export type { Route, RouteHandler, RouteOptions } from './router';
 
 // Middleware module exports
 export { createMiddleware, compose };
-export type { Middleware, NextFunction } from './middleware';
-
-// Context module exports
-export type { ContextRequest, ContextResponse, Context } from './context';
 
 // Plugins module exports
 export { createPlugin };
-export type { Plugin, PluginOptions } from './plugins';
 
 // Version information
 export const VERSION = '0.1.0';

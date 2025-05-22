@@ -1,7 +1,6 @@
-// src/middleware/create.test.ts
+import { Context, MiddlewareFunction, Middleware, MiddlewareOptions } from '@blaizejs/types';
+
 import { create } from './create';
-import { MiddlewareFunction, Middleware, MiddlewareOptions } from './types';
-import { Context } from '../context/types';
 
 describe('createMiddleware', () => {
   // Shared test data and utilities
