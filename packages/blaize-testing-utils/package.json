@@ -5,13 +5,9 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    "./context": {
-      "types": "./src/context.ts",
-      "import": "./dist/context.js"
-    },
-    "./middleware": {
-      "types": "./dist/middleware.d.ts",
-      "import": "./dist/middleware.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "dependencies": {
