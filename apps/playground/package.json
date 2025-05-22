@@ -16,6 +16,7 @@
   "devDependencies": {
     "@blaizejs/eslint-config": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
-    "@blaizejs/tsup-config": "workspace:*"
+    "@blaizejs/tsup-config": "workspace:*",
+    "@blaizejs/types": "workspace:*"
   }
 }

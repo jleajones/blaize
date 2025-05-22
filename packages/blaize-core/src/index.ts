@@ -13,6 +13,12 @@ import { create as createPlugin } from './plugins';
 import { create as createRoute } from './router/';
 import { create as createServer } from './server';
 
+// Import registry to ensure global declarations are processed
+import './router/registry';
+
+// Import the type exports from registry
+import type { AppType } from './router/registry';
+
 // Re-export everything
 // Server module exports
 export { createServer };
@@ -34,6 +40,9 @@ export const ServerAPI = { createServer };
 export const RouterAPI = { createRoute };
 export const MiddlewareAPI = { createMiddleware, compose };
 export const PluginsAPI = { createPlugin };
+
+// Export route types for users
+export type { AppType };
 
 // Default export
 const Blaize = {

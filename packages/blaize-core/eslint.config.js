@@ -8,6 +8,7 @@ export default [
     rules: {
       // Any custom rules for the BlaizeJS core package
       'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
+      '@typescript-eslint/no-namespace': ['error', { allowDeclarations: true }],
     },
   },
   {

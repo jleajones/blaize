@@ -1,6 +1,5 @@
+import { Blaize } from 'blaizejs';
 import { z } from 'zod';
-
-import Blaize from '../../../../../dist/index.js';
 
 export default Blaize.createRoute({
   GET: {
@@ -43,9 +42,6 @@ export default Blaize.createRoute({
       }),
     },
     handler: async (ctx, params) => {
-      const { name, age } = ctx.request.body;
-      console.log('name', name);
-      console.log('age', age);
       return {
         message: `hello user ${params.userId}`,
         timestamp: Date.now(),

@@ -12,6 +12,7 @@ import { watchRoutes } from './discovery/watchers';
 import { executeHandler } from './handlers';
 import { handleRouteError } from './handlers/error';
 import { createMatcher } from './matching';
+import { setGlobalConfig } from '../config/global';
 
 const DEFAULT_ROUTER_OPTIONS = {
   routesDir: './routes',
@@ -28,6 +29,11 @@ export function createRouter(options: RouterOptions): Router {
     ...DEFAULT_ROUTER_OPTIONS,
     ...options,
   };
+
+  setGlobalConfig({
+    routesDir: routerOptions.routesDir,
+    basePath: routerOptions.basePath,
+  });
 
   // Internal state
   const routes: Route[] = [];
