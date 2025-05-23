@@ -2,14 +2,6 @@ import { RouteDefinition } from '@blaizejs/types';
 
 import { create } from './create';
 
-vi.mock('../config/global', () => ({
-  getGlobalConfig: vi.fn(() => ({
-    routesDir: './test-routes', // This won't be found either, but we can handle it
-    basePath: '/',
-  })),
-  setGlobalConfig: vi.fn(),
-}));
-
 describe('route create function', () => {
   // Test successful route creation with defaults
   test('creates a route with default base path', () => {
@@ -25,9 +17,12 @@ describe('route create function', () => {
     const route = create(definition);
 
     // Assert
-    expect(route).toHaveProperty('GET.handler', mockHandler);
-    expect(route).toHaveProperty('path');
-    expect(typeof route.path).toBe('string');
+    expect(route).toEqual({
+      GET: {
+        handler: mockHandler,
+      },
+      path: '/',
+    });
   });
 
   // Test successful route creation with custom base path
@@ -44,7 +39,7 @@ describe('route create function', () => {
     const route = create(definition, { basePath: '/api/users' });
 
     // Assert
-    expect(route).toMatchObject({
+    expect(route).toEqual({
       POST: {
         handler: mockHandler,
       },
@@ -70,7 +65,7 @@ describe('route create function', () => {
     const route = create(definition);
 
     // Assert
-    expect(route).toMatchObject({
+    expect(route).toEqual({
       GET: {
         handler: getHandler,
       },
@@ -98,7 +93,7 @@ describe('route create function', () => {
     const route = create(definition);
 
     // Assert
-    expect(route).toMatchObject({
+    expect(route).toEqual({
       GET: {
         handler: mockHandler,
         middleware: [mockMiddleware1, mockMiddleware2],
@@ -177,10 +172,12 @@ describe('route create function', () => {
     const route = create(definition);
 
     // Assert - should not throw error and process the valid method
-
-    // Verify the valid method is preserved
-    expect(route).toHaveProperty('GET.handler', mockHandler);
-    expect(route.POST).toBeNull();
-    expect(route.PUT).toBeUndefined();
+    expect(route).toEqual({
+      GET: {
+        handler: mockHandler,
+      },
+      POST: null,
+      path: '/',
+    });
   });
 });

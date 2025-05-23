@@ -177,75 +177,6 @@ export interface ParsedRoute {
 }
 
 /**
- * Standardized error response structure
- */
-export interface StandardErrorResponse {
-  error: string;
-  message: string;
-}
-
-/**
- * Transform a route method to client-consumable type
- */
-export type RouteMethodToClientType<T extends RouteMethodOptions> = T extends {
-  schema?: {
-    params?: infer P;
-    query?: infer Q;
-    body?: infer B;
-    response?: infer R;
-  };
-}
-  ? {
-      params: P extends z.ZodType ? z.infer<P> : {};
-      query: Q extends z.ZodType ? z.infer<Q> : {};
-      body: B extends z.ZodType ? z.infer<B> : never;
-      response: R extends z.ZodType ? z.infer<R> : unknown;
-      errors: StandardErrorResponse;
-    }
-  : {
-      params: {};
-      query: {};
-      body: never;
-      response: unknown;
-      errors: StandardErrorResponse;
-    };
-
-/**
- * Transform route definition to client types
- */
-export type RouteDefinitionToClientType<T> = {
-  [K in keyof T]: T[K] extends {
-    schema?: {
-      params?: infer P;
-      query?: infer Q;
-      body?: infer B;
-      response?: infer R;
-    };
-    handler?: any;
-  }
-    ? {
-        params: P extends z.ZodType ? z.infer<P> : {};
-        query: Q extends z.ZodType ? z.infer<Q> : {};
-        body: B extends z.ZodType ? z.infer<B> : never;
-        response: R extends z.ZodType ? z.infer<R> : unknown;
-        errors: StandardErrorResponse;
-      }
-    : never;
-};
-
-/**
- * Global route registry that gets populated by createRoute calls
- */
-export interface RouteRegistry {}
-
-/**
- * Helper type for registering routes in the global registry
- */
-export type RegisterRoute<TPath extends string, TDefinition> = {
-  [P in TPath]: RouteDefinitionToClientType<TDefinition>;
-};
-
-/**
  * Helper type for creating route methods with type inference
  */
 export type CreateRoute = {
@@ -295,10 +226,7 @@ export type CreateRoute = {
       };
     },
     options?: RouteOptions
-  ): typeof definition & {
-    path: string;
-    __routeRegistry: RegisterRoute<string, typeof definition>;
-  };
+  ): Route;
 };
 
 /**

@@ -63,9 +63,6 @@ importers:
       '@blaizejs/tsup-config':
         specifier: workspace:*
         version: link:../../configs/tsup
-      '@blaizejs/types':
-        specifier: workspace:*
-        version: link:../../packages/blaize-types
 
   configs/eslint:
     dependencies:
