@@ -11,11 +11,11 @@ export interface WatchOptions {
   /** Directories to ignore */
   ignore?: string[];
   /** Callback for new routes */
-  onRouteAdded?: (route: Route) => void;
+  onRouteAdded?: (routes: Route[]) => void;
   /** Callback for changed routes */
-  onRouteChanged?: (route: Route) => void;
+  onRouteChanged?: (routes: Route[]) => void;
   /** Callback for removed routes */
-  onRouteRemoved?: (path: string) => void;
+  onRouteRemoved?: (filePath: string, routes: Route[]) => void;
   /** Callback for errors */
   onError?: (error: Error) => void;
 }
@@ -24,8 +24,8 @@ export interface WatchOptions {
  * Watch for route file changes
  */
 export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
-  // Track loaded routes by file path
-  const routesByPath = new Map<string, Route>();
+  // Track loaded routes by file path - now stores arrays of routes
+  const routesByPath = new Map<string, Route[]>();
 
   // Initial loading of routes
   async function loadInitialRoutes() {
@@ -45,27 +45,27 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
   // Load a route module and notify listeners
   async function loadAndNotify(filePath: string) {
     try {
-      const route = await loadRouteModule(filePath, routesDir);
+      const routes = await loadRouteModule(filePath, routesDir);
 
-      if (!route) {
+      if (!routes || routes.length === 0) {
         return;
       }
 
-      const existingRoute = routesByPath.get(filePath);
+      const existingRoutes = routesByPath.get(filePath);
 
-      if (existingRoute) {
-        // Route changed
-        routesByPath.set(filePath, route);
+      if (existingRoutes) {
+        // Routes changed
+        routesByPath.set(filePath, routes);
 
         if (options.onRouteChanged) {
-          options.onRouteChanged(route);
+          options.onRouteChanged(routes);
         }
       } else {
-        // New route
-        routesByPath.set(filePath, route);
+        // New routes
+        routesByPath.set(filePath, routes);
 
         if (options.onRouteAdded) {
-          options.onRouteAdded(route);
+          options.onRouteAdded(routes);
         }
       }
     } catch (error) {
@@ -76,10 +76,10 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
   // Handle route file removal
   function handleRemoved(filePath: string) {
     const normalizedPath = path.normalize(filePath);
-    const route = routesByPath.get(normalizedPath);
+    const routes = routesByPath.get(normalizedPath);
 
-    if (route && options.onRouteRemoved) {
-      options.onRouteRemoved(route.path);
+    if (routes && routes.length > 0 && options.onRouteRemoved) {
+      options.onRouteRemoved(normalizedPath, routes);
     }
 
     routesByPath.delete(normalizedPath);
@@ -127,8 +127,19 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
     close: () => watcher.close(),
 
     /**
-     * Get all currently loaded routes
+     * Get all currently loaded routes (flattened)
      */
-    getRoutes: () => Array.from(routesByPath.values()),
+    getRoutes: () => {
+      const allRoutes: Route[] = [];
+      for (const routes of routesByPath.values()) {
+        allRoutes.push(...routes);
+      }
+      return allRoutes;
+    },
+
+    /**
+     * Get routes organized by file path
+     */
+    getRoutesByFile: () => new Map(routesByPath),
   };
 }

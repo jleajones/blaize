@@ -10,7 +10,16 @@
 // Explicit imports to avoid using values without importing
 import { create as createMiddleware, compose } from './middleware';
 import { create as createPlugin } from './plugins';
-import { create as createRoute } from './router/';
+import {
+  createDeleteRoute,
+  createGetRoute,
+  createHeadRoute,
+  createOptionsRoute,
+  createPatchRoute,
+  createPostRoute,
+  createPutRoute,
+  defineAppRoutes,
+} from './router/';
 import { create as createServer } from './server';
 
 // Re-export everything
@@ -18,7 +27,16 @@ import { create as createServer } from './server';
 export { createServer };
 
 // Router module exports
-export { createRoute };
+export {
+  createDeleteRoute,
+  createGetRoute,
+  createHeadRoute,
+  createOptionsRoute,
+  createPatchRoute,
+  createPostRoute,
+  createPutRoute,
+  defineAppRoutes,
+};
 
 // Middleware module exports
 export { createMiddleware, compose };
@@ -31,7 +49,15 @@ export const VERSION = '0.1.0';
 
 // Namespaced exports with different names to avoid conflicts
 export const ServerAPI = { createServer };
-export const RouterAPI = { createRoute };
+export const RouterAPI = {
+  createDeleteRoute,
+  createGetRoute,
+  createHeadRoute,
+  createOptionsRoute,
+  createPatchRoute,
+  createPostRoute,
+  createPutRoute,
+};
 export const MiddlewareAPI = { createMiddleware, compose };
 export const PluginsAPI = { createPlugin };
 
@@ -39,10 +65,9 @@ export const PluginsAPI = { createPlugin };
 const Blaize = {
   // Core functions
   createServer,
-  createRoute,
   createMiddleware,
   createPlugin,
-  compose,
+  defineAppRoutes,
 
   // Namespaces (using the non-conflicting names)
   Server: ServerAPI,

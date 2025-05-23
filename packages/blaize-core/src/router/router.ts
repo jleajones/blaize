@@ -93,30 +93,47 @@ export function createRouter(options: RouterOptions): Router {
   function setupWatcher() {
     _watcher = watchRoutes(routerOptions.routesDir, {
       ignore: ['node_modules', '.git'],
-      onRouteAdded: route => {
-        console.log(`Route added: ${route.path}`);
-        addRouteInternal(route);
+      onRouteAdded: addedRoutes => {
+        console.log(
+          `${addedRoutes.length} route(s) added:`,
+          addedRoutes.map(r => r.path)
+        );
+        addedRoutes.forEach(route => addRouteInternal(route));
       },
-      onRouteChanged: route => {
-        console.log(`Route changed: ${route.path}`);
+      onRouteChanged: changedRoutes => {
+        console.log(
+          `${changedRoutes.length} route(s) changed:`,
+          changedRoutes.map(r => r.path)
+        );
 
-        // Remove existing route with the same path
-        const index = routes.findIndex(r => r.path === route.path);
-        if (index >= 0) {
-          routes.splice(index, 1);
-        }
+        changedRoutes.forEach(route => {
+          // Remove existing route with the same path
+          const index = routes.findIndex(r => r.path === route.path);
+          if (index >= 0) {
+            routes.splice(index, 1);
+          }
 
-        // Add the updated route
-        addRouteInternal(route);
+          // Add the updated route
+          addRouteInternal(route);
+        });
       },
-      onRouteRemoved: path => {
-        console.log(`Route removed: ${path}`);
+      onRouteRemoved: (filePath, removedRoutes) => {
+        console.log('-----------------------Routes before removal:', routes);
 
-        // Remove route from routes array
-        const index = routes.findIndex(r => r.path === path);
-        if (index >= 0) {
-          routes.splice(index, 1);
-        }
+        console.log(
+          `File removed: ${filePath} with ${removedRoutes.length} route(s):`,
+          removedRoutes.map(r => r.path)
+        );
+
+        removedRoutes.forEach(route => {
+          // Remove route from routes array
+          const index = routes.findIndex(r => r.path === route.path);
+          if (index >= 0) {
+            routes.splice(index, 1);
+          }
+        });
+
+        console.log('-----------------------Routes after removal:', routes);
 
         // Note: We can't easily remove routes from the matcher
         // In production this isn't an issue since file watching is disabled

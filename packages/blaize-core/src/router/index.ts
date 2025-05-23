@@ -5,7 +5,16 @@
  */
 
 export { createRouter } from './router';
-export { create } from './create';
+export {
+  createGetRoute,
+  createDeleteRoute,
+  createHeadRoute,
+  createOptionsRoute,
+  createPatchRoute,
+  createPostRoute,
+  createPutRoute,
+} from './create';
+export { defineAppRoutes } from './define-app-routes';
 
 // Export errors
 export * from './errors';

@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 try {
   console.log(`BlaizeJS version: ${Blaize.VERSION}`);
   // Resolve the routes directory path relative to this file
-  const routesDir = path.resolve(__dirname, './routes/');
+  const routesDir = path.resolve(__dirname, './ap/');
 
   // This will throw an error since the implementation is not yet available
   const app = Blaize.createServer({

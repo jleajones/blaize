@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createServer } from 'blaizejs';
+import { createServer, defineAppRoutes } from 'blaizejs';
+
+import HelloRoute from './ap/hello.js';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -10,7 +12,7 @@ try {
   // Create the server instance
   const app = createServer({
     port: 7485,
-    routesDir: path.resolve(__dirname, '../src/routes'),
+    routesDir: path.resolve(__dirname, '../src/ap'),
     http2: {
       enabled: true,
     },
@@ -36,3 +38,9 @@ try {
 } catch (err) {
   console.error('Error:', err);
 }
+
+export const appRoutes = defineAppRoutes({
+  hello: HelloRoute,
+});
+
+export type AppAPI = typeof appRoutes;
