@@ -8,6 +8,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { IndexRoute } from './router';
 import Blaize from '../../dist/index.js';
 
 // Get the directory name of the current module
@@ -32,3 +33,9 @@ try {
 } catch (err) {
   console.error('Error:', err);
 }
+
+export const appRoutes = Blaize.defineAppRoutes({
+  hello: IndexRoute,
+});
+
+export type AppAPI = typeof appRoutes;

@@ -76,13 +76,13 @@ export interface RouteMethodOptions<
  * Route definition mapping HTTP methods to handlers
  */
 export interface RouteDefinition {
-  GET?: RouteMethodOptions<any, any, any, any>;
-  POST?: RouteMethodOptions<any, any, any, any>;
-  PUT?: RouteMethodOptions<any, any, any, any>;
-  DELETE?: RouteMethodOptions<any, any, any, any>;
-  PATCH?: RouteMethodOptions<any, any, any, any>;
-  HEAD?: RouteMethodOptions<any, any, any, any>;
-  OPTIONS?: RouteMethodOptions<any, any, any, any>;
+  GET?: RouteMethodOptions<any, any, never, any>; // GET/HEAD/DELETE/OPTIONS don't have bodies
+  POST?: RouteMethodOptions<any, any, any, any>; // POST can have bodies
+  PUT?: RouteMethodOptions<any, any, any, any>; // PUT can have bodies
+  DELETE?: RouteMethodOptions<any, any, never, any>; // DELETE typically no body
+  PATCH?: RouteMethodOptions<any, any, any, any>; // PATCH can have bodies
+  HEAD?: RouteMethodOptions<any, any, never, any>; // HEAD no body
+  OPTIONS?: RouteMethodOptions<any, any, never, any>; // OPTIONS no body
 }
 
 /**
@@ -177,59 +177,6 @@ export interface ParsedRoute {
 }
 
 /**
- * Helper type for creating route methods with type inference
- */
-export type CreateRoute = {
-  <P extends z.ZodType, Q extends z.ZodType, B extends z.ZodType, R extends z.ZodType>(
-    definition: {
-      GET?: {
-        schema?: RouteSchema<P, Q, B, R>;
-        handler: RouteHandler<Infer<P>, Infer<Q>, Infer<B>, Infer<R>>;
-        middleware?: Middleware[];
-        options?: Record<string, unknown>;
-      };
-      POST?: {
-        schema?: RouteSchema<P, Q, B, R>;
-        handler: RouteHandler<Infer<P>, Infer<Q>, Infer<B>, Infer<R>>;
-        middleware?: Middleware[];
-        options?: Record<string, unknown>;
-      };
-      PUT?: {
-        schema?: RouteSchema<P, Q, B, R>;
-        handler: RouteHandler<Infer<P>, Infer<Q>, Infer<B>, Infer<R>>;
-        middleware?: Middleware[];
-        options?: Record<string, unknown>;
-      };
-      DELETE?: {
-        schema?: RouteSchema<P, Q, B, R>;
-        handler: RouteHandler<Infer<P>, Infer<Q>, Infer<B>, Infer<R>>;
-        middleware?: Middleware[];
-        options?: Record<string, unknown>;
-      };
-      PATCH?: {
-        schema?: RouteSchema<P, Q, B, R>;
-        handler: RouteHandler<Infer<P>, Infer<Q>, Infer<B>, Infer<R>>;
-        middleware?: Middleware[];
-        options?: Record<string, unknown>;
-      };
-      HEAD?: {
-        schema?: RouteSchema<P, Q, B, R>;
-        handler: RouteHandler<Infer<P>, Infer<Q>, Infer<B>, Infer<R>>;
-        middleware?: Middleware[];
-        options?: Record<string, unknown>;
-      };
-      OPTIONS?: {
-        schema?: RouteSchema<P, Q, B, R>;
-        handler: RouteHandler<Infer<P>, Infer<Q>, Infer<B>, Infer<R>>;
-        middleware?: Middleware[];
-        options?: Record<string, unknown>;
-      };
-    },
-    options?: RouteOptions
-  ): Route;
-};
-
-/**
  * Node in the radix tree for efficient route matching
  */
 export interface RouteNode {
@@ -286,121 +233,29 @@ export interface StandardErrorResponse {
 }
 
 /**
- * Transform a route method to client-consumable type
- */
-export type RouteMethodToClientType<T extends RouteMethodOptions> = T extends {
-  schema?: {
-    params?: infer P;
-    query?: infer Q;
-    body?: infer B;
-    response?: infer R;
-  };
-}
-  ? {
-      params: P extends z.ZodType ? z.infer<P> : {};
-      query: Q extends z.ZodType ? z.infer<Q> : {};
-      body: B extends z.ZodType ? z.infer<B> : never;
-      response: R extends z.ZodType ? z.infer<R> : unknown;
-      errors: StandardErrorResponse;
-    }
-  : {
-      params: {};
-      query: {};
-      body: never;
-      response: unknown;
-      errors: StandardErrorResponse;
-    };
-
-// For methods without body (GET, DELETE, HEAD, OPTIONS)
-export type ExtractMethodWithoutBody<T extends RouteMethodOptions> = T extends { schema?: infer S }
-  ? S extends { params?: infer P; query?: infer Q; response?: infer R }
-    ? {
-        params: P extends z.ZodType ? z.infer<P> : {};
-        query: Q extends z.ZodType ? z.infer<Q> : {};
-        response: R extends z.ZodType ? z.infer<R> : unknown;
-      }
-    : { params: {}; query: {}; response: unknown }
-  : { params: {}; query: {}; response: unknown };
-
-// For methods with body (POST, PUT, PATCH)
-export type ExtractMethodWithBody<T extends RouteMethodOptions> = T extends { schema?: infer S }
-  ? S extends { params?: infer P; query?: infer Q; body?: infer B; response?: infer R }
-    ? {
-        params: P extends z.ZodType ? z.infer<P> : {};
-        query: Q extends z.ZodType ? z.infer<Q> : {};
-        body: B extends z.ZodType ? z.infer<B> : unknown;
-        response: R extends z.ZodType ? z.infer<R> : unknown;
-      }
-    : { params: {}; query: {}; body: unknown; response: unknown }
-  : { params: {}; query: {}; body: unknown; response: unknown };
-
-// Specific method extractors using the base types
-export type ExtractGetRoute<T extends RouteMethodOptions> = ExtractMethodWithoutBody<T>;
-export type ExtractDeleteRoute<T extends RouteMethodOptions> = ExtractMethodWithoutBody<T>;
-export type ExtractHeadRoute<T extends RouteMethodOptions> = ExtractMethodWithoutBody<T>;
-export type ExtractOptionsRoute<T extends RouteMethodOptions> = ExtractMethodWithoutBody<T>;
-
-export type ExtractPostRoute<T extends RouteMethodOptions> = ExtractMethodWithBody<T>;
-export type ExtractPutRoute<T extends RouteMethodOptions> = ExtractMethodWithBody<T>;
-export type ExtractPatchRoute<T extends RouteMethodOptions> = ExtractMethodWithBody<T>;
-
-export type ExtractRouteType<T extends Route> = {
-  [K in keyof Omit<T, 'path'>]: K extends 'GET'
-    ? T[K] extends RouteMethodOptions
-      ? ExtractGetRoute<T[K]>
-      : never
-    : K extends 'POST'
-      ? T[K] extends RouteMethodOptions
-        ? ExtractPostRoute<T[K]>
-        : never
-      : K extends 'PUT'
-        ? T[K] extends RouteMethodOptions
-          ? ExtractPutRoute<T[K]>
-          : never
-        : K extends 'DELETE'
-          ? T[K] extends RouteMethodOptions
-            ? ExtractDeleteRoute<T[K]>
-            : never
-          : K extends 'PATCH'
-            ? T[K] extends RouteMethodOptions
-              ? ExtractPatchRoute<T[K]>
-              : never
-            : K extends 'HEAD'
-              ? T[K] extends RouteMethodOptions
-                ? ExtractHeadRoute<T[K]>
-                : never
-              : K extends 'OPTIONS'
-                ? T[K] extends RouteMethodOptions
-                  ? ExtractOptionsRoute<T[K]>
-                  : never
-                : never;
-};
-
-/**
  * GET route creator - no body schema needed
  */
 export type CreateGetRoute = <
   P extends z.ZodType = z.ZodType<any>,
   Q extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
->(
-  config: {
-    schema?: {
-      params?: P;
-      query?: Q;
-      response?: R;
-    };
-    handler: RouteHandler<
-      P extends z.ZodType ? Infer<P> : Record<string, string>,
-      Q extends z.ZodType ? Infer<Q> : QueryParams,
-      never,
-      R extends z.ZodType ? Infer<R> : unknown
-    >;
-    middleware?: Middleware[];
-    options?: Record<string, unknown>;
-  },
-  path?: string
-) => Route;
+>(config: {
+  schema?: {
+    params?: P;
+    query?: Q;
+    response?: R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    R extends z.ZodType ? Infer<R> : unknown
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  GET: RouteMethodOptions<P, Q, never, R>;
+}; // Return the specific typed object, not RouteDefinition
 
 /**
  * POST route creator - includes body schema
@@ -410,108 +265,148 @@ export type CreatePostRoute = <
   Q extends z.ZodType = z.ZodType<any>,
   B extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
->(
-  config: {
-    schema?: {
-      params?: P;
-      query?: Q;
-      body?: B;
-      response?: R;
-    };
-    handler: RouteHandler<
-      P extends z.ZodType ? Infer<P> : Record<string, string>,
-      Q extends z.ZodType ? Infer<Q> : QueryParams,
-      B extends z.ZodType ? Infer<B> : unknown,
-      R extends z.ZodType ? Infer<R> : unknown
-    >;
-    middleware?: Middleware[];
-    options?: Record<string, unknown>;
-  },
-  path?: string
-) => Route;
+>(config: {
+  schema?: {
+    params?: P;
+    query?: Q;
+    body?: B;
+    response?: R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    B extends z.ZodType ? Infer<B> : unknown,
+    R extends z.ZodType ? Infer<R> : unknown
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => { POST: RouteMethodOptions<P, Q, B, R> };
 
 /**
  * PUT route creator - includes body schema
  */
-export type CreatePutRoute = CreatePostRoute; // Same signature as POST
+export type CreatePutRoute = <
+  P extends z.ZodType = z.ZodType<any>,
+  Q extends z.ZodType = z.ZodType<any>,
+  B extends z.ZodType = z.ZodType<any>,
+  R extends z.ZodType = z.ZodType<any>,
+>(config: {
+  schema?: {
+    params?: P;
+    query?: Q;
+    body?: B;
+    response?: R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    B extends z.ZodType ? Infer<B> : unknown,
+    R extends z.ZodType ? Infer<R> : unknown
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  PUT: RouteMethodOptions<P, Q, B, R>;
+};
 
 /**
  * DELETE route creator - typically no body
  */
-export type CreateDeleteRoute = CreateGetRoute; // Same signature as GET
+export type CreateDeleteRoute = <
+  P extends z.ZodType = z.ZodType<any>,
+  Q extends z.ZodType = z.ZodType<any>,
+  R extends z.ZodType = z.ZodType<any>,
+>(config: {
+  schema?: {
+    params?: P;
+    query?: Q;
+    response?: R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    R extends z.ZodType ? Infer<R> : unknown
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  DELETE: RouteMethodOptions<P, Q, never, R>;
+};
 
 /**
  * PATCH route creator - includes body schema
  */
-export type CreatePatchRoute = CreatePostRoute; // Same signature as POST
-
-// Helper to determine what parameters are needed for a client method
-type ClientMethodParams<T> = T extends {
-  params: infer P;
-  query: infer Q;
-  body: infer B;
-}
-  ? (keyof P extends never ? {} : { params: P }) &
-      (keyof Q extends never ? {} : { query?: Q }) &
-      (keyof B extends never ? {} : { body: B })
-  : {};
-
-// Transform route method to client method signature
-type RouteMethodToClientMethod<T> = T extends { response: infer R }
-  ? ClientMethodParams<T> extends Record<string, never>
-    ? () => Promise<R>
-    : (options: ClientMethodParams<T>) => Promise<R>
-  : () => Promise<unknown>;
-
-// Transform a full route to client methods (handles multiple HTTP methods)
-type RouteToClientMethods<T extends Record<string, any>> = {
-  [K in keyof T]: RouteMethodToClientMethod<T[K]>;
+export type CreatePatchRoute = <
+  P extends z.ZodType = z.ZodType<any>,
+  Q extends z.ZodType = z.ZodType<any>,
+  B extends z.ZodType = z.ZodType<any>,
+  R extends z.ZodType = z.ZodType<any>,
+>(config: {
+  schema?: {
+    params?: P;
+    query?: Q;
+    body?: B;
+    response?: R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    B extends z.ZodType ? Infer<B> : unknown,
+    R extends z.ZodType ? Infer<R> : unknown
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  PATCH: RouteMethodOptions<P, Q, B, R>;
 };
 
-// Transform the entire app routes to client API
-export type AppRoutesToClientAPI<T extends Record<string, any>> = {
-  [RouteName in keyof T]: T[RouteName] extends Record<string, any>
-    ? RouteToClientMethods<T[RouteName]> extends { GET: infer GetMethod }
-      ? GetMethod
-      : RouteToClientMethods<T[RouteName]> extends { POST: infer PostMethod }
-        ? PostMethod
-        : RouteToClientMethods<T[RouteName]> extends { PUT: infer PutMethod }
-          ? PutMethod
-          : RouteToClientMethods<T[RouteName]> extends { DELETE: infer DeleteMethod }
-            ? DeleteMethod
-            : RouteToClientMethods<T[RouteName]> extends { PATCH: infer PatchMethod }
-              ? PatchMethod
-              : never
-    : never;
+/**
+ * HEAD route creator - no body schema needed (same as GET)
+ */
+export type CreateHeadRoute = <
+  P extends z.ZodType = z.ZodType<any>,
+  Q extends z.ZodType = z.ZodType<any>,
+  R extends z.ZodType = z.ZodType<any>,
+>(config: {
+  schema?: {
+    params?: P;
+    query?: Q;
+    response?: R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    R extends z.ZodType ? Infer<R> : unknown
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  HEAD: RouteMethodOptions<P, Q, never, R>;
 };
 
-// Transform a single route type to client API methods
-export type RouteTypeToClientAPI<T extends Record<string, any>> = {
-  [Method in keyof T]: T[Method] extends {
-    params: infer P;
-    query: infer Q;
-    body: infer B;
-    response: infer R;
-  }
-    ? ClientMethodParams<T[Method]> extends Record<string, never>
-      ? () => Promise<R>
-      : (options: ClientMethodParams<T[Method]>) => Promise<R>
-    : () => Promise<unknown>;
-};
-
-// For collections of routes, transform each route to client methods
-export type RouteCollectionToClientAPI<T extends Record<string, Record<string, any>>> = {
-  [RouteName in keyof T]: T[RouteName] extends Record<string, any>
-    ? RouteTypeToClientAPI<T[RouteName]> extends { GET: infer GetMethod }
-      ? GetMethod
-      : RouteTypeToClientAPI<T[RouteName]> extends { POST: infer PostMethod }
-        ? PostMethod
-        : RouteTypeToClientAPI<T[RouteName]> extends { PUT: infer PutMethod }
-          ? PutMethod
-          : RouteTypeToClientAPI<T[RouteName]> extends { DELETE: infer DeleteMethod }
-            ? DeleteMethod
-            : RouteTypeToClientAPI<T[RouteName]> extends { PATCH: infer PatchMethod }
-              ? PatchMethod
-              : never
-    : never;
+/**
+ * OPTIONS route creator - typically no body or response schema
+ */
+export type CreateOptionsRoute = <
+  P extends z.ZodType = z.ZodType<any>,
+  Q extends z.ZodType = z.ZodType<any>,
+  R extends z.ZodType = z.ZodType<any>,
+>(config: {
+  schema?: {
+    params?: P;
+    query?: Q;
+    response?: R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    R extends z.ZodType ? Infer<R> : unknown
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  OPTIONS: RouteMethodOptions<P, Q, never, R>;
 };

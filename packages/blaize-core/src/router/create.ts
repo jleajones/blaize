@@ -4,7 +4,8 @@ import {
   CreatePutRoute,
   CreateDeleteRoute,
   CreatePatchRoute,
-  Route,
+  CreateHeadRoute,
+  CreateOptionsRoute,
 } from '@blaizejs/types';
 
 /**
@@ -13,11 +14,9 @@ import {
 export const createGetRoute: CreateGetRoute = config => {
   validateMethodConfig('GET', config);
 
-  const route: any = {
+  return {
     GET: config,
   };
-
-  return route as Route;
 };
 
 /**
@@ -26,11 +25,9 @@ export const createGetRoute: CreateGetRoute = config => {
 export const createPostRoute: CreatePostRoute = config => {
   validateMethodConfig('POST', config);
 
-  const route: any = {
+  return {
     POST: config,
   };
-
-  return route as Route;
 };
 
 /**
@@ -39,11 +36,9 @@ export const createPostRoute: CreatePostRoute = config => {
 export const createPutRoute: CreatePutRoute = config => {
   validateMethodConfig('PUT', config);
 
-  const route: any = {
+  return {
     PUT: config,
   };
-
-  return route as Route;
 };
 
 /**
@@ -52,11 +47,9 @@ export const createPutRoute: CreatePutRoute = config => {
 export const createDeleteRoute: CreateDeleteRoute = config => {
   validateMethodConfig('DELETE', config);
 
-  const route: any = {
+  return {
     DELETE: config,
   };
-
-  return route as Route;
 };
 
 /**
@@ -64,37 +57,32 @@ export const createDeleteRoute: CreateDeleteRoute = config => {
  */
 export const createPatchRoute: CreatePatchRoute = config => {
   validateMethodConfig('PATCH', config);
-  const route: any = {
+
+  return {
     PATCH: config,
   };
-
-  return route as Route;
 };
 
 /**
  * Create a HEAD route (same signature as GET - no body)
  */
-export const createHeadRoute: CreateGetRoute = config => {
+export const createHeadRoute: CreateHeadRoute = config => {
   validateMethodConfig('HEAD', config);
 
-  const route: any = {
+  return {
     HEAD: config,
   };
-
-  return route as Route;
 };
 
 /**
  * Create an OPTIONS route (same signature as GET - no body)
  */
-export const createOptionsRoute: CreateGetRoute = config => {
+export const createOptionsRoute: CreateOptionsRoute = config => {
   validateMethodConfig('OPTIONS', config);
 
-  const route: any = {
+  return {
     OPTIONS: config,
   };
-
-  return route as Route;
 };
 
 /**

@@ -13,7 +13,8 @@
     "src/context.ts",
     "src/middleware.ts",
     "src/plugins.ts",
-    "src/router.ts"
+    "src/router.ts",
+    "src/client.ts"
   ],
   "exclude": ["node_modules", "dist/*.d.ts"]
 }

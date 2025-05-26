@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import Blaize from '../../../dist/index.js';
 
-export default Blaize.Router.createGetRoute({
+export const IndexRoute = Blaize.Router.createGetRoute({
   schema: {
     response: z.object({
       message: z.string(),

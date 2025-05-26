@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
+import { createMockMiddleware } from '@blaizejs/testing-utils';
 import { Server, ServerOptionsInput } from '@blaizejs/types';
 
 import { create, DEFAULT_OPTIONS } from './create';
@@ -83,8 +84,10 @@ describe('create', () => {
 
   test('should add middleware with use method', () => {
     const server = create();
-    const middleware1 = vi.fn();
-    const middleware2 = vi.fn();
+    const middleware1 = createMockMiddleware();
+    const middleware2 = createMockMiddleware({
+      name: 'middleware2',
+    });
 
     server.use(middleware1);
     expect(server.middleware).toContain(middleware1);
@@ -132,7 +135,7 @@ describe('create', () => {
     });
 
     test('should initialize middleware and plugins', async () => {
-      const middleware = vi.fn();
+      const middleware = createMockMiddleware();
       const plugin = {
         register: vi.fn().mockResolvedValue(undefined),
         name: 'test-plugin',
@@ -196,8 +199,10 @@ describe('create', () => {
   });
 
   test('should use initial middleware and plugins from options', async () => {
-    const middleware1 = vi.fn();
-    const middleware2 = vi.fn();
+    const middleware1 = createMockMiddleware();
+    const middleware2 = createMockMiddleware({
+      name: 'middleware2',
+    });
     const plugin1 = {
       name: 'test-plugin-1',
       version: '1.0.0',

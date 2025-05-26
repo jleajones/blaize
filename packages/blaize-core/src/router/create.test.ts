@@ -38,7 +38,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createGetRoute(config, '/users/:id');
+      const route = createGetRoute(config);
 
       // Assert
       expect(route).toEqual({
@@ -63,7 +63,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createGetRoute(config, '/users/:id');
+      const route = createGetRoute(config);
 
       // Assert
       expect(route).toEqual({
@@ -128,7 +128,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createPostRoute(config, '/users');
+      const route = createPostRoute(config);
 
       // Assert
       expect(route).toEqual({
@@ -362,6 +362,8 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
+
+      // @ts-expect-error - handler is not a function
       expect(() => creator(config)).toThrow(`Handler for method ${method} must be a function`);
     });
 
@@ -381,6 +383,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
+      // @ts-expect-error - expecting error due to invalid middleware type
       expect(() => creator(config)).toThrow(`Middleware for method ${method} must be an array`);
     });
   });

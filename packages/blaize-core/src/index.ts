@@ -35,7 +35,6 @@ export {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
-  defineAppRoutes,
 };
 
 // Middleware module exports
@@ -57,6 +56,7 @@ export const RouterAPI = {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
+  defineAppRoutes,
 };
 export const MiddlewareAPI = { createMiddleware, compose };
 export const PluginsAPI = { createPlugin };

@@ -1,13 +1,19 @@
-import { AppRoutesToClientAPI, ExtractRouteType, Route } from '@blaizejs/types';
+// define-app-routes.ts - Fixed version
+import { AppRoutesToClientAPI, ExtractRouteTypes } from '@blaizejs/types';
 
 /**
- * Helper function that accepts route objects and extracts their types
- * Usage: defineAppRoutes({ '/users': usersRoute, '/posts': postsRoute })
+ * Define app routes for type extraction
+ * This is primarily a type-level function for client generation
  */
-export function defineAppRoutes<T extends Record<string, Route>>(
+// define-app-routes.ts - Updated to return client API types
+
+/**
+ * Define app routes for type extraction and client generation
+ */
+export function defineAppRoutes<T extends Record<string, any>>(
   routes: T
 ): AppRoutesToClientAPI<{
-  [K in keyof T]: T[K] extends Route ? ExtractRouteType<T[K]> : never;
+  [K in keyof T]: ExtractRouteTypes<T[K]>;
 }> {
-  return routes as any; // Type-only function for now
+  return routes as any;
 }
