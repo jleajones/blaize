@@ -2,7 +2,7 @@ import { createTsupConfig } from '@blaizejs/tsup-config';
 
 export default createTsupConfig({
   // Entry point - the main file that starts your server
-  entry: ['src/index.ts'],
+  entry: ['src/**.ts'],
 
   // Only output ESM for the playground
   format: ['esm'],

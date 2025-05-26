@@ -21,11 +21,12 @@ export const postHello = createPostRoute({
     }),
     body: z.object({
       name: z.string(),
+      age: z.number(),
     }),
   },
   handler: async () => {
     return {
-      message: 'Hello from BlaizeJS!',
+      message: 'Hello from Blaize and Bella!',
     };
   },
 });

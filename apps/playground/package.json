@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Development playground for BlaizeJS",
   "scripts": {
-    "dev": "NODE_ENV=development tsup --watch --onSuccess \"node dist/index.js\"",
+    "dev": "NODE_ENV=development concurrently \"tsup --watch\" \"nodemon --watch dist --exec 'node dist/index.js'\"",
     "build": "tsc",
     "start": "node dist/index.js"
   },
@@ -16,6 +16,8 @@
   "devDependencies": {
     "@blaizejs/eslint-config": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
-    "@blaizejs/tsup-config": "workspace:*"
+    "@blaizejs/tsup-config": "workspace:*",
+    "concurrently": "^9.1.2",
+    "nodemon": "^3.1.10"
   }
 }
