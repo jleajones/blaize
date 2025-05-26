@@ -22,7 +22,7 @@ try {
   // Handle process termination signals
   ['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => {
     process.on(signal, async () => {
-      console.log(`⚡ Received ${signal}, shutting down server...`);
+      console.log(`🔥 Received ${signal}, shutting down server...`);
       try {
         await app.close();
         console.log('🚪 Server shutdown completed, exiting.');
