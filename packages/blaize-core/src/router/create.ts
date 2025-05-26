@@ -8,14 +8,59 @@ import {
   CreateOptionsRoute,
 } from '@blaizejs/types';
 
+import { getRoutesDir } from '../config';
+import { parseRoutePath } from './discovery/parser';
+
+/**
+ * Get the file path of the function that called createXRoute
+ */
+function getCallerFilePath(): string {
+  const originalPrepareStackTrace = Error.prepareStackTrace;
+
+  try {
+    Error.prepareStackTrace = (_, stack) => stack;
+    const stack = new Error().stack as unknown as NodeJS.CallSite[];
+
+    // Stack: getCallerFilePath -> createXRoute -> route file
+    const callerFrame = stack[2];
+    if (!callerFrame || typeof callerFrame.getFileName !== 'function') {
+      throw new Error('Unable to determine caller file frame');
+    }
+    const fileName = callerFrame.getFileName();
+
+    if (!fileName) {
+      throw new Error('Unable to determine caller file name');
+    }
+
+    return fileName;
+  } finally {
+    Error.prepareStackTrace = originalPrepareStackTrace;
+  }
+}
+
+/**
+ * Convert caller file path to route path using existing parsing logic
+ */
+function getRoutePath(): string {
+  const callerPath = getCallerFilePath();
+  const routesDir = getRoutesDir();
+
+  const parsedRoute = parseRoutePath(callerPath, routesDir);
+
+  return parsedRoute.routePath;
+}
+
 /**
  * Create a GET route
  */
 export const createGetRoute: CreateGetRoute = config => {
   validateMethodConfig('GET', config);
 
+  const path = getRoutePath();
+
   return {
     GET: config,
+    path,
   };
 };
 
@@ -25,8 +70,11 @@ export const createGetRoute: CreateGetRoute = config => {
 export const createPostRoute: CreatePostRoute = config => {
   validateMethodConfig('POST', config);
 
+  const path = getRoutePath();
+
   return {
     POST: config,
+    path,
   };
 };
 
@@ -36,8 +84,11 @@ export const createPostRoute: CreatePostRoute = config => {
 export const createPutRoute: CreatePutRoute = config => {
   validateMethodConfig('PUT', config);
 
+  const path = getRoutePath();
+
   return {
     PUT: config,
+    path,
   };
 };
 
@@ -47,8 +98,11 @@ export const createPutRoute: CreatePutRoute = config => {
 export const createDeleteRoute: CreateDeleteRoute = config => {
   validateMethodConfig('DELETE', config);
 
+  const path = getRoutePath();
+
   return {
     DELETE: config,
+    path,
   };
 };
 
@@ -58,8 +112,11 @@ export const createDeleteRoute: CreateDeleteRoute = config => {
 export const createPatchRoute: CreatePatchRoute = config => {
   validateMethodConfig('PATCH', config);
 
+  const path = getRoutePath();
+
   return {
     PATCH: config,
+    path,
   };
 };
 
@@ -69,8 +126,11 @@ export const createPatchRoute: CreatePatchRoute = config => {
 export const createHeadRoute: CreateHeadRoute = config => {
   validateMethodConfig('HEAD', config);
 
+  const path = getRoutePath();
+
   return {
     HEAD: config,
+    path,
   };
 };
 
@@ -80,8 +140,11 @@ export const createHeadRoute: CreateHeadRoute = config => {
 export const createOptionsRoute: CreateOptionsRoute = config => {
   validateMethodConfig('OPTIONS', config);
 
+  const path = getRoutePath();
+
   return {
     OPTIONS: config,
+    path,
   };
 };
 

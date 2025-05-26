@@ -1,16 +1,14 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createServer, Blaize } from 'blaizejs';
-
-import { getHello, postHello } from './routes/hello.js';
+import Blaize from 'blaizejs';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 try {
   // Create the server instance
-  const app = createServer({
+  const app = Blaize.createServer({
     port: 7485,
     routesDir: path.resolve(__dirname, '../src/routes'),
     http2: {
@@ -38,8 +36,3 @@ try {
 } catch (err) {
   console.error('Error:', err);
 }
-
-export const appRoutes = Blaize.defineAppRoutes({
-  getHello,
-  postHello,
-});

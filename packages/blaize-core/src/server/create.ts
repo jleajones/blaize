@@ -11,6 +11,7 @@ import {
   StopOptions,
 } from '@blaizejs/types';
 
+import { setRuntimeConfig } from '../config';
 import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
 import { validateServerOptions } from './validation';
@@ -32,6 +33,7 @@ export const DEFAULT_OPTIONS: ServerOptions = {
  */
 function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
   const baseOptions: ServerOptions = { ...DEFAULT_OPTIONS };
+  setRuntimeConfig({ routesDir: options.routesDir || baseOptions.routesDir });
 
   return {
     port: options.port ?? baseOptions.port,

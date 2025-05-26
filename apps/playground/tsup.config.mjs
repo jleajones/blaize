@@ -8,13 +8,7 @@ export default createTsupConfig({
   format: ['esm'],
 
   // Don't generate .d.ts files for the playground
-  dts: false, // Copy the routes directory to the output
-  assets: [
-    {
-      from: 'src/routes/**/*',
-      to: 'dist/routes',
-    },
-  ],
+  dts: false,
 
   // Since this is a playground, not a library to be consumed,
   // we can bundle dependencies

@@ -29,6 +29,9 @@ export function createRouter(options: RouterOptions): Router {
     ...options,
   };
 
+  if (options.basePath && !options.basePath.startsWith('/')) {
+    console.warn('Base path does nothing');
+  }
   // Internal state
   const routes: Route[] = [];
   const matcher = createMatcher();

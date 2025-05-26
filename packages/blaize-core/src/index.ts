@@ -18,7 +18,6 @@ import {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
-  defineAppRoutes,
 } from './router/';
 import { create as createServer } from './server';
 
@@ -56,7 +55,6 @@ export const RouterAPI = {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
-  defineAppRoutes,
 };
 export const MiddlewareAPI = { createMiddleware, compose };
 export const PluginsAPI = { createPlugin };
@@ -67,7 +65,6 @@ const Blaize = {
   createServer,
   createMiddleware,
   createPlugin,
-  defineAppRoutes,
 
   // Namespaces (using the non-conflicting names)
   Server: ServerAPI,

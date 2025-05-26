@@ -19,9 +19,11 @@ export const postHello = createPostRoute({
     response: z.object({
       message: z.string(),
     }),
-    body: z.object({
-      name: z.string(),
-    }),
+    body: z
+      .object({
+        name: z.string(),
+      })
+      .strict(),
   },
   handler: async () => {
     return {
