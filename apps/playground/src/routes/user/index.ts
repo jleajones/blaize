@@ -19,16 +19,14 @@ export const postUser = createPostRoute({
     response: z.object({
       message: z.string(),
     }),
-    body: z
-      .object({
-        name: z.string(),
-      })
-      .strict(),
+    body: z.object({
+      name: z.string(),
+    }),
   },
+  // TODO: Add to docs handler return type also has runtime validation for Object types
   handler: async () => {
     return {
-      message: 'Hello from Blaize and Bella!',
-      success: 'hi',
+      message: 'Hello from Blaize and Bella on the user route!!',
     };
   },
 });

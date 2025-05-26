@@ -19,15 +19,13 @@ export const postHello = createPostRoute({
     response: z.object({
       message: z.string(),
     }),
-    body: z
-      .object({
-        name: z.string(),
-      })
-      .strict(),
+    body: z.object({
+      name: z.string(),
+    }),
   },
   handler: async () => {
     return {
-      message: 'Hello from Blaize and Bella!',
+      message: 'Hello from Blaize and Bella and the hello route!',
     };
   },
 });

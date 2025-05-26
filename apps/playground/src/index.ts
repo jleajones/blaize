@@ -22,17 +22,17 @@ try {
   // Handle process termination signals
   ['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => {
     process.on(signal, async () => {
-      console.log(`Received ${signal}, shutting down server...`);
+      console.log(`⚡ Received ${signal}, shutting down server...`);
       try {
         await app.close();
-        console.log('Server shutdown completed, exiting.');
+        console.log('🚪 Server shutdown completed, exiting.');
         process.exit(0);
       } catch (error) {
-        console.error('Error during shutdown:', error);
+        console.error('❌ Error during shutdown:', error);
         process.exit(1);
       }
     });
   });
 } catch (err) {
-  console.error('Error:', err);
+  console.error('❌ Error:', err);
 }
