@@ -340,7 +340,7 @@ describe('Router', () => {
     mockMatcher.add.mockClear();
 
     // Act
-    onRouteAdded(newRoute);
+    onRouteAdded([newRoute]);
 
     // Assert
     expect(mockMatcher.add).toHaveBeenCalledWith('/products', 'GET', newRoute.GET);
@@ -370,7 +370,7 @@ describe('Router', () => {
     mockMatcher.add.mockClear();
 
     // Act
-    onRouteChanged(changedRoute);
+    onRouteChanged([changedRoute]);
 
     // Assert
     expect(mockMatcher.add).toHaveBeenCalledWith('/users', 'GET', changedRoute.GET);
@@ -379,20 +379,31 @@ describe('Router', () => {
   test('file watcher handles route removals', async () => {
     // Arrange
     const router = createRouter({ routesDir: './routes', watchMode: true });
-
-    // Wait for initialization
     await vi.runAllTimersAsync();
 
-    // Get the onRouteRemoved callback
+    const onRouteAdded = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls[0]![1].onRouteAdded;
     const onRouteRemoved = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls[0]![1]
       .onRouteRemoved;
 
-    // Act - Remove a route
-    onRouteRemoved('/users');
+    const testRoute: Route = {
+      path: '/another-route',
+      GET: { handler: vi.fn() },
+    };
 
-    // Assert - ensure getRoutes no longer includes the removed route
-    const routes = router.getRoutes();
-    const hasRemovedRoute = routes.some(route => route.path === '/users');
-    expect(hasRemovedRoute).toBe(false);
+    // First, add a route
+    onRouteAdded([testRoute]);
+
+    // Verify it was added
+    let routes = router.getRoutes();
+    let hasRoute = routes.some(route => route.path === '/another-route');
+    expect(hasRoute).toBe(true); // ✅ Route should exist after adding
+
+    // Act - Remove the route
+    onRouteRemoved('/path/to/users.ts', [testRoute]);
+
+    // Assert - ensure the route was removed
+    routes = router.getRoutes();
+    hasRoute = routes.some(route => route.path === '/another-route');
+    expect(hasRoute).toBe(false); // ✅ Route should NOT exist after removal
   });
 });

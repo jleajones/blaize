@@ -25,9 +25,9 @@ export async function findRoutes(
   // Load all route modules
   const routes: Route[] = [];
   for (const filePath of routeFiles) {
-    const route = await loadRouteModule(filePath, routesDir);
-    if (route) {
-      routes.push(route);
+    const moduleRoutes = await loadRouteModule(filePath, routesDir);
+    if (moduleRoutes.length > 0) {
+      routes.push(...moduleRoutes);
     }
   }
 

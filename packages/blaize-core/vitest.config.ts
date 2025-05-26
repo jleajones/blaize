@@ -10,6 +10,11 @@ export default defineConfig({
 
   // Override or add additional settings
   test: {
+    typecheck: {
+      enabled: true,
+      tsconfig: './tsconfig.json',
+      include: ['**/*.{test,spec}.{ts,tsx}'],
+    },
     // Existing shared settings are preserved
 
     // Package-specific settings

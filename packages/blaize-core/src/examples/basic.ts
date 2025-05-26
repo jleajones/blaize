@@ -8,6 +8,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { IndexRoute } from './router/index.ts';
 import Blaize from '../../dist/index.js';
 
 // Get the directory name of the current module
@@ -18,7 +19,7 @@ const __dirname = path.dirname(__filename);
 try {
   console.log(`BlaizeJS version: ${Blaize.VERSION}`);
   // Resolve the routes directory path relative to this file
-  const routesDir = path.resolve(__dirname, './routes/');
+  const routesDir = path.resolve(__dirname, './router/');
 
   // This will throw an error since the implementation is not yet available
   const app = Blaize.createServer({
@@ -32,3 +33,9 @@ try {
 } catch (err) {
   console.error('Error:', err);
 }
+
+export const appRoutes = Blaize.defineAppRoutes({
+  hello: IndexRoute,
+});
+
+export type AppAPI = typeof appRoutes;
