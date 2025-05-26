@@ -38,8 +38,8 @@ export function createRequestValidator(schema: RouteSchema, debug: boolean = fal
       }
     }
 
-    // Validate body if schema exists
-    if (schema.body && ctx.request.body) {
+    // FIXED: Validate body if schema exists (regardless of body content)
+    if (schema.body) {
       try {
         ctx.request.body = validateBody(ctx.request.body, schema.body);
       } catch (error) {

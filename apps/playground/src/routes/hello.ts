@@ -21,7 +21,6 @@ export const postHello = createPostRoute({
     }),
     body: z.object({
       name: z.string(),
-      age: z.number(),
     }),
   },
   handler: async () => {

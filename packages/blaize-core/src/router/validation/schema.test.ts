@@ -35,6 +35,20 @@ describe('Schema Validation Middleware', () => {
     // Reset mocks
     vi.clearAllMocks();
 
+    // Explicitly reset mock implementations to default behavior
+    (validateBody as any).mockImplementation((body: unknown, schema: z.ZodType<any>) =>
+      schema.parse(body)
+    );
+    (validateParams as any).mockImplementation((params: unknown, schema: z.ZodType<any>) =>
+      schema.parse(params)
+    );
+    (validateQuery as any).mockImplementation((query: unknown, schema: z.ZodType<any>) =>
+      schema.parse(query)
+    );
+    (validateResponse as any).mockImplementation((response: unknown, schema: z.ZodType<any>) =>
+      schema.parse(response)
+    );
+
     // Create a mock context
     ctx = {
       request: {
@@ -347,6 +361,198 @@ describe('Schema Validation Middleware', () => {
 
       const middlewareNoDebug = createRequestValidator({});
       expect(middlewareNoDebug.debug).toBe(false);
+    });
+
+    it('should validate body even when request body is undefined', async () => {
+      // Define schema with required body
+      const schema = {
+        body: z.object({
+          name: z.string(),
+          email: z.string().email(),
+        }),
+      };
+
+      // Set request body to undefined (simulating missing body)
+      ctx.request.body = undefined;
+
+      // Set up mock to throw validation error for undefined body
+      const bodyError = new z.ZodError([
+        {
+          code: z.ZodIssueCode.invalid_type,
+          path: [],
+          message: 'Expected object, received undefined',
+          expected: 'object',
+          received: 'undefined',
+        },
+      ]);
+
+      (validateBody as any).mockImplementation(() => {
+        throw bodyError;
+      });
+
+      // Format the error for comparison
+      const formattedError = createFormattedZodError({
+        _errors: ['Expected object, received undefined'],
+      });
+      vi.spyOn(bodyError, 'format').mockReturnValue(formattedError);
+
+      // Create and execute the middleware
+      const middleware = createRequestValidator(schema);
+      await middleware.execute(ctx, next);
+
+      // validateBody should still be called even with undefined body
+      expect(validateBody).toHaveBeenCalledWith(undefined, schema.body);
+
+      // Next should not be called (validation failed)
+      expect(next).not.toHaveBeenCalled();
+
+      // Error response should be sent
+      expect(ctx.response.status).toHaveBeenCalledWith(400);
+      expect(ctx.response.json).toHaveBeenCalledWith({
+        error: 'Validation Error',
+        details: {
+          body: formattedError,
+        },
+      });
+    });
+
+    it('should validate body even when request body is null', async () => {
+      // Define schema with required body
+      const schema = {
+        body: z.object({
+          name: z.string(),
+        }),
+      };
+
+      // Set request body to null
+      ctx.request.body = null;
+
+      // Set up mock to throw validation error for null body
+      const bodyError = new z.ZodError([
+        {
+          code: z.ZodIssueCode.invalid_type,
+          path: [],
+          message: 'Expected object, received null',
+          expected: 'object',
+          received: 'null',
+        },
+      ]);
+
+      (validateBody as any).mockImplementation(() => {
+        throw bodyError;
+      });
+
+      // Format the error for comparison
+      const formattedError = createFormattedZodError({
+        _errors: ['Expected object, received null'],
+      });
+      vi.spyOn(bodyError, 'format').mockReturnValue(formattedError);
+
+      // Create and execute the middleware
+      const middleware = createRequestValidator(schema);
+      await middleware.execute(ctx, next);
+
+      // validateBody should still be called even with null body
+      expect(validateBody).toHaveBeenCalledWith(null, schema.body);
+
+      // Next should not be called (validation failed)
+      expect(next).not.toHaveBeenCalled();
+
+      // Error response should be sent
+      expect(ctx.response.status).toHaveBeenCalledWith(400);
+      expect(ctx.response.json).toHaveBeenCalledWith({
+        error: 'Validation Error',
+        details: {
+          body: formattedError,
+        },
+      });
+    });
+
+    it('should validate body even when request body is an empty object', async () => {
+      // Define schema with required fields
+      const schema = {
+        body: z.object({
+          name: z.string(),
+          email: z.string().email(),
+        }),
+      };
+
+      // Set request body to empty object
+      ctx.request.body = {};
+
+      // Set up mock to throw validation error for missing required fields
+      const bodyError = new z.ZodError([
+        {
+          code: z.ZodIssueCode.invalid_type,
+          path: ['name'],
+          message: 'Required',
+          expected: 'string',
+          received: 'undefined',
+        },
+        {
+          code: z.ZodIssueCode.invalid_type,
+          path: ['email'],
+          message: 'Required',
+          expected: 'string',
+          received: 'undefined',
+        },
+      ]);
+
+      (validateBody as any).mockImplementation(() => {
+        throw bodyError;
+      });
+
+      // Format the error for comparison
+      const formattedError = createFormattedZodError({
+        name: ['Required'],
+        email: ['Required'],
+      });
+      vi.spyOn(bodyError, 'format').mockReturnValue(formattedError);
+
+      // Create and execute the middleware
+      const middleware = createRequestValidator(schema);
+      await middleware.execute(ctx, next);
+
+      // validateBody should be called with empty object
+      expect(validateBody).toHaveBeenCalledWith({}, schema.body);
+
+      // Next should not be called (validation failed)
+      expect(next).not.toHaveBeenCalled();
+
+      // Error response should be sent
+      expect(ctx.response.status).toHaveBeenCalledWith(400);
+      expect(ctx.response.json).toHaveBeenCalledWith({
+        error: 'Validation Error',
+        details: {
+          body: formattedError,
+        },
+      });
+    });
+
+    it('should skip body validation when no body schema is provided', async () => {
+      // Define schema without body validation
+      const schema = {
+        params: z.object({ id: z.string() }),
+        // No body schema
+      };
+
+      // Set request body to undefined
+      ctx.request.body = undefined;
+      ctx.request.params = { id: 'jason' };
+
+      // Create and execute the middleware
+      const middleware = createRequestValidator(schema);
+      await middleware.execute(ctx, next);
+
+      // validateBody should NOT be called when no schema provided
+      expect(validateBody).not.toHaveBeenCalled();
+
+      // Next should be called (no validation needed)
+      expect(next).toHaveBeenCalled();
+
+      // No error response should be sent
+      expect(ctx.response.status).not.toHaveBeenCalled();
+      expect(ctx.response.json).not.toHaveBeenCalled();
     });
   });
 
