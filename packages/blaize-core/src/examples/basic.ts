@@ -8,7 +8,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import Blaize from '../../dist/index.js';
+import Blaize from '@/index.js';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);

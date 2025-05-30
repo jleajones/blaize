@@ -17,8 +17,6 @@
     "@blaizejs/eslint-config": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
     "@blaizejs/tsup-config": "workspace:*",
-    "concurrently": "^9.1.2",
-    "nodemon": "^3.1.10",
     "tsx": "^4.19.4"
   }
 }

@@ -4,9 +4,13 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "tsBuildInfoFile": "./.tsbuildinfo",
-
-    "exactOptionalPropertyTypes": false
+    "exactOptionalPropertyTypes": false,
+    "baseUrl": ".",
+    "paths": {
+      "@router/*": ["./src/router/*"],
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist/*.d.ts", "src/examples"]
+  "exclude": ["node_modules", "dist", "dist/**/*"]
 }
