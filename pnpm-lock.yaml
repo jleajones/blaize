@@ -149,6 +149,43 @@ importers:
         specifier: ^3.1.3
         version: 3.1.3(@types/node@22.15.17)(tsx@4.19.4)
 
+  packages/blaize-client:
+    dependencies:
+      zod:
+        specifier: ^3.24.4
+        version: 3.24.4
+    devDependencies:
+      '@blaizejs/eslint-config':
+        specifier: workspace:*
+        version: link:../../configs/eslint
+      '@blaizejs/testing-utils':
+        specifier: workspace:*
+        version: link:../blaize-testing-utils
+      '@blaizejs/tsconfig':
+        specifier: workspace:*
+        version: link:../../configs/tsconfig
+      '@blaizejs/tsup-config':
+        specifier: workspace:*
+        version: link:../../configs/tsup
+      '@blaizejs/types':
+        specifier: workspace:*
+        version: link:../blaize-types
+      '@blaizejs/vitest-config':
+        specifier: workspace:*
+        version: link:../../configs/vitest
+      '@types/node':
+        specifier: ^22.15.17
+        version: 22.15.17
+      '@vitest/coverage-v8':
+        specifier: ^3.1.3
+        version: 3.1.3(vitest@3.1.3(@types/node@22.15.17)(tsx@4.19.4))
+      tsx:
+        specifier: ^4.19.4
+        version: 4.19.4
+      vitest:
+        specifier: ^3.1.3
+        version: 3.1.3(@types/node@22.15.17)(tsx@4.19.4)
+
   packages/blaize-core:
     dependencies:
       chokidar:

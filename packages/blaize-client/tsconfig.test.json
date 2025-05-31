@@ -1,0 +1,10 @@
+{
+  "extends": "@blaizejs/tsconfig/test.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "examples"]
+}
