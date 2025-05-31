@@ -15,7 +15,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsup",
+    "dev": "tsup --watch",
     "build": "tsup",
     "type-check": "tsc --noEmit"
   },
