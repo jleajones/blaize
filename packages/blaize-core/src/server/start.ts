@@ -79,7 +79,20 @@ function listenOnPort(
   return new Promise((resolve, reject) => {
     server.listen(port, host, () => {
       const protocol = isHttp2 ? 'https' : 'http';
-      console.log(`\n🚀 BlaizeJS server running at ${protocol}://${host}:${port}\n`);
+      const url = `${protocol}://${host}:${port}`;
+      console.log(`
+🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+
+    ⚡ BlaizeJS DEVELOPMENT SERVER HOT AND READY ⚡
+    
+    🚀 Server: ${url}
+    🔥 Hot Reload: Enabled
+    🛠️  Mode: Development
+    
+    Time to build something amazing! 🚀
+
+🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+`);
       resolve();
     });
 

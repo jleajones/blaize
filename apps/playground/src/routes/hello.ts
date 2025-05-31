@@ -25,7 +25,7 @@ export const postHello = createPostRoute({
   },
   handler: async () => {
     return {
-      message: 'Hello from Blaize and Bella!',
+      message: 'Hello from Blaize and Bella and the hello route!',
     };
   },
 });

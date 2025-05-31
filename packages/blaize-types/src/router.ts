@@ -255,6 +255,7 @@ export type CreateGetRoute = <
   options?: Record<string, unknown>;
 }) => {
   GET: RouteMethodOptions<P, Q, never, R>;
+  path: string;
 }; // Return the specific typed object, not RouteDefinition
 
 /**
@@ -280,7 +281,7 @@ export type CreatePostRoute = <
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
-}) => { POST: RouteMethodOptions<P, Q, B, R> };
+}) => { POST: RouteMethodOptions<P, Q, B, R>; path: string };
 
 /**
  * PUT route creator - includes body schema
@@ -307,6 +308,7 @@ export type CreatePutRoute = <
   options?: Record<string, unknown>;
 }) => {
   PUT: RouteMethodOptions<P, Q, B, R>;
+  path: string;
 };
 
 /**
@@ -332,6 +334,7 @@ export type CreateDeleteRoute = <
   options?: Record<string, unknown>;
 }) => {
   DELETE: RouteMethodOptions<P, Q, never, R>;
+  path: string;
 };
 
 /**
@@ -359,6 +362,7 @@ export type CreatePatchRoute = <
   options?: Record<string, unknown>;
 }) => {
   PATCH: RouteMethodOptions<P, Q, B, R>;
+  path: string;
 };
 
 /**
@@ -384,6 +388,7 @@ export type CreateHeadRoute = <
   options?: Record<string, unknown>;
 }) => {
   HEAD: RouteMethodOptions<P, Q, never, R>;
+  path: string;
 };
 
 /**
@@ -409,4 +414,5 @@ export type CreateOptionsRoute = <
   options?: Record<string, unknown>;
 }) => {
   OPTIONS: RouteMethodOptions<P, Q, never, R>;
+  path: string;
 };

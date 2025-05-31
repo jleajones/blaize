@@ -10,6 +10,20 @@ import {
   createOptionsRoute,
 } from './create';
 
+// Mock the internal functions
+vi.mock('../config', () => ({
+  getRoutesDir: vi.fn(() => '/project/routes'),
+}));
+
+// Mock the path parsing
+vi.mock('./discovery/parser', () => ({
+  parseRoutePath: vi.fn((filePath, _routesDir) => ({
+    filePath,
+    routePath: '/mocked/path',
+    params: [],
+  })),
+}));
+
 describe('Method-specific route creators', () => {
   describe('createGetRoute', () => {
     test('creates a GET route with default path', () => {
@@ -27,6 +41,7 @@ describe('Method-specific route creators', () => {
         GET: {
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
 
@@ -45,6 +60,7 @@ describe('Method-specific route creators', () => {
         GET: {
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
 
@@ -72,6 +88,7 @@ describe('Method-specific route creators', () => {
           handler: mockHandler,
           middleware: [mockMiddleware],
         },
+        path: '/mocked/path',
       });
     });
 
@@ -113,6 +130,7 @@ describe('Method-specific route creators', () => {
         POST: {
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
 
@@ -136,6 +154,7 @@ describe('Method-specific route creators', () => {
           schema: config.schema,
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
 
@@ -181,6 +200,7 @@ describe('Method-specific route creators', () => {
           schema: config.schema,
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
   });
@@ -206,6 +226,7 @@ describe('Method-specific route creators', () => {
           schema: config.schema,
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
 
@@ -258,6 +279,7 @@ describe('Method-specific route creators', () => {
           schema: config.schema,
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
   });
@@ -278,6 +300,7 @@ describe('Method-specific route creators', () => {
         HEAD: {
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
 
@@ -320,6 +343,7 @@ describe('Method-specific route creators', () => {
         OPTIONS: {
           handler: mockHandler,
         },
+        path: '/mocked/path',
       });
     });
   });

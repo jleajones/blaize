@@ -8,6 +8,8 @@
  */
 
 // Explicit imports to avoid using values without importing
+import type { BuildRouteRegistry } from '@blaizejs/types';
+
 import { create as createMiddleware, compose } from './middleware';
 import { create as createPlugin } from './plugins';
 import {
@@ -18,7 +20,6 @@ import {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
-  defineAppRoutes,
 } from './router/';
 import { create as createServer } from './server';
 
@@ -56,7 +57,6 @@ export const RouterAPI = {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
-  defineAppRoutes,
 };
 export const MiddlewareAPI = { createMiddleware, compose };
 export const PluginsAPI = { createPlugin };
@@ -67,7 +67,6 @@ const Blaize = {
   createServer,
   createMiddleware,
   createPlugin,
-  defineAppRoutes,
 
   // Namespaces (using the non-conflicting names)
   Server: ServerAPI,
@@ -79,5 +78,6 @@ const Blaize = {
   VERSION,
 };
 
+export type { BuildRouteRegistry };
 export default Blaize;
 export { Blaize };
