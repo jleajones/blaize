@@ -8,7 +8,7 @@
  */
 
 // Explicit imports to avoid using values without importing
-import type { BuildRouteRegistry } from '@blaizejs/types';
+import type { BuildRoutesRegistry } from '@blaizejs/types';
 
 import { create as createMiddleware, compose } from './middleware';
 import { create as createPlugin } from './plugins';
@@ -78,6 +78,6 @@ const Blaize = {
   VERSION,
 };
 
-export type { BuildRouteRegistry };
+export type { BuildRoutesRegistry };
 export default Blaize;
 export { Blaize };
