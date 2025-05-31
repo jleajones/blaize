@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import Blaize from '@/index.js';
 
-export const userRoute = Blaize.Router.createGetRoute({
+export const getUserRoute = Blaize.Router.createGetRoute({
   schema: {
     response: z.object({
       message: z.string(),
@@ -31,7 +31,7 @@ export const userRoute = Blaize.Router.createGetRoute({
   },
 });
 
-export const createUser = Blaize.Router.createPostRoute({
+export const postUserRoute = Blaize.Router.createPostRoute({
   schema: {
     body: z.object({
       name: z.string(),
@@ -40,6 +40,9 @@ export const createUser = Blaize.Router.createPostRoute({
     response: z.object({
       timestamp: z.number(),
       message: z.string(),
+    }),
+    params: z.object({
+      userId: z.string(),
     }),
   },
   handler: async (ctx, params) => {

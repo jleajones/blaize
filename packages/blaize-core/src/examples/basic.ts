@@ -8,6 +8,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+
 import Blaize from '@/index.js';
 
 // Get the directory name of the current module
@@ -26,9 +27,9 @@ try {
     host: 'localhost',
     routesDir,
   });
-
   // Start the server
   await app.listen();
 } catch (err) {
   console.error('Error:', err);
 }
+
