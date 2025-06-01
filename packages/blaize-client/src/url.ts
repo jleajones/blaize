@@ -5,11 +5,12 @@ export function buildUrl(
   path: string, 
   args?: RequestArgs
 ): string {
-  // TODO: Replace path parameters (:userId -> actual values)
-  // TODO: Add query parameters
-  // TODO: Handle URL encoding
   
-  let url = `${baseUrl}${path}`;
+  // Normalize URL construction to avoid double slashes
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  
+  let url = `${normalizedBaseUrl}${normalizedPath}`;
   
   // Replace URL parameters
   if (args?.params) {
