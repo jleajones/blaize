@@ -1,4 +1,4 @@
-import { BuildRouteRegistry, CreateClient } from '@blaizejs/types';
+import { BuildRoutesRegistry, CreateClient } from '@blaizejs/types';
 
 import { getUserRoute, postUserRoute } from './router/user/[userId]/index';
 
@@ -7,6 +7,6 @@ const _routes = {
   postUserRoute,
 } as const;
 
-export type AppRoutes = BuildRouteRegistry<typeof _routes>;
+export type AppRoutes = BuildRoutesRegistry<typeof _routes>;
 
 type _BlaizeClient = CreateClient<AppRoutes>;
