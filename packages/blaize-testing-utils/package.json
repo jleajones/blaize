@@ -26,8 +26,6 @@
   "scripts": {
     "build": "tsup",
     "type-check": "tsc --noEmit",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "clean": "rimraf dist"
   }
