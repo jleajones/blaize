@@ -1,7 +1,19 @@
 {
   "name": "@blaizejs/client",
   "version": "0.1.0",
-  "description": "A blazing-fast client for Blaizejs, type-safe Node.js framework with file-based routing, powerful middleware, and end-to-end type safety",
+  "description": "A blazing-fast client for Blaizejs Server, type-safe Node.js framework with file-based routing, powerful middleware, and end-to-end type safety",
+  "author": "J.Lea-Jones <jason@careymarcel.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jleajones/blaize.git"
+  },
+  "homepage": "https://github.com/jleajones/blaize/tree/main/packages/blaize-client#readme",
+  "bugs": {
+    "url": "https://github.com/jleajones/blaize/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -42,7 +54,7 @@
     "vitest": "^3.1.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "keywords": [
     "nodejs",
