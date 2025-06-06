@@ -340,6 +340,8 @@ describe('Route Tree', () => {
 
   describe('Performance and Memory', () => {
     test('should handle large number of routes efficiently', () => {
+      const isCI = process.env.CI === 'true';
+      const threshold = isCI ? 200 : 100;
       const tree = createRouteTree();
       const startTime = performance.now();
 
@@ -350,7 +352,7 @@ describe('Route Tree', () => {
       }
 
       const addTime = performance.now() - startTime;
-      expect(addTime).toBeLessThan(100); // Should be fast
+      expect(addTime).toBeLessThan(threshold); // Should be fast
 
       // Test matching performance
       const matchStartTime = performance.now();
