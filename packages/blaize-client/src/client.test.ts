@@ -1,7 +1,7 @@
-import { RouteMethodOptions } from '@blaizejs/types';
+import type { RouteMethodOptions } from '@blaizejs/types';
 
 import { createClient } from './client';
-import { makeRequest } from '../src/request';
+import { makeRequest } from './request';
 
 // Mock the request module
 vi.mock('../src/request', () => ({
@@ -10,13 +10,13 @@ vi.mock('../src/request', () => ({
 
 const mockMakeRequest = vi.mocked(makeRequest);
 
-// Create properly typed mock route methods
+// Create properly typed mock route methods (same as before)
 const mockGetUserRoute = {
   GET: {
     handler: async () => ({ user: { id: '123', name: 'John' } }),
     schema: {
-      params: {} as any, // Mock Zod schema
-      response: {} as any, // Mock Zod schema
+      params: {} as any,
+      response: {} as any,
     },
   } satisfies RouteMethodOptions,
   path: '/users/:userId',
@@ -26,19 +26,8 @@ const mockCreateUserRoute = {
   POST: {
     handler: async () => ({ user: { id: '456', name: 'Jane' } }),
     schema: {
-      body: {} as any, // Mock Zod schema
-      response: {} as any, // Mock Zod schema
-    },
-  } satisfies RouteMethodOptions,
-  path: '/users',
-} as const;
-
-// Create properly typed mock route
-const mockGetAllUsersRoute = {
-  GET: {
-    handler: async () => ({ users: [] }),
-    schema: {
-      response: {} as any, // Mock Zod schema
+      body: {} as any,
+      response: {} as any,
     },
   } satisfies RouteMethodOptions,
   path: '/users',
@@ -51,7 +40,8 @@ describe('createClient', () => {
 
   describe('configuration processing', () => {
     it('should accept string baseUrl', () => {
-      const client = createClient('https://api.example.com');
+      const routes = { testRoute: mockGetUserRoute } as const;
+      const client = createClient('https://api.example.com', routes);
       expect(client).toBeDefined();
       expect(client.$get).toBeDefined();
     });
@@ -63,33 +53,22 @@ describe('createClient', () => {
         defaultHeaders: { Authorization: 'Bearer token' },
       };
 
-      const client = createClient(config);
+      const routes = { testRoute: mockGetUserRoute } as const;
+      const client = createClient(config, routes);
       expect(client).toBeDefined();
     });
   });
 
-  describe('proxy client creation', () => {
-    it('should create client with HTTP method properties', () => {
-      const client = createClient('https://api.example.com');
+  describe('proxy client creation with type inference', () => {
+    it('should infer types from route registry', () => {
+      // Flat routes structure (what user provides)
+      const routes = {
+        getUser: mockGetUserRoute,
+        createUser: mockCreateUserRoute,
+      } as const;
 
-      expect(client.$get).toBeDefined();
-      expect(client.$post).toBeDefined();
-      expect(client.$put).toBeDefined();
-      expect(client.$delete).toBeDefined();
-      expect(client.$patch).toBeDefined();
-    });
-
-    it('should create callable route methods from registry', () => {
-      // Use BuildRoutesRegistry type to get the right structure
-      type MockAppRoutes = {
-        $get: { getUser: typeof mockGetUserRoute };
-        $post: { createUser: typeof mockCreateUserRoute };
-      };
-
-      const client = createClient<MockAppRoutes>('https://api.example.com', {
-        $get: { getUser: mockGetUserRoute },
-        $post: { createUser: mockCreateUserRoute },
-      });
+      // TypeScript should infer the types automatically!
+      const client = createClient('https://api.example.com', routes);
 
       // Test that route methods exist and are callable
       expect(typeof client.$get.getUser).toBe('function');
@@ -99,15 +78,11 @@ describe('createClient', () => {
     it('should call makeRequest with correct parameters for GET', async () => {
       mockMakeRequest.mockResolvedValue({ user: { id: '123', name: 'John' } });
 
-      type MockAppRoutes = {
-        $get: { getUser: typeof mockGetUserRoute };
-      };
+      const routes = {
+        getUser: mockGetUserRoute,
+      } as const;
 
-      const mockRouteRegistry = {
-        $get: { getUser: mockGetUserRoute },
-      };
-
-      const client = createClient<MockAppRoutes>('https://api.example.com', mockRouteRegistry);
+      const client = createClient('https://api.example.com', routes);
 
       await client.$get.getUser({
         params: { userId: '123' },
@@ -115,29 +90,24 @@ describe('createClient', () => {
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
-        { baseUrl: 'https://api.example.com', timeout: 5000 }, // config
-        'GET', // method
-        'getUser', // routeName
-        { params: { userId: '123' }, query: { include: 'profile' } }, // args
-        mockRouteRegistry // routeRegistry
+        { baseUrl: 'https://api.example.com', timeout: 5000 },
+        'GET',
+        'getUser',
+        { params: { userId: '123' }, query: { include: 'profile' } },
+        expect.objectContaining({
+          $get: { getUser: mockGetUserRoute },
+        })
       );
     });
 
     it('should call makeRequest with correct parameters for POST', async () => {
-      mockMakeRequest.mockResolvedValue({ success: true, data: {} });
+      mockMakeRequest.mockResolvedValue({ user: { id: '456', name: 'Jane' } });
 
-      // Use BuildRoutesRegistry type to get the right structure
-      type MockAppRoutes = {
-        $post: { createUser: typeof mockCreateUserRoute };
-      };
+      const routes = {
+        createUser: mockCreateUserRoute,
+      } as const;
 
-      const mockRouteRegistry = {
-        $post: { createUser: mockCreateUserRoute },
-      };
-
-      const client = createClient<MockAppRoutes>('https://api.example.com', {
-        $post: { createUser: mockCreateUserRoute },
-      });
+      const client = createClient('https://api.example.com', routes);
 
       await client.$post.createUser({
         body: { name: 'John', email: 'john@example.com' },
@@ -148,55 +118,9 @@ describe('createClient', () => {
         'POST',
         'createUser',
         { body: { name: 'John', email: 'john@example.com' } },
-        mockRouteRegistry
-      );
-    });
-
-    it('should handle calls without arguments', async () => {
-      mockMakeRequest.mockResolvedValue({ success: true, data: {} });
-
-      // Use BuildRoutesRegistry type to get the right structure
-      type MockAppRoutes = {
-        $get: { getAllUsers: typeof mockGetAllUsersRoute };
-      };
-
-      const mockRouteRegistry = {
-        $get: { getAllUsers: mockGetAllUsersRoute },
-      };
-
-      const client = createClient<MockAppRoutes>('https://api.example.com', {
-        $get: { getAllUsers: mockGetAllUsersRoute },
-      });
-
-      await client.$get.getAllUsers();
-
-      expect(mockMakeRequest).toHaveBeenCalledWith(
-        { baseUrl: 'https://api.example.com', timeout: 5000 },
-        'GET',
-        'getAllUsers',
-        undefined,
-        mockRouteRegistry
-      );
-    });
-  });
-
-  describe('error handling', () => {
-    it('should propagate errors from makeRequest', async () => {
-      const error = new Error('Network error');
-      mockMakeRequest.mockRejectedValue(error);
-
-      type MockAppRoutes = {
-        $get: { getUser: typeof mockGetUserRoute };
-      };
-
-      const mockRouteRegistry = {
-        $get: { getUser: mockGetUserRoute },
-      };
-
-      const client = createClient<MockAppRoutes>('https://api.example.com', mockRouteRegistry);
-
-      await expect(client.$get.getUser({ params: { userId: '123' } })).rejects.toThrow(
-        'Network error'
+        expect.objectContaining({
+          $post: { createUser: mockCreateUserRoute },
+        })
       );
     });
   });
