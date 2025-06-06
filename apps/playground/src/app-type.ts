@@ -1,11 +1,10 @@
-// eslint-disable-next-line n/no-extraneous-import
-import { getHello, postHello } from './routes/hello.js';
+import type { BuildRoutesRegistry } from '@blaizejs/types';
 
-import type { BuildRouteRegistry } from 'blaizejs';
+import { getHello, postHello } from './routes/hello.js';
 
 const _routes = {
   getHello,
   postHello,
 } as const;
 
-export type AppRoutes = BuildRouteRegistry<typeof _routes>;
+export type AppRoutes = BuildRoutesRegistry<typeof _routes>;

@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local", "tsconfig.json"],
+  "ui": "tui",
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -40,6 +41,11 @@
     },
     "test": {
       "dependsOn": ["^build"],
+      "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+      "cache": false
+    },
+    "test:watch": {
+      "dependsOn": [],
       "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx"],
       "cache": false
     },

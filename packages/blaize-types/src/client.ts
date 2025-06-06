@@ -51,11 +51,13 @@ export type ExtractMethod<T> = T extends { GET: any }
               : never;
 
 // Build the method-grouped registry
-export type BuildRouteRegistry<TRoutes extends Record<string, any>> = {
+// We need to preserve the entire route object, not just the method
+export type BuildRoutesRegistry<TRoutes extends Record<string, any>> = {
   [Method in ExtractMethod<TRoutes[keyof TRoutes]> as `$${Lowercase<Method>}`]: {
-    [K in keyof TRoutes as ExtractMethod<TRoutes[K]> extends Method ? K : never]: TRoutes[K];
-  };
-};
+    [K in keyof TRoutes as ExtractMethod<TRoutes[K]> extends Method ? K : never]: TRoutes[K]
+    // This preserves the full route object: { GET: RouteMethodOptions, path: string }
+  }
+}
 
 // We need to exclude the 'path' property and only get the HTTP method
 type GetRouteMethod<TRoute> = TRoute extends { path: string }
@@ -78,3 +80,23 @@ export type CreateClient<TRoutes extends Record<string, Record<string, any>>> = 
     [RouteName in keyof TRoutes[Method]]: CreateClientMethod<TRoutes[Method][RouteName]>;
   };
 };
+
+export interface ClientConfig {
+  baseUrl: string;
+  defaultHeaders?: Record<string, string>;
+  timeout?: number;
+}
+
+export interface RequestArgs {
+  params?: Record<string, string>;
+  query?: Record<string, any>;
+  body?: unknown;
+}
+
+export interface RequestOptions {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+  timeout: number;
+}
