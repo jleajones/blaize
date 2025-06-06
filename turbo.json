@@ -40,7 +40,7 @@
       "cache": false
     },
     "test": {
-      "dependsOn": [],
+      "dependsOn": ["^build"],
       "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx"],
       "cache": false
     },
@@ -50,7 +50,7 @@
       "cache": false
     },
     "test:coverage": {
-      "dependsOn": [],
+      "dependsOn": ["^build"],
       "outputs": ["coverage/**"],
       "cache": false,
       "persistent": true
