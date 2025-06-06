@@ -1,3 +1,8 @@
+[![npm version](https://badge.fury.io/js/%40blaizejs%2Fclient.svg)](https://www.npmjs.com/package/@blaizejs/client)
+[![npm downloads](https://img.shields.io/npm/dm/@blaizejs/client.svg)](https://www.npmjs.com/package/@blaizejs/client)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
 # @blaizejs/client
 
 A type-safe, universal HTTP client for BlaizeJS APIs with end-to-end type safety and zero configuration. Works seamlessly in browsers, Node.js, serverless functions, and edge environments.
@@ -102,22 +107,22 @@ const api = createClient('https://api.example.com', routes);
 async function example() {
   // GET request with path parameters and query
   const { user } = await api.$get.getUser({
-    params: { userId: '123' },          // ✅ Typed - userId: string
-    query: { include: 'profile' }       // ✅ Typed - include?: string
+    params: { userId: '123' }, // ✅ Typed - userId: string
+    query: { include: 'profile' }, // ✅ Typed - include?: string
   });
-  
-  console.log(user.name);               // ✅ Typed - user.name: string
-  console.log(user.age);                // ❌ TypeScript error - age doesn't exist
-  
+
+  console.log(user.name); // ✅ Typed - user.name: string
+  console.log(user.age); // ❌ TypeScript error - age doesn't exist
+
   // POST request with body
   const newUser = await api.$post.createUser({
     body: {
-      name: 'John Doe',                 // ✅ Typed - name: string
-      email: 'john@example.com'         // ✅ Typed - email: string (validated)
-    }
+      name: 'John Doe', // ✅ Typed - name: string
+      email: 'john@example.com', // ✅ Typed - email: string (validated)
+    },
   });
-  
-  return newUser.user;                  // ✅ Typed return value
+
+  return newUser.user; // ✅ Typed return value
 }
 ```
 
@@ -151,7 +156,7 @@ packages/blaize-client/
 ### Key Components
 
 - **Client Factory**: Creates type-safe client instances with automatic method generation
-- **Request Engine**: Handles HTTP requests, parameter replacement, and error management  
+- **Request Engine**: Handles HTTP requests, parameter replacement, and error management
 - **URL Builder**: Constructs URLs with path parameters and query strings
 - **Type System**: Provides end-to-end type safety from server routes to client calls
 - **Error Handling**: Classifies and handles network, HTTP, and application errors
@@ -166,7 +171,7 @@ Creates a type-safe client for your BlaizeJS API.
 function createClient<TRoutes extends Record<string, any>>(
   config: string | ClientConfig,
   routes: TRoutes
-): CreateClient<BuildRoutesRegistry<TRoutes>>
+): CreateClient<BuildRoutesRegistry<TRoutes>>;
 ```
 
 #### Parameters
@@ -191,14 +196,17 @@ interface ClientConfig {
 const client = createClient('https://api.example.com', routes);
 
 // Advanced configuration
-const client = createClient({
-  baseUrl: 'https://api.example.com',
-  timeout: 10000,
-  defaultHeaders: {
-    'User-Agent': 'MyApp/1.0',
-    'Accept': 'application/json'
-  }
-}, routes);
+const client = createClient(
+  {
+    baseUrl: 'https://api.example.com',
+    timeout: 10000,
+    defaultHeaders: {
+      'User-Agent': 'MyApp/1.0',
+      Accept: 'application/json',
+    },
+  },
+  routes
+);
 ```
 
 ### Generated Client Methods
@@ -208,7 +216,7 @@ The client automatically generates methods based on your route definitions:
 ```typescript
 // For each HTTP method, you get a $method property
 client.$get      // GET requests
-client.$post     // POST requests  
+client.$post     // POST requests
 client.$put      // PUT requests
 client.$delete   // DELETE requests
 client.$patch    // PATCH requests
@@ -225,19 +233,19 @@ client.$post.routeName(args?)
 
 ```typescript
 interface RequestArgs {
-  params?: Record<string, string>;      // URL path parameters
-  query?: Record<string, any>;          // Query string parameters
-  body?: unknown;                       // Request body (POST/PUT/PATCH)
+  params?: Record<string, string>; // URL path parameters
+  query?: Record<string, any>; // Query string parameters
+  body?: unknown; // Request body (POST/PUT/PATCH)
 }
 
 // Usage
 await client.$get.getUser({
-  params: { userId: '123' },           // Replaces :userId in path
-  query: { include: 'profile' }        // Adds ?include=profile
+  params: { userId: '123' }, // Replaces :userId in path
+  query: { include: 'profile' }, // Adds ?include=profile
 });
 
 await client.$post.createUser({
-  body: { name: 'John', email: 'john@example.com' }
+  body: { name: 'John', email: 'john@example.com' },
 });
 ```
 
@@ -249,17 +257,20 @@ Handle authentication by configuring headers at client creation or per-request:
 
 ```typescript
 // Option 1: Configure default headers at creation
-const authenticatedClient = createClient({
-  baseUrl: 'https://api.example.com',
-  defaultHeaders: {
-    'Authorization': 'Bearer ' + getAuthToken()
-  }
-}, routes);
+const authenticatedClient = createClient(
+  {
+    baseUrl: 'https://api.example.com',
+    defaultHeaders: {
+      Authorization: 'Bearer ' + getAuthToken(),
+    },
+  },
+  routes
+);
 
 // Option 2: Per-request headers (Coming Soon)
 await client.$get.getUser(
   { params: { userId: '123' } },
-  { headers: { 'Authorization': 'Bearer ' + freshToken } }
+  { headers: { Authorization: 'Bearer ' + freshToken } }
 );
 ```
 
@@ -293,6 +304,7 @@ try {
 The client works seamlessly across different JavaScript environments:
 
 #### Browser/Frontend
+
 ```typescript
 // React, Vue, Svelte, etc.
 import { createClient } from '@blaizejs/client';
@@ -302,17 +314,18 @@ const api = createClient('https://api.example.com', routes);
 
 function UserProfile({ userId }: { userId: string }) {
   const [user, setUser] = useState(null);
-  
+
   useEffect(() => {
     api.$get.getUser({ params: { userId } })
       .then(({ user }) => setUser(user));
   }, [userId]);
-  
+
   return <div>{user?.name}</div>;
 }
 ```
 
 #### Node.js Server (Server-to-Server)
+
 ```typescript
 // BlaizeJS server calling another BlaizeJS server
 import { createClient } from '@blaizejs/client';
@@ -324,22 +337,23 @@ export const enrichUserRoute = createGetRoute({
   // ... route definition
   handler: async ({ request }, params) => {
     // Call external service from your server
-    const userData = await externalAPI.$get.getUser({ 
-      params: { userId: params.userId } 
+    const userData = await externalAPI.$get.getUser({
+      params: { userId: params.userId },
     });
-    
+
     // Enrich and return
     return {
       user: {
         ...userData.user,
-        enrichedBy: 'our-service'
-      }
+        enrichedBy: 'our-service',
+      },
     };
-  }
+  },
 });
 ```
 
 #### Serverless Functions
+
 ```typescript
 // Vercel, Netlify, AWS Lambda
 import { createClient } from '@blaizejs/client';
@@ -352,6 +366,7 @@ export default async function handler(req, res) {
 ```
 
 #### Edge Functions
+
 ```typescript
 // Cloudflare Workers, Vercel Edge
 export default {
@@ -359,7 +374,7 @@ export default {
     const api = createClient('https://api.example.com', routes);
     const data = await api.$get.getData({ params: { id: '123' } });
     return new Response(JSON.stringify(data));
-  }
+  },
 };
 ```
 
@@ -378,11 +393,11 @@ async function getOrderSummary(orderId: string) {
   const order = await orderService.$get.getOrder({ params: { orderId } });
   const user = await userService.$get.getUser({ params: { userId: order.userId } });
   const payment = await paymentService.$get.getPayment({ params: { orderId } });
-  
+
   return {
     order: order.order,
     customer: user.user,
-    payment: payment.payment
+    payment: payment.payment,
   };
 }
 ```
@@ -425,7 +440,7 @@ pnpm test
 
 # Run specific test suites
 pnpm test url        # URL construction tests
-pnpm test client     # Client creation tests  
+pnpm test client     # Client creation tests
 pnpm test request    # HTTP request tests
 pnpm test errors     # Error handling tests
 
@@ -456,23 +471,23 @@ Found a bug or have a feature request? Please check our [GitHub Issues](https://
 ```typescript
 // Create
 const newUser = await api.$post.createUser({
-  body: { name: 'Alice', email: 'alice@example.com' }
+  body: { name: 'Alice', email: 'alice@example.com' },
 });
 
 // Read
-const user = await api.$get.getUser({ 
-  params: { userId: newUser.user.id } 
+const user = await api.$get.getUser({
+  params: { userId: newUser.user.id },
 });
 
-// Update  
+// Update
 const updatedUser = await api.$put.updateUser({
   params: { userId: user.user.id },
-  body: { name: 'Alice Smith' }
+  body: { name: 'Alice Smith' },
 });
 
 // Delete
-await api.$delete.deleteUser({ 
-  params: { userId: user.user.id } 
+await api.$delete.deleteUser({
+  params: { userId: user.user.id },
 });
 ```
 
@@ -487,17 +502,17 @@ const results = await api.$get.searchUsers({
     limit: 20,
     offset: 0,
     sortBy: 'created_at',
-    order: 'desc'
-  }
+    order: 'desc',
+  },
 });
 
 // Nested resource access
 const userPosts = await api.$get.getUserPosts({
   params: { userId: '123' },
-  query: { 
+  query: {
     published: true,
-    limit: 10 
-  }
+    limit: 10,
+  },
 });
 ```
 
@@ -546,18 +561,21 @@ MIT © [BlaizeJS](../../LICENSE)
 ## 🌟 Why BlaizeJS Client?
 
 ### vs. axios
+
 - ✅ **Type Safety**: Full TypeScript integration vs. manual typing
 - ✅ **Auto-generated API**: No manual endpoint configuration
 - ✅ **Modern**: Built on fetch vs. XMLHttpRequest
 - ✅ **Universal**: Works everywhere vs. Node.js focused
 
 ### vs. fetch
+
 - ✅ **Type Safety**: End-to-end typing vs. untyped
 - ✅ **Developer Experience**: Auto-completion and error handling
 - ✅ **Convenience**: Automatic URL construction and parameter handling
 - ✅ **Error Handling**: Structured error classification
 
-### vs. tRPC Client  
+### vs. tRPC Client
+
 - ✅ **HTTP Standard**: Uses standard REST vs. custom protocol
 - ✅ **Framework Agnostic**: Works with any frontend vs. React focused
 - ✅ **Simpler**: No complex setup or code generation

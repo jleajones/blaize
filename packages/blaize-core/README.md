@@ -1,6 +1,12 @@
+[![npm version](https://badge.fury.io/js/blaizejs.svg)](https://www.npmjs.com/package/blaizejs)
+[![npm downloads](https://img.shields.io/npm/dm/blaizejs.svg)](https://www.npmjs.com/package/blaizejs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org/)
+
 # BlaizeJS
 
-🔥 A blazing-fast, TypeScript-first API framework with file-based routing, powerful plugins, and end-to-end type safety.
+🔥 **A lightning-fast, TypeScript-first API framework with file-based routing, powerful plugins, and end-to-end type safety.**
 
 ## Overview
 
