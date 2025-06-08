@@ -12,9 +12,6 @@ export async function stopServer(serverInstance: Server, options: StopOptions = 
 
   const timeout = options.timeout || 30000; // 30 seconds default
 
-  // Use plugins from server instance
-  const plugins = serverInstance.plugins;
-
   try {
     // Execute pre-stop hook if provided
     if (options.onStopping) {
@@ -23,6 +20,9 @@ export async function stopServer(serverInstance: Server, options: StopOptions = 
 
     // Emit stopping event
     events.emit('stopping');
+
+    // Notify plugins that server is stopping
+    await serverInstance.pluginManager.onServerStop(serverInstance, server);
 
     // Set a timeout to ensure we don't wait forever
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -44,15 +44,8 @@ export async function stopServer(serverInstance: Server, options: StopOptions = 
     // Wait for server to close with timeout
     await Promise.race([closePromise, timeoutPromise]);
 
-    // Terminate plugins in reverse order if provided
-    if (plugins?.length) {
-      // Reverse plugins array to terminate in reverse order of initialization
-      for (const plugin of [...plugins].reverse()) {
-        if (plugin.terminate) {
-          await plugin.terminate();
-        }
-      }
-    }
+    // Use plugin lifecycle manager to terminate plugins
+    await serverInstance.pluginManager.terminatePlugins(serverInstance);
 
     // Execute post-stop hook if provided
     if (options.onStopped) {

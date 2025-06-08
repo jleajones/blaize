@@ -39,7 +39,65 @@ export function createRouter(options: RouterOptions): Router {
   // Initialize routes
   let initialized = false;
   let initializationPromise: Promise<void> | null = null;
-  let _watcher: ReturnType<typeof watchRoutes> | null = null;
+  let _watchers: Map<string, ReturnType<typeof watchRoutes>> | null = null; // For plugin directories
+
+  // Track route sources for conflict detection
+  const routeSources = new Map<string, string[]>(); // path -> [source1, source2, ...]
+  const routeDirectories = new Set<string>([routerOptions.routesDir]);
+
+  /**
+   * Add a route with source tracking
+   */
+  function addRouteWithSource(route: Route, source: string) {
+    const existingSources = routeSources.get(route.path) || [];
+
+    if (existingSources.length > 0) {
+      // Route conflict detected
+      const conflictError = new Error(
+        `Route conflict for path "${route.path}": ` +
+          `already defined in ${existingSources.join(', ')}, ` +
+          `now being added from ${source}`
+      );
+      console.error(conflictError.message);
+      throw conflictError;
+    }
+
+    // Track the source
+    routeSources.set(route.path, [...existingSources, source]);
+
+    // Add to router
+    addRouteInternal(route);
+  }
+
+  /**
+   * Load routes from a directory
+   */
+  async function loadRoutesFromDirectory(directory: string, source: string, prefix?: string) {
+    try {
+      const discoveredRoutes = await findRoutes(directory, {
+        basePath: routerOptions.basePath,
+      });
+
+      for (const route of discoveredRoutes) {
+        // Apply prefix if provided
+        const finalRoute = prefix
+          ? {
+              ...route,
+              path: `${prefix}${route.path}`,
+            }
+          : route;
+
+        addRouteWithSource(finalRoute, source);
+      }
+
+      console.log(
+        `Loaded ${discoveredRoutes.length} routes from ${source}${prefix ? ` with prefix ${prefix}` : ''}`
+      );
+    } catch (error) {
+      console.error(`Failed to load routes from ${source}:`, error);
+      throw error;
+    }
+  }
 
   /**
    * Initialize the router by loading routes from the filesystem
@@ -51,19 +109,14 @@ export function createRouter(options: RouterOptions): Router {
 
     initializationPromise = (async () => {
       try {
-        // Discover routes from file system
-        const discoveredRoutes = await findRoutes(routerOptions.routesDir, {
-          basePath: routerOptions.basePath,
-        });
-
-        // Add routes to the matcher
-        for (const route of discoveredRoutes) {
-          addRouteInternal(route);
+        // Load routes from all registered directories
+        for (const directory of routeDirectories) {
+          await loadRoutesFromDirectory(directory, directory);
         }
 
         // Set up file watching in development if enabled
         if (routerOptions.watchMode) {
-          setupWatcher();
+          setupWatcherForAllDirectories();
         }
 
         initialized = true;
@@ -91,60 +144,110 @@ export function createRouter(options: RouterOptions): Router {
   }
 
   /**
-   * Set up file watcher for development
+   * Create watcher callbacks for a specific directory
    */
-  function setupWatcher() {
-    _watcher = watchRoutes(routerOptions.routesDir, {
-      ignore: ['node_modules', '.git'],
-      onRouteAdded: addedRoutes => {
+  function createWatcherCallbacks(directory: string, source: string, prefix?: string) {
+    return {
+      onRouteAdded: (addedRoutes: Route[]) => {
         console.log(
-          `${addedRoutes.length} route(s) added:`,
+          `${addedRoutes.length} route(s) added from ${directory}:`,
           addedRoutes.map(r => r.path)
         );
-        addedRoutes.forEach(route => addRouteInternal(route));
+        addedRoutes.forEach(route => {
+          const finalRoute = prefix ? { ...route, path: `${prefix}${route.path}` } : route;
+          addRouteWithSource(finalRoute, source);
+        });
       },
-      onRouteChanged: changedRoutes => {
+
+      onRouteChanged: (changedRoutes: Route[]) => {
         console.log(
-          `${changedRoutes.length} route(s) changed:`,
+          `${changedRoutes.length} route(s) changed in ${directory}:`,
           changedRoutes.map(r => r.path)
         );
 
         changedRoutes.forEach(route => {
-          // Remove existing route with the same path
-          const index = routes.findIndex(r => r.path === route.path);
+          const finalPath = prefix ? `${prefix}${route.path}` : route.path;
+
+          // Remove existing route with the same final path
+          const index = routes.findIndex(r => r.path === finalPath);
           if (index >= 0) {
             routes.splice(index, 1);
+
+            // Update source tracking
+            const sources = routeSources.get(finalPath) || [];
+            const filteredSources = sources.filter(s => s !== source);
+            if (filteredSources.length > 0) {
+              routeSources.set(finalPath, filteredSources);
+            } else {
+              routeSources.delete(finalPath);
+            }
           }
 
           // Add the updated route
-          addRouteInternal(route);
+          const finalRoute = prefix ? { ...route, path: finalPath } : route;
+          addRouteWithSource(finalRoute, source);
         });
       },
-      onRouteRemoved: (filePath, removedRoutes) => {
-        console.log('-----------------------Routes before removal:', routes);
 
+      onRouteRemoved: (filePath: string, removedRoutes: Route[]) => {
         console.log(
-          `File removed: ${filePath} with ${removedRoutes.length} route(s):`,
+          `File removed from ${directory}: ${filePath} with ${removedRoutes.length} route(s):`,
           removedRoutes.map(r => r.path)
         );
 
         removedRoutes.forEach(route => {
+          const finalPath = prefix ? `${prefix}${route.path}` : route.path;
+
           // Remove route from routes array
-          const index = routes.findIndex(r => r.path === route.path);
+          const index = routes.findIndex(r => r.path === finalPath);
           if (index >= 0) {
             routes.splice(index, 1);
           }
+
+          // Update source tracking
+          const sources = routeSources.get(finalPath) || [];
+          const filteredSources = sources.filter(s => s !== source);
+          if (filteredSources.length > 0) {
+            routeSources.set(finalPath, filteredSources);
+          } else {
+            routeSources.delete(finalPath);
+          }
         });
-
-        console.log('-----------------------Routes after removal:', routes);
-
-        // Note: We can't easily remove routes from the matcher
-        // In production this isn't an issue since file watching is disabled
       },
-      onError: error => {
-        console.error('Route watcher error:', error);
+
+      onError: (error: Error) => {
+        console.error(`Route watcher error for ${directory}:`, error);
       },
+    };
+  }
+
+  /**
+   * Set up file watcher for a specific directory
+   */
+  function setupWatcherForDirectory(directory: string, source: string, prefix?: string) {
+    const callbacks = createWatcherCallbacks(directory, source, prefix);
+
+    const watcher = watchRoutes(directory, {
+      ignore: ['node_modules', '.git'],
+      ...callbacks,
     });
+
+    // Store watcher reference for cleanup
+    if (!_watchers) {
+      _watchers = new Map();
+    }
+    _watchers.set(directory, watcher);
+
+    return watcher;
+  }
+
+  /**
+   * Set up file watcher for all directories
+   */
+  function setupWatcherForAllDirectories() {
+    for (const directory of routeDirectories) {
+      setupWatcherForDirectory(directory, directory);
+    }
   }
 
   initialize().catch(error => {
@@ -215,6 +318,42 @@ export function createRouter(options: RouterOptions): Router {
      */
     addRoute(route: Route) {
       addRouteInternal(route);
+    },
+
+    /**
+     * Add a route directory (for plugins)
+     */
+    async addRouteDirectory(directory: string, options: { prefix?: string } = {}) {
+      if (routeDirectories.has(directory)) {
+        console.warn(`Route directory ${directory} already registered`);
+        return;
+      }
+
+      routeDirectories.add(directory);
+
+      // If already initialized, load routes immediately
+      if (initialized) {
+        await loadRoutesFromDirectory(directory, directory, options.prefix);
+
+        // Set up watching for this directory if in watch mode
+        if (routerOptions.watchMode) {
+          setupWatcherForDirectory(directory, directory, options.prefix);
+        }
+      }
+    },
+    /**
+     * Get route conflicts
+     */
+    getRouteConflicts() {
+      const conflicts: Array<{ path: string; sources: string[] }> = [];
+
+      for (const [path, sources] of routeSources.entries()) {
+        if (sources.length > 1) {
+          conflicts.push({ path, sources });
+        }
+      }
+
+      return conflicts;
     },
   };
 }

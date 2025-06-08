@@ -15,6 +15,8 @@ import { setRuntimeConfig } from '../config';
 import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
 import { validateServerOptions } from './validation';
+import { createPluginLifecycleManager } from '../plugins/lifecycle';
+import { validatePlugin } from '../plugins/validation';
 import { createRouter } from '../router';
 
 export const DEFAULT_OPTIONS: ServerOptions = {
@@ -62,8 +64,13 @@ function createListenMethod(
     // Initialize middleware and plugins
     await initializeComponents(serverInstance, initialMiddleware, initialPlugins);
 
+    // Use the functional manager
+    await serverInstance.pluginManager.initializePlugins(serverInstance);
+
     // Start the server
     await startServer(serverInstance, validatedOptions);
+
+    await serverInstance.pluginManager.onServerStart(serverInstance, serverInstance.server);
 
     // Setup signal handlers and emit events
     setupServerLifecycle(serverInstance);
@@ -152,22 +159,6 @@ function createRegisterMethod(serverInstance: Server): Server['register'] {
 }
 
 /**
- * Validates a plugin object
- */
-function validatePlugin(plugin: unknown): asserts plugin is Plugin {
-  if (
-    !plugin ||
-    typeof plugin !== 'object' ||
-    !('register' in plugin) ||
-    typeof (plugin as Plugin).register !== 'function'
-  ) {
-    throw new Error(
-      'Invalid plugin. Must be a valid BlaizeJS plugin object with a register method.'
-    );
-  }
-}
-
-/**
  * Creates a BlaizeJS server instance
  */
 export function create(options: ServerOptionsInput = {}): Server {
@@ -186,6 +177,7 @@ export function create(options: ServerOptionsInput = {}): Server {
 
   // Extract options and prepare initial components
   const { port, host, middleware, plugins } = validatedOptions;
+  // TODO: create registries to manage middleware and plugins
   const initialMiddleware = Array.isArray(middleware) ? [...middleware] : [];
   const initialPlugins = Array.isArray(plugins) ? [...plugins] : [];
 
@@ -194,6 +186,11 @@ export function create(options: ServerOptionsInput = {}): Server {
   const router = createRouter({
     routesDir: validatedOptions.routesDir,
     watchMode: process.env.NODE_ENV === 'development',
+  });
+  // Create plugin lifecycle manager
+  const pluginManager = createPluginLifecycleManager({
+    debug: process.env.NODE_ENV === 'development',
+    continueOnError: true,
   });
   const events = new EventEmitter();
 
@@ -212,6 +209,7 @@ export function create(options: ServerOptionsInput = {}): Server {
     listen: async () => serverInstance,
     close: async () => {},
     router,
+    pluginManager,
   };
 
   // Add methods to the server instance

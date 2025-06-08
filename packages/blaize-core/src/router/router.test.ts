@@ -80,7 +80,7 @@ describe('Router', () => {
     };
     (createMatcher as ReturnType<typeof vi.fn>).mockReturnValue(mockMatcher);
 
-    // Setup mock findRoutes
+    // Setup mock findRoutes - default for main router tests
     (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValue(mockRoutes);
 
     // Setup mock watcher
@@ -405,5 +405,190 @@ describe('Router', () => {
     routes = router.getRoutes();
     hasRoute = routes.some(route => route.path === '/another-route');
     expect(hasRoute).toBe(false); // ✅ Route should NOT exist after removal
+  });
+
+  describe('Plugin Route Support', () => {
+    let router: ReturnType<typeof createRouter>;
+
+    beforeEach(async () => {
+      // Reset findRoutes mock specifically for plugin tests
+      (findRoutes as ReturnType<typeof vi.fn>).mockReset();
+      // Reset watchRoutes mock for clean state
+      (watchRoutes as ReturnType<typeof vi.fn>).mockReset();
+      (watchRoutes as ReturnType<typeof vi.fn>).mockReturnValue(mockWatcher);
+
+      // Set up minimal mock for router initialization (empty routes to avoid conflicts)
+      (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      router = createRouter({ routesDir: './routes', watchMode: true });
+      // Wait for initial initialization
+      await vi.runAllTimersAsync();
+    });
+
+    test('addRouteDirectory adds routes from plugin directory', async () => {
+      // Arrange - Set specific mock for this test
+      const pluginRoutes: Route[] = [
+        {
+          path: '/auth/login',
+          POST: {
+            handler: vi.fn(),
+            middleware: [],
+          },
+        },
+        {
+          path: '/auth/logout',
+          POST: {
+            handler: vi.fn(),
+            middleware: [],
+          },
+        },
+      ];
+
+      (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce(pluginRoutes);
+
+      // Act
+      await router.addRouteDirectory('./plugins/auth/routes');
+
+      // Assert
+      expect(findRoutes).toHaveBeenCalledWith('./plugins/auth/routes', {
+        basePath: '/',
+      });
+
+      expect(mockMatcher.add).toHaveBeenCalledWith('/auth/login', 'POST', pluginRoutes[0]!.POST);
+      expect(mockMatcher.add).toHaveBeenCalledWith('/auth/logout', 'POST', pluginRoutes[1]!.POST);
+    });
+
+    test('addRouteDirectory with prefix prepends prefix to routes', async () => {
+      // Arrange - Set specific mock for this test
+      const pluginRoutes: Route[] = [
+        {
+          path: '/login',
+          POST: {
+            handler: vi.fn(),
+            middleware: [],
+          },
+        },
+      ];
+
+      (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce(pluginRoutes);
+
+      // Act
+      await router.addRouteDirectory('./plugins/auth/routes', { prefix: '/api/v1' });
+
+      // Assert
+      expect(mockMatcher.add).toHaveBeenCalledWith('/api/v1/login', 'POST', pluginRoutes[0]!.POST);
+    });
+
+    test('addRouteDirectory warns when directory already registered', async () => {
+      // Arrange
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const pluginRoutes: Route[] = [
+        {
+          path: '/auth/login',
+          POST: {
+            handler: vi.fn(),
+            middleware: [],
+          },
+        },
+      ];
+      // Reset the call count after router initialization
+      (findRoutes as ReturnType<typeof vi.fn>).mockClear();
+
+      // Mock the first call to findRoutes (second call should be skipped)
+      (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce(pluginRoutes);
+
+      // Act
+      await router.addRouteDirectory('./plugins/auth/routes');
+      await router.addRouteDirectory('./plugins/auth/routes'); // Second time
+
+      // Assert
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Route directory ./plugins/auth/routes already registered'
+      );
+
+      // Verify findRoutes was only called once (for the first registration)
+      expect(findRoutes).toHaveBeenCalledTimes(1);
+
+      consoleSpy.mockRestore();
+    });
+
+    test('detects route conflicts between main routes and plugin routes', async () => {
+      // Arrange - First set up some main routes
+      const mainRoutes: Route[] = [
+        {
+          path: '/users',
+          GET: {
+            handler: vi.fn(),
+            middleware: [],
+          },
+        },
+      ];
+
+      // Reset and set up router with main routes
+      (findRoutes as ReturnType<typeof vi.fn>).mockReset();
+      (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mainRoutes);
+
+      // Create a new router with main routes
+      const conflictRouter = createRouter({ routesDir: './routes', watchMode: true });
+      await vi.runAllTimersAsync();
+
+      // Now try to add conflicting plugin routes
+      const conflictingPluginRoutes: Route[] = [
+        {
+          path: '/users', // This conflicts with main routes
+          GET: {
+            handler: vi.fn(),
+            middleware: [],
+          },
+        },
+      ];
+
+      (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce(conflictingPluginRoutes);
+
+      // Act & Assert
+      await expect(conflictRouter.addRouteDirectory('./plugins/users/routes')).rejects.toThrow(
+        'Route conflict for path "/users"'
+      );
+    });
+
+    test('getRouteConflicts returns current conflicts', async () => {
+      // Arrange - Initially no conflicts
+      const conflicts = router.getRouteConflicts();
+      expect(conflicts).toHaveLength(0);
+
+      // Test that the method exists and returns the right structure
+      expect(Array.isArray(conflicts)).toBe(true);
+    });
+
+    test('setupWatcherForDirectory sets up file watching for plugin directory', async () => {
+      // Arrange
+      const pluginRoutes: Route[] = [
+        {
+          path: '/auth/login',
+          POST: { handler: vi.fn(), middleware: [] },
+        },
+      ];
+
+      (findRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce(pluginRoutes);
+
+      // Clear previous watchRoutes calls
+      (watchRoutes as ReturnType<typeof vi.fn>).mockClear();
+
+      // Act
+      await router.addRouteDirectory('./plugins/auth/routes');
+
+      // Assert - Should have been called for the plugin directory
+      expect(watchRoutes).toHaveBeenCalledWith(
+        './plugins/auth/routes',
+        expect.objectContaining({
+          ignore: ['node_modules', '.git'],
+          onRouteAdded: expect.any(Function),
+          onRouteChanged: expect.any(Function),
+          onRouteRemoved: expect.any(Function),
+          onError: expect.any(Function),
+        })
+      );
+    });
   });
 });

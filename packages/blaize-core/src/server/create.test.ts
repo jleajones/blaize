@@ -115,7 +115,7 @@ describe('create', () => {
     const invalidPlugin = {} as any;
 
     await expect(server.register(invalidPlugin)).rejects.toThrow(
-      'Invalid plugin. Must be a valid BlaizeJS plugin object with a register method.'
+      'Plugin validation error: Plugin must have a name (string)'
     );
   });
 
