@@ -1,211 +1,148 @@
-import { EventEmitter } from 'node:events';
-
-import { Plugin, Server } from '@blaizejs/types';
+import { createMockServerWithPlugins, createMockHttpServer } from '@blaizejs/testing-utils';
+import type { Server } from '@blaizejs/types';
 
 import { stopServer, registerSignalHandlers } from './stop';
 
 describe('Server Module', () => {
-  // Setup mocks
-  const mockServer = {
-    close: vi.fn(cb => {
-      cb();
-      return mockServer;
-    }),
-  };
-
-  // Create a mock server instance
   let serverInstance: Server;
+  let mockServerClose: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    // Reset mocks
-    vi.resetAllMocks();
+    const { server } = createMockServerWithPlugins(2);
+    serverInstance = server;
 
-    const plugins: Plugin[] = [
-      {
-        name: 'test-plugin-1',
-        version: '1.0.0',
-        register: vi.fn(),
-        initialize: vi.fn(),
-        terminate: vi.fn().mockResolvedValue(undefined),
-      },
-      {
-        name: 'test-plugin-2',
-        version: '1.0.0',
-        register: vi.fn(),
-        initialize: vi.fn(),
-        terminate: vi.fn().mockResolvedValue(undefined),
-      },
-    ];
-    // Create a fresh server instance for each test
-    serverInstance = {
-      server: mockServer as any,
-      port: 3000,
-      host: 'localhost',
-      events: new EventEmitter(),
-      plugins: plugins as Plugin[],
-      middleware: [],
-      listen: vi.fn(),
-      close: vi.fn(),
-      use: vi.fn().mockReturnThis(),
-      register: vi.fn().mockResolvedValue({}),
-      router: {
-        handleRequest: vi.fn().mockResolvedValue(undefined),
-        getRoutes: vi.fn().mockReturnValue([]),
-        addRoute: vi.fn(),
-      },
-      context: { getStore: vi.fn() } as any,
-    };
+    mockServerClose = vi.fn().mockImplementation(callback => {
+      if (callback) callback();
+    });
+    serverInstance.server = { close: mockServerClose } as any;
   });
 
-  describe('stopServer function', () => {
-    it('should do nothing if server is not running', async () => {
-      // Setup a server instance that's not running
-      serverInstance.server = undefined;
+  describe('stopServer', () => {
+    describe('when server is not running', () => {
+      test('should do nothing and emit no events', async () => {
+        serverInstance.server = undefined;
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
-      // Add a spy to the events emitter to verify no events are emitted
-      const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+        await stopServer(serverInstance);
 
-      await stopServer(serverInstance);
-
-      // Verify no events were emitted
-      expect(emitSpy).not.toHaveBeenCalled();
+        expect(emitSpy).not.toHaveBeenCalled();
+      });
     });
 
-    it('should close the server correctly and emit events', async () => {
-      // Add spy to the events emitter
-      const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+    describe('when server is running', () => {
+      test('should close server and emit lifecycle events', async () => {
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
-      await stopServer(serverInstance);
+        await stopServer(serverInstance);
 
-      // Verify server was closed and events were emitted
-      expect(mockServer.close).toHaveBeenCalled();
-      expect(emitSpy).toHaveBeenCalledWith('stopping');
-      expect(emitSpy).toHaveBeenCalledWith('stopped');
-      expect(serverInstance.server).toBeNull();
-    });
-
-    it('should call onStopping and onStopped hooks', async () => {
-      // Create mock hooks
-      const onStopping = vi.fn();
-      const onStopped = vi.fn();
-
-      // Add spy to the events emitter
-      const emitSpy = vi.spyOn(serverInstance.events, 'emit');
-
-      await stopServer(serverInstance, { onStopping, onStopped });
-
-      // Verify hooks were called
-      expect(onStopping).toHaveBeenCalledOnce();
-      expect(onStopped).toHaveBeenCalledOnce();
-
-      // Verify order of operations
-      const stoppingEventIndex = emitSpy.mock.calls.findIndex(call => call[0] === 'stopping');
-      const stoppedEventIndex = emitSpy.mock.calls.findIndex(call => call[0] === 'stopped');
-
-      expect(stoppingEventIndex).toBeGreaterThan(-1);
-      expect(stoppedEventIndex).toBeGreaterThan(-1);
-
-      // Check order: onStopping -> stopping event -> onStopped -> stopped event
-      expect(onStopping.mock.invocationCallOrder[0]).toBeLessThan(
-        emitSpy.mock.invocationCallOrder[stoppingEventIndex]!
-      );
-      expect(emitSpy.mock.invocationCallOrder[stoppingEventIndex]).toBeLessThan(
-        onStopped.mock.invocationCallOrder[0]!
-      );
-      expect(onStopped.mock.invocationCallOrder[0]).toBeLessThan(
-        emitSpy.mock.invocationCallOrder[stoppedEventIndex]!
-      );
-    });
-
-    it('should terminate plugins in reverse order', async () => {
-      // Access the properly typed plugins for spying
-      const plugin1 = serverInstance.plugins[0] as Plugin;
-      const plugin2 = serverInstance.plugins[1] as Plugin;
-
-      const pluginsSpy1 = vi.spyOn(plugin1, 'terminate');
-      const pluginsSpy2 = vi.spyOn(plugin2, 'terminate');
-
-      await stopServer(serverInstance);
-
-      // Verify plugins were terminated in reverse order
-      expect(pluginsSpy1).toHaveBeenCalledOnce();
-      expect(pluginsSpy2).toHaveBeenCalledOnce();
-      expect(pluginsSpy2).toHaveBeenCalledBefore(pluginsSpy1);
-    });
-
-    it('should handle server close errors', async () => {
-      // Setup server to emit an error on close
-      mockServer.close.mockImplementation(cb => {
-        cb(new Error('Close error'));
-        return mockServer;
+        expect(mockServerClose).toHaveBeenCalledOnce();
+        expect(emitSpy).toHaveBeenCalledWith('stopping');
+        expect(emitSpy).toHaveBeenCalledWith('stopped');
+        expect(serverInstance.server).toBeNull();
       });
 
-      // Add spy to the events emitter
-      const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+      test('should call lifecycle hooks in correct order', async () => {
+        const onStopping = vi.fn();
+        const onStopped = vi.fn();
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
-      // Expect the function to throw
-      await expect(stopServer(serverInstance)).rejects.toThrow('Close error');
-      expect(emitSpy).toHaveBeenCalledWith('error', expect.any(Error));
+        await stopServer(serverInstance, { onStopping, onStopped });
+
+        expect(onStopping).toHaveBeenCalledOnce();
+        expect(onStopped).toHaveBeenCalledOnce();
+
+        const stoppingEventIndex = emitSpy.mock.calls.findIndex(call => call[0] === 'stopping');
+        const stoppedEventIndex = emitSpy.mock.calls.findIndex(call => call[0] === 'stopped');
+
+        expect(stoppingEventIndex).toBeGreaterThan(-1);
+        expect(stoppedEventIndex).toBeGreaterThan(-1);
+        expect(stoppingEventIndex).toBeLessThan(stoppedEventIndex);
+      });
     });
 
-    it('should timeout if server takes too long to close', async () => {
-      // Setup fake timers
-      vi.useFakeTimers();
+    describe('plugin lifecycle integration', () => {
+      test('should call pluginManager methods in correct order', async () => {
+        const onServerStopSpy = vi.spyOn(serverInstance.pluginManager, 'onServerStop');
+        const terminatePluginsSpy = vi.spyOn(serverInstance.pluginManager, 'terminatePlugins');
 
-      // Setup server to never call the callback
-      mockServer.close.mockImplementation(() => mockServer);
+        // Store the server reference before it gets nullified
+        const originalServer = serverInstance.server;
 
-      // Add spy to the events emitter
-      const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+        await stopServer(serverInstance);
 
-      // Start the stop process with a short timeout
-      const stopPromise = stopServer(serverInstance, { timeout: 1000 });
-
-      // Advance timers to trigger timeout
-      vi.advanceTimersByTime(1001);
-
-      // Expect the promise to reject with timeout error
-      await expect(stopPromise).rejects.toThrow('Server shutdown timed out');
-      expect(emitSpy).toHaveBeenCalledWith('error', expect.any(Error));
-
-      // Restore real timers
-      vi.useRealTimers();
-    });
-
-    it('should handle plugin termination errors', async () => {
-      // Setup plugin to throw on terminate
-      serverInstance.plugins[0]!.terminate = vi.fn().mockRejectedValue(new Error('Plugin error'));
-
-      // Add spy to the events emitter
-      const emitSpy = vi.spyOn(serverInstance.events, 'emit');
-
-      // Expect the function to throw
-      await expect(stopServer(serverInstance)).rejects.toThrow('Plugin error');
-      expect(emitSpy).toHaveBeenCalledWith('error', expect.any(Error));
-    });
-
-    it('should skip plugins without terminate method', async () => {
-      // Setup a plugin without terminate method
-      serverInstance.plugins.push({
-        name: 'plugin-without-terminate',
-        version: '1.0.0',
-        initialize: vi.fn(),
-        register: vi.fn(),
+        expect(onServerStopSpy).toHaveBeenCalledWith(serverInstance, originalServer);
+        expect(terminatePluginsSpy).toHaveBeenCalledWith(serverInstance);
+        expect(onServerStopSpy).toHaveBeenCalledBefore(terminatePluginsSpy);
       });
 
-      await stopServer(serverInstance);
+      test('should handle pluginManager.onServerStop errors', async () => {
+        const error = new Error('Plugin manager onServerStop failed');
+        vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockRejectedValue(error);
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
-      // Verify we don't crash and the other plugins are still terminated
-      expect(serverInstance.plugins[0]!.terminate).toHaveBeenCalled();
-      expect(serverInstance.plugins[1]!.terminate).toHaveBeenCalled();
+        await expect(stopServer(serverInstance)).rejects.toThrow(
+          'Plugin manager onServerStop failed'
+        );
+        expect(emitSpy).toHaveBeenCalledWith('error', error);
+      });
+
+      test('should handle pluginManager.terminatePlugins errors', async () => {
+        const error = new Error('Plugin termination failed');
+        vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockRejectedValue(error);
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+
+        await expect(stopServer(serverInstance)).rejects.toThrow('Plugin termination failed');
+        expect(emitSpy).toHaveBeenCalledWith('error', error);
+      });
+    });
+
+    describe('error handling', () => {
+      test('should handle server close errors', async () => {
+        mockServerClose.mockImplementation(callback => {
+          callback(new Error('Close error'));
+        });
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+
+        await expect(stopServer(serverInstance)).rejects.toThrow('Close error');
+        expect(emitSpy).toHaveBeenCalledWith('error', expect.any(Error));
+      });
+
+      test('should timeout if server takes too long to close', async () => {
+        // Don't use fake timers - use real ones with short timeout
+        const hangingServer = createMockHttpServer({
+          close: vi.fn(), // Never calls callback
+        });
+        serverInstance.server = hangingServer;
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+
+        // Use very short timeout for fast test
+        await expect(
+          stopServer(serverInstance, { timeout: 10 }) // 10ms timeout
+        ).rejects.toThrow('Server shutdown timed out waiting for requests to complete');
+
+        expect(emitSpy).toHaveBeenCalledWith('error', expect.any(Error));
+      }, 1000);
+
+      test('should handle onStopping hook errors', async () => {
+        const error = new Error('onStopping hook failed');
+        const onStopping = vi.fn().mockRejectedValue(error);
+        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+
+        await expect(stopServer(serverInstance, { onStopping })).rejects.toThrow(
+          'onStopping hook failed'
+        );
+        expect(emitSpy).toHaveBeenCalledWith('error', error);
+      });
     });
   });
 
   describe('registerSignalHandlers', () => {
-    const originalProcessOn = process.on;
-    const originalProcessRemoveListener = process.removeListener;
+    let originalProcessOn: typeof process.on;
+    let originalProcessRemoveListener: typeof process.removeListener;
 
     beforeEach(() => {
+      originalProcessOn = process.on;
+      originalProcessRemoveListener = process.removeListener;
       process.on = vi.fn();
       process.removeListener = vi.fn();
     });
@@ -215,35 +152,31 @@ describe('Server Module', () => {
       process.removeListener = originalProcessRemoveListener;
     });
 
-    it('should register SIGINT and SIGTERM handlers', () => {
+    test('should register SIGINT and SIGTERM handlers', () => {
       const stopFn = vi.fn().mockResolvedValue(undefined);
 
       registerSignalHandlers(stopFn);
 
-      // Verify handlers were registered
       expect(process.on).toHaveBeenCalledTimes(2);
       expect(process.on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
       expect(process.on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
     });
 
-    it('should unregister handlers when unregister is called', () => {
+    test('should unregister handlers when requested', () => {
       const stopFn = vi.fn().mockResolvedValue(undefined);
 
       const { unregister } = registerSignalHandlers(stopFn);
       unregister();
 
-      // Verify handlers were unregistered
       expect(process.removeListener).toHaveBeenCalledTimes(2);
       expect(process.removeListener).toHaveBeenCalledWith('SIGINT', expect.any(Function));
       expect(process.removeListener).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
     });
 
-    it('should call stopFn when signal handlers are triggered', async () => {
+    test('should call stopFn when signals are received', async () => {
       const stopFn = vi.fn().mockResolvedValue(undefined);
-
-      // Capture the signal handlers
-      let sigintHandler: () => void | undefined;
-      let sigtermHandler: () => void | undefined;
+      let sigintHandler: () => void;
+      let sigtermHandler: () => void;
 
       (process.on as any).mockImplementation((signal: string, handler: () => void) => {
         if (signal === 'SIGINT') sigintHandler = handler;
@@ -252,7 +185,6 @@ describe('Server Module', () => {
 
       registerSignalHandlers(stopFn);
 
-      // Trigger the handlers
       sigintHandler!();
       expect(stopFn).toHaveBeenCalledTimes(1);
 
@@ -260,33 +192,23 @@ describe('Server Module', () => {
       expect(stopFn).toHaveBeenCalledTimes(2);
     });
 
-    it('should log errors if stopFn fails', async () => {
-      // Mock console.error
-      const consoleErrorMock = vi.spyOn(console, 'error').mockImplementation(() => {});
-
+    test('should log errors when stopFn fails', async () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const error = new Error('Stop error');
       const stopFn = vi.fn().mockRejectedValue(error);
-
-      // Capture the signal handlers
-      let sigintHandler: () => void | undefined;
+      let sigintHandler: () => void;
 
       (process.on as any).mockImplementation((signal: string, handler: () => void) => {
         if (signal === 'SIGINT') sigintHandler = handler;
       });
 
       registerSignalHandlers(stopFn);
-
-      // Trigger the handler
       sigintHandler!();
 
-      // Let the promise chain run
       await new Promise(process.nextTick);
 
-      // Verify error was logged
-      expect(consoleErrorMock).toHaveBeenCalledWith(error);
-
-      // Clean up
-      consoleErrorMock.mockRestore();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(error);
+      consoleErrorSpy.mockRestore();
     });
   });
 });

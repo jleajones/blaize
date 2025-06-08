@@ -1,8 +1,8 @@
-import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as http2 from 'node:http2';
 
+import { createMockServerWithPlugins } from '@blaizejs/testing-utils';
 import { Server, ServerOptions } from '@blaizejs/types';
 
 import { generateDevCertificates } from './dev-certificate';
@@ -59,32 +59,7 @@ describe('Server Module', () => {
       certFile: '/tmp/dev.cert',
     });
 
-    // Create a fresh server instance for each test
-    serverInstance = {
-      server: undefined,
-      port: 0,
-      host: '',
-      events: new EventEmitter(),
-      plugins: [
-        {
-          name: 'test-plugin',
-          version: '1.0.0',
-          initialize: vi.fn(),
-          register: vi.fn(),
-        },
-      ],
-      middleware: [],
-      listen: vi.fn(),
-      close: vi.fn(),
-      use: vi.fn().mockReturnThis(),
-      register: vi.fn().mockResolvedValue({}),
-      router: {
-        handleRequest: vi.fn().mockResolvedValue(undefined),
-        getRoutes: vi.fn().mockReturnValue([]),
-        addRoute: vi.fn(),
-      },
-      context: { getStore: vi.fn() } as any,
-    };
+    serverInstance = createMockServerWithPlugins(2).server;
 
     // Default server options
     serverOptions = {

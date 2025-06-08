@@ -9,7 +9,7 @@ import http2 from 'node:http2';
 
 import type { Context } from './context';
 import type { Middleware } from './middleware';
-import type { Plugin } from './plugins';
+import type { Plugin, PluginLifecycleManager } from './plugins';
 import type { Router } from './router';
 import type { EventEmitter } from 'node:events';
 
@@ -135,6 +135,8 @@ export interface Server {
 
   /** Context storage system */
   context: AsyncLocalStorage<Context>;
+
+  pluginManager: PluginLifecycleManager;
 }
 
 export type RequestHandler = (
