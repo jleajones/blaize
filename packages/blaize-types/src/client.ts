@@ -1,4 +1,5 @@
 import { z } from 'zod';
+
 import { Infer, RouteMethodOptions } from './router';
 
 // Extract the parameter types from a RouteMethodOptions

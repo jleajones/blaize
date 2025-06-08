@@ -64,10 +64,5 @@ export async function findRouteFiles(
  */
 function isRouteFile(filename: string): boolean {
   // Route files are TypeScript/JavaScript files that don't start with underscore
-  return (
-    !filename.startsWith('_') &&
-    (filename.endsWith('.ts') || filename.endsWith('.js')) &&
-    filename !== 'index.ts' &&
-    filename !== 'index.js'
-  );
+  return !filename.startsWith('_') && (filename.endsWith('.ts') || filename.endsWith('.js'));
 }

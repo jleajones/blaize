@@ -3,6 +3,10 @@ import { fileURLToPath } from 'node:url';
 
 import Blaize from 'blaizejs';
 
+import bc from '@blaizejs/client';
+
+import { routes } from './app-type.js';
+
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,3 +40,7 @@ try {
 } catch (err) {
   console.error('❌ Error:', err);
 }
+
+const c = bc.create('http://localhost:7485', routes);
+const data = await c.$get.getHello();
+console.log(data.message);
