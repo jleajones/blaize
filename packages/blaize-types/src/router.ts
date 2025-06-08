@@ -132,6 +132,12 @@ export interface Router {
 
   /** Add a route programmatically */
   addRoute: (route: Route) => void;
+
+  /** Add a route directory for plugins */
+  addRouteDirectory(directory: string, options?: { prefix?: string }): Promise<void>;
+
+  /** Get route conflicts */
+  getRouteConflicts(): Array<{ path: string; sources: string[] }>;
 }
 
 /**

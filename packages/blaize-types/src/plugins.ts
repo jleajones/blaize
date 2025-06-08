@@ -49,3 +49,19 @@ export interface Plugin extends PluginHooks {
  * Plugin factory function
  */
 export type PluginFactory<T = any> = (options?: T) => Plugin;
+
+export interface PluginLifecycleManager {
+  initializePlugins(server: Server): Promise<void>;
+  terminatePlugins(server: Server): Promise<void>;
+  onServerStart(server: Server, httpServer: any): Promise<void>;
+  onServerStop(server: Server, httpServer: any): Promise<void>;
+}
+
+export interface PluginLifecycleOptions {
+  /** Continue initialization even if a plugin fails */
+  continueOnError?: boolean;
+  /** Log plugin lifecycle events */
+  debug?: boolean;
+  /** Custom error handler for plugin failures */
+  onError?: (plugin: Plugin, phase: string, error: Error) => void;
+}
