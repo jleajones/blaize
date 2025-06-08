@@ -68,7 +68,7 @@ const __dirname = path.dirname(__filename);
 
 // Create server with automatic routing
 const server = createServer({
-  routesDir: path.resolve(__dirname, './routes')
+  routesDir: path.resolve(__dirname, './routes'),
 });
 
 await server.listen();
@@ -87,24 +87,26 @@ export const getUsers = createGetRoute({
   schema: {
     query: z.object({
       limit: z.coerce.number().min(1).max(100).default(10),
-      search: z.string().optional()
+      search: z.string().optional(),
     }),
     response: z.object({
-      users: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        email: z.string()
-      })),
-      total: z.number()
-    })
+      users: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          email: z.string(),
+        })
+      ),
+      total: z.number(),
+    }),
   },
-  handler: async (ctx) => {
+  handler: async ctx => {
     // Query params are automatically typed and validated
     const { limit, search } = ctx.request.query;
-    
+
     const users = await findUsers({ limit, search });
     return { users, total: users.length };
-  }
+  },
 });
 
 // POST /users - Create user with validation
@@ -112,22 +114,22 @@ export const createUser = createPostRoute({
   schema: {
     body: z.object({
       name: z.string().min(1),
-      email: z.string().email()
+      email: z.string().email(),
     }),
     response: z.object({
       id: z.string(),
       name: z.string(),
       email: z.string(),
-      createdAt: z.string()
-    })
+      createdAt: z.string(),
+    }),
   },
-  handler: async (ctx) => {
+  handler: async ctx => {
     // Request body is automatically validated
     const userData = ctx.request.body;
-    
+
     const user = await createNewUser(userData);
     return user;
-  }
+  },
 });
 ```
 
@@ -147,18 +149,18 @@ const logger = createMiddleware({
   handler: async (ctx, next) => {
     const start = Date.now();
     console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
-    
+
     await next();
-    
+
     const duration = Date.now() - start;
     console.log(`← ${ctx.response.raw.statusCode} (${duration}ms)`);
-  }
+  },
 });
 
 // Create server with middleware
 const server = createServer({
   routesDir: path.resolve(__dirname, './routes'),
-  middleware: [logger]
+  middleware: [logger],
 });
 
 await server.listen();
@@ -174,12 +176,12 @@ graph TD
     A --> C[Context]
     B --> D[Middleware]
     A --> E[Plugins]
-    
+
     B --> F[File-based Routes]
     C --> G[AsyncLocalStorage]
     D --> H[Composable Pipeline]
     E --> I[Lifecycle Management]
-    
+
     F --> J[Type-safe Handlers]
     G --> K[State Management]
     H --> L[Request/Response Flow]
@@ -222,13 +224,13 @@ my-blaize-app/
 
 ### 📊 Module Responsibilities
 
-| Module | Purpose | Key Features |
-|--------|---------|-------------|
-| **Server** | HTTP server management | HTTP/2, SSL, lifecycle |
-| **Router** | Request routing | File-based, type-safe |
-| **Context** | Request/response handling | AsyncLocalStorage, state |
-| **Middleware** | Request processing | Composable, error handling |
-| **Plugins** | Framework extension | Lifecycle, validation |
+| Module         | Purpose                   | Key Features               |
+| -------------- | ------------------------- | -------------------------- |
+| **Server**     | HTTP server management    | HTTP/2, SSL, lifecycle     |
+| **Router**     | Request routing           | File-based, type-safe      |
+| **Context**    | Request/response handling | AsyncLocalStorage, state   |
+| **Middleware** | Request processing        | Composable, error handling |
+| **Plugins**    | Framework extension       | Lifecycle, validation      |
 
 ## 🌐 Production Deployment
 
@@ -242,8 +244,8 @@ const server = createServer({
   routesDir: path.resolve(__dirname, './routes'),
   http2: {
     // Disable HTTP/2 if certificates aren't accessible
-    enabled: process.env.HTTP2_ENABLED === 'true'
-  }
+    enabled: process.env.HTTP2_ENABLED === 'true',
+  },
 });
 ```
 
@@ -254,7 +256,7 @@ const server = createServer({
 const server = createServer({
   port: parseInt(process.env.PORT || '3000'),
   routesDir: path.resolve(__dirname, './routes'),
-  http2: { enabled: false }
+  http2: { enabled: false },
 });
 
 // VPS/Dedicated (HTTP/2 with Let's Encrypt)
@@ -265,8 +267,8 @@ const server = createServer({
   http2: {
     enabled: true,
     keyFile: '/etc/letsencrypt/live/yourdomain.com/privkey.pem',
-    certFile: '/etc/letsencrypt/live/yourdomain.com/fullchain.pem'
-  }
+    certFile: '/etc/letsencrypt/live/yourdomain.com/fullchain.pem',
+  },
 });
 
 // Docker Container
@@ -277,8 +279,8 @@ const server = createServer({
   http2: {
     enabled: process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH,
     keyFile: process.env.SSL_KEY_PATH,
-    certFile: process.env.SSL_CERT_PATH
-  }
+    certFile: process.env.SSL_CERT_PATH,
+  },
 });
 ```
 
@@ -288,15 +290,15 @@ const server = createServer({
 // Environment-aware server setup
 const getServerConfig = () => {
   const env = process.env.NODE_ENV || 'development';
-  
+
   switch (env) {
     case 'development':
       return {
         port: 3000,
         routesDir: path.resolve(__dirname, './routes'),
-        http2: { enabled: true } // Auto-generates certs
+        http2: { enabled: true }, // Auto-generates certs
       };
-    
+
     case 'production':
       return {
         port: parseInt(process.env.PORT || '443'),
@@ -305,15 +307,15 @@ const getServerConfig = () => {
         http2: {
           enabled: !!process.env.SSL_CERT_PATH,
           keyFile: process.env.SSL_KEY_PATH,
-          certFile: process.env.SSL_CERT_PATH
-        }
+          certFile: process.env.SSL_CERT_PATH,
+        },
       };
-    
+
     case 'test':
       return {
         port: 0,
         routesDir: path.resolve(__dirname, './test-fixtures/routes'),
-        http2: { enabled: false }
+        http2: { enabled: false },
       };
   }
 };
@@ -326,6 +328,7 @@ const server = createServer(getServerConfig());
 ## 🔗 Framework Modules
 
 ### 🌐 Server Module
+
 High-performance HTTP/2 server with graceful lifecycle management.
 
 ```typescript
@@ -334,7 +337,7 @@ import { createServer } from 'blaizejs';
 const server = createServer({
   port: 3000,
   routesDir: './routes',
-  http2: { enabled: true }
+  http2: { enabled: true },
 });
 
 // Event-driven lifecycle
@@ -344,9 +347,10 @@ server.events.on('stopping', () => console.log('Graceful shutdown'));
 await server.listen();
 ```
 
-[📖 Server Module Documentation](../server/README.md)
+[📖 Server Module Documentation](./src/server/README.md)
 
 ### 🚀 Router Module
+
 File-based routing with automatic path generation and type safety.
 
 ```typescript
@@ -360,18 +364,19 @@ export const getPost = createGetRoute({
     response: z.object({
       id: z.string(),
       title: z.string(),
-      content: z.string()
-    })
+      content: z.string(),
+    }),
   },
   handler: async (ctx, params) => {
     return await findPost(params.id);
-  }
+  },
 });
 ```
 
-[📖 Router Module Documentation](../router/README.md)
+[📖 Router Module Documentation](./src/router/README.md)
 
 ### 🔗 Context Module
+
 Request/response context with AsyncLocalStorage integration.
 
 ```typescript
@@ -379,23 +384,24 @@ import { getCurrentContext, setState, getState } from 'blaizejs';
 
 export const handler = async () => {
   const ctx = getCurrentContext(); // Available anywhere
-  
+
   // Request data
   const userAgent = ctx.request.header('user-agent');
   const body = ctx.request.body;
-  
+
   // State management
   setState('userId', '123');
   const userId = getState<string>('userId');
-  
+
   // Response
   return ctx.response.json({ success: true });
 };
 ```
 
-[📖 Context Module Documentation](../context/README.md)
+[📖 Context Module Documentation](./src/context/README.md)
 
 ### 🔗 Middleware Module
+
 Composable middleware with onion-style execution.
 
 ```typescript
@@ -407,80 +413,95 @@ const auth = createMiddleware({
     // Pre-processing
     const token = ctx.request.header('authorization');
     if (!token) return ctx.response.status(401).json({ error: 'Unauthorized' });
-    
+
     await next();
-    
+
     // Post-processing
     ctx.response.header('X-Authenticated', 'true');
-  }
+  },
 });
 
 // Compose multiple middleware
 const apiMiddleware = compose([cors, auth, rateLimit]);
 ```
 
-[📖 Middleware Module Documentation](../middleware/README.md)
+[📖 Middleware Module Documentation](./src/middleware/README.md)
 
 ### 🧩 Plugins Module
+
 Extensible plugin system with lifecycle management.
 
 ```typescript
 import { createPlugin } from 'blaizejs';
 
-const databasePlugin = createPlugin('database', '1.0.0', async (server, options) => {
-  let db: Database;
-  
-  return {
-    initialize: async () => {
-      db = await connectToDatabase(options.connectionString);
-      server.context.setGlobal('db', db);
-    },
-    terminate: async () => {
-      await db.close();
-    }
-  };
-}, { connectionString: 'mongodb://localhost:27017/app' });
+const databasePlugin = createPlugin(
+  'database',
+  '1.0.0',
+  async (server, options) => {
+    let db: Database;
+
+    return {
+      initialize: async () => {
+        db = await connectToDatabase(options.connectionString);
+        server.context.setGlobal('db', db);
+      },
+      terminate: async () => {
+        await db.close();
+      },
+    };
+  },
+  { connectionString: 'mongodb://localhost:27017/app' }
+);
 
 const server = createServer({
   routesDir: './routes',
-  plugins: [databasePlugin()]
+  plugins: [databasePlugin()],
 });
 ```
 
-[📖 Plugins Module Documentation](../plugins/README.md)
+[📖 Plugins Module Documentation](./src/plugins/README.md)
 
 ## 🧩 Plugin Ecosystem
 
 ### 🏗️ Official Plugins
 
-| Plugin | Purpose | Status |
-|--------|---------|---------|
-| `@blaizejs/auth` | Authentication & authorization | 🔄 Coming Soon |
-| `@blaizejs/database` | Database integration | 🔄 Coming Soon |
-| `@blaizejs/cache` | Caching strategies | 🔄 Coming Soon |
-| `@blaizejs/validation` | Enhanced validation | 🔄 Coming Soon |
-| `@blaizejs/monitoring` | Metrics & observability | 🔄 Coming Soon |
+| Plugin                        | Purpose                        | Status         |
+| ----------------------------- | ------------------------------ | -------------- |
+| `@blaizejs/auth-plugin`       | Authentication & authorization | 🔄 Coming Soon |
+| `@blaizejs/database-plugin`   | Database integration           | 🔄 Coming Soon |
+| `@blaizejs/cache-plugin`      | Caching strategies             | 🔄 Coming Soon |
+| `@blaizejs/validation-plugin` | Enhanced validation            | 🔄 Coming Soon |
+| `@blaizejs/monitoring-plugin` | Metrics & observability        | 🔄 Coming Soon |
 
 ### 🛠️ Creating Custom Plugins
 
 ```typescript
 import { createPlugin } from 'blaizejs';
 
-export const myPlugin = createPlugin('my-plugin', '1.0.0', (server, options) => {
-  // Add middleware
-  server.use(createMiddleware({
-    name: 'my-middleware',
-    handler: async (ctx, next) => {
-      // Plugin logic
-      await next();
-    }
-  }));
-  
-  // Add routes
-  server.router.addRoute('GET', '/plugin-route', {
-    handler: () => ({ message: 'From plugin' })
-  });
-}, { /* default options */ });
+export const myPlugin = createPlugin(
+  'my-plugin',
+  '1.0.0',
+  (server, options) => {
+    // Add middleware
+    server.use(
+      createMiddleware({
+        name: 'my-middleware',
+        handler: async (ctx, next) => {
+          // Plugin logic
+          await next();
+        },
+      })
+    );
+
+    // Add routes
+    server.router.addRoute('GET', '/plugin-route', {
+      handler: () => ({ message: 'From plugin' }),
+    });
+  },
+  {
+    /* default options */
+  }
+);
 ```
 
 ## 📡 Type-Safe Client
@@ -506,39 +527,39 @@ import { z } from 'zod';
 export const getHello = createGetRoute({
   schema: {
     query: z.object({
-      name: z.string().optional()
+      name: z.string().optional(),
     }),
     response: z.object({
       message: z.string(),
-      timestamp: z.string()
-    })
+      timestamp: z.string(),
+    }),
   },
-  handler: async (ctx) => {
+  handler: async ctx => {
     const { name } = ctx.request.query;
     return {
       message: `Hello ${name || 'World'}!`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
-  }
+  },
 });
 
 export const postHello = createPostRoute({
   schema: {
     body: z.object({
-      message: z.string()
+      message: z.string(),
     }),
     response: z.object({
       id: z.string(),
-      echo: z.string()
-    })
+      echo: z.string(),
+    }),
   },
-  handler: async (ctx) => {
+  handler: async ctx => {
     const { message } = ctx.request.body;
     return {
       id: crypto.randomUUID(),
-      echo: message
+      echo: message,
     };
-  }
+  },
 });
 ```
 
@@ -564,7 +585,7 @@ const client = createClient('http://localhost:3000', routes);
 
 // Fully typed API calls with method grouping
 const helloData = await client.$get.getHello({
-  query: { name: 'TypeScript' } // Typed and validated
+  query: { name: 'TypeScript' }, // Typed and validated
 });
 
 console.log(helloData.message); // Type: string
@@ -572,7 +593,7 @@ console.log(helloData.timestamp); // Type: string
 
 // POST request with body validation
 const postData = await client.$post.postHello({
-  body: { message: 'Hello from client!' } // Typed and validated
+  body: { message: 'Hello from client!' }, // Typed and validated
 });
 
 console.log(postData.id); // Type: string
@@ -589,10 +610,10 @@ import type { ClientConfig } from '@blaizejs/types';
 const config: ClientConfig = {
   baseUrl: 'https://api.example.com',
   defaultHeaders: {
-    'Authorization': 'Bearer your-token',
-    'User-Agent': 'MyApp/1.0.0'
+    Authorization: 'Bearer your-token',
+    'User-Agent': 'MyApp/1.0.0',
   },
-  timeout: 10000
+  timeout: 10000,
 };
 
 const client = createClient(config, routes);
@@ -607,16 +628,17 @@ The client organizes methods by HTTP verb using the `$method` pattern:
 
 ```typescript
 // Available client methods
-client.$get.routeName()     // GET requests
-client.$post.routeName()    // POST requests  
-client.$put.routeName()     // PUT requests
-client.$delete.routeName()  // DELETE requests
-client.$patch.routeName()   // PATCH requests
-client.$head.routeName()    // HEAD requests
-client.$options.routeName() // OPTIONS requests
+client.$get.routeName(); // GET requests
+client.$post.routeName(); // POST requests
+client.$put.routeName(); // PUT requests
+client.$delete.routeName(); // DELETE requests
+client.$patch.routeName(); // PATCH requests
+client.$head.routeName(); // HEAD requests
+client.$options.routeName(); // OPTIONS requests
 ```
 
 **Key Client Features:**
+
 - 🔒 **Full Type Safety** - Automatically inferred from your route schemas
 - ✅ **Request Validation** - Client-side validation before sending requests
 - 📊 **Response Validation** - Runtime validation of API responses
@@ -624,7 +646,7 @@ client.$options.routeName() // OPTIONS requests
 - 🔄 **Error Handling** - Typed error responses with detailed validation messages
 - ⚡ **Lightweight** - Minimal runtime overhead with proxy-based implementation
 
-[📖 Client Package Documentation](https://github.com/jleajones/blaize/tree/main/packages/client#readme)
+[📖 Client Package Documentation](https://github.com/jleajones/blaize/tree/main/packages/blaize-client#readme)
 
 ## ✅ Testing
 
@@ -642,7 +664,7 @@ describe('Users API', () => {
     const ctx = createTestContext({
       method: 'GET',
       path: '/users',
-      query: { limit: '5', offset: '0' }
+      query: { limit: '5', offset: '0' },
     });
 
     const result = await getUsers.handler(ctx, {});
@@ -652,10 +674,10 @@ describe('Users API', () => {
         expect.objectContaining({
           id: expect.any(String),
           name: expect.any(String),
-          email: expect.any(String)
-        })
+          email: expect.any(String),
+        }),
       ]),
-      total: expect.any(Number)
+      total: expect.any(Number),
     });
   });
 });
@@ -778,6 +800,7 @@ Key principles for core framework development:
 ## 🗺️ Roadmap
 
 ### 🚀 Current (v0.1.x)
+
 - ✅ **HTTP/2 Server** with HTTP/1.1 fallback and SSL support
 - ✅ **File-Based Routing** with automatic path generation and hot reloading
 - ✅ **Type-Safe Routes** with Zod schema validation and route creators
@@ -789,6 +812,7 @@ Key principles for core framework development:
 - ✅ **Client Generation** with full type safety (separate package)
 
 ### 🎯 Next Release (v0.2.x)
+
 - 🔄 **HTTP/2 Hosting Solutions** - Workarounds for hosting provider limitations
 - 🔄 **Performance Optimizations** - Radix tree improvements and caching
 - 🔄 **Advanced Schema Validation** - Enhanced Zod integration and custom validators
@@ -797,6 +821,7 @@ Key principles for core framework development:
 - 🔄 **Plugin Registry** - Centralized plugin discovery and management
 
 ### 🔮 Future (v0.3.x+)
+
 - 🔄 **GraphQL Integration** - File-based GraphQL resolvers
 - 🔄 **WebSocket Support** - Real-time endpoints with type safety
 - 🔄 **Server-Side Streaming** - Streaming responses and SSE
@@ -805,6 +830,7 @@ Key principles for core framework development:
 - 🔄 **Advanced Caching** - Multi-layer caching strategies
 
 ### 🌟 Long-term Vision
+
 - 🔄 **Visual Development** - GUI tools for route and middleware management
 - 🔄 **AI-Powered Optimization** - Automatic performance tuning and suggestions
 - 🔄 **Multi-Protocol Support** - gRPC, WebSocket, and HTTP/3 in unified framework
@@ -815,13 +841,13 @@ Key principles for core framework development:
 
 ## 📚 Related Documentation
 
-- 🌐 [Server Module](../server/README.md) - HTTP server creation and lifecycle management
-- 🚀 [Router Module](../router/README.md) - File-based routing and type-safe handlers
-- 🔗 [Context Module](../context/README.md) - Request/response context and state management
-- 🔗 [Middleware Module](../middleware/README.md) - Composable middleware system
-- 🧩 [Plugins Module](../plugins/README.md) - Plugin architecture and lifecycle
-- 🔗 [Client Package](../client/README.md) - Type-safe API client generation
-- 🧪 [Testing Utils](../testing-utils/README.md) - Testing utilities and helpers
+- 🌐 [Server Module](./src/server/README.md) - HTTP server creation and lifecycle management
+- 🚀 [Router Module](./src/router/README.md) - File-based routing and type-safe handlers
+- 🔗 [Context Module](./src/context/README.md) - Request/response context and state management
+- 🔗 [Middleware Module](./src/middleware/README.md) - Composable middleware system
+- 🧩 [Plugins Module](./src/plugins/README.md) - Plugin architecture and lifecycle
+- 🔗 [Client Package](./src/client/README.md) - Type-safe API client generation
+- 🧪 [Testing Utils](./src/testing-utils/README.md) - Testing utilities and helpers
 
 ---
 
