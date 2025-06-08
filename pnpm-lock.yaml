@@ -50,6 +50,9 @@ importers:
 
   apps/playground:
     dependencies:
+      '@blaizejs/client':
+        specifier: workspace:*
+        version: link:../../packages/blaize-client
       blaizejs:
         specifier: workspace:*
         version: link:../../packages/blaize-core
