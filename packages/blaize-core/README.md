@@ -278,15 +278,15 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 - ✅ Basic HTTP server
 - ✅ Context API
 - ✅ Middleware system
-- ⬜ HTTP/2 support
-- ⬜ File-based router
-- ⬜ Type-safe parameters
+- ✅ HTTP/2 support
+- ✅ File-based router
+- ✅ Type-safe parameters
 
 ### Phase 2: Advanced Features
 
-- ⬜ Plugin system
-- ⬜ Type inference system
-- ⬜ Client library generation
+- ✅ Plugin system
+- ✅ Type inference system
+- ✅ Client library generation
 - ⬜ OpenAPI integration
 - ⬜ Performance optimizations
 - ⬜ Documentation
