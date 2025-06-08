@@ -119,6 +119,7 @@ describe('findRouteFiles', () => {
     expect(result).toEqual([
       '/routes/users.ts',
       '/routes/posts.js',
+      '/routes/index.ts',
       '/routes/auth/login.ts',
       '/routes/auth/register.ts',
     ]);
@@ -197,7 +198,6 @@ describe('findRouteFiles', () => {
     // Mock fs.readdir to return only non-route files
     vi.mocked(fs.readdir).mockResolvedValueOnce([
       { name: '_middleware.ts', isDirectory: () => false } as any,
-      { name: 'index.ts', isDirectory: () => false } as any,
       { name: 'README.md', isDirectory: () => false } as any,
     ]);
 
@@ -206,5 +206,69 @@ describe('findRouteFiles', () => {
 
     // Expect an empty array
     expect(result).toEqual([]);
+  });
+
+  it('should include index.ts files and handle them correctly', async () => {
+    // Mock fs.stat to return a directory
+    vi.mocked(fs.stat).mockResolvedValueOnce({
+      isDirectory: () => true,
+    } as any);
+
+    const mockDirents: any[] = [
+      { name: 'index.ts', isDirectory: () => false }, // Root index route
+      { name: 'users.ts', isDirectory: () => false },
+      { name: 'api', isDirectory: () => true },
+    ];
+
+    vi.mocked(fs.readdir).mockResolvedValueOnce(mockDirents);
+
+    // Mock readdir for the api directory with its own index
+    const mockApiDirents: any[] = [
+      { name: 'index.ts', isDirectory: () => false }, // API index route
+      { name: 'users.ts', isDirectory: () => false },
+    ];
+
+    vi.mocked(fs.readdir).mockResolvedValueOnce(mockApiDirents);
+
+    const result = await findRouteFiles('/routes');
+
+    expect(result).toEqual([
+      '/routes/index.ts', // Should be included now
+      '/routes/users.ts',
+      '/routes/api/index.ts', // Should be included now
+      '/routes/api/users.ts',
+    ]);
+  });
+
+  it('should handle nested index routes correctly', async () => {
+    // Mock fs.stat to return a directory
+    vi.mocked(fs.stat).mockResolvedValueOnce({
+      isDirectory: () => true,
+    } as any);
+
+    // Mock complex nested structure with multiple index files
+    vi.mocked(fs.readdir).mockResolvedValueOnce([
+      { name: 'users', isDirectory: () => true } as any,
+    ]);
+
+    // Mock /routes/users with index and subdirectory
+    vi.mocked(fs.readdir).mockResolvedValueOnce([
+      { name: 'index.ts', isDirectory: () => false } as any,
+      { name: 'profile', isDirectory: () => true } as any,
+    ]);
+
+    // Mock /routes/users/profile with its own index
+    vi.mocked(fs.readdir).mockResolvedValueOnce([
+      { name: 'index.ts', isDirectory: () => false } as any,
+      { name: 'settings.ts', isDirectory: () => false } as any,
+    ]);
+
+    const result = await findRouteFiles('/routes');
+
+    expect(result).toEqual([
+      '/routes/users/index.ts', // maps to /users
+      '/routes/users/profile/index.ts', // maps to /users/profile
+      '/routes/users/profile/settings.ts',
+    ]);
   });
 });
