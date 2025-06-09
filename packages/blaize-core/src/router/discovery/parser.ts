@@ -7,6 +7,14 @@ import { ParsedRoute } from '@blaizejs/types';
  * Works consistently across Windows and Unix-like file systems
  */
 export function parseRoutePath(filePath: string, basePath: string): ParsedRoute {
+  // Clean file:// URLs if present
+  if (filePath.startsWith('file://')) {
+    filePath = filePath.replace('file://', '');
+  }
+  if (basePath.startsWith('file://')) {
+    basePath = basePath.replace('file://', '');
+  }
+
   // Convert all backslashes to forward slashes for consistent handling
   const forwardSlashFilePath = filePath.replace(/\\/g, '/');
   const forwardSlashBasePath = basePath.replace(/\\/g, '/');

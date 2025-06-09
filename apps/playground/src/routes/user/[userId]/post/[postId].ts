@@ -1,7 +1,7 @@
 import { createGetRoute } from 'blaizejs';
 import { z } from 'zod';
 
-export const getUserPost = createGetRoute({
+export default createGetRoute({
   schema: {
     params: z.object({
       userId: z.string(),
