@@ -22,7 +22,7 @@ function getCallerFilePath(): string {
     const stack = new Error().stack as unknown as NodeJS.CallSite[];
 
     // Stack: getCallerFilePath -> createXRoute -> route file
-    const callerFrame = stack[2];
+    const callerFrame = stack[3];
     if (!callerFrame || typeof callerFrame.getFileName !== 'function') {
       throw new Error('Unable to determine caller file frame');
     }
@@ -42,10 +42,12 @@ function getCallerFilePath(): string {
  * Convert caller file path to route path using existing parsing logic
  */
 function getRoutePath(): string {
+  console.log('getRoutePath called');
   const callerPath = getCallerFilePath();
   const routesDir = getRoutesDir();
 
   const parsedRoute = parseRoutePath(callerPath, routesDir);
+  console.log(`Parsed route path: ${parsedRoute.routePath} from file: ${callerPath}`);
 
   return parsedRoute.routePath;
 }

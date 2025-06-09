@@ -51,8 +51,14 @@ export function createRouter(options: RouterOptions): Router {
   function addRouteWithSource(route: Route, source: string) {
     const existingSources = routeSources.get(route.path) || [];
 
+    // Check if this exact route from this exact source already exists
+    if (existingSources.includes(source)) {
+      console.warn(`Skipping duplicate route: ${route.path} from ${source}`);
+      return;
+    }
+
+    // Check for real conflicts (different sources)
     if (existingSources.length > 0) {
-      // Route conflict detected
       const conflictError = new Error(
         `Route conflict for path "${route.path}": ` +
           `already defined in ${existingSources.join(', ')}, ` +
