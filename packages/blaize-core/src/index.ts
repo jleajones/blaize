@@ -7,9 +7,6 @@
  * @package blaizejs
  */
 
-// Explicit imports to avoid using values without importing
-import type { BuildRoutesRegistry } from '@blaizejs/types';
-
 import { create as createMiddleware, compose } from './middleware';
 import { create as createPlugin } from './plugins';
 import {
@@ -22,6 +19,10 @@ import {
   createPutRoute,
 } from './router/';
 import { create as createServer } from './server';
+
+// TODO: ideally this could be import as an npm package, but for now we use a relative path
+// Explicit imports to avoid using values without importing
+export type * from '../../../packages/blaize-types/src/index.ts';
 
 // Re-export everything
 // Server module exports
@@ -78,6 +79,5 @@ const Blaize = {
   VERSION,
 };
 
-export type { BuildRoutesRegistry };
 export default Blaize;
 export { Blaize };

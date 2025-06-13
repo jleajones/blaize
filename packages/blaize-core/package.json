@@ -45,7 +45,6 @@
     "@blaizejs/testing-utils": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
     "@blaizejs/tsup-config": "workspace:*",
-    "@blaizejs/types": "workspace:*",
     "@blaizejs/vitest-config": "workspace:*",
     "@types/node": "^22.15.17",
     "@types/selfsigned": "^2.1.0",

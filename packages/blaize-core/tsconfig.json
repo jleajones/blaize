@@ -2,7 +2,7 @@
   "extends": "@blaizejs/tsconfig/library.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../../packages",
     "tsBuildInfoFile": "./.tsbuildinfo",
     "exactOptionalPropertyTypes": false,
     "baseUrl": ".",
@@ -11,6 +11,7 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts"],
+  "references": [{ "path": "../../packages/blaize-types" }],
+  "include": ["src/**/*.ts", "../../blaize-types/src/index.ts"],
   "exclude": ["node_modules", "dist", "dist/**/*"]
 }

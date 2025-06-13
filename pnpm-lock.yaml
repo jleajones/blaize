@@ -219,9 +219,6 @@ importers:
       '@blaizejs/tsup-config':
         specifier: workspace:*
         version: link:../../configs/tsup
-      '@blaizejs/types':
-        specifier: workspace:*
-        version: link:../blaize-types
       '@blaizejs/vitest-config':
         specifier: workspace:*
         version: link:../../configs/vitest
