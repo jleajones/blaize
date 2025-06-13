@@ -1,7 +1,7 @@
 {
   "name": "blaizejs",
   "version": "0.2.0",
-  "description": "A blazing-fast, type-safe Node.js framework with file-based routing, powerful middleware, and end-to-end type safety",
+  "description": "A blazing-fast, TypeScript-first Node.js framework with HTTP/2 support, file-based routing, powerful middleware system, and end-to-end type safety for building modern APIs.",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
     "type": "git",
@@ -10,6 +10,9 @@
   "homepage": "https://github.com/jleajones/blaize/tree/main/packages/blaize-core#readme",
   "bugs": {
     "url": "https://github.com/jleajones/blaize/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "type": "module",
   "main": "./dist/index.js",

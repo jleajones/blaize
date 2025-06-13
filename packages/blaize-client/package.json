@@ -1,7 +1,7 @@
 {
   "name": "@blaizejs/client",
   "version": "0.2.0",
-  "description": "A blazing-fast client for Blaizejs Server, type-safe Node.js framework with file-based routing, powerful middleware, and end-to-end type safety",
+  "description": "Type-safe, universal HTTP client for BlaizeJS APIs with automatic route inference, zero configuration, and support for browsers, Node.js, serverless, and edge environments.",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
     "type": "git",
