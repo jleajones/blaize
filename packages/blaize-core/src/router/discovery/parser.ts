@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 
-import { ParsedRoute } from '@blaizejs/types';
+import type { ParsedRoute } from '../../index';
 
 /**
  * Parse a file path into a route path

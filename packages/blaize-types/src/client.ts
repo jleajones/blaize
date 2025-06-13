@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { Infer, RouteMethodOptions } from './router';
+import type { Infer, RouteMethodOptions } from './router';
 
 // Extract the parameter types from a RouteMethodOptions
 export type ExtractParams<T> =
@@ -55,10 +55,10 @@ export type ExtractMethod<T> = T extends { GET: any }
 // We need to preserve the entire route object, not just the method
 export type BuildRoutesRegistry<TRoutes extends Record<string, any>> = {
   [Method in ExtractMethod<TRoutes[keyof TRoutes]> as `$${Lowercase<Method>}`]: {
-    [K in keyof TRoutes as ExtractMethod<TRoutes[K]> extends Method ? K : never]: TRoutes[K]
+    [K in keyof TRoutes as ExtractMethod<TRoutes[K]> extends Method ? K : never]: TRoutes[K];
     // This preserves the full route object: { GET: RouteMethodOptions, path: string }
-  }
-}
+  };
+};
 
 // We need to exclude the 'path' property and only get the HTTP method
 type GetRouteMethod<TRoute> = TRoute extends { path: string }

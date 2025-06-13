@@ -1,7 +1,8 @@
 import { createMockServerWithPlugins, createMockHttpServer } from '@blaizejs/testing-utils';
-import type { Server } from '@blaizejs/types';
 
 import { stopServer, registerSignalHandlers } from './stop';
+
+import type { Server } from '../index';
 
 describe('Server Module', () => {
   let serverInstance: Server;

@@ -1,9 +1,8 @@
 import EventEmitter from 'node:events';
 
-import { Plugin, PluginLifecycleManager, Server } from '@blaizejs/types';
-
 import { createMockPluginLifecycleManager, createMockPlugins } from './plugins';
 import { createMockRouter } from './router';
+import { Plugin, PluginLifecycleManager, Server } from '../../../blaize-types/src/index';
 
 /**
  * Create a mock server instance for testing

@@ -1,4 +1,4 @@
-import { Context, ProcessResponseOptions } from '@blaizejs/types';
+import type { Context, ProcessResponseOptions } from '../../index';
 
 /**
  * Process a handler response

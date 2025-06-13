@@ -1,4 +1,12 @@
 import {
+  ParseUrlError,
+  ResponseSentContentError,
+  ResponseSentError,
+  ResponseSentHeaderError,
+} from './errors';
+import { hasContext, getContext } from './store';
+
+import type {
   Context,
   ContextOptions,
   QueryParams,
@@ -7,15 +15,7 @@ import {
   StreamOptions,
   UnifiedRequest,
   UnifiedResponse,
-} from '@blaizejs/types';
-
-import {
-  ParseUrlError,
-  ResponseSentContentError,
-  ResponseSentError,
-  ResponseSentHeaderError,
-} from './errors';
-import { hasContext, getContext } from './store';
+} from '../index';
 
 const CONTENT_TYPE_HEADER = 'Content-Type';
 

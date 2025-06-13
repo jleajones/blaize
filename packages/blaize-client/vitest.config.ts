@@ -12,7 +12,7 @@ export default defineConfig({
   test: {
     typecheck: {
       enabled: true,
-      tsconfig: './tsconfig.json',
+      tsconfig: './tsconfig.test.json',
       include: ['**/*.{test,spec}.{ts,tsx}'],
     },
     // Existing shared settings are preserved

@@ -1,5 +1,3 @@
-import { Context } from '@blaizejs/types';
-
 import {
   contextStorage,
   getContext,
@@ -8,6 +6,8 @@ import {
   hasContext,
   bindContext,
 } from './store';
+
+import type { Context } from '../index';
 
 // Mock AsyncLocalStorage for better test control
 vi.mock('node:async_hooks', () => {

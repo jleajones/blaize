@@ -1,4 +1,3 @@
-// errors.test.ts
 import {
   PluginError,
   PluginLifecycleError,

@@ -2,12 +2,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
 import { createMockMiddleware } from '@blaizejs/testing-utils';
-import { Server, ServerOptionsInput } from '@blaizejs/types';
 
 import { create, DEFAULT_OPTIONS } from './create';
 import * as startModule from './start';
 import * as stopModule from './stop';
 import * as validationModule from './validation';
+
+import type { Server, ServerOptionsInput } from '../index';
 
 // Mock the modules we depend on
 vi.mock('./start', () => ({

@@ -1,4 +1,4 @@
-import { Router } from '@blaizejs/types';
+import { Router } from '../../../blaize-types/src/index';
 
 /**
  * Create a mock router for testing

@@ -1,4 +1,4 @@
-import { Plugin, PluginLifecycleManager } from '@blaizejs/types';
+import { Plugin, PluginLifecycleManager } from '../../../blaize-types/src/index';
 
 /**
  * Create a mock plugin for testing

@@ -1,8 +1,8 @@
 import * as path from 'node:path';
 
-import { ParsedRoute } from '@blaizejs/types';
-
 import { parseRoutePath } from './parser';
+
+import type { ParsedRoute } from '../../index';
 
 describe('parseRoutePath', () => {
   const basePath = '/app/routes';

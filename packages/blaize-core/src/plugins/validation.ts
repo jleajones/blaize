@@ -1,6 +1,6 @@
-import type { Plugin } from '@blaizejs/types';
-
 import { PluginValidationError } from './errors';
+
+import type { Plugin } from '../index';
 
 export interface PluginValidationOptions {
   /** Require specific plugin properties */

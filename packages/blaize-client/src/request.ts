@@ -1,7 +1,7 @@
-import { ClientConfig, RequestArgs, RequestOptions } from '@blaizejs/types';
-
 import { ClientError, NetworkError, handleResponseError } from './errors';
 import { buildUrl } from './url';
+
+import type { ClientConfig, RequestArgs, RequestOptions } from '../../blaize-types/src/index';
 
 export async function makeRequest(
   config: ClientConfig,

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import { Context, QueryParams, State, UnknownFunction } from '@blaizejs/types';
+import type { Context, QueryParams, State, UnknownFunction } from '../index';
 
 /**
  * AsyncLocalStorage instance for storing request context

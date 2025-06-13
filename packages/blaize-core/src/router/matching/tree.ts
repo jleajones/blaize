@@ -1,4 +1,4 @@
-import { HttpMethod, RouteMethodOptions, RouteNode } from '@blaizejs/types';
+import type { HttpMethod, RouteMethodOptions, RouteNode } from '../../index';
 
 /**
  * Create a route tree for efficient route matching

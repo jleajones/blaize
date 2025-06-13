@@ -69,9 +69,6 @@ importers:
       '@blaizejs/tsup-config':
         specifier: workspace:*
         version: link:../../configs/tsup
-      '@blaizejs/types':
-        specifier: workspace:*
-        version: link:../../packages/blaize-types
       tsx:
         specifier: ^4.19.4
         version: 4.19.4
@@ -176,9 +173,6 @@ importers:
       '@blaizejs/tsup-config':
         specifier: workspace:*
         version: link:../../configs/tsup
-      '@blaizejs/types':
-        specifier: workspace:*
-        version: link:../blaize-types
       '@blaizejs/vitest-config':
         specifier: workspace:*
         version: link:../../configs/vitest
@@ -219,9 +213,6 @@ importers:
       '@blaizejs/tsup-config':
         specifier: workspace:*
         version: link:../../configs/tsup
-      '@blaizejs/types':
-        specifier: workspace:*
-        version: link:../blaize-types
       '@blaizejs/vitest-config':
         specifier: workspace:*
         version: link:../../configs/vitest
@@ -256,9 +247,6 @@ importers:
       '@blaizejs/tsup-config':
         specifier: workspace:*
         version: link:../../configs/tsup
-      '@blaizejs/types':
-        specifier: workspace:*
-        version: link:../blaize-types
       '@blaizejs/vitest-config':
         specifier: workspace:*
         version: link:../../configs/vitest

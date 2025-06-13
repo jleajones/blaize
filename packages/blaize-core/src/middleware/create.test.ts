@@ -1,6 +1,6 @@
-import { Context, MiddlewareFunction, Middleware, MiddlewareOptions } from '@blaizejs/types';
-
 import { create } from './create';
+
+import type { Context, MiddlewareFunction, Middleware, MiddlewareOptions } from '../index';
 
 describe('createMiddleware', () => {
   // Shared test data and utilities

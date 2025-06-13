@@ -1,4 +1,4 @@
-import { Plugin, PluginFactory, PluginHooks, Server } from '@blaizejs/types';
+import type { Plugin, PluginFactory, PluginHooks, Server } from '../index';
 
 /**
  * Create a plugin with the given name, version, and setup function

@@ -1,6 +1,6 @@
-import type { RouteMethodOptions } from '@blaizejs/types';
-
 import { createMatcher } from './matcher';
+
+import type { RouteMethodOptions } from '../../index';
 
 describe('Route Matcher', () => {
   let matcher: ReturnType<typeof createMatcher>;

@@ -1,7 +1,15 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
-import {
+import { setRuntimeConfig } from '../config';
+import { startServer } from './start';
+import { registerSignalHandlers, stopServer } from './stop';
+import { validateServerOptions } from './validation';
+import { createPluginLifecycleManager } from '../plugins/lifecycle';
+import { validatePlugin } from '../plugins/validation';
+import { createRouter } from '../router/router';
+
+import type {
   Context,
   Middleware,
   Plugin,
@@ -9,15 +17,7 @@ import {
   ServerOptions,
   ServerOptionsInput,
   StopOptions,
-} from '@blaizejs/types';
-
-import { setRuntimeConfig } from '../config';
-import { startServer } from './start';
-import { registerSignalHandlers, stopServer } from './stop';
-import { validateServerOptions } from './validation';
-import { createPluginLifecycleManager } from '../plugins/lifecycle';
-import { validatePlugin } from '../plugins/validation';
-import { createRouter } from '../router';
+} from '../index';
 
 export const DEFAULT_OPTIONS: ServerOptions = {
   port: 3000,
