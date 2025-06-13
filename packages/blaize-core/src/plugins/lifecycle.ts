@@ -1,9 +1,4 @@
-import type {
-  Server,
-  Plugin,
-  PluginLifecycleManager,
-  PluginLifecycleOptions,
-} from '@blaizejs/types';
+import type { Server, Plugin, PluginLifecycleManager, PluginLifecycleOptions } from '../index';
 
 /**
  * Create a plugin lifecycle manager

@@ -1,6 +1,6 @@
-import { Context, ProcessResponseOptions } from '@blaizejs/types';
-
 import { processResponse } from './response';
+
+import type { Context, ProcessResponseOptions } from '../../index';
 
 describe('processResponse', () => {
   // Mock Context object

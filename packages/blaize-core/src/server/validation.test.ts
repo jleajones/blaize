@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
 import { createMockMiddleware } from '@blaizejs/testing-utils';
-import { ServerOptionsInput, Middleware, Plugin } from '@blaizejs/types';
 
 import { validateServerOptions, serverOptionsSchema } from './validation';
+
+import type { ServerOptionsInput, Middleware, Plugin } from '../index';
 
 describe('Server Options Validation', () => {
   // Store original NODE_ENV and restore after tests

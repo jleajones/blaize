@@ -1,6 +1,6 @@
-import type { Server } from '@blaizejs/types';
-
 import { create } from './create';
+
+import type { Server } from '../index';
 
 describe('Plugin Creation', () => {
   // Mock server object for testing

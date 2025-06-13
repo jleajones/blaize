@@ -1,6 +1,6 @@
-import { HttpMethod, RouteMethodOptions, RouteMatch, Matcher, RouteEntry } from '@blaizejs/types';
-
 import { compilePathPattern, extractParams } from './params';
+
+import type { HttpMethod, RouteMethodOptions, RouteMatch, Matcher, RouteEntry } from '../../index';
 
 /**
  * Create a route matcher

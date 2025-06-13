@@ -1,5 +1,3 @@
-import { Context, UnifiedRequest, UnifiedResponse } from '@blaizejs/types';
-
 import {
   getState,
   setState,
@@ -10,6 +8,8 @@ import {
   createTypedState,
 } from './state';
 import { getContext } from './store';
+
+import type { Context, UnifiedRequest, UnifiedResponse } from '../index';
 
 class MockContextError extends Error {
   constructor(message: string = 'Mock context is not defined') {

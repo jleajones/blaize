@@ -1,6 +1,11 @@
-import type { CreateClient, BuildRoutesRegistry, RequestArgs, ClientConfig } from '@blaizejs/types';
-
 import { makeRequest } from './request';
+
+import type {
+  CreateClient,
+  BuildRoutesRegistry,
+  RequestArgs,
+  ClientConfig,
+} from '../../blaize-types/src/index';
 
 export function createClient<TRoutes extends Record<string, any> = Record<string, any>>(
   baseUrlOrConfig: string | ClientConfig,

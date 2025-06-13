@@ -1,6 +1,6 @@
-import { Context, ErrorHandlerOptions } from '@blaizejs/types';
-
 import { handleRouteError } from './error';
+
+import type { Context, ErrorHandlerOptions } from '../../index';
 
 describe('Error Handler', () => {
   // Mock console.error to avoid noise in test output

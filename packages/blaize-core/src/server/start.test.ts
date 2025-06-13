@@ -3,10 +3,11 @@ import * as http from 'node:http';
 import * as http2 from 'node:http2';
 
 import { createMockServerWithPlugins } from '@blaizejs/testing-utils';
-import { Server, ServerOptions } from '@blaizejs/types';
 
 import { generateDevCertificates } from './dev-certificate';
 import { startServer } from './start';
+
+import type { Server, ServerOptions } from '../index';
 
 // Mock the dependencies
 vi.mock('node:fs');

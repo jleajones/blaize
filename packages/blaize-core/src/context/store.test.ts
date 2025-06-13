@@ -1,5 +1,4 @@
-import { Context } from '@blaizejs/types';
-
+import { Context } from '../index';
 import {
   contextStorage,
   getContext,

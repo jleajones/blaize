@@ -1,4 +1,4 @@
-import { Middleware } from '@blaizejs/types';
+import { Middleware } from '../../../blaize-types/src/index';
 
 export const createMockMiddleware = (
   options: Partial<Middleware> = {

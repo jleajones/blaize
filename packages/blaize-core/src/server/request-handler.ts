@@ -1,8 +1,8 @@
-import { RequestHandler, Server } from '@blaizejs/types';
-
 import { createContext } from '../context/create';
 import { runWithContext } from '../context/store';
 import { compose } from '../middleware/compose';
+
+import type { RequestHandler, Server } from '../index';
 
 export function createRequestHandler(serverInstance: Server): RequestHandler {
   return async (req, res) => {

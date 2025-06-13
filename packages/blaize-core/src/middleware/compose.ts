@@ -1,6 +1,6 @@
-import { Context, Middleware, MiddlewareFunction, NextFunction } from '@blaizejs/types';
-
 import { execute } from './execute';
+
+import type { Context, Middleware, MiddlewareFunction, NextFunction } from '../index';
 
 /**
  * Compose multiple middleware functions into a single middleware function

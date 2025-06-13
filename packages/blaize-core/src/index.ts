@@ -7,8 +7,9 @@
  * @package blaizejs
  */
 
-import { create as createMiddleware, compose } from './middleware';
-import { create as createPlugin } from './plugins';
+import { compose } from './middleware/compose';
+import { create as createMiddleware } from './middleware/create';
+import { create as createPlugin } from './plugins/create';
 import {
   createDeleteRoute,
   createGetRoute,
@@ -17,8 +18,8 @@ import {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
-} from './router/';
-import { create as createServer } from './server';
+} from './router/create';
+import { create as createServer } from './server/create';
 
 // TODO: ideally this could be import as an npm package, but for now we use a relative path
 // Explicit imports to avoid using values without importing

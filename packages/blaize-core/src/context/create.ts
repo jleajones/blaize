@@ -7,8 +7,7 @@ import {
   StreamOptions,
   UnifiedRequest,
   UnifiedResponse,
-} from '@blaizejs/types';
-
+} from '../index';
 import {
   ParseUrlError,
   ResponseSentContentError,

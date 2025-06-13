@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { createGetRoute } from '@/router/index.js';
+import { createGetRoute } from '@/index';
 
 export const IndexRoute = createGetRoute({
   schema: {

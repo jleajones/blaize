@@ -1,9 +1,9 @@
-import { Context, NextFunction, Server } from '@blaizejs/types';
-
 import { createRequestHandler } from './request-handler';
 import { createContext } from '../context/create';
 import { runWithContext } from '../context/store';
 import { compose } from '../middleware/compose';
+
+import type { Context, NextFunction, Server } from '../index';
 
 // Mock the dependencies
 vi.mock('../context/create');

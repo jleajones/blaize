@@ -7,11 +7,10 @@
     "exactOptionalPropertyTypes": false,
     "baseUrl": ".",
     "paths": {
-      "@router/*": ["./src/router/*"],
-      "@/*": ["./src/*"]
+      "@*": ["./src/*"]
     }
   },
-  "references": [{ "path": "../../packages/blaize-types" }],
+  "references": [{ "path": "../blaize-types" }],
   "include": ["src/**/*.ts", "../../blaize-types/src/index.ts"],
   "exclude": ["node_modules", "dist", "dist/**/*"]
 }

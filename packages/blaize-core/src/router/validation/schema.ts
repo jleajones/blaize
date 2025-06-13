@@ -1,17 +1,17 @@
 import { z } from 'zod';
 
-import {
+import { validateBody } from './body';
+import { validateParams } from './params';
+import { validateQuery } from './query';
+import { validateResponse } from './response';
+
+import type {
   RouteSchema,
   Context,
   Middleware,
   MiddlewareFunction,
   NextFunction,
-} from '@blaizejs/types';
-
-import { validateBody } from './body';
-import { validateParams } from './params';
-import { validateQuery } from './query';
-import { validateResponse } from './response';
+} from '../../index';
 
 /**
  * Create a validation middleware for request data

@@ -1,11 +1,12 @@
 import * as z from 'zod';
 
 import { createMockMiddleware } from '@blaizejs/testing-utils';
-import { Context, RouteMethodOptions } from '@blaizejs/types';
 
 import { executeHandler } from './executor';
 import { compose } from '../../middleware/compose';
 import { createRequestValidator, createResponseValidator } from '../validation/schema';
+
+import type { Context, RouteMethodOptions } from '../../index';
 
 // Mock the dependencies
 vi.mock('../../middleware/compose', () => ({

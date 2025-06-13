@@ -1,10 +1,9 @@
-// test/errors.test.ts
 import { ClientError, NetworkError, handleResponseError } from './errors';
 
 describe('ClientError', () => {
   it('should create error with message only', () => {
     const error = new ClientError('Something went wrong');
-    
+
     expect(error.name).toBe('ClientError');
     expect(error.message).toBe('Something went wrong');
     expect(error.status).toBeUndefined();
@@ -13,7 +12,7 @@ describe('ClientError', () => {
 
   it('should create error with status code', () => {
     const error = new ClientError('Not found', 404);
-    
+
     expect(error.name).toBe('ClientError');
     expect(error.message).toBe('Not found');
     expect(error.status).toBe(404);
@@ -22,7 +21,7 @@ describe('ClientError', () => {
   it('should create error with response data', () => {
     const responseData = { error: 'Invalid input', details: ['Field required'] };
     const error = new ClientError('Validation failed', 400, responseData);
-    
+
     expect(error.name).toBe('ClientError');
     expect(error.message).toBe('Validation failed');
     expect(error.status).toBe(400);
@@ -39,7 +38,7 @@ describe('ClientError', () => {
 describe('NetworkError', () => {
   it('should create error with message only', () => {
     const error = new NetworkError('Network timeout');
-    
+
     expect(error.name).toBe('NetworkError');
     expect(error.message).toBe('Network timeout');
     expect(error.cause).toBeUndefined();
@@ -48,7 +47,7 @@ describe('NetworkError', () => {
   it('should create error with cause', () => {
     const cause = new Error('Connection refused');
     const error = new NetworkError('Failed to connect', cause);
-    
+
     expect(error.name).toBe('NetworkError');
     expect(error.message).toBe('Failed to connect');
     expect(error.cause).toBe(cause);
@@ -66,7 +65,7 @@ describe('handleResponseError', () => {
     const mockResponse = {
       ok: false,
       status: 404,
-      statusText: 'Not Found'
+      statusText: 'Not Found',
     } as Response;
 
     expect(() => handleResponseError(mockResponse)).toThrow(ClientError);
@@ -77,7 +76,7 @@ describe('handleResponseError', () => {
     const mockResponse = {
       ok: false,
       status: 500,
-      statusText: 'Internal Server Error'
+      statusText: 'Internal Server Error',
     } as Response;
 
     expect(() => handleResponseError(mockResponse)).toThrow(ClientError);
@@ -88,7 +87,7 @@ describe('handleResponseError', () => {
     const mockResponse = {
       ok: false,
       status: 400,
-      statusText: 'Bad Request'
+      statusText: 'Bad Request',
     } as Response;
 
     try {

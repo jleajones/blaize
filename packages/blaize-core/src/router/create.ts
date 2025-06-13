@@ -1,4 +1,7 @@
-import {
+import { getRoutesDir } from '../config';
+import { parseRoutePath } from './discovery/parser';
+
+import type {
   CreateGetRoute,
   CreatePostRoute,
   CreatePutRoute,
@@ -6,10 +9,7 @@ import {
   CreatePatchRoute,
   CreateHeadRoute,
   CreateOptionsRoute,
-} from '@blaizejs/types';
-
-import { getRoutesDir } from '../config';
-import { parseRoutePath } from './discovery/parser';
+} from '../index';
 
 /**
  * Get the file path of the function that called createXRoute
