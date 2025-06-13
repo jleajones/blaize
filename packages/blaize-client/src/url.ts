@@ -1,27 +1,22 @@
-import { RequestArgs } from "@blaizejs/types";
+import type { RequestArgs } from '../../blaize-types/src/index';
 
-export function buildUrl(
-  baseUrl: string, 
-  path: string, 
-  args?: RequestArgs
-): string {
-  
+export function buildUrl(baseUrl: string, path: string, args?: RequestArgs): string {
   // Normalize URL construction to avoid double slashes
   const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  
+
   let url = `${normalizedBaseUrl}${normalizedPath}`;
-  
+
   // Replace URL parameters
   if (args?.params) {
     url = replacePathParameters(url, args.params);
   }
-  
+
   // Add query parameters
   if (args?.query) {
     url = addQueryParameters(url, args.query);
   }
-  
+
   return url;
 }
 
@@ -42,7 +37,7 @@ function addQueryParameters(url: string, query: Record<string, any>): string {
       searchParams.append(key, String(value));
     }
   }
-  
+
   const queryString = searchParams.toString();
   return queryString ? `${url}?${queryString}` : url;
 }

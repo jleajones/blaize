@@ -1,4 +1,4 @@
-import { Context, ErrorHandlerOptions } from '@blaizejs/types';
+import type { Context, ErrorHandlerOptions } from '../../index';
 
 /**
  * Handle a route error

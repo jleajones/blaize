@@ -1,17 +1,17 @@
-import {
+import { findRoutes } from './discovery';
+import { watchRoutes } from './discovery/watchers';
+import { executeHandler } from './handlers';
+import { handleRouteError } from './handlers/error';
+import { createMatcher } from './matching';
+
+import type {
   Context,
   HttpMethod,
   Route,
   RouteMethodOptions,
   RouterOptions,
   Router,
-} from '@blaizejs/types';
-
-import { findRoutes } from './discovery';
-import { watchRoutes } from './discovery/watchers';
-import { executeHandler } from './handlers';
-import { handleRouteError } from './handlers/error';
-import { createMatcher } from './matching';
+} from '../index';
 
 const DEFAULT_ROUTER_OPTIONS = {
   routesDir: './routes',

@@ -1,6 +1,6 @@
-import { Route, RouteDefinition } from '@blaizejs/types';
-
 import { parseRoutePath } from './parser';
+
+import type { Route, RouteDefinition } from '../../index';
 
 export async function dynamicImport(filePath: string) {
   return import(filePath);

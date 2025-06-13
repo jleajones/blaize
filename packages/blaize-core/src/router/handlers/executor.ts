@@ -1,8 +1,7 @@
-import { Context, RouteMethodOptions } from '@blaizejs/types';
-
 import { compose } from '../../middleware/compose';
 import { createRequestValidator, createResponseValidator } from '../validation';
 
+import type { Context, RouteMethodOptions } from '../../index';
 /**
  * Execute a route handler with its middleware
  */

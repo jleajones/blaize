@@ -1,7 +1,7 @@
-import { Route } from '@blaizejs/types';
-
 import { findRouteFiles } from './finder';
 import { loadRouteModule } from './loader';
+
+import type { Route } from '../../index';
 
 export interface FindRoutesOptions {
   /** Base path for routes */

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import Blaize from '@/index.js';
+import Blaize from '../../../../index';
 
 export const getUserRoute = Blaize.Router.createGetRoute({
   schema: {

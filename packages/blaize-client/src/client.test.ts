@@ -1,7 +1,7 @@
-import type { RouteMethodOptions } from '@blaizejs/types';
-
 import { createClient } from './client';
 import { makeRequest } from './request';
+
+import type { RouteMethodOptions } from '../../blaize-types/src/index';
 
 // Mock the request module
 vi.mock('../src/request', () => ({

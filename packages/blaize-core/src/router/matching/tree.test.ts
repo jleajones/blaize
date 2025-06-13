@@ -1,6 +1,6 @@
-import { RouteMethodOptions } from '@blaizejs/types';
-
 import { createRouteTree } from './tree';
+
+import type { RouteMethodOptions } from '../../index';
 
 // Mock handler for testing
 const createMockHandler = (name: string): RouteMethodOptions => ({

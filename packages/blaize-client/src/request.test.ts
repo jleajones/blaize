@@ -1,6 +1,6 @@
-import { ClientConfig } from '@blaizejs/types';
-
 import { makeRequest } from './request';
+
+import type { ClientConfig } from '../../blaize-types/src/index';
 
 // Mock fetch globally
 const mockFetch = vi.fn();

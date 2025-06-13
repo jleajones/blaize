@@ -1,6 +1,6 @@
-import { Context, Middleware, MiddlewareFunction } from '@blaizejs/types';
-
 import { execute } from './execute';
+
+import type { Context, Middleware, MiddlewareFunction } from '../index';
 
 describe('execute', () => {
   // Create shared test objects

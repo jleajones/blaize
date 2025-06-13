@@ -1,5 +1,3 @@
-import { Context, Route, RouterOptions, RouteMethodOptions } from '@blaizejs/types';
-
 // Mock dependencies
 vi.mock('./discovery', () => ({
   findRoutes: vi.fn(),
@@ -30,6 +28,8 @@ import { handleRouteError } from './handlers/error';
 import { executeHandler } from './handlers/executor';
 import { createMatcher } from './matching';
 import { createRouter } from './router';
+
+import type { Context, Route, RouterOptions, RouteMethodOptions } from '../index';
 
 describe('Router', () => {
   // Setup common mocks and fixtures

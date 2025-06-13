@@ -18,7 +18,6 @@
     "@blaizejs/eslint-config": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
     "@blaizejs/tsup-config": "workspace:*",
-    "@blaizejs/types": "workspace:*",
     "tsx": "^4.19.4"
   }
 }
