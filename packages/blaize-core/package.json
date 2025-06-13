@@ -1,6 +1,6 @@
 {
   "name": "blaizejs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A blazing-fast, type-safe Node.js framework with file-based routing, powerful middleware, and end-to-end type safety",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
