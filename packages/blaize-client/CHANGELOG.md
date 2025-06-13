@@ -1,5 +1,12 @@
 # @blaizejs/client
 
+## 0.2.1
+
+### Patch Changes
+
+- dddaaa2: - Update to release workflow
+  - Core/Client/Testing: Update package description
+
 ## 0.2.0
 
 ### Minor Changes
