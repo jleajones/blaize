@@ -1,4 +1,12 @@
 import {
+  ParseUrlError,
+  ResponseSentContentError,
+  ResponseSentError,
+  ResponseSentHeaderError,
+} from './errors';
+import { hasContext, getContext } from './store';
+
+import type {
   Context,
   ContextOptions,
   QueryParams,
@@ -8,13 +16,6 @@ import {
   UnifiedRequest,
   UnifiedResponse,
 } from '../index';
-import {
-  ParseUrlError,
-  ResponseSentContentError,
-  ResponseSentError,
-  ResponseSentHeaderError,
-} from './errors';
-import { hasContext, getContext } from './store';
 
 const CONTENT_TYPE_HEADER = 'Content-Type';
 

@@ -23,7 +23,7 @@ import { create as createServer } from './server/create';
 
 // TODO: ideally this could be import as an npm package, but for now we use a relative path
 // Explicit imports to avoid using values without importing
-export type * from '../../../packages/blaize-types/src/index.ts';
+export type * from '../../blaize-types/src/index.ts';
 
 // Re-export everything
 // Server module exports

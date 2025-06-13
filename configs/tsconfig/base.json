@@ -33,8 +33,7 @@
     "forceConsistentCasingInFileNames": true,
     "noErrorTruncation": true,
     "baseUrl": ".",
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "outDir": "./dist"
   },
   "exclude": ["node_modules", "dist"]
 }

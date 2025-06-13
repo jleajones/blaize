@@ -2,7 +2,14 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
 import { setRuntimeConfig } from '../config';
-import {
+import { startServer } from './start';
+import { registerSignalHandlers, stopServer } from './stop';
+import { validateServerOptions } from './validation';
+import { createPluginLifecycleManager } from '../plugins/lifecycle';
+import { validatePlugin } from '../plugins/validation';
+import { createRouter } from '../router/router';
+
+import type {
   Context,
   Middleware,
   Plugin,
@@ -11,12 +18,6 @@ import {
   ServerOptionsInput,
   StopOptions,
 } from '../index';
-import { startServer } from './start';
-import { registerSignalHandlers, stopServer } from './stop';
-import { validateServerOptions } from './validation';
-import { createPluginLifecycleManager } from '../plugins/lifecycle';
-import { validatePlugin } from '../plugins/validation';
-import { createRouter } from '../router/router';
 
 export const DEFAULT_OPTIONS: ServerOptions = {
   port: 3000,
