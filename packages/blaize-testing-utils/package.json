@@ -1,6 +1,16 @@
 {
   "name": "@blaizejs/testing-utils",
   "version": "0.1.1",
+  "description": "Comprehensive testing utilities for BlaizeJS applications including middleware testing, plugin lifecycle simulation, context mocking, and integration test helpers with full TypeScript support.",
+  "author": "J.Lea-Jones <jason@careymarcel.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jleajones/blaize.git"
+  },
+  "homepage": "https://github.com/jleajones/blaize/tree/main/packages/blaize-testing-utils#readme",
+  "bugs": {
+    "url": "https://github.com/jleajones/blaize/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,6 +22,9 @@
   },
   "dependencies": {
     "zod": "^3.24.4"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@blaizejs/eslint-config": "workspace:*",
