@@ -917,7 +917,7 @@ describe('Plugin Lifecycle', () => {
 // tests/plugins/integration.test.ts
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { createServer, createPlugin } from 'blaizejs';
-import { Server } from '@blaizejs/types';
+import type { Server } from 'blaizejs';
 
 describe('Plugin Integration', () => {
   let server: Server;

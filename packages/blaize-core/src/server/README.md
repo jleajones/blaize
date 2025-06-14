@@ -685,7 +685,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { createServer } from 'blaizejs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { Server } from '@blaizejs/types';
+import type { Server } from 'blaizejs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
