@@ -1,5 +1,11 @@
 # @blaizejs/client
 
+## 0.2.2
+
+### Patch Changes
+
+- 4b9614e: Test automation token publishing
+
 ## 0.2.1
 
 ### Patch Changes

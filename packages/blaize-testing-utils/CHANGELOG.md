@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.1.3
+
+### Patch Changes
+
+- 4b9614e: Test automation token publishing
+
 ## 0.1.2
 
 ### Patch Changes
