@@ -1,5 +1,12 @@
 # @blaizejs/testing-utils
 
+## 0.1.2
+
+### Patch Changes
+
+- dddaaa2: - Update to release workflow
+  - Core/Client/Testing: Update package description
+
 ## 0.1.1
 
 ### Patch Changes
