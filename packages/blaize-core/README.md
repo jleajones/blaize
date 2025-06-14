@@ -604,7 +604,7 @@ console.log(postData.echo); // Type: string
 
 ```typescript
 import { createClient } from '@blaizejs/client';
-import type { ClientConfig } from '@blaizejs/types';
+import type { ClientConfig } from '@blaizejs/client';
 
 // Advanced client configuration
 const config: ClientConfig = {

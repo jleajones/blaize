@@ -33,7 +33,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const server = createServer({
-  routesDir: path.resolve(__dirname, './routes')
+  routesDir: path.resolve(__dirname, './routes'),
 });
 
 await server.listen();
@@ -49,19 +49,21 @@ import { z } from 'zod';
 export const getUsers = createGetRoute({
   schema: {
     query: z.object({
-      limit: z.coerce.number().default(10)
+      limit: z.coerce.number().default(10),
     }),
     response: z.object({
-      users: z.array(z.object({
-        id: z.string(),
-        name: z.string()
-      }))
-    })
+      users: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+        })
+      ),
+    }),
   },
-  handler: async (ctx) => {
+  handler: async ctx => {
     const { limit } = ctx.request.query;
     return { users: await findUsers(limit) };
-  }
+  },
 });
 ```
 
@@ -71,7 +73,7 @@ export const getUsers = createGetRoute({
 blaize/
 ├── 📦 packages/                    # Core framework packages
 │   ├── blaize-core/               # Main framework (blaizejs)
-│   ├── blaize-client/             # Type-safe client generator  
+│   ├── blaize-client/             # Type-safe client generator
 │   ├── blaize-types/              # Shared TypeScript types
 │   └── blaize-testing-utils/      # Testing utilities
 ├── 🧩 plugins/                    # Official plugins
@@ -87,18 +89,15 @@ blaize/
 ## 📁 Core Packages
 
 ### 🔥 [`blaizejs`](packages/blaize-core) - Main Framework
+
 The core framework providing servers, routing, middleware, and plugins.
 
 ```typescript
-import { 
-  createServer, 
-  createGetRoute, 
-  createMiddleware, 
-  createPlugin 
-} from 'blaizejs';
+import { createServer, createGetRoute, createMiddleware, createPlugin } from 'blaizejs';
 ```
 
 ### 🔗 [`@blaizejs/client`](packages/blaize-client) - Type-Safe Client
+
 Automatic API client generation with full type inference.
 
 ```typescript
@@ -109,6 +108,7 @@ const users = await client.$get.getUsers({ query: { limit: 10 } });
 ```
 
 ### 🧪 [`@blaizejs/testing-utils`](packages/blaize-testing-utils) - Testing Tools
+
 Utilities for testing BlaizeJS applications.
 
 ```typescript
@@ -119,15 +119,17 @@ const result = await getUsers.handler(ctx, {});
 ```
 
 ### 🏷️ [`@blaizejs/types`](packages/blaize-types) - Type Definitions
+
 Shared TypeScript types and interfaces.
 
 ```typescript
-import type { Context, Middleware, Plugin } from '@blaizejs/types';
+import type { Context, Middleware, Plugin } from 'blaizejs';
 ```
 
 ## 🛠️ Development
 
 ### 📋 Prerequisites
+
 - **Node.js**: >= 22.0.0
 - **pnpm**: >= 9.7.0
 
@@ -146,7 +148,7 @@ pnpm install
 pnpm dev                    # Start all packages in dev mode
 pnpm build                  # Build all packages
 
-# Testing  
+# Testing
 pnpm test                   # Run all tests
 pnpm test:watch            # Watch mode
 pnpm test:coverage         # Coverage reports
@@ -200,6 +202,7 @@ describe('API Tests', () => {
 7. **Submit pull request**
 
 ### 📝 Standards
+
 - ✅ TypeScript strict mode
 - ✅ Comprehensive tests with Vitest
 - ✅ ESLint + Prettier formatting
@@ -209,18 +212,21 @@ describe('API Tests', () => {
 ## 🗺️ Roadmap
 
 ### 🚀 Current (v0.1.x)
+
 - ✅ Core framework with HTTP/2, routing, middleware
 - ✅ Type-safe client generation
 - ✅ Plugin system and testing utilities
 - ✅ Monorepo with pnpm + Turbo
 
 ### 🎯 Next (v0.2.x)
+
 - 🔄 Official auth and database plugins
 - 🔄 CLI for project scaffolding
 - 🔄 Performance optimizations
 - 🔄 Enhanced deployment tooling
 
 ### 🔮 Future (v0.3.x+)
+
 - 🔄 GraphQL integration
 - 🔄 WebSocket support
 - 🔄 Edge runtime deployment

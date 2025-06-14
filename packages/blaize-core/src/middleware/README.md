@@ -60,13 +60,13 @@ const logger = createMiddleware({
     console.log(`${ctx.request.method} ${ctx.request.path}`);
     await next();
     console.log(`Response: ${ctx.response.raw.statusCode}`);
-  }
+  },
 });
 
 // Create server with middleware
 const server = createServer({
   routesDir: './routes',
-  middleware: [logger]
+  middleware: [logger],
 });
 
 await server.listen();
@@ -87,13 +87,13 @@ const authMiddleware = createMiddleware({
     if (!token?.startsWith('Bearer ')) {
       return ctx.response.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     // Validate token and attach user to context
     const user = await validateToken(token);
     ctx.state.user = user;
-    
+
     await next();
-  }
+  },
 });
 
 export const getProtectedData = createGetRoute({
@@ -103,16 +103,16 @@ export const getProtectedData = createGetRoute({
       message: z.string(),
       user: z.object({
         id: z.string(),
-        name: z.string()
-      })
-    })
+        name: z.string(),
+      }),
+    }),
   },
-  handler: async (ctx) => {
+  handler: async ctx => {
     return {
       message: 'Protected data accessed successfully',
-      user: ctx.state.user
+      user: ctx.state.user,
     };
-  }
+  },
 });
 ```
 
@@ -146,25 +146,25 @@ const advancedMiddleware = createMiddleware({
   name: 'rate-limiter',
   handler: async (ctx, next) => {
     const ip = ctx.request.header('x-forwarded-for') || 'unknown';
-    
+
     // Check rate limit
     if (await isRateLimited(ip)) {
       return ctx.response.status(429).json({
         error: 'Too Many Requests',
-        retryAfter: 60
+        retryAfter: 60,
       });
     }
-    
+
     // Record request
     await recordRequest(ip);
-    
+
     await next();
   },
-  skip: (ctx) => {
+  skip: ctx => {
     // Skip rate limiting for health checks
     return ctx.request.path === '/health';
   },
-  debug: process.env.NODE_ENV === 'development'
+  debug: process.env.NODE_ENV === 'development',
 });
 ```
 
@@ -194,12 +194,12 @@ class CacheMiddleware {
     return async (ctx, next) => {
       const key = this.getCacheKey(ctx);
       const cached = this.cache.get(key);
-      
+
       // Return cached response if valid
       if (cached && !this.isExpired(cached.expires)) {
         return ctx.response.json(cached.data);
       }
-      
+
       // Intercept response to cache it
       const originalJson = ctx.response.json.bind(ctx.response);
       ctx.response.json = (data: any, status?: number) => {
@@ -207,12 +207,12 @@ class CacheMiddleware {
         if (!status || status < 400) {
           this.cache.set(key, {
             data,
-            expires: Date.now() + this.ttl
+            expires: Date.now() + this.ttl,
           });
         }
         return originalJson(data, status);
       };
-      
+
       await next();
     };
   }
@@ -227,7 +227,7 @@ const cacheInstance = new CacheMiddleware(600); // 10 minutes
 const cacheMiddleware = createMiddleware({
   name: 'response-cache',
   handler: cacheInstance.middleware(),
-  skip: (ctx) => ctx.request.method !== 'GET'
+  skip: ctx => ctx.request.method !== 'GET',
 });
 ```
 
@@ -246,13 +246,13 @@ const cors = createMiddleware({
       .header('Access-Control-Allow-Origin', '*')
       .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
       .header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
+
     if (ctx.request.method === 'OPTIONS') {
       return ctx.response.status(204).text('');
     }
-    
+
     await next();
-  }
+  },
 });
 
 // Request timing middleware
@@ -260,17 +260,17 @@ const timer = createMiddleware({
   name: 'request-timer',
   handler: async (ctx, next) => {
     const start = Date.now();
-    
+
     await next();
-    
+
     const duration = Date.now() - start;
     ctx.response.header('X-Response-Time', `${duration}ms`);
-  }
+  },
 });
 
 const server = createServer({
   routesDir: './routes',
-  middleware: [cors, timer] // Applied to all routes
+  middleware: [cors, timer], // Applied to all routes
 });
 ```
 
@@ -282,23 +282,21 @@ import { createServer, createMiddleware } from 'blaizejs';
 const server = createServer({ routesDir: './routes' });
 
 // Add single middleware
-server.use(createMiddleware({
-  name: 'security-headers',
-  handler: async (ctx, next) => {
-    ctx.response
-      .header('X-Content-Type-Options', 'nosniff')
-      .header('X-Frame-Options', 'DENY')
-      .header('X-XSS-Protection', '1; mode=block');
-    await next();
-  }
-}));
+server.use(
+  createMiddleware({
+    name: 'security-headers',
+    handler: async (ctx, next) => {
+      ctx.response
+        .header('X-Content-Type-Options', 'nosniff')
+        .header('X-Frame-Options', 'DENY')
+        .header('X-XSS-Protection', '1; mode=block');
+      await next();
+    },
+  })
+);
 
 // Add multiple middleware
-server.use([
-  securityMiddleware,
-  compressionMiddleware,
-  rateLimitMiddleware
-]);
+server.use([securityMiddleware, compressionMiddleware, rateLimitMiddleware]);
 ```
 
 ### Conditional Middleware
@@ -314,14 +312,14 @@ const conditionalMiddleware = createMiddleware({
     await trackRequest(ctx.request);
     await next();
   },
-  skip: (ctx) => {
+  skip: ctx => {
     // Skip for:
     const skipPaths = ['/health', '/metrics', '/favicon.ico'];
     const isSkipPath = skipPaths.includes(ctx.request.path);
     const isBot = ctx.request.header('user-agent')?.includes('bot');
-    
+
     return isSkipPath || !!isBot;
-  }
+  },
 });
 ```
 
@@ -340,7 +338,7 @@ const middleware1 = createMiddleware({
     console.log('1: Before next');
     await next();
     console.log('1: After next');
-  }
+  },
 });
 
 const middleware2 = createMiddleware({
@@ -349,7 +347,7 @@ const middleware2 = createMiddleware({
     console.log('2: Before next');
     await next();
     console.log('2: After next');
-  }
+  },
 });
 
 // Compose middleware into a single function
@@ -373,17 +371,17 @@ const apiMiddleware = compose([
   corsMiddleware,
   authMiddleware,
   rateLimitMiddleware,
-  loggingMiddleware
+  loggingMiddleware,
 ]);
 
 // Use in routes
 export default {
   GET: {
     middleware: [apiMiddleware], // All composed middleware runs as one
-    handler: async (ctx) => {
+    handler: async ctx => {
       return { message: 'Hello from protected API' };
-    }
-  }
+    },
+  },
 };
 ```
 
@@ -399,9 +397,9 @@ const securityStack = [
     handler: async (ctx, next) => {
       ctx.response.header('X-Content-Type-Options', 'nosniff');
       await next();
-    }
+    },
   }),
-  
+
   createMiddleware({
     name: 'auth-validator',
     handler: async (ctx, next) => {
@@ -409,9 +407,9 @@ const securityStack = [
       const user = await validateAuth(ctx.request.header('authorization'));
       ctx.state.user = user;
       await next();
-    }
+    },
   }),
-  
+
   createMiddleware({
     name: 'permission-check',
     handler: async (ctx, next) => {
@@ -420,8 +418,8 @@ const securityStack = [
         return ctx.response.status(403).json({ error: 'Forbidden' });
       }
       await next();
-    }
-  })
+    },
+  }),
 ];
 ```
 
@@ -440,14 +438,14 @@ const errorProneMiddleware = createMiddleware({
       await next();
     } catch (error) {
       console.error('Database error:', error);
-      
+
       // Don't call next() to prevent further execution
       ctx.response.status(503).json({
         error: 'Service Unavailable',
-        message: 'Database temporarily unavailable'
+        message: 'Database temporarily unavailable',
       });
     }
-  }
+  },
 });
 ```
 
@@ -463,33 +461,32 @@ const globalErrorHandler = createMiddleware({
       await next();
     } catch (error) {
       console.error('Unhandled error:', error);
-      
+
       // Determine error response based on error type
       if (error instanceof ValidationError) {
         ctx.response.status(400).json({
           error: 'Validation Error',
-          details: error.details
+          details: error.details,
         });
       } else if (error instanceof AuthenticationError) {
         ctx.response.status(401).json({
-          error: 'Authentication Required'
+          error: 'Authentication Required',
         });
       } else {
         // Generic server error
         ctx.response.status(500).json({
           error: 'Internal Server Error',
-          message: process.env.NODE_ENV === 'development' 
-            ? error.message 
-            : 'An unexpected error occurred'
+          message:
+            process.env.NODE_ENV === 'development' ? error.message : 'An unexpected error occurred',
         });
       }
     }
-  }
+  },
 });
 
 // Place error handler first in the middleware stack
 const server = createServer({
-  middleware: [globalErrorHandler, /* other middleware */]
+  middleware: [globalErrorHandler /* other middleware */],
 });
 ```
 
@@ -504,7 +501,7 @@ const badMiddleware = createMiddleware({
   handler: async (ctx, next) => {
     await next();
     await next(); // ❌ This will throw an error: "next() called multiple times"
-  }
+  },
 });
 
 // Correct pattern - call next() only once
@@ -512,14 +509,14 @@ const goodMiddleware = createMiddleware({
   name: 'good-example',
   handler: async (ctx, next) => {
     const shouldContinue = await checkCondition();
-    
+
     if (shouldContinue) {
       await next(); // ✅ Called conditionally, only once
     } else {
       ctx.response.status(403).json({ error: 'Access denied' });
       // ✅ Don't call next() when terminating early
     }
-  }
+  },
 });
 ```
 
@@ -535,13 +532,13 @@ const debugMiddleware = createMiddleware({
   debug: true, // Enable debug mode
   handler: async (ctx, next) => {
     console.log(`[DEBUG] Processing ${ctx.request.method} ${ctx.request.path}`);
-    
+
     const start = performance.now();
     await next();
     const duration = performance.now() - start;
-    
+
     console.log(`[DEBUG] Completed in ${duration.toFixed(2)}ms`);
-  }
+  },
 });
 ```
 
@@ -561,9 +558,9 @@ class MetricsMiddleware {
       handler: async (ctx, next) => {
         this.metrics.requests++;
         const start = Date.now();
-        
+
         await next();
-        
+
         const duration = Date.now() - start;
         this.updateResponseTime(duration);
         this.updateStatusMetrics(ctx.response.raw.statusCode || 200);
@@ -573,7 +570,7 @@ class MetricsMiddleware {
 
   private updateResponseTime(duration: number): void {
     const { requests, averageResponseTime } = this.metrics;
-    this.metrics.averageResponseTime = 
+    this.metrics.averageResponseTime =
       (averageResponseTime * (requests - 1) + duration) / requests;
   }
 
@@ -623,17 +620,17 @@ describe('Auth Middleware', () => {
       if (!token) {
         return ctx.response.status(401).json({ error: 'Unauthorized' });
       }
-      
+
       ctx.state.user = { id: 'user-123', name: 'Test User' };
       await next();
-    }
+    },
   });
 
   test('should reject requests without auth header', async () => {
     // Arrange
     const ctx = createTestContext({
       method: 'GET',
-      path: '/protected'
+      path: '/protected',
     });
     const next = vi.fn();
 
@@ -652,8 +649,8 @@ describe('Auth Middleware', () => {
       method: 'GET',
       path: '/protected',
       headers: {
-        authorization: 'Bearer valid-token'
-      }
+        authorization: 'Bearer valid-token',
+      },
     });
     const next = vi.fn();
 
@@ -672,12 +669,12 @@ describe('Auth Middleware', () => {
         ctx.state.authChecked = true;
         await next();
       },
-      skip: (ctx) => ctx.request.path === '/public'
+      skip: ctx => ctx.request.path === '/public',
     });
 
     const ctx = createTestContext({
       method: 'GET',
-      path: '/public'
+      path: '/public',
     });
     const next = vi.fn();
 
@@ -707,16 +704,16 @@ describe('Middleware Composition', () => {
         executionOrder.push('1-before');
         await next();
         executionOrder.push('1-after');
-      }
+      },
     });
 
     const middleware2 = create({
-      name: 'second', 
+      name: 'second',
       handler: async (ctx, next) => {
         executionOrder.push('2-before');
         await next();
         executionOrder.push('2-after');
-      }
+      },
     });
 
     const finalHandler = vi.fn(async () => {
@@ -728,13 +725,7 @@ describe('Middleware Composition', () => {
 
     await composed(ctx, finalHandler);
 
-    expect(executionOrder).toEqual([
-      '1-before',
-      '2-before', 
-      'handler',
-      '2-after',
-      '1-after'
-    ]);
+    expect(executionOrder).toEqual(['1-before', '2-before', 'handler', '2-after', '1-after']);
   });
 
   test('should handle middleware that terminates early', async () => {
@@ -743,7 +734,7 @@ describe('Middleware Composition', () => {
       handler: async (ctx, next) => {
         ctx.response.status(403).json({ error: 'Forbidden' });
         // Don't call next()
-      }
+      },
     });
 
     const nextMiddleware = create({
@@ -751,7 +742,7 @@ describe('Middleware Composition', () => {
       handler: async (ctx, next) => {
         ctx.state.shouldNotBeSet = true;
         await next();
-      }
+      },
     });
 
     const finalHandler = vi.fn();
@@ -774,7 +765,7 @@ describe('Middleware Composition', () => {
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { createServer } from 'blaizejs';
 import { create } from 'blaizejs/middleware';
-import { Server } from '@blaizejs/types';
+import { Server } from 'blaizejs';
 
 describe('Middleware Integration', () => {
   let server: Server;
@@ -785,12 +776,12 @@ describe('Middleware Integration', () => {
       handler: async (ctx, next) => {
         ctx.state.requestLogged = true;
         await next();
-      }
+      },
     });
 
     server = createServer({
       routesDir: './test-fixtures/routes',
-      middleware: [requestLogger]
+      middleware: [requestLogger],
     });
 
     await server.listen();
@@ -804,7 +795,7 @@ describe('Middleware Integration', () => {
 
   test('should apply global middleware to all routes', async () => {
     const response = await fetch(`http://localhost:3000/test`);
-    
+
     expect(response.ok).toBe(true);
     // Middleware should have run and set state
     // (You'd need to expose this through a test endpoint)
@@ -823,7 +814,7 @@ describe('Middleware Integration', () => {
 // utils/test-helpers.ts
 import { createTestContext } from '@blaizejs/testing-utils';
 import { create } from 'blaizejs/middleware';
-import { Context, Middleware } from '@blaizejs/types';
+import type { Context, Middleware } from 'blaizejs';
 
 /**
  * Helper to test middleware execution
@@ -835,7 +826,7 @@ export async function executeMiddleware(
 ): Promise<{ ctx: Context; nextCalled: boolean }> {
   const ctx = createTestContext(contextOptions);
   let nextCalled = false;
-  
+
   const next = vi.fn(async () => {
     nextCalled = true;
   });
@@ -865,7 +856,7 @@ export function createMockMiddleware(
         case 'error':
           throw new Error(`Error from ${name}`);
       }
-    }
+    },
   });
 }
 ```
@@ -938,6 +929,7 @@ When contributing middleware features:
 ## 🗺️ Roadmap
 
 ### 🚀 Current (v0.1.x)
+
 - ✅ Composable middleware system with onion execution
 - ✅ Type-safe middleware creation with TypeScript support
 - ✅ Conditional middleware execution with skip functions
@@ -948,18 +940,21 @@ When contributing middleware features:
 - ✅ Integration with context state and AsyncLocalStorage
 
 ### 🎯 Next Release (v0.2.x)
+
 - 🔄 **Middleware Registry** - Centralized middleware discovery and management
 - 🔄 **Performance Profiling** - Built-in timing and performance analysis
 - 🔄 **Middleware Dependencies** - Declare and enforce middleware prerequisites
 - 🔄 **Hot Reloading** - Dynamic middleware replacement in development
 
 ### 🔮 Future (v0.3.x+)
+
 - 🔄 **Middleware Packages** - Plugin system for shareable middleware
 - 🔄 **Route-Level Caching** - Smart caching middleware with invalidation
 - 🔄 **Schema Validation** - Automatic request/response validation middleware
 - 🔄 **Circuit Breaker** - Fault tolerance middleware patterns
 
 ### 🌟 Long-term Vision
+
 - 🔄 **Visual Middleware Designer** - GUI tool for middleware composition
 - 🔄 **AI-Powered Optimization** - Automatic middleware ordering and optimization
 - 🔄 **Distributed Middleware** - Cross-service middleware execution
