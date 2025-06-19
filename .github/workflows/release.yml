@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'packages/**'
+      - 'plugins/**'
+      - '.changeset/**'
+      # Exclude apps, configs, docs
+      - '!apps/**'
+      - '!configs/**'
+      - '!**/*.md'
+      - '!.github/workflows/**'
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -42,6 +51,7 @@ jobs:
         uses: changesets/action@v1
         with:
           publish: pnpm release
+          commit: "🎁 Version Packages" 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
