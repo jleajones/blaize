@@ -130,7 +130,7 @@ import type { Context, Middleware, Plugin } from 'blaizejs';
 
 ### 📋 Prerequisites
 
-- **Node.js**: >= 22.0.0
+- **Node.js**: >= 23.0.0
 - **pnpm**: >= 9.7.0
 
 ### 🏁 Setup
@@ -191,53 +191,112 @@ describe('API Tests', () => {
 });
 ```
 
+## 📦 Release Management
+
+BlaizeJS uses **Changesets** with **GitHub Actions** for automated, coordinated releases. Our workflow supports both individual releases and batching multiple features together.
+
+### 🔄 Release Workflow
+
+```
+1. 🔧 Create feature branch with changes
+2. 📝 Add changeset for published package changes
+3. 🔀 Submit and merge pull request
+4. 🤖 GitHub Actions automatically creates/updates "Version Packages" PR
+5. 👀 Review and merge "Version Packages" PR when ready to release
+6. 🚀 Packages automatically published to npm with changelog generation
+```
+
+### ✨ Key Features
+
+- **Automatic version bumping** based on semantic versioning
+- **Coordinated releases** across multiple packages
+- **Changelog generation** from changeset summaries
+- **Git tagging** and GitHub releases
+- **Smart accumulation** - batch multiple features into one release
+
+### 📝 When to Create Changesets
+
+Create changesets for changes to **published packages** (`blaizejs`, `@blaizejs/client`, `@blaizejs/testing-utils`):
+
+- 🐛 **Bug fixes** → `patch`
+- 🚀 **New features** → `minor`  
+- 💥 **Breaking changes** → `major`
+
+No changesets needed for documentation, tooling, or internal changes.
+
+### 📖 Learn More
+
+For complete release workflow documentation, troubleshooting, and best practices:
+
+**→ [RELEASE-MANAGEMENT.md](RELEASE-MANAGEMENT.md)**
+
 ## 🤝 Contributing
+
+We welcome contributions to BlaizeJS! Whether you're fixing bugs, adding features, or improving documentation, your help makes the framework better for everyone.
+
+### 🚀 Quick Start for Contributors
 
 1. **Fork & clone** the repository
 2. **Install dependencies**: `pnpm install`
-3. **Create feature branch**: `git checkout -b feature/my-feature`
+3. **Create feature branch**: `git checkout -b feature/your-feature-name`
 4. **Make changes** with tests and documentation
-5. **Run checks**: `pnpm test && pnpm lint && pnpm type-check`
-6. **Create changeset**: `pnpm changeset`
-7. **Submit pull request**
+5. **Run quality checks**: `pnpm test && pnpm lint && pnpm type-check`
+6. **Create changeset** (if modifying published packages): `pnpm changeset`
+7. **Submit pull request** with clear description
 
-### 📝 Standards
+### 🎯 Contribution Areas
 
-- ✅ TypeScript strict mode
-- ✅ Comprehensive tests with Vitest
-- ✅ ESLint + Prettier formatting
-- ✅ Conventional commits
-- ✅ Changesets for versioning
+- **Core Framework**: Improve performance, add features, fix bugs
+- **Type System**: Enhance TypeScript integration and inference
+- **Documentation**: API docs, examples, guides
+- **Testing**: Expand test coverage, testing utilities
+- **Tooling**: Developer experience improvements
 
-## 🗺️ Roadmap
+### 📝 Development Standards
 
-### 🚀 Current (v0.1.x)
+- ✅ **TypeScript strict mode** with comprehensive typing
+- ✅ **Comprehensive tests** using Vitest
+- ✅ **Code quality** with ESLint + Prettier
+- ✅ **Commit conventions** with descriptive emoji-prefixed messages
+- ✅ **Changesets** for package versioning
+
+### 📚 Detailed Guidelines
+
+For comprehensive contribution guidelines, development setup, changeset workflow, and coding standards:
+
+**→ [CONTRIBUTING.md](CONTRIBUTING.md)**
+
+### 🗺️ Roadmap
+
+### 🚀 Current (v0.2.x)
 
 - ✅ Core framework with HTTP/2, routing, middleware
 - ✅ Type-safe client generation
 - ✅ Plugin system and testing utilities
-- ✅ Monorepo with pnpm + Turbo
+- ✅ Automated release workflow
 
-### 🎯 Next (v0.2.x)
+### 🎯 Next (v0.3.x)
 
 - 🔄 Official auth and database plugins
 - 🔄 CLI for project scaffolding
 - 🔄 Performance optimizations
 - 🔄 Enhanced deployment tooling
 
-### 🔮 Future (v0.3.x+)
+### 🔮 Future (v0.4.x+)
 
 - 🔄 GraphQL integration
 - 🔄 WebSocket support
 - 🔄 Edge runtime deployment
 - 🔄 Microservices toolkit
 
-## 📞 Links
+## 📞 Community & Support
 
-- 📖 **Documentation**: Each package includes comprehensive README
-- 🐛 **Issues**: [GitHub Issues](https://github.com/jleajones/blaize/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/jleajones/blaize/discussions)
+- 📖 **Documentation**: Comprehensive guides in each package
+- 🐛 **Issues**: [GitHub Issues](https://github.com/jleajones/blaize/issues) for bugs and feature requests
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/jleajones/blaize/discussions) for questions and ideas
 - 📧 **Contact**: jason@careymarcel.com
+- 🤝 **Contributing**: See [CONTRIBUTING.md](CONTRIBUTING.md)
+- 📦 **Releases**: See [RELEASE-MANAGEMENT.md](RELEASE-MANAGEMENT.md)
 
 ## 📄 License
 
