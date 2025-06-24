@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { getRoutesDir } from '../config';
 import { parseRoutePath } from './discovery/parser';
 
@@ -32,6 +34,10 @@ function getCallerFilePath(): string {
       throw new Error('Unable to determine caller file name');
     }
 
+    if (fileName.startsWith('file://')) {
+      return fileURLToPath(fileName);
+    }
+
     return fileName;
   } finally {
     Error.prepareStackTrace = originalPrepareStackTrace;
@@ -42,12 +48,11 @@ function getCallerFilePath(): string {
  * Convert caller file path to route path using existing parsing logic
  */
 function getRoutePath(): string {
-  console.log('getRoutePath called');
   const callerPath = getCallerFilePath();
   const routesDir = getRoutesDir();
 
   const parsedRoute = parseRoutePath(callerPath, routesDir);
-  console.log(`Parsed route path: ${parsedRoute.routePath} from file: ${callerPath}`);
+  console.log(`🔎 Parsed route path: ${parsedRoute.routePath} from file: ${callerPath}`);
 
   return parsedRoute.routePath;
 }

@@ -1,64 +1,117 @@
 import type { Server, StopOptions } from '../index';
 
+// Add a global flag to prevent multiple shutdowns
+let isShuttingDown = false;
+
+// Replace the stopServer function in stop.ts with this version:
+
 export async function stopServer(serverInstance: Server, options: StopOptions = {}): Promise<void> {
-  // Get the HTTP server from the server instance
   const server = serverInstance.server;
   const events = serverInstance.events;
 
-  // If no server is running, do nothing
+  if (isShuttingDown) {
+    console.log('⚠️ Shutdown already in progress, ignoring duplicate shutdown request');
+    return;
+  }
+
   if (!server) {
     return;
   }
 
-  const timeout = options.timeout || 30000; // 30 seconds default
+  isShuttingDown = true;
+  const timeout = options.timeout || 5000; // Reduced to 5 seconds for faster restarts
 
   try {
-    // Execute pre-stop hook if provided
     if (options.onStopping) {
       await options.onStopping();
     }
 
-    // Emit stopping event
     events.emit('stopping');
 
-    // Notify plugins that server is stopping
-    await serverInstance.pluginManager.onServerStop(serverInstance, server);
+    // Close router watchers with timeout
+    if (serverInstance.router && typeof serverInstance.router.close === 'function') {
+      console.log('🔌 Closing router watchers...');
+      try {
+        // Add timeout to router close
+        await Promise.race([
+          serverInstance.router.close(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Router close timeout')), 2000)
+          ),
+        ]);
+        console.log('✅ Router watchers closed');
+      } catch (error) {
+        console.error('❌ Error closing router watchers:', error);
+        // Continue with shutdown
+      }
+    }
 
-    // Set a timeout to ensure we don't wait forever
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('Server shutdown timed out waiting for requests to complete'));
-      }, timeout);
-    });
+    // Notify plugins with timeout
+    try {
+      await Promise.race([
+        serverInstance.pluginManager.onServerStop(serverInstance, server),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Plugin stop timeout')), 2000)
+        ),
+      ]);
+    } catch (error) {
+      console.error('❌ Plugin stop timeout:', error);
+      // Continue with shutdown
+    }
 
-    // Create server close promise
+    // Create server close promise with shorter timeout
     const closePromise = new Promise<void>((resolve, reject) => {
       server.close((err?: Error) => {
-        if (err) {
-          return reject(err);
-        }
+        if (err) return reject(err);
         resolve();
       });
     });
 
-    // Wait for server to close with timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Server shutdown timeout'));
+      }, timeout);
+    });
+
     await Promise.race([closePromise, timeoutPromise]);
 
-    // Use plugin lifecycle manager to terminate plugins
-    await serverInstance.pluginManager.terminatePlugins(serverInstance);
+    // Terminate plugins with timeout
+    try {
+      await Promise.race([
+        serverInstance.pluginManager.terminatePlugins(serverInstance),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Plugin terminate timeout')), 1000)
+        ),
+      ]);
+    } catch (error) {
+      console.error('❌ Plugin terminate timeout:', error);
+      // Continue with shutdown
+    }
 
-    // Execute post-stop hook if provided
     if (options.onStopped) {
       await options.onStopped();
     }
 
-    // Emit stopped event
     events.emit('stopped');
-
-    // Clear server reference
     serverInstance.server = null as any;
+
+    console.log('✅ Graceful shutdown completed');
+    isShuttingDown = false;
   } catch (error) {
-    // Emit error event and rethrow
+    isShuttingDown = false;
+    console.error('⚠️ Shutdown error (forcing exit):', error);
+
+    // Force close the server if graceful shutdown fails
+    if (server && typeof server.close === 'function') {
+      server.close();
+    }
+
+    // In development, force exit to allow tsx to restart
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 Forcing exit for development restart...');
+      process.exit(0);
+    }
+
     events.emit('error', error);
     throw error;
   }
@@ -68,19 +121,49 @@ export async function stopServer(serverInstance: Server, options: StopOptions = 
  * Register signal handlers for graceful shutdown
  */
 export function registerSignalHandlers(stopFn: () => Promise<void>): { unregister: () => void } {
-  // Create bound handler functions
-  const sigintHandler = () => stopFn().catch(console.error);
-  const sigtermHandler = () => stopFn().catch(console.error);
+  const isDevelopment = process.env.NODE_ENV === 'development';
 
-  // Register handlers
-  process.on('SIGINT', sigintHandler);
-  process.on('SIGTERM', sigtermHandler);
+  if (isDevelopment) {
+    // Development: Force exit for fast restarts
+    const sigintHandler = () => {
+      console.log('📤 SIGINT received, forcing exit for development restart...');
+      process.exit(0);
+    };
 
-  // Return function to unregister handlers
-  return {
-    unregister: () => {
-      process.removeListener('SIGINT', sigintHandler);
-      process.removeListener('SIGTERM', sigtermHandler);
-    },
-  };
+    const sigtermHandler = () => {
+      console.log('📤 SIGTERM received, forcing exit for development restart...');
+      process.exit(0);
+    };
+
+    process.on('SIGINT', sigintHandler);
+    process.on('SIGTERM', sigtermHandler);
+
+    return {
+      unregister: () => {
+        process.removeListener('SIGINT', sigintHandler);
+        process.removeListener('SIGTERM', sigtermHandler);
+      },
+    };
+  } else {
+    // Production: Graceful shutdown
+    const sigintHandler = () => {
+      console.log('📤 SIGINT received, starting graceful shutdown...');
+      stopFn().catch(console.error);
+    };
+
+    const sigtermHandler = () => {
+      console.log('📤 SIGTERM received, starting graceful shutdown...');
+      stopFn().catch(console.error);
+    };
+
+    process.on('SIGINT', sigintHandler);
+    process.on('SIGTERM', sigtermHandler);
+
+    return {
+      unregister: () => {
+        process.removeListener('SIGINT', sigintHandler);
+        process.removeListener('SIGTERM', sigtermHandler);
+      },
+    };
+  }
 }

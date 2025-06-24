@@ -2,28 +2,39 @@ import * as path from 'node:path';
 
 import { watch } from 'chokidar';
 
+import { hasRouteContentChanged, processChangedFile } from './cache';
 import { findRouteFiles } from './finder';
-import { loadRouteModule } from './loader';
 
-import type { Route } from '../../index';
-
-export interface WatchOptions {
-  /** Directories to ignore */
-  ignore?: string[];
-  /** Callback for new routes */
-  onRouteAdded?: (routes: Route[]) => void;
-  /** Callback for changed routes */
-  onRouteChanged?: (routes: Route[]) => void;
-  /** Callback for removed routes */
-  onRouteRemoved?: (filePath: string, routes: Route[]) => void;
-  /** Callback for errors */
-  onError?: (error: Error) => void;
-}
+import type { Route, WatchOptions } from '../../index';
 
 /**
  * Watch for route file changes
  */
 export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
+  // Debounce rapid file changes
+  const debounceMs = options.debounceMs || 16;
+  const debouncedCallbacks = new Map<string, NodeJS.Timeout>();
+
+  function createDebouncedCallback<T extends (...args: any[]) => void>(
+    fn: T,
+    filePath: string
+  ): (...args: Parameters<T>) => void {
+    return (...args: Parameters<T>) => {
+      // Clear existing timeout for this file
+      const existingTimeout = debouncedCallbacks.get(filePath);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      // Set new timeout
+      const timeoutId = setTimeout(() => {
+        fn(...args);
+        debouncedCallbacks.delete(filePath);
+      }, debounceMs);
+
+      debouncedCallbacks.set(filePath, timeoutId);
+    };
+  }
   // Track loaded routes by file path - now stores arrays of routes
   const routesByPath = new Map<string, Route[]>();
 
@@ -42,33 +53,41 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
     }
   }
 
-  // Load a route module and notify listeners
+  // Optimized load and notify function
   async function loadAndNotify(filePath: string) {
     try {
-      const routes = await loadRouteModule(filePath, routesDir);
+      const existingRoutes = routesByPath.get(filePath);
 
-      if (!routes || routes.length === 0) {
+      // Step 1: Load new routes WITHOUT updating cache
+      const newRoutes = await processChangedFile(filePath, routesDir, false);
+
+      if (!newRoutes || newRoutes.length === 0) {
         return;
       }
 
-      const existingRoutes = routesByPath.get(filePath);
+      // Step 2: Check if content has actually changed (cache still has old data)
+      if (existingRoutes && !hasRouteContentChanged(filePath, newRoutes)) {
+        return;
+      }
+
+      // Step 3: Content changed! Now update the cache
+      await processChangedFile(filePath, routesDir, true);
+
+      const normalizedPath = path.normalize(filePath);
 
       if (existingRoutes) {
-        // Routes changed
-        routesByPath.set(filePath, routes);
-
+        routesByPath.set(filePath, newRoutes);
         if (options.onRouteChanged) {
-          options.onRouteChanged(routes);
+          options.onRouteChanged(normalizedPath, newRoutes);
         }
       } else {
-        // New routes
-        routesByPath.set(filePath, routes);
-
+        routesByPath.set(filePath, newRoutes);
         if (options.onRouteAdded) {
-          options.onRouteAdded(routes);
+          options.onRouteAdded(normalizedPath, newRoutes);
         }
       }
     } catch (error) {
+      console.log(`⚠️ Error processing file ${filePath}:`, error);
       handleError(error);
     }
   }
@@ -90,30 +109,56 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
     if (options.onError && error instanceof Error) {
       options.onError(error);
     } else {
-      console.error('Route watcher error:', error);
+      console.error('⚠️ Route watcher error:', error);
     }
   }
 
   // Start file watcher
+  // Create optimized watcher
   const watcher = watch(routesDir, {
+    // Much faster response times
+    awaitWriteFinish: {
+      stabilityThreshold: 50, // Reduced from 300ms
+      pollInterval: 10, // Reduced from 100ms
+    },
+
+    // Performance optimizations
+    usePolling: false,
+    atomic: true,
+    followSymlinks: false,
+    depth: 10,
+
+    // More aggressive ignoring
     ignored: [
-      /(^|[/\\])\../, // Ignore dot files
+      /(^|[/\\])\../,
       /node_modules/,
+      /\.git/,
+      /\.DS_Store/,
+      /Thumbs\.db/,
+      /\.(test|spec)\.(ts|js)$/,
+      /\.d\.ts$/,
+      /\.map$/,
+      /~$/,
       ...(options.ignore || []),
     ],
-    persistent: true,
-    ignoreInitial: false,
-    awaitWriteFinish: {
-      stabilityThreshold: 300,
-      pollInterval: 100,
-    },
   });
 
   // Set up event handlers
   watcher
-    .on('add', loadAndNotify)
-    .on('change', loadAndNotify)
-    .on('unlink', handleRemoved)
+    .on('add', filePath => {
+      const debouncedLoad = createDebouncedCallback(loadAndNotify, filePath);
+      debouncedLoad(filePath);
+    })
+    .on('change', filePath => {
+      const debouncedLoad = createDebouncedCallback(loadAndNotify, filePath);
+
+      // Call debounced load for changed file
+      debouncedLoad(filePath);
+    })
+    .on('unlink', filePath => {
+      const debouncedRemove = createDebouncedCallback(handleRemoved, filePath);
+      debouncedRemove(filePath);
+    })
     .on('error', handleError);
 
   // Load initial routes
@@ -121,14 +166,13 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
 
   // Return control methods
   return {
-    /**
-     * Close the watcher
-     */
-    close: () => watcher.close(),
+    close: () => {
+      // Clear any pending debounced callbacks
+      debouncedCallbacks.forEach(timeout => clearTimeout(timeout));
+      debouncedCallbacks.clear();
 
-    /**
-     * Get all currently loaded routes (flattened)
-     */
+      return watcher.close();
+    },
     getRoutes: () => {
       const allRoutes: Route[] = [];
       for (const routes of routesByPath.values()) {
@@ -136,10 +180,6 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
       }
       return allRoutes;
     },
-
-    /**
-     * Get routes organized by file path
-     */
     getRoutesByFile: () => new Map(routesByPath),
   };
 }

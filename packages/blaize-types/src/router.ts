@@ -133,11 +133,17 @@ export interface Router {
   /** Add a route programmatically */
   addRoute: (route: Route) => void;
 
+  /** Add multiple routes programmatically with batch processing */
+  addRoutes: (routes: Route[]) => { added: Route[]; removed: string[]; changed: Route[] };
+
   /** Add a route directory for plugins */
   addRouteDirectory(directory: string, options?: { prefix?: string }): Promise<void>;
 
   /** Get route conflicts */
   getRouteConflicts(): Array<{ path: string; sources: string[] }>;
+
+  /** Close watchers and cleanup resources */
+  close?: () => Promise<void>;
 }
 
 /**
@@ -174,6 +180,12 @@ export interface Matcher {
   findRoutes: (
     path: string
   ) => { path: string; method: HttpMethod; params: Record<string, string> }[];
+
+  /** Remove a route from the matcher (optional for compatibility) */
+  remove: (path: string) => void;
+
+  /** Clear all routes from the matcher (optional for compatibility) */
+  clear: () => void;
 }
 
 export interface ParsedRoute {
@@ -422,3 +434,36 @@ export type CreateOptionsRoute = <
   OPTIONS: RouteMethodOptions<P, Q, never, R>;
   path: string;
 };
+
+export interface FileCache {
+  routes: Route[];
+  timestamp: number;
+  hash: string;
+}
+
+export interface ReloadMetrics {
+  fileChanges: number;
+  totalReloadTime: number;
+  averageReloadTime: number;
+  slowReloads: Array<{ file: string; time: number }>;
+}
+
+export interface WatchOptions {
+  debounceMs?: number;
+  /** Directories to ignore */
+  ignore?: string[];
+  /** Callback for new routes */
+  onRouteAdded?: (filePath: string, routes: Route[]) => void;
+  /** Callback for changed routes */
+  onRouteChanged?: (filePath: string, routes: Route[]) => void;
+  /** Callback for removed routes */
+  onRouteRemoved?: (filePath: string, routes: Route[]) => void;
+  /** Callback for errors */
+  onError?: (error: Error) => void;
+}
+
+export interface RouteRegistry {
+  routesByPath: Map<string, Route>;
+  routesByFile: Map<string, Set<string>>; // file -> paths
+  pathToFile: Map<string, string>; // path -> file
+}

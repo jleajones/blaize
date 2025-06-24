@@ -1,6 +1,13 @@
 import { compilePathPattern, extractParams } from './params';
 
-import type { HttpMethod, RouteMethodOptions, RouteMatch, Matcher, RouteEntry } from '../../index';
+import type {
+  HttpMethod,
+  RouteMethodOptions,
+  RouteMatch,
+  Matcher,
+  RouteEntry,
+  Route,
+} from '../../index';
 
 /**
  * Create a route matcher
@@ -33,6 +40,25 @@ export function createMatcher(): Matcher {
       } else {
         routes.splice(insertIndex, 0, newRoute);
       }
+    },
+
+    /**
+     * Remove a route from the matcher by path
+     */
+    remove(path: string) {
+      // Remove all routes that match the given path
+      for (let i = routes.length - 1; i >= 0; i--) {
+        if ((routes[i] as Route).path === path) {
+          routes.splice(i, 1);
+        }
+      }
+    },
+
+    /**
+     * Clear all routes from the matcher
+     */
+    clear() {
+      routes.length = 0;
     },
 
     /**
