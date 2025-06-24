@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.1.4
+
+### Patch Changes
+
+- 5293caa: Optimize route loading with a registry and cache
+
 ## 0.1.3
 
 ### Patch Changes
