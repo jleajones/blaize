@@ -2,7 +2,10 @@ packages:
   # Core packages
   - 'packages/*'
   
-  # Plugin packages (nested structure)
+  # Middleware packages
+  - 'middleware/*'
+
+  # Plugin packages
   - 'plugins/*'
   
   # Apps and examples (nested structure)
