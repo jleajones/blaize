@@ -3,7 +3,21 @@ import { parseRoutePath } from './parser';
 import type { Route, RouteDefinition } from '../../index';
 
 export async function dynamicImport(filePath: string) {
-  return import(filePath);
+  // Add a cache-busting query parameter for ESM
+  const cacheBuster = `?t=${Date.now()}`;
+  const importPath = filePath + cacheBuster;
+
+  try {
+    const module = await import(importPath);
+    console.log(`✅ Successfully imported module`);
+    return module;
+  } catch (error) {
+    // Type guard to ensure resolveError is an Error object
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.log(`⚠️ Error importing with cache buster, trying original path:`, errorMessage);
+    // Fallback to original path
+    return import(filePath);
+  }
 }
 
 /**
@@ -13,18 +27,14 @@ export async function loadRouteModule(filePath: string, basePath: string): Promi
   try {
     // Parse the route path from the file path
     const parsedRoute = parseRoutePath(filePath, basePath);
-    console.log('parsedRoute:', parsedRoute);
-
     // Dynamically import the module
     const module = await dynamicImport(filePath);
-    console.log('Module exports:', Object.keys(module));
+    console.log('📦 Module exports:', Object.keys(module));
 
     const routes: Route[] = [];
 
     // Method 1: Check for default export (existing pattern)
     if (module.default && typeof module.default === 'object') {
-      console.log('Found default export:', module.default);
-
       const route: Route = {
         ...(module.default as RouteDefinition),
         path: parsedRoute.routePath,
@@ -44,8 +54,6 @@ export async function loadRouteModule(filePath: string, basePath: string): Promi
       const potentialRoute = exportValue as any;
 
       if (isValidRoute(potentialRoute)) {
-        console.log(`Found named route export: ${exportName}`, potentialRoute);
-
         // For named exports, we might want to use the export name or the route's path
         const route: Route = {
           ...potentialRoute,
@@ -62,7 +70,7 @@ export async function loadRouteModule(filePath: string, basePath: string): Promi
       return [];
     }
 
-    console.log(`Loaded ${routes.length} route(s) from ${filePath}`);
+    console.log(`✅ Successfully Loaded ${routes.length} route(s)`);
     return routes;
   } catch (error) {
     console.error(`Failed to load route module ${filePath}:`, error);

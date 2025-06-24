@@ -16,6 +16,11 @@ describe('Server Module', () => {
       if (callback) callback();
     });
     serverInstance.server = { close: mockServerClose } as any;
+
+    // Mock router.close if it exists
+    if (serverInstance.router) {
+      serverInstance.router.close = vi.fn().mockResolvedValue(undefined);
+    }
   });
 
   describe('stopServer', () => {
@@ -42,6 +47,28 @@ describe('Server Module', () => {
         expect(serverInstance.server).toBeNull();
       });
 
+      test('should close router watchers if available', async () => {
+        const routerCloseSpy = vi.fn().mockResolvedValue(undefined);
+        serverInstance.router = { close: routerCloseSpy } as any;
+
+        await stopServer(serverInstance);
+
+        expect(routerCloseSpy).toHaveBeenCalledOnce();
+      });
+
+      test('should handle router close timeout gracefully', async () => {
+        const routerCloseSpy = vi.fn().mockImplementation(() => 
+          new Promise(() => {}) // Never resolves
+        );
+        serverInstance.router = { close: routerCloseSpy } as any;
+
+        // Should not hang due to router timeout
+        await stopServer(serverInstance, { timeout: 100 });
+
+        expect(routerCloseSpy).toHaveBeenCalledOnce();
+        expect(serverInstance.server).toBeNull();
+      });
+
       test('should call lifecycle hooks in correct order', async () => {
         const onStopping = vi.fn();
         const onStopped = vi.fn();
@@ -63,10 +90,9 @@ describe('Server Module', () => {
 
     describe('plugin lifecycle integration', () => {
       test('should call pluginManager methods in correct order', async () => {
-        const onServerStopSpy = vi.spyOn(serverInstance.pluginManager, 'onServerStop');
-        const terminatePluginsSpy = vi.spyOn(serverInstance.pluginManager, 'terminatePlugins');
+        const onServerStopSpy = vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockResolvedValue();
+        const terminatePluginsSpy = vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockResolvedValue();
 
-        // Store the server reference before it gets nullified
         const originalServer = serverInstance.server;
 
         await stopServer(serverInstance);
@@ -76,32 +102,46 @@ describe('Server Module', () => {
         expect(onServerStopSpy).toHaveBeenCalledBefore(terminatePluginsSpy);
       });
 
-      test('should handle pluginManager.onServerStop errors', async () => {
-        const error = new Error('Plugin manager onServerStop failed');
-        vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockRejectedValue(error);
-        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
-
-        await expect(stopServer(serverInstance)).rejects.toThrow(
-          'Plugin manager onServerStop failed'
+      test('should handle pluginManager.onServerStop timeout gracefully', async () => {
+        vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockImplementation(() => 
+          new Promise(() => {}) // Never resolves
         );
-        expect(emitSpy).toHaveBeenCalledWith('error', error);
+        vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockResolvedValue();
+
+        // Should not hang due to plugin timeout
+        await stopServer(serverInstance, { timeout: 100 });
+
+        expect(serverInstance.server).toBeNull();
       });
 
-      test('should handle pluginManager.terminatePlugins errors', async () => {
-        const error = new Error('Plugin termination failed');
-        vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockRejectedValue(error);
-        const emitSpy = vi.spyOn(serverInstance.events, 'emit');
+      test('should handle pluginManager.terminatePlugins timeout gracefully', async () => {
+        vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockResolvedValue();
+        vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockImplementation(() => 
+          new Promise(() => {}) // Never resolves
+        );
 
-        await expect(stopServer(serverInstance)).rejects.toThrow('Plugin termination failed');
-        expect(emitSpy).toHaveBeenCalledWith('error', error);
+        // Should not hang due to plugin timeout
+        await stopServer(serverInstance, { timeout: 100 });
+
+        expect(serverInstance.server).toBeNull();
       });
     });
 
     describe('error handling', () => {
       test('should handle server close errors', async () => {
-        mockServerClose.mockImplementation(callback => {
-          callback(new Error('Close error'));
-        });
+        const closeError = new Error('Close error');
+        
+        // Create a mock server that throws an error when closing
+        const errorServer = {
+          close: vi.fn().mockImplementation(callback => {
+            if (callback) {
+              // Call callback with error immediately
+              callback(closeError);
+            }
+          })
+        };
+        
+        serverInstance.server = errorServer as any;
         const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
         await expect(stopServer(serverInstance)).rejects.toThrow('Close error');
@@ -109,17 +149,15 @@ describe('Server Module', () => {
       });
 
       test('should timeout if server takes too long to close', async () => {
-        // Don't use fake timers - use real ones with short timeout
         const hangingServer = createMockHttpServer({
           close: vi.fn(), // Never calls callback
         });
         serverInstance.server = hangingServer;
         const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
-        // Use very short timeout for fast test
         await expect(
-          stopServer(serverInstance, { timeout: 10 }) // 10ms timeout
-        ).rejects.toThrow('Server shutdown timed out waiting for requests to complete');
+          stopServer(serverInstance, { timeout: 10 })
+        ).rejects.toThrow('Server shutdown timeout');
 
         expect(emitSpy).toHaveBeenCalledWith('error', expect.any(Error));
       }, 1000);
@@ -140,10 +178,12 @@ describe('Server Module', () => {
   describe('registerSignalHandlers', () => {
     let originalProcessOn: typeof process.on;
     let originalProcessRemoveListener: typeof process.removeListener;
+    let originalNodeEnv: string | undefined;
 
     beforeEach(() => {
       originalProcessOn = process.on;
       originalProcessRemoveListener = process.removeListener;
+      originalNodeEnv = process.env.NODE_ENV;
       process.on = vi.fn();
       process.removeListener = vi.fn();
     });
@@ -151,11 +191,25 @@ describe('Server Module', () => {
     afterEach(() => {
       process.on = originalProcessOn;
       process.removeListener = originalProcessRemoveListener;
+      process.env.NODE_ENV = originalNodeEnv;
     });
 
-    test('should register SIGINT and SIGTERM handlers', () => {
+    test('should register handlers in both development and production', () => {
+      // Test development
+      process.env.NODE_ENV = 'development';
       const stopFn = vi.fn().mockResolvedValue(undefined);
 
+      registerSignalHandlers(stopFn);
+
+      expect(process.on).toHaveBeenCalledTimes(2);
+      expect(process.on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+      expect(process.on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+
+      // Reset mocks
+      (process.on as any).mockClear();
+
+      // Test production
+      process.env.NODE_ENV = 'production';
       registerSignalHandlers(stopFn);
 
       expect(process.on).toHaveBeenCalledTimes(2);
@@ -164,6 +218,7 @@ describe('Server Module', () => {
     });
 
     test('should unregister handlers when requested', () => {
+      process.env.NODE_ENV = 'development';
       const stopFn = vi.fn().mockResolvedValue(undefined);
 
       const { unregister } = registerSignalHandlers(stopFn);
@@ -174,7 +229,37 @@ describe('Server Module', () => {
       expect(process.removeListener).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
     });
 
-    test('should call stopFn when signals are received', async () => {
+    test('should force exit in development mode', () => {
+      process.env.NODE_ENV = 'development';
+      const originalExit = process.exit;
+      const exitSpy = vi.fn();
+      process.exit = exitSpy as any;
+
+      let sigintHandler: () => void;
+      let sigtermHandler: () => void;
+
+      (process.on as any).mockImplementation((signal: string, handler: () => void) => {
+        if (signal === 'SIGINT') sigintHandler = handler;
+        if (signal === 'SIGTERM') sigtermHandler = handler;
+      });
+
+      const stopFn = vi.fn().mockResolvedValue(undefined);
+      registerSignalHandlers(stopFn);
+
+      sigintHandler!();
+      expect(exitSpy).toHaveBeenCalledWith(0);
+      expect(stopFn).not.toHaveBeenCalled(); // Should not call stopFn in development
+
+      exitSpy.mockClear();
+      sigtermHandler!();
+      expect(exitSpy).toHaveBeenCalledWith(0);
+      expect(stopFn).not.toHaveBeenCalled(); // Should not call stopFn in development
+
+      process.exit = originalExit;
+    });
+
+    test('should call stopFn in production mode', async () => {
+      process.env.NODE_ENV = 'production';
       const stopFn = vi.fn().mockResolvedValue(undefined);
       let sigintHandler: () => void;
       let sigtermHandler: () => void;
@@ -193,7 +278,8 @@ describe('Server Module', () => {
       expect(stopFn).toHaveBeenCalledTimes(2);
     });
 
-    test('should log errors when stopFn fails', async () => {
+    test('should log errors when stopFn fails in production', async () => {
+      process.env.NODE_ENV = 'production';
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const error = new Error('Stop error');
       const stopFn = vi.fn().mockRejectedValue(error);

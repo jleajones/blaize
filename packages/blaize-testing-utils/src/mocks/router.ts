@@ -8,7 +8,9 @@ export function createMockRouter(): Router {
     handleRequest: vi.fn().mockResolvedValue(undefined),
     getRoutes: vi.fn().mockReturnValue([]),
     addRoute: vi.fn(),
+    addRoutes: vi.fn().mockReturnValue({ added: [], removed: [], changed: [] }),
     addRouteDirectory: vi.fn().mockResolvedValue(undefined),
     getRouteConflicts: vi.fn().mockReturnValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
   };
 }
