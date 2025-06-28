@@ -6,7 +6,6 @@ export default [
     // Package-specific overrides
     files: ['src/**/*.ts'],
     rules: {
-      // Any custom rules for the BlaizeJS core package
       'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
     },
   },
