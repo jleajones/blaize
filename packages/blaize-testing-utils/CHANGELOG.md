@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.1.5
+
+### Patch Changes
+
+- d3099e9: ✨ Enhanced testing mocks
+
 ## 0.1.4
 
 ### Patch Changes
