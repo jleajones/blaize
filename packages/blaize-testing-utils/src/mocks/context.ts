@@ -1,40 +1,109 @@
-// Create mock HTTP/1.1 request
-export const createMockHttp1Request = () => ({
-  url: '/test?foo=bar&arr=1&arr=2',
-  method: 'GET',
-  headers: {
-    host: 'example.com',
-    'user-agent': 'test-agent',
-    'x-custom-header': 'custom-value',
-  },
-  socket: {
-    encrypted: false,
-  },
-});
+import { Context, QueryParams, State } from '../../../blaize-types/src';
 
-// Create mock HTTP/2 request
-export const createMockHttp2Request = () => ({
-  url: '/test?foo=bar&arr=1&arr=2',
-  method: 'GET',
-  headers: {
-    host: 'example.com',
-    'user-agent': 'test-agent',
-    'x-custom-header': 'custom-value',
-  },
-  socket: {
-    encrypted: true,
-  },
-  stream: {}, // HTTP/2 specific property
-  httpVersionMajor: 2,
-});
+/**
+ * Configuration options for creating test contexts
+ */
+export interface TestContextConfig {
+  method?: string;
+  path?: string;
+  query?: Record<string, string | string[]>;
+  params?: Record<string, string>;
+  headers?: Record<string, string>;
+  body?: unknown;
+  initialState?: Record<string, unknown>;
+}
 
-// Create mock response
-export const createMockResponse = () => ({
-  statusCode: 200,
-  setHeader: vi.fn(),
-  getHeader: vi.fn(),
-  removeHeader: vi.fn(),
-  end: vi.fn(),
-  write: vi.fn(),
-  on: vi.fn(),
-});
+/**
+ * Create a test context for BlaizeJS testing
+ *
+ * Creates a complete Context object suitable for testing route handlers and middleware.
+ *
+ * @param config Configuration options for the context
+ * @returns Complete BlaizeJS Context object
+ *
+ * @example
+ * ```typescript
+ * // Basic usage
+ * const ctx = createTestContext();
+ *
+ * // With configuration
+ * const ctx = createTestContext({
+ *   method: 'POST',
+ *   path: '/api/users',
+ *   body: { name: 'John Doe' },
+ *   headers: { authorization: 'Bearer token' }
+ * });
+ * ```
+ */
+export function createMockContext(config: TestContextConfig = {}): Context {
+  const {
+    method = 'GET',
+    path = '/test',
+    query = {},
+    params = {},
+    headers = {},
+    body,
+    initialState = {},
+  } = config;
+
+  // Create response object that properly chains
+  const responseObj: Context['response'] = {
+    raw: null as any, // Mock response object
+    sent: false,
+
+    status: vi.fn().mockImplementation((_code: number) => responseObj),
+    header: vi.fn().mockImplementation((_name: string, _value: string) => responseObj),
+    headers: vi.fn().mockImplementation((_headerObj: Record<string, string>) => responseObj),
+    type: vi.fn().mockImplementation((_contentType: string) => responseObj),
+
+    json: vi.fn().mockImplementation((_body: unknown, _status?: number) => {
+      responseObj.sent = true;
+    }),
+    text: vi.fn().mockImplementation((_body: string, _status?: number) => {
+      responseObj.sent = true;
+    }),
+    html: vi.fn().mockImplementation((_body: string, _status?: number) => {
+      responseObj.sent = true;
+    }),
+    redirect: vi.fn().mockImplementation((_url: string, _status?: number) => {
+      responseObj.sent = true;
+    }),
+    stream: vi.fn().mockImplementation((_readable: NodeJS.ReadableStream, _options?: any) => {
+      responseObj.sent = true;
+    }),
+  };
+
+  return {
+    request: {
+      raw: null as any, // Mock request object
+      method,
+      path,
+      url: null, // URL object would be parsed in real implementation
+      query: query as QueryParams,
+      params,
+      protocol: 'http',
+      isHttp2: false,
+      body,
+
+      // Required header function
+      header: vi.fn().mockImplementation((name: string): string | undefined => {
+        return headers[name.toLowerCase()];
+      }),
+
+      // Required headers function
+      headers: vi
+        .fn()
+        .mockImplementation((names?: string[]): Record<string, string | undefined> => {
+          if (names && Array.isArray(names)) {
+            return names.reduce<Record<string, string | undefined>>((acc, name) => {
+              acc[name] = headers[name.toLowerCase()];
+              return acc;
+            }, {});
+          }
+          return { ...headers };
+        }),
+    },
+    response: responseObj,
+    state: { ...initialState } as State,
+  };
+}

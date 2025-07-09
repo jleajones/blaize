@@ -80,29 +80,70 @@ export function createMockHttpServer(overrides: any = {}) {
 }
 
 /**
+ * Test server lifecycle (listen -> close) with automatic cleanup
+ * This eliminates the repetitive beforeEach/afterEach pattern in server tests
+ */
+export async function testServerLifecycle(
+  server: Server,
+  testFn: (server: Server) => Promise<void> | void
+): Promise<void> {
+  try {
+    await server.listen();
+    await testFn(server);
+  } finally {
+    await server.close();
+  }
+}
+
+/**
+ * Create a spy for server events that's easy to test
+ * This eliminates repetitive event spying setup
+ */
+export function spyOnServerEvents(server: Server) {
+  const eventSpy = vi.spyOn(server.events, 'emit');
+
+  return {
+    expectEvent: (eventName: string) => {
+      expect(eventSpy).toHaveBeenCalledWith(eventName);
+    },
+    expectNoEvents: () => {
+      expect(eventSpy).not.toHaveBeenCalled();
+    },
+    reset: () => eventSpy.mockClear(),
+  };
+}
+
+/**
  * Reset all mocks in a server instance
  */
 export function resetServerMocks(server: Server): void {
   // Reset plugin mocks
   server.plugins.forEach(plugin => {
-    if (vi.isMockFunction(plugin.register)) plugin.register.mockReset();
-    if (vi.isMockFunction(plugin.initialize)) plugin.initialize.mockReset();
-    if (vi.isMockFunction(plugin.terminate)) plugin.terminate.mockReset();
-    if (vi.isMockFunction(plugin.onServerStart)) plugin.onServerStart.mockReset();
-    if (vi.isMockFunction(plugin.onServerStop)) plugin.onServerStop.mockReset();
+    if (vi.isMockFunction(plugin.register)) vi.mocked(plugin.register).mockClear();
+    if (vi.isMockFunction(plugin.initialize)) vi.mocked(plugin.initialize).mockClear();
+    if (vi.isMockFunction(plugin.terminate)) vi.mocked(plugin.terminate).mockClear();
+    if (vi.isMockFunction(plugin.onServerStart)) vi.mocked(plugin.onServerStart).mockClear();
+    if (vi.isMockFunction(plugin.onServerStop)) vi.mocked(plugin.onServerStop).mockClear();
+  });
+
+  // Reset middleware mocks
+  server.middleware.forEach(middleware => {
+    if (vi.isMockFunction(middleware.execute)) {
+      vi.mocked(middleware.execute).mockClear();
+    }
   });
 
   // Reset server method mocks
-  if (vi.isMockFunction(server.listen)) server.listen.mockReset();
-  if (vi.isMockFunction(server.close)) server.close.mockReset();
-  if (vi.isMockFunction(server.use)) server.use.mockReset();
-  if (vi.isMockFunction(server.register)) server.register.mockReset();
+  if (vi.isMockFunction(server.listen)) vi.mocked(server.listen).mockClear();
+  if (vi.isMockFunction(server.close)) vi.mocked(server.close).mockClear();
+  if (vi.isMockFunction(server.use)) vi.mocked(server.use).mockClear();
+  if (vi.isMockFunction(server.register)) vi.mocked(server.register).mockClear();
 
   // Reset router mocks
   const router = server.router as any;
-  if (vi.isMockFunction(router.handleRequest)) router.handleRequest.mockReset();
-  if (vi.isMockFunction(router.getRoutes)) router.getRoutes.mockReset();
-  if (vi.isMockFunction(router.addRoute)) router.addRoute.mockReset();
-  if (vi.isMockFunction(router.addRouteDirectory)) router.addRouteDirectory.mockReset();
-  if (vi.isMockFunction(router.getRouteConflicts)) router.getRouteConflicts.mockReset();
+  if (vi.isMockFunction(router.handleRequest)) vi.mocked(router.handleRequest).mockClear();
+  if (vi.isMockFunction(router.getRoutes)) vi.mocked(router.getRoutes).mockClear();
+  if (vi.isMockFunction(router.addRoute)) vi.mocked(router.addRoute).mockClear();
+  if (vi.isMockFunction(router.addRouteDirectory)) vi.mocked(router.addRouteDirectory).mockClear();
+  if (vi.isMockFunction(router.getRouteConflicts)) vi.mocked(router.getRouteConflicts).mockClear();
 }
