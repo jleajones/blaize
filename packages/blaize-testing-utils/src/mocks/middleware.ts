@@ -1,13 +1,151 @@
-import { Middleware } from '../../../blaize-types/src/index';
+import { createMockContext } from './context';
+import { Middleware, Context, NextFunction } from '../../../blaize-types/src/index';
 
-export const createMockMiddleware = (
-  options: Partial<Middleware> = {
-    name: 'mock-middleware',
-    execute: async (ctx, next) => {
-      ctx.response.text('mock-middleware');
-      return next();
-    },
+/**
+ * Result from executing middleware in tests
+ */
+export interface MiddlewareTestResult {
+  context: Context;
+  nextCalled: boolean;
+  error?: Error;
+}
+
+/**
+ * Execute a single middleware and track if next() was called
+ * This eliminates the repetitive nextCalled tracking in tests
+ */
+export async function executeMiddleware(
+  middleware: Middleware,
+  context?: Context
+): Promise<MiddlewareTestResult> {
+  const ctx = context || createMockContext();
+  let nextCalled = false;
+  let error: Error | undefined;
+
+  const next: NextFunction = vi.fn().mockImplementation(async () => {
+    nextCalled = true;
+  });
+
+  try {
+    await middleware.execute(ctx, next);
+  } catch (err) {
+    error = err as Error;
   }
-): Middleware => {
-  return options as Middleware;
-};
+
+  const result: MiddlewareTestResult = {
+    context: ctx,
+    nextCalled,
+  };
+
+  if (error) {
+    result.error = error;
+  }
+
+  return result;
+}
+
+/**
+ * Test middleware execution order in a chain
+ * This replaces the manual executionOrder tracking pattern
+ */
+export async function trackMiddlewareOrder(
+  middlewares: Middleware[],
+  context?: Context
+): Promise<{
+  context: Context;
+  executionOrder: string[];
+  error?: Error;
+}> {
+  const ctx = context || createMockContext();
+  const executionOrder: string[] = [];
+  let error: Error | undefined;
+
+  // Wrap middlewares to track their execution
+  const trackedMiddlewares = middlewares.map(middleware => ({
+    ...middleware,
+    execute: async (ctx: Context, next: NextFunction) => {
+      executionOrder.push(`${middleware.name}-before`);
+      try {
+        await middleware.execute(ctx, next);
+        executionOrder.push(`${middleware.name}-after`);
+      } catch (err) {
+        executionOrder.push(`${middleware.name}-error`);
+        throw err;
+      }
+    },
+  }));
+
+  const finalHandler = async () => {
+    executionOrder.push('final-handler');
+  };
+
+  try {
+    // Simple chain execution
+    let index = 0;
+    async function dispatch(): Promise<void> {
+      if (index >= trackedMiddlewares.length) {
+        await finalHandler();
+        return;
+      }
+      const middleware = trackedMiddlewares[index++];
+      // Add safety check (though this should never be undefined)
+      if (!middleware) {
+        throw new Error('Middleware is undefined - this should not happen');
+      }
+      await middleware.execute(ctx, dispatch);
+    }
+    await dispatch();
+  } catch (err) {
+    error = err as Error;
+  }
+
+  const result = {
+    context: ctx,
+    executionOrder,
+  };
+
+  if (error) {
+    return { ...result, error };
+  }
+
+  return result;
+}
+
+/**
+ * Enhanced createMockMiddleware that covers common test scenarios
+ */
+export function createMockMiddleware(
+  config: {
+    name?: string;
+    behavior?: 'pass' | 'block' | 'error';
+    errorMessage?: string;
+    stateChanges?: Record<string, unknown>;
+  } = {}
+): Middleware {
+  const {
+    name = 'test-middleware',
+    behavior = 'pass',
+    errorMessage = 'Test error',
+    stateChanges = {},
+  } = config;
+
+  return {
+    name,
+    execute: vi.fn().mockImplementation(async (ctx: Context, next: NextFunction) => {
+      // Apply any state changes
+      Object.assign(ctx.state, stateChanges);
+
+      switch (behavior) {
+        case 'pass':
+          await next();
+          break;
+        case 'block':
+          ctx.response.status(403).json({ error: 'Blocked' });
+          // Don't call next()
+          break;
+        case 'error':
+          throw new Error(errorMessage);
+      }
+    }),
+  };
+}
