@@ -117,21 +117,34 @@ export async function trackMiddlewareOrder(
 export function createMockMiddleware(
   config: {
     name?: string;
+    execute?: (ctx: Context, next: NextFunction) => Promise<void> | void;
     behavior?: 'pass' | 'block' | 'error';
     errorMessage?: string;
     stateChanges?: Record<string, unknown>;
+    skip?: (ctx: Context) => boolean;
+    debug?: boolean;
   } = {}
 ): Middleware {
   const {
     name = 'test-middleware',
+    execute,
     behavior = 'pass',
     errorMessage = 'Test error',
     stateChanges = {},
+    skip,
+    debug,
   } = config;
 
   return {
     name,
+    skip,
+    debug,
     execute: vi.fn().mockImplementation(async (ctx: Context, next: NextFunction) => {
+      // If custom execute function provided, use that
+      if (execute) {
+        return execute(ctx, next);
+      }
+
       // Apply any state changes
       Object.assign(ctx.state, stateChanges);
 
