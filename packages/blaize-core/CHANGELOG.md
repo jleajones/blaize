@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.2.4
+
+### Patch Changes
+
+- 0d4bc0d: ✨ New Feature: Support for file upload and multipart formdata
+
 ## 0.2.3
 
 ### Patch Changes

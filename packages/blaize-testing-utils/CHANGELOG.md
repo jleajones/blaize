@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.1.6
+
+### Patch Changes
+
+- 0d4bc0d: ✨ New Feature: Support for file upload and multipart formdata
+
 ## 0.1.5
 
 ### Patch Changes
