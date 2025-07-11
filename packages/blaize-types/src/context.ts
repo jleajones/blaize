@@ -1,6 +1,9 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Http2ServerRequest, Http2ServerResponse } from 'node:http2';
 
+import type { BodyParseError } from './errors';
+import type { MultipartData, UploadedFile } from './upload';
+
 /**
  * Unified request type supporting both HTTP/1.1 and HTTP/2
  */
@@ -40,6 +43,11 @@ export interface StreamOptions {
  */
 export interface State {
   [key: string]: unknown;
+  /**
+   * Body parsing error information
+   * Set when body parsing fails during request processing
+   */
+  _bodyError?: BodyParseError;
 }
 
 export interface ContextResponse<S extends State = State> {
@@ -76,6 +84,18 @@ export interface ContextRequest<TBody = unknown> {
   isHttp2: boolean;
   body?: TBody;
 
+  /**
+   * Uploaded files from multipart/form-data requests
+   * Available when Content-Type is multipart/form-data
+   */
+  files?: Record<string, UploadedFile | UploadedFile[]>;
+
+  /**
+   * Complete multipart data (files + fields)
+   * Available when Content-Type is multipart/form-data
+   */
+  multipart?: MultipartData;
+
   // Accessors
   header: (name: string) => string | undefined;
   headers: (names?: string[]) => Record<string, string | undefined>;
@@ -104,6 +124,14 @@ export interface Context<S extends State = State, TBody = unknown, TQuery = Quer
   state: S;
 }
 
+// Define the multipart limits type properly
+export type MultipartLimits = {
+  maxFileSize?: number;
+  maxTotalSize?: number;
+  maxFiles?: number;
+  maxFieldSize?: number;
+};
+
 /**
  * Options for creating a context
  */
@@ -117,6 +145,16 @@ export interface ContextOptions {
    * Additional state to merge into the context
    */
   initialState?: State;
+  /**
+   * Limits for various body types to prevent abuse
+   */
+  bodyLimits?: {
+    json?: number; // Default: 512KB (large JSON usually indicates design issues)
+    form?: number; // Default: 1MB (reasonable for form data)
+    text?: number; // Default: 5MB (documents, logs, code)
+    multipart?: MultipartLimits;
+    raw?: number; // Default: 10MB (for custom content types)
+  };
 }
 
 /**

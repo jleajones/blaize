@@ -5,10 +5,14 @@ import {
   ResponseSentHeaderError,
 } from './errors';
 import { hasContext, getContext } from './store';
+import { parseMultipartRequest } from '../upload/multipart-parser';
+import { isMultipartContent } from '../upload/utils';
 
 import type {
+  BodyParseError,
   Context,
   ContextOptions,
+  MultipartLimits,
   QueryParams,
   RequestParams,
   State,
@@ -18,6 +22,19 @@ import type {
 } from '../index';
 
 const CONTENT_TYPE_HEADER = 'Content-Type';
+
+const DEFAULT_BODY_LIMITS = {
+  json: 512 * 1024, // 512KB - Most APIs should be much smaller
+  form: 1024 * 1024, // 1MB - Reasonable for form submissions
+  text: 5 * 1024 * 1024, // 5MB - Documents, logs, code files
+  multipart: {
+    maxFileSize: 50 * 1024 * 1024, // 50MB per file
+    maxTotalSize: 100 * 1024 * 1024, // 100MB total request
+    maxFiles: 10,
+    maxFieldSize: 1024 * 1024, // 1MB for form fields
+  },
+  raw: 10 * 1024 * 1024, // 10MB for unknown content types
+};
 
 /**
  * Parse URL and extract path and query parameters using modern URL API
@@ -133,7 +150,7 @@ export async function createContext<TBody = unknown, TQuery = QueryParams>(
 
   // Parse body if requested
   if (options.parseBody) {
-    await parseBodyIfNeeded(req, ctx);
+    await parseBodyIfNeeded(req, ctx, options);
   }
 
   return ctx;
@@ -419,7 +436,8 @@ function createStreamResponder(res: UnifiedResponse, responseState: { sent: bool
  */
 async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
-  ctx: Context<State, TBody, TQuery>
+  ctx: Context<State, TBody, TQuery>,
+  options: ContextOptions = {}
 ): Promise<void> {
   // Skip parsing for methods that typically don't have bodies
   if (shouldSkipParsing(req.method)) {
@@ -429,16 +447,60 @@ async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
   const contentType = req.headers['content-type'] || '';
   const contentLength = parseInt(req.headers['content-length'] || '0', 10);
 
-  // Skip if no content or very large (can be handled by dedicated middleware)
-  if (contentLength === 0 || contentLength > 1048576) {
-    // 1MB limit for built-in parser
+  // Skip if no content
+  if (contentLength === 0) {
     return;
   }
 
+  const limits = {
+    json: options.bodyLimits?.json ?? DEFAULT_BODY_LIMITS.json,
+    form: options.bodyLimits?.form ?? DEFAULT_BODY_LIMITS.form,
+    text: options.bodyLimits?.text ?? DEFAULT_BODY_LIMITS.text,
+    raw: options.bodyLimits?.raw ?? DEFAULT_BODY_LIMITS.raw,
+    multipart: {
+      maxFileSize:
+        options.bodyLimits?.multipart?.maxFileSize ?? DEFAULT_BODY_LIMITS.multipart.maxFileSize,
+      maxFiles: options.bodyLimits?.multipart?.maxFiles ?? DEFAULT_BODY_LIMITS.multipart.maxFiles,
+      maxFieldSize:
+        options.bodyLimits?.multipart?.maxFieldSize ?? DEFAULT_BODY_LIMITS.multipart.maxFieldSize,
+      maxTotalSize:
+        options.bodyLimits?.multipart?.maxTotalSize ?? DEFAULT_BODY_LIMITS.multipart.maxTotalSize,
+    },
+  };
+
   try {
-    await parseBodyByContentType(req, ctx, contentType);
+    // Apply content-type specific size validation
+    if (contentType.includes('application/json')) {
+      if (contentLength > limits.json) {
+        throw new Error(`JSON body too large: ${contentLength} > ${limits.json} bytes`);
+      }
+      await parseJsonBody(req, ctx);
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      if (contentLength > limits.form) {
+        throw new Error(`Form body too large: ${contentLength} > ${limits.form} bytes`);
+      }
+      await parseFormUrlEncodedBody(req, ctx);
+    } else if (contentType.includes('text/')) {
+      if (contentLength > limits.text) {
+        throw new Error(`Text body too large: ${contentLength} > ${limits.text} bytes`);
+      }
+      await parseTextBody(req, ctx);
+    } else if (isMultipartContent(contentType)) {
+      // Multipart has its own sophisticated size validation
+      await parseMultipartBody(req, ctx, limits.multipart);
+    } else {
+      // Unknown content type - apply raw limit
+      if (contentLength > limits.raw) {
+        throw new Error(`Request body too large: ${contentLength} > ${limits.raw} bytes`);
+      }
+      // Don't parse unknown content types, but allow them through
+      return;
+    }
   } catch (error) {
-    setBodyError(ctx, 'body_read_error', 'Error reading request body', error);
+    const errorType = contentType.includes('multipart')
+      ? 'multipart_parse_error'
+      : 'body_read_error';
+    setBodyError(ctx, errorType, 'Error reading request body', error);
   }
 }
 
@@ -448,24 +510,6 @@ async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
 function shouldSkipParsing(method?: string): boolean {
   const skipMethods = ['GET', 'HEAD', 'OPTIONS'];
   return skipMethods.includes(method || 'GET');
-}
-
-/**
- * Parse the body based on content type
- */
-async function parseBodyByContentType<TBody = unknown, TQuery = QueryParams>(
-  req: UnifiedRequest,
-  ctx: Context<State, TBody, TQuery>,
-  contentType: string
-): Promise<void> {
-  if (contentType.includes('application/json')) {
-    await parseJsonBody(req, ctx);
-  } else if (contentType.includes('application/x-www-form-urlencoded')) {
-    await parseFormUrlEncodedBody(req, ctx);
-  } else if (contentType.includes('text/')) {
-    await parseTextBody(req, ctx);
-  }
-  // For other content types, do nothing (let specialized middleware handle it)
 }
 
 /**
@@ -552,15 +596,46 @@ async function parseTextBody<TBody = null, TQuery = QueryParams>(
 }
 
 /**
- * Set body parsing error in context state
+ * Parse multipart/form-data request body with improved error handling
+ */
+async function parseMultipartBody<TBody = unknown, TQuery = QueryParams>(
+  req: UnifiedRequest,
+  ctx: Context<State, TBody, TQuery>,
+  multipartLimits: MultipartLimits
+): Promise<void> {
+  try {
+    const limits = multipartLimits || DEFAULT_BODY_LIMITS.multipart;
+    const multipartData = await parseMultipartRequest(req, {
+      strategy: 'stream',
+      maxFileSize: limits.maxFileSize,
+      maxFiles: limits.maxFiles,
+      maxFieldSize: limits.maxFieldSize,
+      // Could add total size validation here
+    });
+
+    // Extend context with multipart data (type-safe assignments)
+    (ctx.request as any).multipart = multipartData;
+    (ctx.request as any).files = multipartData.files;
+
+    // Set body to fields for backward compatibility with existing form handling
+    ctx.request.body = multipartData.fields as TBody;
+  } catch (error) {
+    ctx.request.body = null as TBody;
+    setBodyError(ctx, 'multipart_parse_error', 'Failed to parse multipart data', error);
+  }
+}
+
+/**
+ * Set body parsing error in context state with proper typing
  */
 function setBodyError<TBody = unknown, TQuery = QueryParams>(
   ctx: Context<State, TBody, TQuery>,
-  type: string,
+  type: BodyParseError['type'],
   message: string,
   error: unknown
 ): void {
-  ctx.state._bodyError = { type, message, error };
+  const bodyError: BodyParseError = { type, message, error };
+  ctx.state._bodyError = bodyError;
 }
 
 /**

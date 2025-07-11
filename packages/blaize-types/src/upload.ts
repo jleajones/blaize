@@ -187,24 +187,56 @@ export interface UploadProgress {
   readonly eta: number;
 }
 
+/**
+ * Internal state for multipart parser state machine
+ */
 export interface ParserState {
-  readonly boundary: Buffer;
-  readonly options: Required<ParseOptions>;
-  readonly fields: Map<string, string[]>;
-  readonly files: Map<string, UploadedFile[]>;
-  readonly buffer: Buffer;
-  readonly stage: 'boundary' | 'headers' | 'content';
-  readonly currentHeaders: string;
-  readonly currentField: string | null;
-  readonly currentFilename: string | undefined;
-  readonly currentMimetype: string;
-  readonly currentContentLength: number;
-  readonly fileCount: number;
-  readonly fieldCount: number;
-  readonly currentBufferChunks: Buffer[];
-  readonly currentStream: Readable | null;
-  readonly currentTempPath: string | null;
-  readonly currentWriteStream: WriteStream | null;
-  readonly streamController: ReadableStreamDefaultController<Uint8Array> | null;
-  readonly cleanupTasks: Array<() => Promise<void>>;
+  // Parsing configuration
+  boundary: Buffer;
+  options: Required<ParseOptions>;
+
+  // Collections
+  fields: Map<string, string[]>;
+  files: Map<string, UploadedFile[]>;
+
+  // Buffer management
+  buffer: Buffer;
+  stage: 'boundary' | 'headers' | 'content';
+
+  // Current part state
+  currentHeaders: string;
+  currentField: string | null;
+  currentFilename: string | undefined;
+  currentMimetype: string;
+  currentContentLength: number;
+
+  // Counters
+  fileCount: number;
+  fieldCount: number;
+
+  // Processing state
+  currentBufferChunks: Buffer[];
+  currentStream: Readable | null;
+  currentTempPath: string | null;
+  currentWriteStream: WriteStream | null;
+  streamController: ReadableStreamDefaultController<Uint8Array> | null;
+
+  // Cleanup
+  cleanupTasks: Array<() => Promise<void>>;
+
+  // 🆕 NEW: Validation tracking
+  /**
+   * Whether we've found at least one valid boundary marker
+   */
+  hasFoundValidBoundary: boolean;
+
+  /**
+   * Whether we've successfully processed at least one complete part (field or file)
+   */
+  hasProcessedAnyPart: boolean;
+
+  /**
+   * Whether parsing has reached the end boundary
+   */
+  isFinished: boolean;
 }

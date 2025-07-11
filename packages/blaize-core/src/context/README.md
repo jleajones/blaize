@@ -30,6 +30,7 @@
 - 📤 **Rich response methods** (JSON, HTML, streaming, redirects)
 - 🛡️ **Built-in error protection** against double responses and invalid operations
 - 🔍 **Request parsing** with automatic body handling for JSON, form data, and text
+- 📂 **File upload support** with multipart/form-data handling
 - 📊 **Query and parameter parsing** with array support
 - 🎯 **Context binding** for preserving context across async operations
 - 🚀 **High performance** with minimal overhead and memory efficiency
@@ -62,20 +63,20 @@ export const getUserProfile = createGetRoute({
   handler: async () => {
     // Get current context - no parameters needed!
     const ctx = getCurrentContext();
-    
+
     // Access request data
     const userId = ctx.request.header('x-user-id');
     const userAgent = ctx.request.header('user-agent');
-    
+
     // Store data in request-scoped state
     setState('requestStart', Date.now());
-    
+
     // Call other functions - context is preserved
     const profile = await fetchUserData(userId);
-    
+
     // Return response (or use ctx.response methods)
     return { profile, userAgent };
-  }
+  },
 });
 
 // Context is preserved in called functions
@@ -83,16 +84,16 @@ async function fetchUserData(userId: string) {
   // Context is still available here!
   const ctx = getCurrentContext();
   const startTime = getState<number>('requestStart');
-  
+
   console.log(`Fetching user ${userId}, request started ${Date.now() - startTime}ms ago`);
-  
+
   // ... fetch user data
   return { id: userId, name: 'John Doe' };
 }
 
 // Start server - context management is automatic
 const server = createServer({
-  routesDir: './routes'
+  routesDir: './routes',
 });
 
 await server.listen();
@@ -110,16 +111,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   // Create context manually
   const ctx = await createContext(req, res, {
     parseBody: true, // Enable automatic body parsing
-    initialState: { 
+    initialState: {
       requestId: generateRequestId(),
-      startTime: Date.now()
-    }
+      startTime: Date.now(),
+    },
   });
-  
+
   // Use context
-  ctx.response.json({ 
+  ctx.response.json({
     message: 'Hello World',
-    requestId: ctx.state.requestId 
+    requestId: ctx.state.requestId,
   });
 }
 ```
@@ -137,30 +138,30 @@ import { getCurrentContext, setState, getState } from 'blaizejs';
 export const processOrder = createPostRoute({
   handler: async () => {
     setState('orderId', 'order-123');
-    
+
     // Context flows automatically to all called functions
-    await validateOrder();    // ✅ Has context
-    await chargePayment();    // ✅ Has context  
+    await validateOrder(); // ✅ Has context
+    await chargePayment(); // ✅ Has context
     await sendConfirmation(); // ✅ Has context
-    
+
     return { success: true };
-  }
+  },
 });
 
 async function validateOrder() {
   const ctx = getCurrentContext(); // ✅ Works automatically
   const orderId = getState<string>('orderId'); // ✅ Gets 'order-123'
-  
+
   // Access request data
   const userAgent = ctx.request.header('user-agent');
-  
+
   // ... validation logic
 }
 
 async function chargePayment() {
   const ctx = getCurrentContext(); // ✅ Same context instance
   const orderId = getState<string>('orderId'); // ✅ Same state
-  
+
   // ... payment logic
 }
 ```
@@ -177,27 +178,27 @@ export const apiHandler = createPostRoute({
     // Global state (be careful with key collisions)
     setState('userId', '123');
     setState('permissions', ['read', 'write']);
-    
+
     // Namespaced state (recommended)
     const userState = createNamespacedState('user');
     userState.set('id', '123');
     userState.set('role', 'admin');
-    
+
     // Type-safe state
     interface UserSession {
       id: string;
       role: string;
       lastActivity: number;
     }
-    
+
     const sessionState = createTypedState<UserSession>('session');
-    sessionState.set('id', '123');           // ✅ Type-safe
-    sessionState.set('role', 'admin');       // ✅ Type-safe
+    sessionState.set('id', '123'); // ✅ Type-safe
+    sessionState.set('role', 'admin'); // ✅ Type-safe
     sessionState.set('lastActivity', Date.now()); // ✅ Type-safe
     // sessionState.set('invalid', 'value'); // ❌ TypeScript error
-    
+
     return { success: true };
-  }
+  },
 });
 ```
 
@@ -209,25 +210,25 @@ The context provides a unified API for both HTTP/1.1 and HTTP/2:
 export const protocolHandler = createGetRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     // Unified request interface
     const protocol = ctx.request.protocol; // 'http' or 'https'
-    const isHttp2 = ctx.request.isHttp2;   // boolean
-    const method = ctx.request.method;     // 'GET', 'POST', etc.
-    const path = ctx.request.path;         // '/api/users'
-    
+    const isHttp2 = ctx.request.isHttp2; // boolean
+    const method = ctx.request.method; // 'GET', 'POST', etc.
+    const path = ctx.request.path; // '/api/users'
+
     // Headers work the same regardless of HTTP version
     const auth = ctx.request.header('authorization');
     const contentType = ctx.request.header('content-type');
-    
+
     return {
       protocol,
       isHttp2,
       method,
       path,
-      headers: { auth, contentType }
+      headers: { auth, contentType },
     };
-  }
+  },
 });
 ```
 
@@ -240,33 +241,33 @@ export const requestInfoHandler = createGetRoute({
   handler: async () => {
     const ctx = getCurrentContext();
     const { request } = ctx;
-    
+
     // Basic properties
-    const method = request.method;        // 'GET', 'POST', etc.
-    const path = request.path;            // '/api/users/123'
-    const protocol = request.protocol;    // 'http' or 'https'
-    const isHttp2 = request.isHttp2;      // boolean
-    
+    const method = request.method; // 'GET', 'POST', etc.
+    const path = request.path; // '/api/users/123'
+    const protocol = request.protocol; // 'http' or 'https'
+    const isHttp2 = request.isHttp2; // boolean
+
     // URL and query data
-    const url = request.url;              // Full URL object or null
-    const query = request.query;          // Parsed query parameters
-    const params = request.params;        // Route parameters (/:id)
-    
+    const url = request.url; // Full URL object or null
+    const query = request.query; // Parsed query parameters
+    const params = request.params; // Route parameters (/:id)
+
     // Request body (if parsed)
-    const body = request.body;            // Parsed body data
-    
+    const body = request.body; // Parsed body data
+
     // Raw Node.js request object
-    const rawReq = request.raw;           // IncomingMessage | Http2ServerRequest
-    
+    const rawReq = request.raw; // IncomingMessage | Http2ServerRequest
+
     return {
       method,
       path,
       protocol,
       query,
       params,
-      hasBody: !!body
+      hasBody: !!body,
     };
-  }
+  },
 });
 ```
 
@@ -276,26 +277,26 @@ export const requestInfoHandler = createGetRoute({
 export const headerHandler = createGetRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     // Get single header
     const auth = ctx.request.header('authorization');
     const userAgent = ctx.request.header('user-agent');
     const customHeader = ctx.request.header('x-custom-header');
-    
+
     // Get multiple specific headers
     const specificHeaders = ctx.request.headers(['host', 'authorization', 'x-api-key']);
     // Returns: { host: 'example.com', authorization: 'Bearer ...', 'x-api-key': undefined }
-    
+
     // Get all headers
     const allHeaders = ctx.request.headers();
-    
+
     return {
       auth,
       userAgent,
       specificHeaders,
-      totalHeaders: Object.keys(allHeaders).length
+      totalHeaders: Object.keys(allHeaders).length,
     };
-  }
+  },
 });
 ```
 
@@ -307,29 +308,29 @@ BlaizeJS automatically parses query parameters with array support:
 export const queryHandler = createGetRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     // URL: /api/search?q=javascript&tags=web&tags=tutorial&limit=10&active=true
     const query = ctx.request.query;
-    
+
     // Single values
-    const searchTerm = query.q;          // 'javascript'
-    const limit = query.limit;           // '10' (string)
-    const active = query.active;         // 'true' (string)
-    
+    const searchTerm = query.q; // 'javascript'
+    const limit = query.limit; // '10' (string)
+    const active = query.active; // 'true' (string)
+
     // Array values (multiple same-named parameters)
-    const tags = query.tags;             // ['web', 'tutorial']
-    
+    const tags = query.tags; // ['web', 'tutorial']
+
     // Type conversion (handle manually or use Zod in route schema)
     const limitNum = parseInt(query.limit as string, 10);
     const isActive = query.active === 'true';
-    
+
     return {
       searchTerm,
       tags,
       limit: limitNum,
-      active: isActive
+      active: isActive,
     };
-  }
+  },
 });
 ```
 
@@ -342,33 +343,33 @@ export const bodyHandler = createPostRoute({
   handler: async () => {
     const ctx = getCurrentContext();
     const body = ctx.request.body;
-    
+
     // JSON body (Content-Type: application/json)
     if (ctx.request.header('content-type')?.includes('application/json')) {
       const jsonData = body as { name: string; email: string };
       console.log('Received JSON:', jsonData);
     }
-    
+
     // Form data (Content-Type: application/x-www-form-urlencoded)
     if (ctx.request.header('content-type')?.includes('application/x-www-form-urlencoded')) {
       const formData = body as Record<string, string | string[]>;
       console.log('Received form data:', formData);
     }
-    
+
     // Plain text (Content-Type: text/*)
     if (ctx.request.header('content-type')?.includes('text/')) {
       const textData = body as string;
       console.log('Received text:', textData);
     }
-    
+
     // Check for parsing errors
     const bodyError = ctx.state._bodyError;
     if (bodyError) {
       console.warn('Body parsing error:', bodyError);
     }
-    
+
     return { success: true, bodyReceived: !!body };
-  }
+  },
 });
 ```
 
@@ -380,32 +381,29 @@ export const bodyHandler = createPostRoute({
 export const responseHandler = createGetRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     // Set status code
     ctx.response.status(201);
-    
+
     // Set single header
     ctx.response.header('X-Custom-Header', 'custom-value');
-    
+
     // Set multiple headers
     ctx.response.headers({
       'X-Rate-Limit': '1000',
       'X-Rate-Remaining': '999',
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
     });
-    
+
     // Set content type
     ctx.response.type('application/xml');
-    
+
     // Method chaining works
-    ctx.response
-      .status(200)
-      .header('X-Powered-By', 'BlaizeJS')
-      .type('application/json');
-    
+    ctx.response.status(200).header('X-Powered-By', 'BlaizeJS').type('application/json');
+
     // Send response (or return data from handler)
     ctx.response.json({ message: 'Headers set!' });
-  }
+  },
 });
 ```
 
@@ -415,35 +413,38 @@ export const responseHandler = createGetRoute({
 export const responseMethodsHandler = createGetRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     // JSON response (most common)
-    ctx.response.json({ 
-      message: 'Success',
-      timestamp: new Date().toISOString()
-    }, 200); // Optional status code
-    
+    ctx.response.json(
+      {
+        message: 'Success',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    ); // Optional status code
+
     // Plain text response
     ctx.response.text('Hello, World!', 200);
-    
+
     // HTML response
     ctx.response.html('<h1>Welcome!</h1><p>This is HTML content</p>', 200);
-    
+
     // Redirect response
     ctx.response.redirect('/new-location', 301); // Permanent redirect
-    ctx.response.redirect('/temporary', 302);    // Temporary redirect (default)
-    
+    ctx.response.redirect('/temporary', 302); // Temporary redirect (default)
+
     // Stream response
     import { createReadStream } from 'fs';
     const fileStream = createReadStream('./large-file.json');
-    
+
     ctx.response.stream(fileStream, {
       contentType: 'application/json',
       status: 200,
       headers: {
-        'Content-Disposition': 'attachment; filename="data.json"'
-      }
+        'Content-Disposition': 'attachment; filename="data.json"',
+      },
     });
-  }
+  },
 });
 ```
 
@@ -455,34 +456,34 @@ BlaizeJS prevents common response errors:
 export const protectedResponseHandler = createPostRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     // First response
     ctx.response.json({ message: 'First response' });
-    
+
     // These will throw errors:
     try {
-      ctx.response.status(500);           // ❌ ResponseSentError
+      ctx.response.status(500); // ❌ ResponseSentError
     } catch (error) {
       console.log('Cannot modify status after response sent');
     }
-    
+
     try {
       ctx.response.header('X-Test', 'value'); // ❌ ResponseSentHeaderError
     } catch (error) {
       console.log('Cannot set headers after response sent');
     }
-    
+
     try {
-      ctx.response.json({ error: true });    // ❌ ResponseSentError
+      ctx.response.json({ error: true }); // ❌ ResponseSentError
     } catch (error) {
       console.log('Cannot send multiple responses');
     }
-    
+
     // Check if response was sent
     if (ctx.response.sent) {
       console.log('Response has been sent');
     }
-  }
+  },
 });
 ```
 
@@ -491,44 +492,38 @@ export const protectedResponseHandler = createPostRoute({
 ### 🌍 Global State Functions
 
 ```typescript
-import { 
-  getState, 
-  setState, 
-  removeState, 
-  getStateMany, 
-  setStateMany 
-} from 'blaizejs';
+import { getState, setState, removeState, getStateMany, setStateMany } from 'blaizejs';
 
 export const stateHandler = createPostRoute({
   handler: async () => {
     // Basic state operations
     setState('userId', '123');
     setState('permissions', ['read', 'write']);
-    
-    const userId = getState<string>('userId');          // '123'
+
+    const userId = getState<string>('userId'); // '123'
     const permissions = getState<string[]>('permissions'); // ['read', 'write']
     const missing = getState('nonexistent', 'default'); // 'default'
-    
+
     // Multiple state operations
     setStateMany({
       sessionId: 'session-456',
       lastActivity: Date.now(),
-      isAuthenticated: true
+      isAuthenticated: true,
     });
-    
+
     const multipleValues = getStateMany(['userId', 'sessionId', 'nonexistent']);
     // Returns: { userId: '123', sessionId: 'session-456' }
-    
+
     // Remove state
     removeState('permissions');
     const removed = getState('permissions'); // undefined
-    
-    return { 
-      userId, 
+
+    return {
+      userId,
       multipleValues,
-      removedExists: !!removed 
+      removedExists: !!removed,
     };
-  }
+  },
 });
 ```
 
@@ -544,38 +539,38 @@ export const namespacedStateHandler = createPostRoute({
     // Create namespaced state accessors
     const userState = createNamespacedState('user');
     const sessionState = createNamespacedState('session');
-    
+
     // Set namespaced values
     userState.set('id', '123');
     userState.set('name', 'John Doe');
     userState.set('role', 'admin');
-    
+
     sessionState.set('id', 'session-456');
     sessionState.set('created', Date.now());
     sessionState.set('lastActivity', Date.now());
-    
+
     // Get namespaced values
-    const userName = userState.get('name');           // 'John Doe'
-    const sessionId = sessionState.get('id');         // 'session-456'
+    const userName = userState.get('name'); // 'John Doe'
+    const sessionId = sessionState.get('id'); // 'session-456'
     const defaultValue = userState.get('missing', 'default'); // 'default'
-    
+
     // Get all keys in namespace
-    const userKeys = userState.getAllKeys();          // ['id', 'name', 'role']
-    const sessionKeys = sessionState.getAllKeys();    // ['id', 'created', 'lastActivity']
-    
+    const userKeys = userState.getAllKeys(); // ['id', 'name', 'role']
+    const sessionKeys = sessionState.getAllKeys(); // ['id', 'created', 'lastActivity']
+
     // Remove specific keys
     userState.remove('role');
-    
+
     // Clear entire namespace
     sessionState.clear();
-    
+
     return {
       userName,
       sessionId,
       userKeys,
-      sessionKeys: sessionState.getAllKeys() // Now empty
+      sessionKeys: sessionState.getAllKeys(), // Now empty
     };
-  }
+  },
 });
 ```
 
@@ -602,43 +597,43 @@ interface UserSession {
 export const typedStateHandler = createPostRoute({
   handler: async () => {
     const sessionState = createTypedState<UserSession>('session');
-    
+
     // Type-safe setters
-    sessionState.set('id', '123');                           // ✅ Valid
-    sessionState.set('role', 'admin');                       // ✅ Valid
-    sessionState.set('permissions', ['read', 'write']);      // ✅ Valid
-    sessionState.set('lastActivity', Date.now());            // ✅ Valid
+    sessionState.set('id', '123'); // ✅ Valid
+    sessionState.set('role', 'admin'); // ✅ Valid
+    sessionState.set('permissions', ['read', 'write']); // ✅ Valid
+    sessionState.set('lastActivity', Date.now()); // ✅ Valid
     // sessionState.set('invalidKey', 'value');              // ❌ TypeScript error
     // sessionState.set('role', 'invalid');                  // ❌ TypeScript error
-    
+
     // Type-safe getters
-    const userId = sessionState.get('id');                   // string | undefined
-    const role = sessionState.get('role');                   // 'admin' | 'user' | 'guest' | undefined
+    const userId = sessionState.get('id'); // string | undefined
+    const role = sessionState.get('role'); // 'admin' | 'user' | 'guest' | undefined
     const permissions = sessionState.get('permissions', []); // string[]
-    
+
     // Set multiple values with type safety
     sessionState.setMany({
       email: 'user@example.com',
       preferences: {
         theme: 'dark',
-        language: 'en'
-      }
+        language: 'en',
+      },
     });
-    
+
     // Get all values (only includes set values)
     const allSessionData = sessionState.getAll();
     // Type: Partial<UserSession>
-    
+
     // Clear all session data
     sessionState.clear();
-    
+
     return {
       userId,
       role,
       permissions,
-      allSessionData
+      allSessionData,
     };
-  }
+  },
 });
 ```
 
@@ -654,29 +649,29 @@ import { bindContext, getCurrentContext } from 'blaizejs';
 export const asyncHandler = createPostRoute({
   handler: async () => {
     setState('requestId', 'req-123');
-    
+
     // Bind context to preserve it in async operations
     const boundFunction = bindContext(async () => {
       // This function will run with the original context
       const ctx = getCurrentContext();
       const requestId = getState<string>('requestId');
-      
+
       return { contextPreserved: true, requestId };
     });
-    
+
     // Even if called later or passed around, context is preserved
     const result = await boundFunction();
-    
+
     // Works with timeouts and intervals
     const boundTimeout = bindContext(() => {
       const ctx = getCurrentContext(); // ✅ Still works
       console.log('Timeout executed with context');
     });
-    
+
     setTimeout(boundTimeout, 1000);
-    
+
     return result;
-  }
+  },
 });
 ```
 
@@ -699,16 +694,16 @@ export function logMessage(message: string) {
 export const utilityHandler = createGetRoute({
   handler: async () => {
     setState('requestId', 'req-456');
-    
-    logMessage('This has context');     // [req-456] This has context
-    
+
+    logMessage('This has context'); // [req-456] This has context
+
     // Call without context
     setTimeout(() => {
       logMessage('This has no context'); // [NO_CONTEXT] This has no context
     }, 100);
-    
+
     return { success: true };
-  }
+  },
 });
 ```
 
@@ -726,19 +721,19 @@ export async function manualContextExample(req: IncomingMessage, res: ServerResp
   const ctx = await createContext(req, res, {
     parseBody: true,
     initialState: {
-      customData: 'initial-value'
-    }
+      customData: 'initial-value',
+    },
   });
-  
+
   // Run code with the context
   await runWithContext(ctx, async () => {
     // Now getCurrentContext() works
     const currentCtx = getCurrentContext();
     setState('processedAt', Date.now());
-    
+
     // Call other functions that expect context
     await someBusinessLogic();
-    
+
     currentCtx.response.json({ success: true });
   });
 }
@@ -747,7 +742,7 @@ async function someBusinessLogic() {
   // This function expects to be called within a context
   const ctx = getCurrentContext();
   const processedAt = getState<number>('processedAt');
-  
+
   console.log(`Business logic executed at ${processedAt}`);
 }
 ```
@@ -757,40 +752,38 @@ async function someBusinessLogic() {
 ### 🚨 Built-in Error Types
 
 ```typescript
-import { 
-  ResponseSentError, 
-  ResponseSentHeaderError, 
+import {
+  ResponseSentError,
+  ResponseSentHeaderError,
   ResponseSentContentError,
-  ParseUrlError 
+  ParseUrlError,
 } from 'blaizejs';
 
 export const errorHandlingHandler = createPostRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     try {
       // Send initial response
       ctx.response.json({ message: 'First response' });
-      
+
       // This will throw ResponseSentError
       ctx.response.json({ message: 'Second response' });
-      
     } catch (error) {
       if (error instanceof ResponseSentError) {
         console.log('Attempted to send response multiple times');
       }
     }
-    
+
     try {
       // After response is sent, header operations fail
       ctx.response.header('X-Too-Late', 'value');
-      
     } catch (error) {
       if (error instanceof ResponseSentHeaderError) {
         console.log('Attempted to set header after response sent');
       }
     }
-  }
+  },
 });
 ```
 
@@ -800,27 +793,27 @@ export const errorHandlingHandler = createPostRoute({
 export const bodyErrorHandler = createPostRoute({
   handler: async () => {
     const ctx = getCurrentContext();
-    
+
     // Check for body parsing errors
     const bodyError = ctx.state._bodyError;
-    
+
     if (bodyError) {
       console.error('Body parsing failed:', {
-        type: bodyError.type,           // 'json_parse_error', 'form_parse_error', etc.
-        message: bodyError.message,     // Human-readable message
-        originalError: bodyError.error  // Original error object
+        type: bodyError.type, // 'json_parse_error', 'form_parse_error', etc.
+        message: bodyError.message, // Human-readable message
+        originalError: bodyError.error, // Original error object
       });
-      
+
       return ctx.response.status(400).json({
         error: 'Invalid request body',
-        details: bodyError.message
+        details: bodyError.message,
       });
     }
-    
+
     // Body parsed successfully
     const body = ctx.request.body;
     return { receivedBody: body };
-  }
+  },
 });
 ```
 
@@ -834,7 +827,7 @@ export function safeContextAccess() {
   if (!isInRequestContext()) {
     throw new Error('This function must be called within a request context');
   }
-  
+
   const ctx = getCurrentContext();
   return ctx.request.path;
 }
@@ -864,38 +857,38 @@ describe('Context Request Handling', () => {
   test('should create context with HTTP/1.1 request', async () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
-    
+
     const context = await createContext(req as any, res as any);
-    
+
     expect(context.request.method).toBe('GET');
     expect(context.request.path).toBe('/test');
     expect(context.request.isHttp2).toBe(false);
     expect(context.state).toEqual({});
   });
-  
+
   test('should parse query parameters correctly', async () => {
     const req = {
       ...createMockHttp1Request(),
-      url: '/api/search?q=javascript&tags=web&tags=tutorial&limit=10'
+      url: '/api/search?q=javascript&tags=web&tags=tutorial&limit=10',
     };
     const res = createMockResponse();
-    
+
     const context = await createContext(req as any, res as any);
-    
+
     expect(context.request.query).toEqual({
       q: 'javascript',
       tags: ['web', 'tutorial'],
-      limit: '10'
+      limit: '10',
     });
   });
-  
+
   test('should handle initial state', async () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     const initialState = { userId: '123', sessionId: 'session-456' };
-    
+
     const context = await createContext(req as any, res as any, { initialState });
-    
+
     expect(context.state).toEqual(initialState);
   });
 });
@@ -906,73 +899,73 @@ describe('Context Request Handling', () => {
 ```typescript
 // tests/context/state-management.test.ts
 import { describe, test, expect, beforeEach } from 'vitest';
-import { 
-  runWithContext, 
+import {
+  runWithContext,
   createContext,
-  setState, 
+  setState,
   getState,
   createNamespacedState,
-  createTypedState 
+  createTypedState,
 } from 'blaizejs';
 import { createMockHttp1Request, createMockResponse } from '@blaizejs/testing-utils';
 
 describe('State Management', () => {
   let context: any;
-  
+
   beforeEach(async () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     context = await createContext(req, res);
   });
-  
+
   test('should set and get state values', async () => {
     await runWithContext(context, () => {
       setState('testKey', 'testValue');
       const value = getState<string>('testKey');
-      
+
       expect(value).toBe('testValue');
     });
   });
-  
+
   test('should handle namespaced state', async () => {
     await runWithContext(context, () => {
       const userState = createNamespacedState('user');
       const sessionState = createNamespacedState('session');
-      
+
       userState.set('id', '123');
       sessionState.set('id', 'session-456');
-      
+
       expect(userState.get('id')).toBe('123');
       expect(sessionState.get('id')).toBe('session-456');
-      
+
       // Verify isolation
       expect(userState.get('id')).not.toBe(sessionState.get('id'));
     });
   });
-  
+
   test('should provide type safety with typed state', async () => {
     interface TestState {
       id: string;
       count: number;
       active: boolean;
     }
-    
+
     await runWithContext(context, () => {
       const typedState = createTypedState<TestState>('test');
-      
+
       typedState.set('id', '123');
       typedState.set('count', 42);
       typedState.set('active', true);
-      
+
       expect(typedState.get('id')).toBe('123');
       expect(typedState.get('count')).toBe(42);
       expect(typedState.get('active')).toBe(true);
-      
+
       const allValues = typedState.getAll();
       expect(allValues).toEqual({
         id: '123',
         count: 42,
-        active: true
+        active: true,
       });
     });
   });
@@ -992,50 +985,50 @@ describe('Response Methods', () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     const context = await createContext(req as any, res as any);
-    
+
     const data = { success: true, message: 'Test response' };
     context.response.json(data, 201);
-    
+
     expect(res.statusCode).toBe(201);
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json');
     expect(res.end).toHaveBeenCalledWith(JSON.stringify(data));
     expect(context.response.sent).toBe(true);
   });
-  
+
   test('should send text response', async () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     const context = await createContext(req as any, res as any);
-    
+
     context.response.text('Hello World', 200);
-    
+
     expect(res.statusCode).toBe(200);
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/plain');
     expect(res.end).toHaveBeenCalledWith('Hello World');
     expect(context.response.sent).toBe(true);
   });
-  
+
   test('should send redirect response', async () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     const context = await createContext(req as any, res as any);
-    
+
     context.response.redirect('/new-location', 301);
-    
+
     expect(res.statusCode).toBe(301);
     expect(res.setHeader).toHaveBeenCalledWith('Location', '/new-location');
     expect(res.end).toHaveBeenCalled();
     expect(context.response.sent).toBe(true);
   });
-  
+
   test('should prevent multiple responses', async () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     const context = await createContext(req as any, res as any);
-    
+
     // Send first response
     context.response.json({ first: true });
-    
+
     // Attempt second response should throw
     expect(() => {
       context.response.json({ second: true });
@@ -1049,13 +1042,13 @@ describe('Response Methods', () => {
 ```typescript
 // tests/context/integration.test.ts
 import { describe, test, expect, vi } from 'vitest';
-import { 
-  runWithContext, 
-  createContext, 
-  getCurrentContext, 
+import {
+  runWithContext,
+  createContext,
+  getCurrentContext,
   bindContext,
   setState,
-  getState 
+  getState,
 } from 'blaizejs';
 import { createMockHttp1Request, createMockResponse } from '@blaizejs/testing-utils';
 
@@ -1064,61 +1057,57 @@ describe('Context Integration', () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     const context = await createContext(req as any, res as any);
-    
+
     const callStack: string[] = [];
-    
+
     await runWithContext(context, async () => {
       setState('requestId', 'test-123');
       callStack.push('main');
-      
+
       await levelOne();
-      
+
       async function levelOne() {
         const ctx = getCurrentContext();
         const requestId = getState<string>('requestId');
         callStack.push(`level1-${requestId}`);
-        
+
         await levelTwo();
       }
-      
+
       async function levelTwo() {
         const ctx = getCurrentContext();
         const requestId = getState<string>('requestId');
         callStack.push(`level2-${requestId}`);
       }
     });
-    
-    expect(callStack).toEqual([
-      'main',
-      'level1-test-123',
-      'level2-test-123'
-    ]);
+
+    expect(callStack).toEqual(['main', 'level1-test-123', 'level2-test-123']);
   });
-  
+
   test('should bind context to functions', async () => {
     const req = createMockHttp1Request();
     const res = createMockResponse();
     const context = await createContext(req as any, res as any);
-    
+
     let boundResult: any;
-    
+
     await runWithContext(context, async () => {
       setState('testValue', 'bound-context');
-      
+
       const boundFunction = bindContext(() => {
         const ctx = getCurrentContext();
         return getState<string>('testValue');
       });
-      
+
       // Call bound function later (simulating async operation)
       setTimeout(() => {
         boundResult = boundFunction();
       }, 10);
     });
-    
+
     // Wait for timeout
     await new Promise(resolve => setTimeout(resolve, 20));
-    
+
     expect(boundResult).toBe('bound-context');
   });
 });
@@ -1139,27 +1128,27 @@ describe('Route Handler Context Usage', () => {
       const ctx = getCurrentContext();
       const userId = ctx.request.params.id;
       const userAgent = ctx.request.header('user-agent');
-      
+
       setState('accessTime', Date.now());
-      
+
       return {
         userId,
         userAgent,
-        accessTime: getState<number>('accessTime')
+        accessTime: getState<number>('accessTime'),
       };
     };
-    
+
     // Create test context
     const ctx = createTestContext({
       method: 'GET',
       path: '/users/123',
       params: { id: '123' },
-      headers: { 'user-agent': 'test-browser' }
+      headers: { 'user-agent': 'test-browser' },
     });
-    
+
     // Test the handler
     const result = await getUserHandler();
-    
+
     expect(result.userId).toBe('123');
     expect(result.userAgent).toBe('test-browser');
     expect(result.accessTime).toBeTypeOf('number');
@@ -1262,6 +1251,7 @@ For contributors working on context internals:
 ## 🗺️ Roadmap
 
 ### 🚀 Current (v0.1.x)
+
 - ✅ AsyncLocalStorage-based context propagation
 - ✅ Type-safe request/response handling for HTTP/1.1 and HTTP/2
 - ✅ Advanced state management with namespaced and typed accessors
@@ -1272,9 +1262,10 @@ For contributors working on context internals:
 - ✅ Comprehensive error handling with custom error types
 - ✅ Stream response support with error handling
 - ✅ Request header access with unified API
-- ✅ **Integrated Zod validation** - Full schema validation for headers, query, body, and responses via route creators
+- ✅ Integrated Zod validation - Full schema validation for headers, query, body, and responses via route creators
 
 ### 🎯 Next Release (v0.2.x)
+
 - 🔄 **Context Profiling** - Built-in timing and performance analysis for request processing
 - 🔄 **Advanced State Persistence** - Redis-backed state for distributed applications
 - 🔄 **Response Compression** - Automatic gzip/brotli compression based on Accept-Encoding
@@ -1282,6 +1273,7 @@ For contributors working on context internals:
 - 🔄 **Context Snapshots** - Save/restore context state for testing and debugging
 
 ### 🔮 Future (v0.3.x+)
+
 - 🔄 **Context Middleware Pipeline** - Composable context transformations
 - 🔄 **Advanced Streaming** - Server-sent events and WebSocket context integration
 - 🔄 **Context Pooling** - Memory optimization for high-traffic applications
@@ -1289,6 +1281,7 @@ For contributors working on context internals:
 - 🔄 **Context Serialization** - Save/restore context state for debugging
 
 ### 🌟 Long-term Vision
+
 - 🔄 **Visual Context Inspector** - Developer tools for debugging context flow
 - 🔄 **AI-Powered Context Analysis** - Automatic optimization suggestions
 - 🔄 **Multi-Protocol Context** - Unified context for HTTP, WebSocket, and gRPC
