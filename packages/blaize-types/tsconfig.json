@@ -4,16 +4,8 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "tsBuildInfoFile": "./.tsbuildinfo",
-    "emitDeclarationOnly": true,
+    "emitDeclarationOnly": true
   },
-  "include": [
-    "src/index.ts",
-    "src/server.ts",
-    "src/context.ts",
-    "src/middleware.ts",
-    "src/plugins.ts",
-    "src/router.ts",
-    "src/client.ts"
-  ],
+  "include": ["src/**.ts"],
   "exclude": ["node_modules", "dist/*.d.ts"]
 }

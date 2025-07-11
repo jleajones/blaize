@@ -366,4 +366,254 @@ describe('Context Module', () => {
       expect(isInRequestContext()).toBe(false);
     });
   });
+
+  describe('Multipart/Form-Data Support', () => {
+    // Helper to create multipart request body
+    function createMultipartBody(
+      boundary: string,
+      parts: Array<{
+        name: string;
+        content: string;
+        filename?: string;
+        contentType?: string;
+      }>
+    ): Buffer {
+      const chunks: Buffer[] = [];
+
+      for (const part of parts) {
+        chunks.push(Buffer.from(`--${boundary}\r\n`));
+
+        if (part.filename) {
+          chunks.push(
+            Buffer.from(
+              `Content-Disposition: form-data; name="${part.name}"; filename="${part.filename}"\r\n`
+            )
+          );
+          chunks.push(
+            Buffer.from(`Content-Type: ${part.contentType || 'application/octet-stream'}\r\n`)
+          );
+        } else {
+          chunks.push(Buffer.from(`Content-Disposition: form-data; name="${part.name}"\r\n`));
+        }
+
+        chunks.push(Buffer.from('\r\n'));
+        chunks.push(Buffer.from(part.content));
+        chunks.push(Buffer.from('\r\n'));
+      }
+
+      chunks.push(Buffer.from(`--${boundary}--\r\n`));
+      return Buffer.concat(chunks);
+    }
+
+    function createMultipartRequest(body: Buffer, boundary: string) {
+      const readable = Readable.from(body);
+      return {
+        ...createMockHttp1Request({ method: 'POST' }),
+        headers: {
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+          'content-length': body.length.toString(),
+        },
+        // Add async iterator support
+        [Symbol.asyncIterator]: readable[Symbol.asyncIterator].bind(readable),
+      };
+    }
+
+    test('should automatically parse multipart form with files', async () => {
+      const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+      const body = createMultipartBody(boundary, [
+        { name: 'title', content: 'Test Upload' },
+        { name: 'description', content: 'A test file upload' },
+        {
+          name: 'avatar',
+          content: 'fake image data',
+          filename: 'profile.jpg',
+          contentType: 'image/jpeg',
+        },
+      ]);
+
+      const req = createMultipartRequest(body, boundary);
+      const res = createMockResponse();
+
+      const context = await createContext(req as any, res as any, { parseBody: true });
+
+      // Check that multipart data was parsed
+      expect(context.request.multipart).toBeDefined();
+      expect(context.request.files).toBeDefined();
+
+      // Check fields (should be in body for backward compatibility)
+      expect(context.request.body).toEqual({
+        title: 'Test Upload',
+        description: 'A test file upload',
+      });
+
+      // Check files
+      expect(context.request.files?.avatar).toBeDefined();
+      const avatar = context.request.files?.avatar as any;
+      expect(avatar.filename).toBe('profile.jpg');
+      expect(avatar.mimetype).toBe('image/jpeg');
+      expect(avatar.size).toBe('fake image data'.length);
+      expect(avatar.fieldname).toBe('avatar');
+
+      // Check complete multipart data
+      expect(context.request.multipart?.fields).toEqual({
+        title: 'Test Upload',
+        description: 'A test file upload',
+      });
+      expect(context.request.multipart?.files.avatar).toBeDefined();
+    });
+
+    test('should handle form-only multipart (no files)', async () => {
+      const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+      const body = createMultipartBody(boundary, [
+        { name: 'username', content: 'john' },
+        { name: 'email', content: 'john@example.com' },
+        { name: 'tags', content: 'tag1' },
+        { name: 'tags', content: 'tag2' },
+      ]);
+
+      const req = createMultipartRequest(body, boundary);
+      const res = createMockResponse();
+
+      const context = await createContext(req as any, res as any, { parseBody: true });
+
+      // Check that multipart data was parsed
+      expect(context.request.multipart).toBeDefined();
+      expect(context.request.files).toBeDefined();
+
+      // Check fields
+      expect(context.request.body).toEqual({
+        username: 'john',
+        email: 'john@example.com',
+        tags: ['tag1', 'tag2'], // Multiple values should be arrays
+      });
+
+      // Should have no files
+      expect(Object.keys(context.request.files || {})).toHaveLength(0);
+
+      // Check complete multipart data
+      expect(context.request.multipart?.fields).toEqual({
+        username: 'john',
+        email: 'john@example.com',
+        tags: ['tag1', 'tag2'],
+      });
+    });
+
+    test('should handle multiple files with same field name', async () => {
+      const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+      const body = createMultipartBody(boundary, [
+        { name: 'category', content: 'documents' },
+        {
+          name: 'files',
+          content: 'document 1 content',
+          filename: 'doc1.txt',
+          contentType: 'text/plain',
+        },
+        {
+          name: 'files',
+          content: 'document 2 content',
+          filename: 'doc2.txt',
+          contentType: 'text/plain',
+        },
+      ]);
+
+      const req = createMultipartRequest(body, boundary);
+      const res = createMockResponse();
+
+      const context = await createContext(req as any, res as any, { parseBody: true });
+
+      // Check fields
+      expect(context.request.body).toEqual({
+        category: 'documents',
+      });
+
+      // Check multiple files
+      expect(Array.isArray(context.request.files?.files)).toBe(true);
+      const files = context.request.files?.files as any[];
+      expect(files).toHaveLength(2);
+      expect(files[0].filename).toBe('doc1.txt');
+      expect(files[1].filename).toBe('doc2.txt');
+    });
+
+    test('should handle multipart parsing errors gracefully', async () => {
+      const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+      // Create invalid multipart data (missing boundary)
+      const invalidBody = Buffer.from('invalid multipart data');
+
+      const req = createMultipartRequest(invalidBody, boundary);
+      const res = createMockResponse();
+
+      const context = await createContext(req as any, res as any, { parseBody: true });
+
+      // Should handle error gracefully
+      expect(context.request.body).toBeNull();
+      expect(context.state._bodyError).toBeDefined();
+      expect(context.state._bodyError?.type).toBe('multipart_parse_error');
+      expect(context.state._bodyError?.message).toContain('Failed to parse multipart data');
+    });
+
+    test('should not attempt multipart parsing for non-multipart content', async () => {
+      const req = {
+        ...createMockHttp1Request({ method: 'POST' }),
+        headers: {
+          'content-type': 'application/json',
+          'content-length': '20',
+        },
+      };
+      const res = createMockResponse();
+
+      const context = await createContext(req as any, res as any, { parseBody: true });
+
+      // Should not have multipart properties for non-multipart requests
+      expect(context.request.multipart).toBeUndefined();
+      expect(context.request.files).toBeUndefined();
+    });
+
+    test('should respect file size limits during parsing', async () => {
+      const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+      const largeContent = 'x'.repeat(100* 1024 * 1024); // 100MB - larger than default 50MB limit
+      const body = createMultipartBody(boundary, [
+        {
+          name: 'largefile',
+          content: largeContent,
+          filename: 'large.txt',
+          contentType: 'text/plain',
+        },
+      ]);
+
+      const req = createMultipartRequest(body, boundary);
+      const res = createMockResponse();
+
+      const context = await createContext(req as any, res as any, { parseBody: true });
+
+      // Should handle size limit error
+      expect(context.request.body).toBeNull();
+      expect(context.state._bodyError).toBeDefined();
+      expect(context.state._bodyError?.type).toBe('multipart_parse_error');
+    });
+
+    test('should provide proper TypeScript types for multipart properties', async () => {
+      const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+      const body = createMultipartBody(boundary, [
+        { name: 'title', content: 'Test' },
+        { name: 'file', content: 'content', filename: 'test.txt' },
+      ]);
+
+      const req = createMultipartRequest(body, boundary);
+      const res = createMockResponse();
+
+      const context = await createContext(req as any, res as any, { parseBody: true });
+
+      // These should all be properly typed (test compilation)
+      const multipart = context.request.multipart;
+      const files = context.request.files;
+      const fields = multipart?.fields;
+      const fileList = multipart?.files;
+
+      // TypeScript should understand these types
+      expect(typeof multipart).toBe('object');
+      expect(typeof files).toBe('object');
+      expect(typeof fields).toBe('object');
+      expect(typeof fileList).toBe('object');
+    });
+  });
 });
