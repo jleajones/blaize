@@ -383,6 +383,198 @@ export abstract class BlaizeError<TDetails = unknown> extends Error {
   }
 }
 
+/**
+ * Interface for authentication error details
+ */
+export interface UnauthorizedErrorDetails {
+  /** Reason for authentication failure */
+  reason?:
+    | 'missing_token'
+    | 'invalid_token'
+    | 'expired_token'
+    | 'malformed_token'
+    | 'insufficient_scope'
+    | string;
+
+  /** Authentication scheme (Bearer, Basic, etc.) */
+  authScheme?: string;
+
+  /** Authentication realm */
+  realm?: string;
+
+  /** Detailed error description */
+  error_description?: string;
+
+  /** Required scopes or permissions */
+  requiredScopes?: string[];
+
+  /** Login URL for interactive authentication */
+  loginUrl?: string;
+
+  /** Additional context */
+  [key: string]: unknown;
+}
+
+/**
+ * Interface for authorization/permission error details
+ */
+export interface ForbiddenErrorDetails {
+  /** Required permission or role */
+  requiredPermission?: string;
+
+  /** User's current permissions */
+  userPermissions?: string[];
+
+  /** Resource being accessed */
+  resource?: string;
+
+  /** Action being attempted */
+  action?: string;
+
+  /** Reason for access denial */
+  reason?: 'insufficient_permissions' | 'account_suspended' | 'resource_locked' | string;
+
+  /** Additional context */
+  [key: string]: unknown;
+}
+
+/**
+ * Interface for resource conflict error details
+ */
+export interface ConflictErrorDetails {
+  /** Type of conflict */
+  conflictType?:
+    | 'duplicate_key'
+    | 'version_mismatch'
+    | 'concurrent_modification'
+    | 'business_rule'
+    | string;
+
+  /** Field that caused the conflict */
+  field?: string;
+
+  /** Existing value that conflicts */
+  existingValue?: unknown;
+
+  /** Provided value that conflicts */
+  providedValue?: unknown;
+
+  /** Resource that has the conflicting value */
+  conflictingResource?: string;
+
+  /** Current version/etag of the resource */
+  currentVersion?: string;
+
+  /** Expected version/etag */
+  expectedVersion?: string;
+
+  /** Suggested resolution */
+  resolution?: string;
+
+  /** Additional context */
+  [key: string]: unknown;
+}
+
+/**
+ * Interface for rate limiting error details
+ */
+export interface RateLimitErrorDetails {
+  /** Maximum requests allowed in the time window */
+  limit?: number;
+
+  /** Remaining requests in current window */
+  remaining?: number;
+
+  /** When the rate limit resets */
+  resetTime?: Date;
+
+  /** Seconds until the rate limit resets */
+  retryAfter?: number;
+
+  /** Time window for the rate limit */
+  window?: string;
+
+  /** Identifier used for rate limiting (IP, user ID, etc.) */
+  identifier?: string;
+
+  /** Type of rate limit hit */
+  limitType?: 'global' | 'per_user' | 'per_ip' | 'per_endpoint' | string;
+
+  /** Additional context */
+  [key: string]: unknown;
+}
+
+/**
+ * Interface for internal server error details
+ */
+export interface InternalServerErrorDetails {
+  /** Original error message (for debugging) */
+  originalError?: string;
+
+  /** Stack trace (for debugging) */
+  stackTrace?: string;
+
+  /** Component where the error occurred */
+  component?: string;
+
+  /** Operation being performed */
+  operation?: string;
+
+  /** Internal error code */
+  internalErrorCode?: string;
+
+  /** When the error occurred */
+  timestamp?: Date;
+
+  /** Whether this error should be retryable */
+  retryable?: boolean;
+
+  /** Additional debugging context */
+  [key: string]: unknown;
+}
+
+/**
+ * Interface for NotFound error details
+ * Provides context about the missing resource
+ */
+export interface NotFoundErrorDetails {
+  /** Type of resource that was not found */
+  resourceType?: string;
+
+  /** ID or identifier of the resource */
+  resourceId?: string;
+
+  /** Collection or table where the resource was searched */
+  collection?: string;
+
+  /** Search criteria that was used */
+  query?: Record<string, unknown>;
+
+  /** Search criteria that was used (for backward compatibility) */
+  searchCriteria?: Record<string, unknown>;
+
+  /** The path that was attempted */
+  path?: string;
+
+  /** HTTP method used (for API endpoints) */
+  method?: string;
+
+  /** The path that was attempted (for backward compatibility) */
+  attemptedPath?: string;
+
+  /** Parent resource information for nested resources */
+  parentResource?: {
+    type: string;
+    id: string;
+  };
+
+  /** Helpful suggestion for the user */
+  suggestion?: string;
+
+  /** Additional context */
+  [key: string]: unknown;
+}
+
 // TODO: This can potentiall be removed
 /**
  * Interface for body parsing errors stored in context state
