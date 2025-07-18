@@ -5,8 +5,8 @@
  * version mismatches, or concurrent modifications.
  */
 
-import { BlaizeError, ErrorType } from '../index';
 import { getCurrentCorrelationId } from './correlation';
+import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
 
 import type { ConflictErrorDetails } from '../index';
 

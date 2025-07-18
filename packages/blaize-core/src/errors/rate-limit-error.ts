@@ -5,10 +5,10 @@
  * It provides context about the rate limit and when requests can resume.
  */
 
-import { BlaizeError, ErrorType } from '../index';
 import { getCurrentCorrelationId } from './correlation';
+import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
 
-import type { RateLimitErrorDetails } from '../index';
+import type { RateLimitErrorDetails } from '../../../blaize-types/src/errors';
 
 /**
  * Error thrown when rate limits are exceeded

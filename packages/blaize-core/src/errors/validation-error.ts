@@ -6,9 +6,9 @@
  */
 
 import { getCurrentCorrelationId } from './correlation';
-import { BlaizeError, ErrorType } from '../index';
+import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
 
-import type { ValidationErrorDetails } from '../index';
+import type { ValidationErrorDetails } from '../../../blaize-types/src/errors';
 
 /**
  * Error thrown when request validation fails

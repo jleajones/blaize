@@ -1,6 +1,5 @@
 /**
  * Correlation ID system for request tracing across async operations
- * Location: packages/blaize-core/src/errors/correlation.ts
  *
  * This module provides utilities for generating, storing, and accessing
  * correlation IDs that follow requests through the entire application stack.
