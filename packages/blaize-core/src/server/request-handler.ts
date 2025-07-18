@@ -2,7 +2,7 @@ import { createContext } from '../context/create';
 import { runWithContext } from '../context/store';
 import { compose } from '../middleware/compose';
 
-import type { RequestHandler, Server } from '../index';
+import type { Server, RequestHandler } from '@blaize-types/server';
 
 export function createRequestHandler(serverInstance: Server): RequestHandler {
   return async (req, res) => {

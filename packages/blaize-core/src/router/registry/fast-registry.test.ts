@@ -6,7 +6,7 @@ import {
   getFileRoutes,
 } from './fast-registry';
 
-import type { Route } from '../../index';
+import type { Route } from '@blaize-types/router';
 
 describe('fast-registry.ts - Route Registry', () => {
   let registry: ReturnType<typeof createRouteRegistry>;

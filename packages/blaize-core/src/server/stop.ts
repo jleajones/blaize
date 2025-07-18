@@ -1,4 +1,4 @@
-import type { Server, StopOptions } from '../index';
+import type { Server, StopOptions } from '@blaize-types/server';
 
 // Add a global flag to prevent multiple shutdowns
 let isShuttingDown = false;

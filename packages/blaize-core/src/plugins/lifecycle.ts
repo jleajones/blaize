@@ -1,4 +1,5 @@
-import type { Server, Plugin, PluginLifecycleManager, PluginLifecycleOptions } from '../index';
+import type { Plugin, PluginLifecycleManager, PluginLifecycleOptions } from '@blaize-types/plugins';
+import type { Server } from '@blaize-types/server';
 
 /**
  * Create a plugin lifecycle manager

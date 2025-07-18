@@ -5,7 +5,7 @@ import { watch } from 'chokidar';
 import { hasRouteContentChanged, processChangedFile } from './cache';
 import { findRouteFiles } from './finder';
 
-import type { Route, WatchOptions } from '../../index';
+import type { Route, WatchOptions } from '@blaize-types/router';
 
 /**
  * Watch for route file changes

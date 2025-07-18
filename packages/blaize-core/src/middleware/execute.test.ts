@@ -1,6 +1,7 @@
 import { execute } from './execute';
 
-import type { Context, Middleware, MiddlewareFunction } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware, MiddlewareFunction } from '@blaize-types/middleware';
 
 describe('execute', () => {
   // Create shared test objects

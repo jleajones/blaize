@@ -1,6 +1,6 @@
 import { create } from './create';
 
-import type { Server } from '../index';
+import type { Server } from '@blaize-types/server';
 
 describe('Plugin Creation', () => {
   // Mock server object for testing

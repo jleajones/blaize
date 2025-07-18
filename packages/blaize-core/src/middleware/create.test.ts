@@ -1,6 +1,7 @@
 import { create } from './create';
 
-import type { Context, MiddlewareFunction, Middleware, MiddlewareOptions } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware, MiddlewareOptions, MiddlewareFunction } from '@blaize-types/middleware';
 
 describe('createMiddleware', () => {
   // Shared test data and utilities

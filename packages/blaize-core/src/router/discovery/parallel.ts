@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import { processChangedFile } from './cache';
 import { findRouteFiles } from './finder';
 
-import type { Route } from '../../index';
+import type { Route } from '@blaize-types/router';
 
 export async function processFilesInParallel(
   filePaths: string[],

@@ -1,6 +1,6 @@
 import { createMatcher } from './matcher';
 
-import type { RouteMethodOptions } from '../../index';
+import type { RouteMethodOptions } from '@blaize-types/router';
 
 describe('Route Matcher', () => {
   let matcher: ReturnType<typeof createMatcher>;

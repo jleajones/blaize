@@ -7,7 +7,7 @@ import {
   bindContext,
 } from './store';
 
-import type { Context } from '../index';
+import type { Context } from '@blaize-types/context';
 
 // Mock AsyncLocalStorage for better test control
 vi.mock('node:async_hooks', () => {

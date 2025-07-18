@@ -5,10 +5,11 @@
  * It provides context about authentication requirements and failure reasons.
  */
 
-import { getCurrentCorrelationId } from './correlation';
-import { ErrorType, BlaizeError } from '../../../blaize-types/src/errors';
+import { ErrorType, BlaizeError } from '@blaize-types/errors';
 
-import type { UnauthorizedErrorDetails } from '../../../blaize-types/src/errors';
+import { getCurrentCorrelationId } from './correlation';
+
+import type { UnauthorizedErrorDetails } from '@blaize-types/errors';
 
 /**
  * Error thrown when authentication is required or has failed

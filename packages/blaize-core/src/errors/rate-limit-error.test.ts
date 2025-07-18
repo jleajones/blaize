@@ -2,7 +2,8 @@
  * Tests for remaining server-side error classes
  */
 
-import { ErrorType } from '../index';
+import { ErrorType } from '@blaize-types/errors';
+
 import { RateLimitError } from './rate-limit-error';
 
 // Mock the correlation system

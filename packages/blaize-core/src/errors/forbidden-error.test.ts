@@ -2,7 +2,8 @@
  * Tests for remaining server-side error classes
  */
 
-import { ErrorType } from '../index';
+import { ErrorType } from '@blaize-types/errors';
+
 import { ForbiddenError } from './forbidden-error';
 
 // Mock the correlation system

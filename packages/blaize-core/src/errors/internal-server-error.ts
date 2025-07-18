@@ -6,10 +6,11 @@
  * sensitive information in production.
  */
 
-import { getCurrentCorrelationId } from './correlation';
-import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import type { InternalServerErrorDetails } from '../../../blaize-types/src/errors';
+import { getCurrentCorrelationId } from './correlation';
+
+import type { InternalServerErrorDetails } from '@blaize-types/errors';
 /**
  * Error thrown for internal server errors
  *

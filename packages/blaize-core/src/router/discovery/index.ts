@@ -1,7 +1,7 @@
 import { findRouteFiles } from './finder';
 import { loadRouteModule } from './loader';
 
-import type { Route } from '../../index';
+import type { Route } from '@blaize-types/router';
 
 export interface FindRoutesOptions {
   /** Base path for routes */

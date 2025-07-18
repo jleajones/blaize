@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 
 import { parseMultipartRequest } from './multipart-parser';
 
-import type { UnifiedRequest } from '../index';
+import type { UnifiedRequest } from '@blaize-types/context';
 
 describe('Multipart Parser', () => {
   const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';

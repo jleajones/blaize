@@ -5,7 +5,7 @@ import * as http2 from 'node:http2';
 import { generateDevCertificates } from './dev-certificate';
 import { createRequestHandler } from './request-handler';
 
-import type { Http2Options, Server, ServerOptions } from '../index';
+import type { Server, Http2Options, ServerOptions } from '@blaize-types/server';
 
 // Extract certificate handling to a separate function
 async function prepareCertificates(

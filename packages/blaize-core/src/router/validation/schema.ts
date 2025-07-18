@@ -7,13 +7,9 @@ import { validateResponse } from './response';
 import { InternalServerError } from '../../errors/internal-server-error';
 import { ValidationError } from '../../errors/validation-error';
 
-import type {
-  RouteSchema,
-  Context,
-  Middleware,
-  MiddlewareFunction,
-  NextFunction,
-} from '../../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware, MiddlewareFunction, NextFunction } from '@blaize-types/middleware';
+import type { RouteSchema } from '@blaize-types/router';
 
 /**
  * Create a validation middleware for request data

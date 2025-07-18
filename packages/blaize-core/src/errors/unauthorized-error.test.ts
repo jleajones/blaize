@@ -2,7 +2,8 @@
  * Tests for Unauthorized server-side error classes
  */
 
-import { ErrorType } from '../index';
+import { ErrorType } from '@blaize-types/errors';
+
 import { UnauthorizedError } from './unauthorized-error';
 
 // Mock the correlation system

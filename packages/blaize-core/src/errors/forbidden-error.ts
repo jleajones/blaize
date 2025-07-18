@@ -5,10 +5,11 @@
  * It provides context about required permissions and access control.
  */
 
-import { getCurrentCorrelationId } from './correlation';
-import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import type { ForbiddenErrorDetails } from '../../../blaize-types/src/errors';
+import { getCurrentCorrelationId } from './correlation';
+
+import type { ForbiddenErrorDetails } from '@blaize-types/errors';
 
 /**
  * Error thrown when user lacks permission to access a resource

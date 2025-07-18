@@ -5,10 +5,11 @@
  * version mismatches, or concurrent modifications.
  */
 
-import { getCurrentCorrelationId } from './correlation';
-import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import type { ConflictErrorDetails } from '../index';
+import { getCurrentCorrelationId } from './correlation';
+
+import type { ConflictErrorDetails } from '@blaize-types/errors';
 
 /**
  * Error thrown when a resource conflict occurs

@@ -1,4 +1,5 @@
-import { ErrorType } from '../index';
+import { ErrorType } from '@blaize-types/errors';
+
 import { NotFoundError } from './not-found-error';
 
 // Mock the correlation system

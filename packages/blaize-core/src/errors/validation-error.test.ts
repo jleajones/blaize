@@ -1,7 +1,8 @@
-import { ValidationError } from './validation-error';
-import { ErrorType } from '../index';
+import { ErrorType } from '@blaize-types/errors';
 
-import type { ValidationErrorDetails } from '../index';
+import { ValidationError } from './validation-error';
+
+import type { ValidationErrorDetails } from '@blaize-types/errors';
 
 // Mock the correlation system
 vi.mock('./correlation', () => ({

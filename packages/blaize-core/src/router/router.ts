@@ -16,7 +16,8 @@ import {
   updateRouteInMatcher,
 } from './utils/matching-helpers';
 
-import type { Context, HttpMethod, Route, RouterOptions, Router } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { HttpMethod, Route, RouterOptions, Router } from '@blaize-types/router';
 
 const DEFAULT_ROUTER_OPTIONS = {
   routesDir: './routes',

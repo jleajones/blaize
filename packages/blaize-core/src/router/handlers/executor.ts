@@ -1,7 +1,9 @@
 import { compose } from '../../middleware/compose';
 import { createRequestValidator, createResponseValidator } from '../validation';
 
-import type { Context, RouteMethodOptions } from '../../index';
+import type { Context } from '@blaize-types/context';
+import type { RouteMethodOptions } from '@blaize-types/router';
+
 /**
  * Execute a route handler with its middleware
  */

@@ -1,6 +1,7 @@
 import { handleRouteError } from './error';
 
-import type { Context, ErrorHandlerOptions } from '../../index';
+import type { Context } from '@blaize-types/context';
+import type { ErrorHandlerOptions } from '@blaize-types/router';
 
 describe('Error Handler', () => {
   // Mock console.error to avoid noise in test output

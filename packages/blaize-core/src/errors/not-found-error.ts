@@ -5,10 +5,11 @@
  * It provides context about what resource was being looked for and how.
  */
 
-import { getCurrentCorrelationId } from './correlation';
-import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import type { NotFoundErrorDetails } from '../../../blaize-types/src/errors';
+import { getCurrentCorrelationId } from './correlation';
+
+import type { NotFoundErrorDetails } from '@blaize-types/errors';
 /**
  * Error thrown when a requested resource cannot be found
  *

@@ -1,4 +1,4 @@
-import type { Route, HttpMethod, RouteMethodOptions, Matcher } from '../../index';
+import type { Route, HttpMethod, RouteMethodOptions, Matcher } from '@blaize-types/router';
 
 export function addRouteToMatcher(route: Route, matcher: Matcher): void {
   Object.entries(route).forEach(([method, methodOptions]) => {

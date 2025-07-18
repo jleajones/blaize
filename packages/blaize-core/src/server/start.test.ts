@@ -7,7 +7,7 @@ import { createMockServerWithPlugins } from '@blaizejs/testing-utils';
 import { generateDevCertificates } from './dev-certificate';
 import { startServer } from './start';
 
-import type { Server, ServerOptions } from '../index';
+import type { Server, ServerOptions } from '@blaize-types/server';
 
 // Mock the dependencies
 vi.mock('node:fs');

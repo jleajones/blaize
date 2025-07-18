@@ -1,6 +1,6 @@
 import { createRouteTree } from './tree';
 
-import type { RouteMethodOptions } from '../../index';
+import type { RouteMethodOptions } from '@blaize-types/router';
 
 // Mock handler for testing
 const createMockHandler = (name: string): RouteMethodOptions => ({

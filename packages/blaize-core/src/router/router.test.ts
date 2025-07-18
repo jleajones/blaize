@@ -68,7 +68,8 @@ import {
   updateRouteInMatcher,
 } from './utils/matching-helpers';
 
-import type { Context, Route, RouterOptions, RouteMethodOptions } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { RouteMethodOptions, Route, RouterOptions } from '@blaize-types/router';
 
 describe('Router', () => {
   // Setup common mocks and fixtures

@@ -4,7 +4,7 @@ import { processChangedFile, hasRouteContentChanged } from './cache';
 import { findRouteFiles } from './finder';
 import { watchRoutes } from './watchers';
 
-import type { WatchOptions } from '../../index';
+import type { WatchOptions } from '@blaize-types/router';
 
 // Create a mock chokidar watcher
 const mockWatcher = {

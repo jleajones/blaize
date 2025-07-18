@@ -2,7 +2,8 @@ import { createMockServerWithPlugins, createMockPlugin } from '@blaizejs/testing
 
 import { createPluginLifecycleManager } from './lifecycle';
 
-import type { Server, PluginLifecycleManager, Plugin } from '../index';
+import type { Plugin, PluginLifecycleManager } from '@blaize-types/plugins';
+import type { Server } from '@blaize-types/server';
 
 describe('PluginLifecycleManager', () => {
   let server: Server;

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import type { ServerOptions, ServerOptionsInput, Middleware, Plugin } from '../index';
+import type { Middleware } from '@blaize-types/middleware';
+import type { Plugin } from '@blaize-types/plugins';
+import type { ServerOptions, ServerOptionsInput } from '@blaize-types/server';
 
 // Create a more flexible validation for the middleware function type
 const middlewareSchema = z.custom<Middleware>(

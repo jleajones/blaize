@@ -5,10 +5,11 @@
  * It provides structured information about which fields failed validation and why.
  */
 
-import { getCurrentCorrelationId } from './correlation';
-import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import type { ValidationErrorDetails } from '../../../blaize-types/src/errors';
+import { getCurrentCorrelationId } from './correlation';
+
+import type { ValidationErrorDetails } from '@blaize-types/errors';
 
 /**
  * Error thrown when request validation fails

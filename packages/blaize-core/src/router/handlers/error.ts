@@ -1,4 +1,5 @@
-import type { Context, ErrorHandlerOptions } from '../../index';
+import type { Context } from '@blaize-types/context';
+import type { ErrorHandlerOptions } from '@blaize-types/router';
 
 /**
  * Handle a route error

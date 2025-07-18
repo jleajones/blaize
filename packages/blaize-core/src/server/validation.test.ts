@@ -4,7 +4,9 @@ import { createMockMiddleware } from '@blaizejs/testing-utils';
 
 import { validateServerOptions, serverOptionsSchema } from './validation';
 
-import type { ServerOptionsInput, Middleware, Plugin } from '../index';
+import type { Middleware } from '@blaize-types/middleware';
+import type { Plugin } from '@blaize-types/plugins';
+import type { ServerOptionsInput } from '@blaize-types/server';
 
 describe('Server Options Validation', () => {
   // Store original NODE_ENV and restore after tests

@@ -467,3 +467,8 @@ export interface RouteRegistry {
   routesByFile: Map<string, Set<string>>; // file -> paths
   pathToFile: Map<string, string>; // path -> file
 }
+
+export interface FindRouteFilesOptions {
+  /** Directories to ignore */
+  ignore?: string[] | undefined;
+}

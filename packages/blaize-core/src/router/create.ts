@@ -11,7 +11,7 @@ import type {
   CreatePatchRoute,
   CreateHeadRoute,
   CreateOptionsRoute,
-} from '../index';
+} from '@blaize-types/router';
 
 /**
  * Get the file path of the function that called createXRoute

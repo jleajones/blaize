@@ -1,10 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-interface FindRouteFilesOptions {
-  /** Directories to ignore */
-  ignore?: string[] | undefined;
-}
+import type { FindRouteFilesOptions } from '@blaize-types/router';
 
 /**
  * Find all route files in the specified directory
