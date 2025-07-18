@@ -6,13 +6,8 @@ import { Readable } from 'node:stream';
 
 import { extractBoundary, parseContentDisposition, parseContentType } from './utils';
 
-import type {
-  UploadedFile,
-  MultipartData,
-  ParseOptions,
-  ParserState,
-  UnifiedRequest,
-} from '../index';
+import type { UnifiedRequest } from '@blaize-types/context';
+import type { UploadedFile, MultipartData, ParseOptions, ParserState } from '@blaize-types/upload';
 
 // Default options with sensible defaults
 const DEFAULT_OPTIONS: Required<ParseOptions> = {
@@ -105,12 +100,12 @@ function processBoundary(state: ParserState): ParserState {
 
   // Check for end boundary (-- after boundary)
   if (buffer.length >= 2 && buffer.subarray(0, 2).equals(Buffer.from('--'))) {
-    return { 
-      ...state, 
-      buffer, 
+    return {
+      ...state,
+      buffer,
       hasFoundValidBoundary,
       isFinished: true,
-      stage: 'boundary'
+      stage: 'boundary',
     };
   }
 
@@ -207,10 +202,10 @@ async function processContent(state: ParserState): Promise<ParserState> {
 
   if (isComplete) {
     updatedState = await finalizeCurrentPart(updatedState);
-    updatedState = { 
-      ...updatedState, 
+    updatedState = {
+      ...updatedState,
       stage: 'boundary' as const,
-      hasProcessedAnyPart: true // Mark that we've processed at least one part
+      hasProcessedAnyPart: true, // Mark that we've processed at least one part
     };
   }
 
