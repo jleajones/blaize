@@ -1,6 +1,8 @@
 import { createContext } from '../context/create';
 import { runWithContext } from '../context/store';
+import { NotFoundError } from '../errors/not-found-error';
 import { compose } from '../middleware/compose';
+import { createErrorBoundary } from '../middleware/error-boundary';
 
 import type { Server, RequestHandler } from '@blaize-types/server';
 
@@ -12,44 +14,29 @@ export function createRequestHandler(serverInstance: Server): RequestHandler {
         parseBody: true, // Enable automatic body parsing
       });
 
+      // Create error boundary middleware that catches all thrown error classes
+      const errorBoundary = createErrorBoundary();
+
+      // Compose all middleware with error boundary first (to catch all errors)
+      const allMiddleware = [errorBoundary, ...serverInstance.middleware];
+
       // Compose all middleware into a single function
-      const handler = compose(serverInstance.middleware);
+      const handler = compose(allMiddleware);
 
       // Run the request with context in AsyncLocalStorage
       await runWithContext(context, async () => {
-        try {
-          // Execute the middleware chain
-          await handler(context, async () => {
-            if (!context.response.sent) {
-              // Let the router handle the request
-              await serverInstance.router.handleRequest(context);
-              // If router didn't handle it either, send a 404
-              if (!context.response.sent) {
-                context.response.status(404).json({
-                  error: 'Not Found',
-                  message: `Route not found: ${context.request.method} ${context.request.path}`,
-                });
-              }
-            }
-          });
-        } catch (error) {
-          // Handle errors in middleware chain
-          console.error('Error processing request:', error);
-
-          // Only send error response if one hasn't been sent already
+        await handler(context, async () => {
           if (!context.response.sent) {
-            context.response.json(
-              {
-                error: 'Internal Server Error',
-                message:
-                  process.env.NODE_ENV === 'development'
-                    ? error || 'Unknown error'
-                    : 'An error occurred processing your request',
-              },
-              500
-            );
+            // Let the router handle the request
+            await serverInstance.router.handleRequest(context);
+            // If router didn't handle it either, send a 404
+            if (!context.response.sent) {
+              throw new NotFoundError(
+                `Route not found: ${context.request.method} ${context.request.path}`
+              );
+            }
           }
-        }
+        });
       });
     } catch (error) {
       // Handle errors in context creation
