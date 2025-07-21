@@ -263,13 +263,11 @@ export type CreateGetRoute = <
   P extends z.ZodType = z.ZodType<any>,
   Q extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
-  ED extends z.ZodType = z.ZodType<any>,
 >(config: {
   schema?: {
     params?: P;
     query?: Q;
     response?: R;
-    errorResponseDetails?: ED;
   };
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
@@ -280,7 +278,7 @@ export type CreateGetRoute = <
   middleware?: Middleware[];
   options?: Record<string, unknown>;
 }) => {
-  GET: RouteMethodOptions<P, Q, never, R, ED>;
+  GET: RouteMethodOptions<P, Q, never, R>;
   path: string;
 }; // Return the specific typed object, not RouteDefinition
 
@@ -292,14 +290,12 @@ export type CreatePostRoute = <
   Q extends z.ZodType = z.ZodType<any>,
   B extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
-  ED extends z.ZodType = z.ZodType<any>,
 >(config: {
   schema?: {
     params?: P;
     query?: Q;
     body?: B;
     response?: R;
-    errorResponseDetails?: ED;
   };
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
@@ -309,7 +305,7 @@ export type CreatePostRoute = <
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
-}) => { POST: RouteMethodOptions<P, Q, B, R, ED>; path: string };
+}) => { POST: RouteMethodOptions<P, Q, B, R>; path: string };
 
 /**
  * PUT route creator - includes body schema
@@ -319,14 +315,12 @@ export type CreatePutRoute = <
   Q extends z.ZodType = z.ZodType<any>,
   B extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
-  ED extends z.ZodType = z.ZodType<any>,
 >(config: {
   schema?: {
     params?: P;
     query?: Q;
     body?: B;
     response?: R;
-    errorResponseDetails?: ED;
   };
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
@@ -337,7 +331,7 @@ export type CreatePutRoute = <
   middleware?: Middleware[];
   options?: Record<string, unknown>;
 }) => {
-  PUT: RouteMethodOptions<P, Q, B, R, ED>;
+  PUT: RouteMethodOptions<P, Q, B, R>;
   path: string;
 };
 
@@ -348,13 +342,11 @@ export type CreateDeleteRoute = <
   P extends z.ZodType = z.ZodType<any>,
   Q extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
-  ED extends z.ZodType = z.ZodType<any>,
 >(config: {
   schema?: {
     params?: P;
     query?: Q;
     response?: R;
-    errorResponseDetails?: ED;
   };
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
@@ -365,7 +357,7 @@ export type CreateDeleteRoute = <
   middleware?: Middleware[];
   options?: Record<string, unknown>;
 }) => {
-  DELETE: RouteMethodOptions<P, Q, never, R, ED>;
+  DELETE: RouteMethodOptions<P, Q, never, R>;
   path: string;
 };
 
@@ -377,14 +369,12 @@ export type CreatePatchRoute = <
   Q extends z.ZodType = z.ZodType<any>,
   B extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
-  ED extends z.ZodType = z.ZodType<any>,
 >(config: {
   schema?: {
     params?: P;
     query?: Q;
     body?: B;
     response?: R;
-    errorResponseDetails?: ED;
   };
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
@@ -395,7 +385,7 @@ export type CreatePatchRoute = <
   middleware?: Middleware[];
   options?: Record<string, unknown>;
 }) => {
-  PATCH: RouteMethodOptions<P, Q, B, R, ED>;
+  PATCH: RouteMethodOptions<P, Q, B, R>;
   path: string;
 };
 
@@ -406,13 +396,11 @@ export type CreateHeadRoute = <
   P extends z.ZodType = z.ZodType<any>,
   Q extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
-  ED extends z.ZodType = z.ZodType<any>,
 >(config: {
   schema?: {
     params?: P;
     query?: Q;
     response?: R;
-    errorResponseDetails?: ED;
   };
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
@@ -423,7 +411,7 @@ export type CreateHeadRoute = <
   middleware?: Middleware[];
   options?: Record<string, unknown>;
 }) => {
-  HEAD: RouteMethodOptions<P, Q, never, R, ED>;
+  HEAD: RouteMethodOptions<P, Q, never, R>;
   path: string;
 };
 
@@ -434,13 +422,11 @@ export type CreateOptionsRoute = <
   P extends z.ZodType = z.ZodType<any>,
   Q extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
-  ED extends z.ZodType = z.ZodType<any>,
 >(config: {
   schema?: {
     params?: P;
     query?: Q;
     response?: R;
-    errorResponseDetails?: ED;
   };
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
@@ -451,7 +437,7 @@ export type CreateOptionsRoute = <
   middleware?: Middleware[];
   options?: Record<string, unknown>;
 }) => {
-  OPTIONS: RouteMethodOptions<P, Q, never, R, ED>;
+  OPTIONS: RouteMethodOptions<P, Q, never, R>;
   path: string;
 };
 
