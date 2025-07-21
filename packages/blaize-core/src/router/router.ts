@@ -1,9 +1,9 @@
+import { NotFoundError } from '../errors/not-found-error';
 import { clearFileCache } from './discovery/cache';
 import { loadInitialRoutesParallel } from './discovery/parallel';
 import { withPerformanceTracking } from './discovery/profiler';
 import { watchRoutes } from './discovery/watchers';
 import { executeHandler } from './handlers';
-import { handleRouteError } from './handlers/error';
 import { createMatcher } from './matching';
 import {
   createRouteRegistry,
@@ -325,8 +325,7 @@ export function createRouter(options: RouterOptions): Router {
       if (!match) {
         console.log(`❌ No match found for: ${method} ${path}`);
         // Handle 404 Not Found
-        ctx.response.status(404).json({ error: 'Not Found' });
-        return;
+        throw new NotFoundError('Not found');
       }
 
       console.log(`✅ Route matched: ${method} ${path}`);
@@ -335,6 +334,7 @@ export function createRouter(options: RouterOptions): Router {
       // Check for method not allowed
       if (match.methodNotAllowed) {
         // Handle 405 Method Not Allowed
+        // TODO: Add support for Method Not Allowed Error
         ctx.response.status(405).json({
           error: '❌ Method Not Allowed',
           allowed: match.allowedMethods,
@@ -352,15 +352,7 @@ export function createRouter(options: RouterOptions): Router {
       ctx.request.params = match.params;
 
       // Execute the route handler with middleware
-      try {
-        await executeHandler(ctx, match.route!, match.params);
-      } catch (error) {
-        // Handle errors
-        handleRouteError(ctx, error, {
-          detailed: process.env.NODE_ENV !== 'production',
-          log: true,
-        });
-      }
+      await executeHandler(ctx, match.route!, match.params);
     },
 
     /**
