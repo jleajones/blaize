@@ -224,6 +224,18 @@ export enum ErrorType {
   /** Internal server error (500) */
   INTERNAL_SERVER_ERROR = 'INTERNAL_SERVER_ERROR',
 
+  /** File/Request Too Large (413) */
+  PAYLOAD_TOO_LARGE = 'PAYLOAD_TOO_LARGE',
+
+  /** Wrong Content Type (415) */
+  UNSUPPORTED_MEDIA_TYPE = 'UNSUPPORTED_MEDIA_TYPE',
+
+  /** Upload Timeout (408) */
+  UPLOAD_TIMEOUT = 'UPLOAD_TIMEOUT',
+
+  /** Valid Format Invalid Semantics (422) */
+  UNPROCESSABLE_ENTITY = 'UNPROCESSABLE_ENTITY',
+
   // Client-side errors
   /** Network connectivity failure (0) */
   NETWORK_ERROR = 'NETWORK_ERROR',
@@ -381,6 +393,28 @@ export abstract class BlaizeError<TDetails = unknown> extends Error {
   toString(): string {
     return `${this.name}: ${this.title} [${this.correlationId}]`;
   }
+}
+
+/**
+ * Interface for payload too large error details
+ */
+export interface PayloadTooLargeErrorDetails {
+  fileCount?: number;
+  maxFiles?: number;
+  filename?: string;
+  field?: string;
+  contentType?: string;
+  currentSize?: number;
+  maxSize?: number;
+}
+
+/**
+ * Interface for unsupported media type error details
+ */
+export interface UnsupportedMediaTypeErrorDetails {
+  receivedMimeType?: string;
+  allowedMimeTypes?: string[];
+  filename?: string;
 }
 
 /**
@@ -613,4 +647,19 @@ export function isBodyParseError(error: unknown): error is BodyParseError {
     typeof (error as any).type === 'string' &&
     typeof (error as any).message === 'string'
   );
+}
+
+/**
+ * Context information for error transformation
+ */
+export interface ErrorTransformContext {
+  url: string;
+  method: string;
+  correlationId: string;
+  timeoutMs?: number;
+  elapsedMs?: number;
+  statusCode?: number;
+  contentType?: string;
+  responseSample?: string;
+  [key: string]: unknown;
 }

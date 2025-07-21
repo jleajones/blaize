@@ -24,22 +24,9 @@ import type {
   NetworkErrorContext,
   TimeoutErrorContext,
   ParseErrorContext,
+  ErrorTransformContext,
 } from '../../blaize-types/src/errors';
 
-/**
- * Context information for error transformation
- */
-interface ErrorTransformContext {
-  url: string;
-  method: string;
-  correlationId: string;
-  timeoutMs?: number;
-  elapsedMs?: number;
-  statusCode?: number;
-  contentType?: string;
-  responseSample?: string;
-  [key: string]: unknown;
-}
 
 /**
  * Generates a unique correlation ID for client-side operations
