@@ -1,7 +1,15 @@
-import { ClientError, NetworkError, handleResponseError } from './errors';
+import {
+  transformClientError,
+  parseAndThrowErrorResponse,
+  generateClientCorrelationId,
+} from './error-transformer';
 import { buildUrl } from './url';
-
-import type { ClientConfig, RequestArgs, RequestOptions } from '../../blaize-types/src/index';
+import {
+  BlaizeError,
+  type ClientConfig,
+  type RequestArgs,
+  type RequestOptions,
+} from '../../blaize-types/src/index';
 
 export async function makeRequest(
   config: ClientConfig,
@@ -10,20 +18,34 @@ export async function makeRequest(
   args?: RequestArgs,
   routeRegistry?: any
 ): Promise<any> {
-  // TODO: Extract path from route registry
-  const path = extractRoutePath(routeRegistry, method, routeName);
+  const correlationId = generateClientCorrelationId();
+  try {
+    // Extract path from route registry
+    const path = extractRoutePath(routeRegistry, method, routeName);
 
-  // TODO: Build complete URL
-  const url = buildUrl(config.baseUrl, path, args);
+    // Build complete URL
+    const url = buildUrl(config.baseUrl, path, args);
 
-  // TODO: Prepare request options
-  const requestOptions = prepareRequestOptions(config, method, args);
+    // Prepare request options
+    const requestOptions = prepareRequestOptions(config, method, args, correlationId);
 
-  // TODO: Make HTTP request
-  return executeRequest(url, requestOptions);
+    // Make HTTP request with error transformation
+    return await executeRequest(url, requestOptions, correlationId);
+  } catch (error) {
+    // Transform ALL errors to BlaizeError instances
+    transformClientError(error, {
+      url: config.baseUrl,
+      method,
+      correlationId,
+    });
+  }
 }
 
 function extractRoutePath(routeRegistry: any, method: string, routeName: string): string {
+  if (!routeRegistry) {
+    throw new Error(`Route '${routeName}' not found for method '${method}'`);
+  }
+
   const methodKey = `$${method.toLowerCase()}`;
   const route = routeRegistry[methodKey]?.[routeName];
 
@@ -37,7 +59,8 @@ function extractRoutePath(routeRegistry: any, method: string, routeName: string)
 function prepareRequestOptions(
   config: ClientConfig,
   method: string,
-  args?: RequestArgs
+  args?: RequestArgs,
+  correlationId?: string
 ): RequestOptions {
   // Methods that shouldn't have bodies
   const methodsWithoutBody = ['GET', 'HEAD', 'DELETE', 'OPTIONS'];
@@ -48,6 +71,7 @@ function prepareRequestOptions(
     headers: {
       'Content-Type': 'application/json',
       ...config.defaultHeaders,
+      ...(correlationId && { 'x-correlation-id': correlationId }),
     },
     // Only include body for methods that support it
     body: methodsWithoutBody.includes(method.toUpperCase())
@@ -59,12 +83,11 @@ function prepareRequestOptions(
   };
 }
 
-async function executeRequest(url: string, options: RequestOptions): Promise<any> {
-  // TODO: Make actual fetch request
-  // TODO: Handle timeouts
-  // TODO: Parse response
-  // TODO: Handle errors
-
+async function executeRequest(
+  url: string,
+  options: RequestOptions,
+  correlationId: string
+): Promise<any> {
   try {
     const response = await fetch(url, {
       method: options.method,
@@ -73,14 +96,32 @@ async function executeRequest(url: string, options: RequestOptions): Promise<any
     });
 
     if (!response.ok) {
-      handleResponseError(response);
+      await parseAndThrowErrorResponse(response);
     }
-
-    return await response.json();
+    try {
+      return await response.json();
+    } catch (parseError) {
+      // For successful responses that fail to parse, use actual response status
+      transformClientError(parseError, {
+        url,
+        method: options.method,
+        correlationId,
+        statusCode: response.status,
+        contentType: response.headers.get('content-type') || 'unknown',
+        responseSample: 'Unable to parse response as JSON',
+      });
+    }
   } catch (error) {
-    if (error instanceof ClientError) {
+    if (error instanceof BlaizeError) {
       throw error;
     }
-    throw new NetworkError('Network request failed', error as Error);
+    transformClientError(error, {
+      url,
+      method: options.method,
+      correlationId,
+      statusCode: 0, // Unknown for client errors
+      contentType: 'unknown',
+      responseSample: 'Unable to capture response sample',
+    });
   }
 }
