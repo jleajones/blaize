@@ -252,7 +252,7 @@ describe('Multipart Parser', () => {
           strategy: 'memory',
           maxFileSize: 500,
         })
-      ).rejects.toThrow('too large');
+      ).rejects.toThrow('File size exceeds limit');
     });
 
     test('should enforce field size limits', async () => {
@@ -266,7 +266,7 @@ describe('Multipart Parser', () => {
           strategy: 'memory',
           maxFieldSize: 1000,
         })
-      ).rejects.toThrow('too large');
+      ).rejects.toThrow('Field size exceeds limit');
     });
 
     test('should enforce file count limits', async () => {
@@ -311,7 +311,7 @@ describe('Multipart Parser', () => {
     test('should handle empty multipart request', async () => {
       const body = Buffer.from(`--${boundary}--\r\n`);
       const request = createMockRequest(body);
-      await expect(parseMultipartRequest(request)).rejects.toThrow('No valid multipart data found');
+      await expect(parseMultipartRequest(request)).rejects.toThrow('Empty multipart request');
     });
 
     test('should handle files without filename', async () => {
@@ -360,7 +360,9 @@ describe('Multipart Parser', () => {
     test('should handle malformed multipart data', async () => {
       const malformedData = Buffer.from('not-multipart-data');
       const request = createMockRequest(malformedData);
-      await expect(parseMultipartRequest(request)).rejects.toThrow('No valid multipart data found');
+      await expect(parseMultipartRequest(request)).rejects.toThrow(
+        'No valid multipart boundary found'
+      );
     });
   });
 
