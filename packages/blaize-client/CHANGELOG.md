@@ -1,5 +1,11 @@
 # @blaizejs/client
 
+## 0.3.0
+
+### Minor Changes
+
+- 5f595d1: ✨ Add automatic type-safe error handling system with correlation tracking
+
 ## 0.2.2
 
 ### Patch Changes
