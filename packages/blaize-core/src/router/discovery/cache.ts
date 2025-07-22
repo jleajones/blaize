@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 import { loadRouteModule } from './loader';
 
-import type { FileCache, Route } from '../../index';
+import type { FileCache, Route } from '@blaize-types/router';
 
 const fileRouteCache = new Map<string, FileCache>();
 

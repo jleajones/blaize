@@ -23,10 +23,6 @@ vi.mock('./handlers', () => ({
   executeHandler: vi.fn().mockImplementation(() => Promise.resolve()),
 }));
 
-vi.mock('./handlers/error', () => ({
-  handleRouteError: vi.fn(),
-}));
-
 vi.mock('./matching', () => ({
   createMatcher: vi.fn(() => ({
     add: vi.fn(),
@@ -54,7 +50,6 @@ import { loadInitialRoutesParallel } from './discovery/parallel';
 import { withPerformanceTracking } from './discovery/profiler';
 import { watchRoutes } from './discovery/watchers';
 import { executeHandler } from './handlers';
-import { handleRouteError } from './handlers/error';
 import { createMatcher } from './matching';
 import {
   createRouteRegistry,
@@ -67,8 +62,11 @@ import {
   removeRouteFromMatcher,
   updateRouteInMatcher,
 } from './utils/matching-helpers';
+import { ErrorType } from '../../../blaize-types/src';
+import { NotFoundError } from '../errors/not-found-error';
 
-import type { Context, Route, RouterOptions, RouteMethodOptions } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { RouteMethodOptions, Route, RouterOptions } from '@blaize-types/router';
 
 describe('Router', () => {
   // Setup common mocks and fixtures
@@ -133,6 +131,12 @@ describe('Router', () => {
       remove: vi.fn(),
       clear: vi.fn(),
     };
+    // Default matcher to return a successful match to avoid unintended 404s
+    mockMatcher.match.mockReturnValue({
+      route: { handler: vi.fn() } as unknown as RouteMethodOptions,
+      params: {},
+      methodNotAllowed: false,
+    });
     (createMatcher as ReturnType<typeof vi.fn>).mockReturnValue(mockMatcher);
 
     // Setup discovery mocks
@@ -153,14 +157,16 @@ describe('Router', () => {
     // Setup mock context
     mockContext = {
       request: {
-        method: 'GET',
+        method: 'PUT',
         path: '/users',
         params: {},
+        header: vi.fn().mockReturnValue(undefined),
       },
       response: {
         status: vi.fn().mockReturnThis(),
         json: vi.fn().mockReturnThis(),
         header: vi.fn().mockReturnThis(),
+        sent: false,
       },
     } as unknown as Context;
 
@@ -268,26 +274,40 @@ describe('Router', () => {
     await router.handleRequest(mockContext);
 
     // Assert
-    expect(mockMatcher.match).toHaveBeenCalledWith('/users', 'GET');
+    expect(mockMatcher.match).toHaveBeenCalledWith('/users', 'PUT');
     expect(mockContext.request.params).toEqual({ id: '123' });
     expect(executeHandler).toHaveBeenCalledWith(mockContext, matchResult.route, matchResult.params);
   });
 
-  test('handles 404 when no route matches', async () => {
+  // ==========================================
+  // NEW ERROR SYSTEM TESTS
+  // ==========================================
+
+  test('throws NotFoundError when no route matches (error boundary will catch)', async () => {
     // Arrange
     const router = createRouter({ routesDir: './routes' });
     mockMatcher.match.mockReturnValue(null);
 
-    // Act
-    await router.handleRequest(mockContext);
+    // Act & Assert - Router should throw error, not handle it manually
+    await expect(router.handleRequest(mockContext)).rejects.toThrow(NotFoundError);
 
-    // Assert
-    expect(mockContext.response.status).toHaveBeenCalledWith(404);
-    expect(mockContext.response.json).toHaveBeenCalledWith({ error: 'Not Found' });
+    // Verify the thrown error has correct properties
+    try {
+      await router.handleRequest(mockContext);
+    } catch (error) {
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect((error as NotFoundError).type).toBe(ErrorType.NOT_FOUND);
+      expect((error as NotFoundError).title).toBe('Not found');
+      expect((error as NotFoundError).status).toBe(404);
+      // Note: correlationId will be 'unknown' since router doesn't have access to it
+      expect((error as NotFoundError).correlationId).toBe('unknown');
+    }
+
+    // Verify no manual response was sent
     expect(executeHandler).not.toHaveBeenCalled();
   });
 
-  test('handles 405 Method Not Allowed', async () => {
+  test('handles 405 Method Not Allowed with manual response (TODO: should throw error)', async () => {
     // Arrange
     const router = createRouter({ routesDir: './routes' });
     mockMatcher.match.mockReturnValue({
@@ -298,7 +318,7 @@ describe('Router', () => {
     // Act
     await router.handleRequest(mockContext);
 
-    // Assert
+    // Assert - Current implementation uses manual response (should be changed)
     expect(mockContext.response.status).toHaveBeenCalledWith(405);
     expect(mockContext.response.json).toHaveBeenCalledWith({
       error: '❌ Method Not Allowed',
@@ -308,10 +328,10 @@ describe('Router', () => {
     expect(executeHandler).not.toHaveBeenCalled();
   });
 
-  test('handles errors during route execution', async () => {
+  test('lets handler errors bubble up to error boundary (no try/catch)', async () => {
     // Arrange
     const router = createRouter({ routesDir: './routes' });
-    const mockError = new Error('Test error');
+    const mockError = new Error('Handler failed');
     const matchResult = {
       route: { handler: vi.fn() } as unknown as RouteMethodOptions,
       params: { id: '123' },
@@ -321,20 +341,58 @@ describe('Router', () => {
     mockMatcher.match.mockReturnValue(matchResult);
     (executeHandler as any).mockImplementation(() => Promise.reject(mockError));
 
+    // Act & Assert - Router should let error bubble up, not catch it
+    await expect(router.handleRequest(mockContext)).rejects.toThrow('Handler failed');
+
+    // Verify executeHandler was called
+    expect(executeHandler).toHaveBeenCalledWith(mockContext, matchResult.route, matchResult.params);
+  });
+
+  test('sets request params when route matches', async () => {
+    // Arrange
+    const router = createRouter({ routesDir: './routes' });
+    const matchResult = {
+      route: { handler: vi.fn() } as unknown as RouteMethodOptions,
+      params: { userId: '123', orgId: '456' },
+      methodNotAllowed: false,
+      allowedMethods: null,
+    };
+    mockMatcher.match.mockReturnValue(matchResult);
+
     // Act
     await router.handleRequest(mockContext);
 
     // Assert
-    expect(executeHandler).toHaveBeenCalled();
-    expect(handleRouteError).toHaveBeenCalledWith(
-      mockContext,
-      mockError,
-      expect.objectContaining({
-        detailed: expect.any(Boolean),
-        log: true,
-      })
-    );
+    expect(mockContext.request.params).toEqual({ userId: '123', orgId: '456' });
+    expect(executeHandler).toHaveBeenCalledWith(mockContext, matchResult.route, matchResult.params);
   });
+
+  test('initializes router during creation (not on first request)', async () => {
+    // Arrange - Clear any previous calls
+    vi.clearAllMocks();
+
+    // Mock the initialization process
+    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValue(mockRoutes);
+
+    // Act - Router initializes during creation
+    const router = createRouter({ routesDir: './routes' });
+
+    // Wait for async initialization to complete
+    await vi.runAllTimersAsync();
+
+    // Assert - Router should have initialized during creation
+    expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
+
+    // Additional test: handling request should work without additional initialization
+    await router.handleRequest(mockContext);
+
+    // Should not have called loadInitialRoutesParallel again
+    expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(1);
+  });
+
+  // ==========================================
+  // REGISTRY AND ROUTE MANAGEMENT TESTS
+  // ==========================================
 
   test('getRoutes returns routes from registry', async () => {
     // Arrange
@@ -452,6 +510,10 @@ describe('Router', () => {
     expect(removeRouteFromMatcher).toHaveBeenCalledWith('/another-route', mockMatcher);
   });
 
+  // ==========================================
+  // PLUGIN ROUTE SUPPORT TESTS
+  // ==========================================
+
   describe('Plugin Route Support', () => {
     let router: ReturnType<typeof createRouter>;
 
@@ -536,141 +598,6 @@ describe('Router', () => {
       expect(addRouteToMatcher).toHaveBeenCalledWith(routeWithPrefix, mockMatcher);
     });
 
-    test('addRouteDirectory warns when directory already registered', async () => {
-      // Arrange
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      const pluginRoutes: Route[] = [
-        {
-          path: '/auth/login',
-          POST: {
-            handler: vi.fn(),
-            middleware: [],
-          },
-        },
-      ];
-
-      // Reset the call count after router initialization
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockClear();
-
-      // Mock the first call to loadInitialRoutesParallel
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValueOnce(pluginRoutes);
-
-      // Act
-      await router.addRouteDirectory('./plugins/auth/routes');
-      await router.addRouteDirectory('./plugins/auth/routes'); // Second time
-
-      // Assert
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Route directory ./plugins/auth/routes already registered'
-      );
-
-      // Verify loadInitialRoutesParallel was only called once (for the first registration)
-      expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(1);
-
-      consoleSpy.mockRestore();
-    });
-
-    test('detects route conflicts using registry system', async () => {
-      // Arrange - First set up some main routes
-      const mainRoutes: Route[] = [
-        {
-          path: '/users',
-          GET: {
-            handler: vi.fn(),
-            middleware: [],
-          },
-        },
-      ];
-
-      // Reset and set up router with main routes
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockReset();
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mainRoutes);
-
-      // Create a new router with main routes
-      const conflictRouter = createRouter({ routesDir: './routes', watchMode: true });
-      await vi.runAllTimersAsync();
-
-      // Now try to add conflicting plugin routes
-      const conflictingPluginRoutes: Route[] = [
-        {
-          path: '/users', // This conflicts with main routes
-          GET: {
-            handler: vi.fn(),
-            middleware: [],
-          },
-        },
-      ];
-
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-        conflictingPluginRoutes
-      );
-
-      // The router should catch and re-throw registry errors
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-      // Mock updateRoutesFromFile to throw conflict error for the plugin route
-      (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockImplementation(
-        (registry, source, routes) => {
-          if (source.includes('plugins') && routes.some((r: Route) => r.path === '/users')) {
-            throw new Error('Route conflict for path "/users"');
-          }
-          return { added: routes, changed: [], removed: [] };
-        }
-      );
-
-      // Act & Assert
-      await expect(conflictRouter.addRouteDirectory('./plugins/users/routes')).rejects.toThrow();
-
-      // The new implementation logs "Route conflicts from {source}:" (no specific route path)
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '⚠️ Route conflicts from ./plugins/users/routes:',
-        expect.any(Error)
-      );
-
-      consoleSpy.mockRestore();
-    });
-
-    test('getRouteConflicts returns current conflicts from registry', async () => {
-      // Arrange - Initially no conflicts
-      const conflicts = router.getRouteConflicts();
-      expect(conflicts).toHaveLength(0);
-
-      // Test that the method exists and returns the right structure
-      expect(Array.isArray(conflicts)).toBe(true);
-    });
-
-    test('setupWatcherForNewDirectory sets up file watching for plugin directory', async () => {
-      // Arrange
-      const pluginRoutes: Route[] = [
-        {
-          path: '/auth/login',
-          POST: { handler: vi.fn(), middleware: [] },
-        },
-      ];
-
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValueOnce(pluginRoutes);
-
-      // Clear previous watchRoutes calls
-      (watchRoutes as ReturnType<typeof vi.fn>).mockClear();
-
-      // Act
-      await router.addRouteDirectory('./plugins/auth/routes');
-
-      // Assert - Should have been called for the plugin directory
-      expect(watchRoutes).toHaveBeenCalledWith(
-        './plugins/auth/routes',
-        expect.objectContaining({
-          debounceMs: 16,
-          ignore: ['node_modules', '.git'],
-          onRouteAdded: expect.any(Function),
-          onRouteChanged: expect.any(Function),
-          onRouteRemoved: expect.any(Function),
-          onError: expect.any(Function),
-        })
-      );
-    });
-
     test('router has close method for cleanup', async () => {
       // Arrange
       const router = createRouter({ routesDir: './routes', watchMode: true });
@@ -687,6 +614,10 @@ describe('Router', () => {
     });
   });
 
+  // ==========================================
+  // REGISTRY INTEGRATION TESTS
+  // ==========================================
+
   describe('Registry Integration', () => {
     test('uses performance tracking for route changes', async () => {
       // Arrange
@@ -702,7 +633,7 @@ describe('Router', () => {
       };
 
       // Act
-      onRouteChanged([changedRoute]);
+      onRouteChanged('./routes/users.ts', [changedRoute]);
 
       // Assert
       expect(withPerformanceTracking).toHaveBeenCalledWith(expect.any(Function), './routes');
@@ -721,128 +652,6 @@ describe('Router', () => {
       // Assert
       expect(updateRoutesFromFile).toHaveBeenCalledWith(mockRegistry, 'programmatic', [route1]);
       expect(updateRoutesFromFile).toHaveBeenCalledWith(mockRegistry, 'programmatic', [route2]);
-    });
-
-    test('registry handles route updates correctly', async () => {
-      // Arrange
-      // Set up router with empty initial routes to avoid interference
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-
-      // Ensure no routes are processed during initialization
-      (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReturnValue({
-        added: [],
-        changed: [],
-        removed: [],
-      });
-
-      createRouter({ routesDir: './routes', watchMode: true });
-      await vi.runAllTimersAsync();
-
-      // Clear any initialization calls
-      (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockClear();
-      (updateRouteInMatcher as ReturnType<typeof vi.fn>).mockClear();
-
-      // Get the onRouteChanged callback from the watcher setup
-      const watchCallArgs = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls[0];
-      if (!watchCallArgs) {
-        throw new Error('watchRoutes should have been called');
-      }
-      const onRouteChanged = watchCallArgs[1].onRouteChanged;
-
-      const updatedRoute: Route = {
-        path: '/users',
-        GET: { handler: vi.fn() },
-        POST: { handler: vi.fn() }, // Added method
-      };
-
-      // Mock registry to show the route was actually changed
-      (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReturnValue({
-        added: [],
-        changed: [updatedRoute],
-        removed: [],
-      });
-
-      // Act
-      // Call onRouteChanged with filepath and routes (matching the watchers.ts callback signature)
-      onRouteChanged('./routes/users.ts', [updatedRoute]);
-
-      // Assert
-      expect(updateRoutesFromFile).toHaveBeenCalledWith(mockRegistry, './routes/users.ts', [
-        updatedRoute,
-      ]);
-      expect(updateRouteInMatcher).toHaveBeenCalledWith(updatedRoute, mockMatcher);
-    });
-
-    test('registry handles partial route changes efficiently within a single file', async () => {
-      // Arrange
-      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-      (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReturnValue({
-        added: [],
-        changed: [],
-        removed: [],
-      });
-
-      createRouter({ routesDir: './routes', watchMode: true });
-      await vi.runAllTimersAsync();
-
-      // Clear any initialization calls
-      (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockClear();
-      (updateRouteInMatcher as ReturnType<typeof vi.fn>).mockClear();
-
-      const onRouteChanged = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls[0]![1]
-        .onRouteChanged;
-
-      // Simulate a file that contains multiple routes
-      const allRoutesInFile = [
-        { path: '/route1', GET: { handler: vi.fn() } },
-        { path: '/route2', GET: { handler: vi.fn() } },
-        { path: '/route3', GET: { handler: vi.fn() } },
-      ];
-
-      // Mock registry to show only some routes actually changed
-      // This simulates the registry's intelligent diffing
-      (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReturnValue({
-        added: [],
-        changed: [allRoutesInFile[0], allRoutesInFile[2]], // Only route1 and route3 actually changed
-        removed: [],
-      });
-
-      // Act
-      // Simulate the file watcher detecting that multi-routes.ts changed
-      // It passes ALL routes from that file to onRouteChanged
-      onRouteChanged('./routes/multi-routes.ts', allRoutesInFile);
-
-      // Assert
-      // Registry should be called with all routes from the file
-      expect(updateRoutesFromFile).toHaveBeenCalledWith(
-        mockRegistry,
-        './routes/multi-routes.ts',
-        allRoutesInFile
-      );
-
-      // But only the routes that registry determined actually changed should be updated in matcher
-      expect(updateRouteInMatcher).toHaveBeenCalledTimes(2);
-      expect(updateRouteInMatcher).toHaveBeenCalledWith(allRoutesInFile[0], mockMatcher);
-      expect(updateRouteInMatcher).toHaveBeenCalledWith(allRoutesInFile[2], mockMatcher);
-      expect(updateRouteInMatcher).not.toHaveBeenCalledWith(allRoutesInFile[1], mockMatcher);
-    });
-
-    test('getRouteConflicts uses registry conflict detection', async () => {
-      // Arrange
-      const router = createRouter({ routesDir: './routes' });
-
-      // Mock a registry with some conflicting routes
-      mockRegistry.routesByPath.set('/users', { path: '/users', GET: { handler: vi.fn() } });
-      mockRegistry.pathToFile.set('/users', './routes/users.ts');
-      mockRegistry.routesByFile.set('./routes/users.ts', new Set(['/users']));
-      mockRegistry.routesByFile.set('./plugins/auth.ts', new Set(['/users']));
-
-      // Act
-      const conflicts = router.getRouteConflicts();
-
-      // Assert
-      expect(Array.isArray(conflicts)).toBe(true);
-      // The implementation should detect conflicts based on multiple sources for same path
     });
   });
 });

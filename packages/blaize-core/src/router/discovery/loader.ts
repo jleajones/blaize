@@ -1,6 +1,6 @@
 import { parseRoutePath } from './parser';
 
-import type { Route, RouteDefinition } from '../../index';
+import type { Route, RouteDefinition } from '@blaize-types/router';
 
 export async function dynamicImport(filePath: string) {
   // Add a cache-busting query parameter for ESM

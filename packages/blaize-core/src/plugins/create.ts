@@ -1,4 +1,5 @@
-import type { Plugin, PluginFactory, PluginHooks, Server } from '../index';
+import type { Plugin, PluginFactory, PluginHooks } from '@blaize-types/plugins';
+import type { Server } from '@blaize-types/server';
 
 /**
  * Create a plugin with the given name, version, and setup function

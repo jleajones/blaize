@@ -5,7 +5,7 @@ import {
   rebuildMatcherWithRoutes,
 } from './matching-helpers';
 
-import type { Route, Matcher } from '../../index';
+import type { Route, Matcher } from '@blaize-types/router';
 
 describe('matcher-helpers.ts - Matcher Utilities', () => {
   let mockMatcher: Matcher;

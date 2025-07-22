@@ -8,7 +8,7 @@ import * as startModule from './start';
 import * as stopModule from './stop';
 import * as validationModule from './validation';
 
-import type { Server, ServerOptionsInput } from '../index';
+import type { Server, ServerOptionsInput } from '@blaize-types/server';
 
 // Mock the modules we depend on
 vi.mock('./start', () => ({

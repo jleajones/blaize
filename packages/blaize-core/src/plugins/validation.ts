@@ -1,6 +1,6 @@
 import { PluginValidationError } from './errors';
 
-import type { Plugin } from '../index';
+import type { Plugin } from '@blaize-types/plugins';
 
 export interface PluginValidationOptions {
   /** Require specific plugin properties */

@@ -2,7 +2,7 @@ import { createMockServerWithPlugins, createMockHttpServer } from '@blaizejs/tes
 
 import { stopServer, registerSignalHandlers } from './stop';
 
-import type { Server } from '../index';
+import type { Server } from '@blaize-types/server';
 
 describe('Server Module', () => {
   let serverInstance: Server;
@@ -57,8 +57,8 @@ describe('Server Module', () => {
       });
 
       test('should handle router close timeout gracefully', async () => {
-        const routerCloseSpy = vi.fn().mockImplementation(() => 
-          new Promise(() => {}) // Never resolves
+        const routerCloseSpy = vi.fn().mockImplementation(
+          () => new Promise(() => {}) // Never resolves
         );
         serverInstance.router = { close: routerCloseSpy } as any;
 
@@ -90,8 +90,12 @@ describe('Server Module', () => {
 
     describe('plugin lifecycle integration', () => {
       test('should call pluginManager methods in correct order', async () => {
-        const onServerStopSpy = vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockResolvedValue();
-        const terminatePluginsSpy = vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockResolvedValue();
+        const onServerStopSpy = vi
+          .spyOn(serverInstance.pluginManager, 'onServerStop')
+          .mockResolvedValue();
+        const terminatePluginsSpy = vi
+          .spyOn(serverInstance.pluginManager, 'terminatePlugins')
+          .mockResolvedValue();
 
         const originalServer = serverInstance.server;
 
@@ -103,8 +107,8 @@ describe('Server Module', () => {
       });
 
       test('should handle pluginManager.onServerStop timeout gracefully', async () => {
-        vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockImplementation(() => 
-          new Promise(() => {}) // Never resolves
+        vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockImplementation(
+          () => new Promise(() => {}) // Never resolves
         );
         vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockResolvedValue();
 
@@ -116,8 +120,8 @@ describe('Server Module', () => {
 
       test('should handle pluginManager.terminatePlugins timeout gracefully', async () => {
         vi.spyOn(serverInstance.pluginManager, 'onServerStop').mockResolvedValue();
-        vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockImplementation(() => 
-          new Promise(() => {}) // Never resolves
+        vi.spyOn(serverInstance.pluginManager, 'terminatePlugins').mockImplementation(
+          () => new Promise(() => {}) // Never resolves
         );
 
         // Should not hang due to plugin timeout
@@ -130,7 +134,7 @@ describe('Server Module', () => {
     describe('error handling', () => {
       test('should handle server close errors', async () => {
         const closeError = new Error('Close error');
-        
+
         // Create a mock server that throws an error when closing
         const errorServer = {
           close: vi.fn().mockImplementation(callback => {
@@ -138,9 +142,9 @@ describe('Server Module', () => {
               // Call callback with error immediately
               callback(closeError);
             }
-          })
+          }),
         };
-        
+
         serverInstance.server = errorServer as any;
         const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
@@ -155,9 +159,9 @@ describe('Server Module', () => {
         serverInstance.server = hangingServer;
         const emitSpy = vi.spyOn(serverInstance.events, 'emit');
 
-        await expect(
-          stopServer(serverInstance, { timeout: 10 })
-        ).rejects.toThrow('Server shutdown timeout');
+        await expect(stopServer(serverInstance, { timeout: 10 })).rejects.toThrow(
+          'Server shutdown timeout'
+        );
 
         expect(emitSpy).toHaveBeenCalledWith('error', expect.any(Error));
       }, 1000);

@@ -1,5 +1,6 @@
 {
   "name": "@blaizejs/types",
+  "type": "module",
   "version": "0.1.0",
   "description": "Type definitions for BlaizeJS framework",
   "main": "./src/index.ts",

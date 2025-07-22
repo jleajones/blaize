@@ -6,7 +6,8 @@ import { executeHandler } from './executor';
 import { compose } from '../../middleware/compose';
 import { createRequestValidator, createResponseValidator } from '../validation/schema';
 
-import type { Context, RouteMethodOptions } from '../../index';
+import type { Context } from '@blaize-types/context';
+import type { RouteMethodOptions } from '@blaize-types/router';
 
 // Mock the dependencies
 vi.mock('../../middleware/compose', () => ({

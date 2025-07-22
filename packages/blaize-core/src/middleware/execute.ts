@@ -1,4 +1,5 @@
-import type { Context, Middleware, NextFunction } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware, NextFunction } from '@blaize-types/middleware';
 
 /**
  * Execute a single middleware, handling both function and object forms

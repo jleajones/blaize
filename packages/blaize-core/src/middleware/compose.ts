@@ -1,6 +1,7 @@
 import { execute } from './execute';
 
-import type { Context, Middleware, MiddlewareFunction, NextFunction } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware, NextFunction, MiddlewareFunction } from '@blaize-types/middleware';
 
 /**
  * Compose multiple middleware functions into a single middleware function

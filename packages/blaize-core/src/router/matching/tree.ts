@@ -1,4 +1,4 @@
-import type { HttpMethod, RouteMethodOptions, RouteNode } from '../../index';
+import type { HttpMethod, RouteMethodOptions, RouteNode } from '@blaize-types/router';
 
 /**
  * Create a route tree for efficient route matching

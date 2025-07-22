@@ -9,7 +9,6 @@ import { parseMultipartRequest } from '../upload/multipart-parser';
 import { isMultipartContent } from '../upload/utils';
 
 import type {
-  BodyParseError,
   Context,
   ContextOptions,
   MultipartLimits,
@@ -19,7 +18,8 @@ import type {
   StreamOptions,
   UnifiedRequest,
   UnifiedResponse,
-} from '../index';
+} from '@blaize-types/context';
+import type { BodyParseError } from '@blaize-types/errors';
 
 const CONTENT_TYPE_HEADER = 'Content-Type';
 

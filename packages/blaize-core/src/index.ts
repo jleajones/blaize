@@ -23,7 +23,7 @@ import { create as createServer } from './server/create';
 
 // TODO: ideally this could be import as an npm package, but for now we use a relative path
 // Explicit imports to avoid using values without importing
-export type * from '../../blaize-types/src/index.ts';
+export * from '../../blaize-types/src/index';
 
 // Re-export everything
 // Server module exports
@@ -62,6 +62,15 @@ export const RouterAPI = {
 };
 export const MiddlewareAPI = { createMiddleware, compose };
 export const PluginsAPI = { createPlugin };
+
+// Server-side error classes
+export { ValidationError } from './errors/validation-error';
+export { NotFoundError } from './errors/not-found-error';
+export { UnauthorizedError } from './errors/unauthorized-error';
+export { ForbiddenError } from './errors/forbidden-error';
+export { ConflictError } from './errors/conflict-error';
+export { RateLimitError } from './errors/rate-limit-error';
+export { InternalServerError } from './errors/internal-server-error';
 
 // Default export
 const Blaize = {

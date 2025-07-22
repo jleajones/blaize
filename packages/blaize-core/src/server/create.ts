@@ -9,15 +9,10 @@ import { createPluginLifecycleManager } from '../plugins/lifecycle';
 import { validatePlugin } from '../plugins/validation';
 import { createRouter } from '../router/router';
 
-import type {
-  Context,
-  Middleware,
-  Plugin,
-  Server,
-  ServerOptions,
-  ServerOptionsInput,
-  StopOptions,
-} from '../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware } from '@blaize-types/middleware';
+import type { Plugin } from '@blaize-types/plugins';
+import type { Server, ServerOptions, ServerOptionsInput, StopOptions } from '@blaize-types/server';
 
 export const DEFAULT_OPTIONS: ServerOptions = {
   port: 3000,

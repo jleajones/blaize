@@ -1,4 +1,4 @@
-import type { Middleware, MiddlewareFunction, MiddlewareOptions } from '../index';
+import type { Middleware, MiddlewareOptions, MiddlewareFunction } from '@blaize-types/middleware';
 
 /**
  * Create a middleware

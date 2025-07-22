@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 
-import type { ParsedRoute } from '../../index';
+import type { ParsedRoute } from '@blaize-types/router';
 
 /**
  * Parse a file path into a route path

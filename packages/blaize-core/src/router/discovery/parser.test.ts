@@ -2,7 +2,7 @@ import * as path from 'node:path';
 
 import { parseRoutePath } from './parser';
 
-import type { ParsedRoute } from '../../index';
+import type { ParsedRoute } from '@blaize-types/router';
 
 describe('parseRoutePath', () => {
   const basePath = '/app/routes';

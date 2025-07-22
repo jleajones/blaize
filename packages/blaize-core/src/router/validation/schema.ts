@@ -4,58 +4,65 @@ import { validateBody } from './body';
 import { validateParams } from './params';
 import { validateQuery } from './query';
 import { validateResponse } from './response';
+import { InternalServerError } from '../../errors/internal-server-error';
+import { ValidationError } from '../../errors/validation-error';
 
-import type {
-  RouteSchema,
-  Context,
-  Middleware,
-  MiddlewareFunction,
-  NextFunction,
-} from '../../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware, MiddlewareFunction, NextFunction } from '@blaize-types/middleware';
+import type { RouteSchema } from '@blaize-types/router';
 
 /**
  * Create a validation middleware for request data
  */
 export function createRequestValidator(schema: RouteSchema, debug: boolean = false): Middleware {
   const middlewareFn: MiddlewareFunction = async (ctx: Context, next: NextFunction) => {
-    const errors: Record<string, unknown> = {};
-
-    // Validate params if schema exists
+    // Validate params if schema exists - throw immediately on failure
     if (schema.params && ctx.request.params) {
       try {
         ctx.request.params = validateParams(ctx.request.params, schema.params);
       } catch (error) {
-        errors.params = formatValidationError(error);
+        const fieldErrors = extractZodFieldErrors(error);
+        const errorCount = fieldErrors.reduce((sum, fe) => sum + fe.messages.length, 0);
+
+        throw new ValidationError('Request validation failed', {
+          fields: fieldErrors,
+          errorCount,
+          section: 'params',
+        });
       }
     }
 
-    // Validate query if schema exists
+    // Validate query if schema exists - throw immediately on failure
     if (schema.query && ctx.request.query) {
       try {
         ctx.request.query = validateQuery(ctx.request.query, schema.query);
       } catch (error) {
-        errors.query = formatValidationError(error);
+        const fieldErrors = extractZodFieldErrors(error);
+        const errorCount = fieldErrors.reduce((sum, fe) => sum + fe.messages.length, 0);
+
+        throw new ValidationError('Request validation failed', {
+          fields: fieldErrors,
+          errorCount,
+          section: 'query',
+        });
       }
     }
 
-    // FIXED: Validate body if schema exists (regardless of body content)
+    // Validate body if schema exists - throw immediately on failure
     if (schema.body) {
       try {
         ctx.request.body = validateBody(ctx.request.body, schema.body);
       } catch (error) {
-        errors.body = formatValidationError(error);
+        const fieldErrors = extractZodFieldErrors(error);
+        const errorCount = fieldErrors.reduce((sum, fe) => sum + fe.messages.length, 0);
+
+        throw new ValidationError('Request validation failed', {
+          fields: fieldErrors,
+          errorCount,
+          section: 'body',
+        });
       }
     }
-
-    // Handle validation errors
-    if (Object.keys(errors).length > 0) {
-      ctx.response.status(400).json({
-        error: 'Validation Error',
-        details: errors,
-      });
-      return;
-    }
-
     // Continue if validation passed
     await next();
   };
@@ -93,16 +100,11 @@ export function createResponseValidator<T>(
         // Restore the original json method
         ctx.response.json = originalJson;
 
-        // Log validation error but don't expose to client
-        console.error('Response validation error:', error);
-
-        // Send an error response
-        ctx.response.status(500).json({
-          error: 'Internal Server Error',
-          message: 'Response validation failed',
+        throw new InternalServerError('Response validation failed', {
+          responseSchema: responseSchema.description || 'Unknown schema',
+          validationError: extractZodFieldErrors(error),
+          originalResponse: body,
         });
-
-        return ctx.response;
       }
     };
 
@@ -117,7 +119,62 @@ export function createResponseValidator<T>(
 }
 
 /**
- * Format a validation error
+ * Extract structured field errors from Zod validation errors
+ *
+ * Converts Zod errors into a clean array of error messages per field.
+ *
+ * @param error - The validation error (typically a ZodError)
+ * @returns Array of error messages for the field
+ *
+ * @example
+ * ```typescript
+ * const zodError = new z.ZodError([
+ *   { path: ['email'], message: 'Invalid email' },
+ *   { path: ['email'], message: 'Email is required' }
+ * ]);
+ *
+ * const fieldErrors = extractZodFieldErrors(zodError);
+ * // Returns: ['Invalid email', 'Email is required']
+ * ```
+ */
+function extractZodFieldErrors(error: unknown): { field: string; messages: string[] }[] {
+  if (error instanceof z.ZodError) {
+    // Group errors by field path
+    const fieldErrorMap = new Map<string, string[]>();
+
+    for (const issue of error.issues) {
+      // Get the field path (e.g., ['user', 'email'] becomes 'user.email')
+      const fieldPath = issue.path.length > 0 ? issue.path.join('.') : 'root';
+
+      if (!fieldErrorMap.has(fieldPath)) {
+        fieldErrorMap.set(fieldPath, []);
+      }
+      fieldErrorMap.get(fieldPath)!.push(issue.message);
+    }
+
+    // Convert map to array of field errors
+    return Array.from(fieldErrorMap.entries()).map(([field, messages]) => ({
+      field,
+      messages,
+    }));
+  }
+
+  if (error instanceof Error) {
+    return [{ field: 'unknown', messages: [error.message] }];
+  }
+
+  return [{ field: 'unknown', messages: [String(error)] }];
+}
+
+/**
+ * 🔄 DEPRECATED: Keep for backward compatibility but mark as deprecated
+ *
+ * This function maintains the old API for any existing code that might depend on it.
+ * New code should use extractZodFieldErrors for better structured error handling.
+ *
+ * @deprecated Use extractZodFieldErrors instead for better structured error details
+ * @param error - The validation error to format
+ * @returns Formatted error object (maintains old structure)
  */
 export function formatValidationError(error: unknown): unknown {
   // Handle Zod errors

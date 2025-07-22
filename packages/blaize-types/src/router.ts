@@ -17,10 +17,11 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 
  * Schema for route validation with generic type parameters
  */
 export interface RouteSchema<
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  B extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
+  P extends z.ZodType = z.ZodType<any>, // URL parameters schema
+  Q extends z.ZodType = z.ZodType<any>, // Query parameters schema
+  B extends z.ZodType = z.ZodType<any>, // Body schema
+  R extends z.ZodType = z.ZodType<any>, // Response schema
+  ED extends z.ZodType = z.ZodType<any>, // Error details schema
 > {
   /** Parameter schema for validation */
   params?: P;
@@ -33,6 +34,9 @@ export interface RouteSchema<
 
   /** Response schema for validation */
   response?: R;
+
+  /** Error Response Details schema for validation */
+  errorResponseDetails?: ED;
 }
 
 /**
@@ -53,9 +57,10 @@ export interface RouteMethodOptions<
   Q extends z.ZodType = z.ZodType<any>,
   B extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
+  ED extends z.ZodType = z.ZodType<any>,
 > {
   /** Schema for request/response validation */
-  schema?: RouteSchema<P, Q, B, R>;
+  schema?: RouteSchema<P, Q, B, R, ED>;
 
   /** Handler function for the route */
   handler: RouteHandler<
@@ -76,13 +81,13 @@ export interface RouteMethodOptions<
  * Route definition mapping HTTP methods to handlers
  */
 export interface RouteDefinition {
-  GET?: RouteMethodOptions<any, any, never, any>; // GET/HEAD/DELETE/OPTIONS don't have bodies
-  POST?: RouteMethodOptions<any, any, any, any>; // POST can have bodies
-  PUT?: RouteMethodOptions<any, any, any, any>; // PUT can have bodies
-  DELETE?: RouteMethodOptions<any, any, never, any>; // DELETE typically no body
-  PATCH?: RouteMethodOptions<any, any, any, any>; // PATCH can have bodies
-  HEAD?: RouteMethodOptions<any, any, never, any>; // HEAD no body
-  OPTIONS?: RouteMethodOptions<any, any, never, any>; // OPTIONS no body
+  GET?: RouteMethodOptions<any, any, never, any, any>; // GET/HEAD/DELETE/OPTIONS don't have bodies
+  POST?: RouteMethodOptions<any, any, any, any, any>; // POST can have bodies
+  PUT?: RouteMethodOptions<any, any, any, any, any>; // PUT can have bodies
+  DELETE?: RouteMethodOptions<any, any, never, any, any>; // DELETE typically no body
+  PATCH?: RouteMethodOptions<any, any, any, any, any>; // PATCH can have bodies
+  HEAD?: RouteMethodOptions<any, any, never, any, any>; // HEAD no body
+  OPTIONS?: RouteMethodOptions<any, any, never, any, any>; // OPTIONS no body
 }
 
 /**
@@ -166,6 +171,7 @@ export interface RouteMatch {
 /**
  * Route matcher interface
  */
+// TODO: Update to use `Route` type once `method` is added
 export interface Matcher {
   /** Add a route to the matcher */
   add: (path: string, method: HttpMethod, route: RouteMethodOptions) => void;
@@ -466,4 +472,9 @@ export interface RouteRegistry {
   routesByPath: Map<string, Route>;
   routesByFile: Map<string, Set<string>>; // file -> paths
   pathToFile: Map<string, string>; // path -> file
+}
+
+export interface FindRouteFilesOptions {
+  /** Directories to ignore */
+  ignore?: string[] | undefined;
 }

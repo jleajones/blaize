@@ -1,4 +1,4 @@
-import type { ReloadMetrics } from '../../index';
+import type { ReloadMetrics } from '@blaize-types/router';
 
 const profilerState: ReloadMetrics = {
   fileChanges: 0,

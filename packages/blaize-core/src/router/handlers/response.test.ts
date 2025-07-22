@@ -1,6 +1,7 @@
 import { processResponse } from './response';
 
-import type { Context, ProcessResponseOptions } from '../../index';
+import type { Context } from '@blaize-types/context';
+import type { ProcessResponseOptions } from '@blaize-types/router';
 
 describe('processResponse', () => {
   // Mock Context object

@@ -1,4 +1,4 @@
-import type { Route, RouteRegistry } from '../../index';
+import type { Route, RouteRegistry } from '@blaize-types/router';
 
 export function createRouteRegistry(): RouteRegistry {
   return {

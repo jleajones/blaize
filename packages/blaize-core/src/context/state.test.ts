@@ -9,7 +9,7 @@ import {
 } from './state';
 import { getContext } from './store';
 
-import type { Context, UnifiedRequest, UnifiedResponse } from '../index';
+import type { Context, UnifiedRequest, UnifiedResponse } from '@blaize-types/context';
 
 class MockContextError extends Error {
   constructor(message: string = 'Mock context is not defined') {

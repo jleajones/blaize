@@ -2,7 +2,8 @@ import { createMockMiddleware } from '@blaizejs/testing-utils';
 
 import { compose } from './compose';
 
-import type { Context, Middleware, NextFunction } from '../index';
+import type { Context } from '@blaize-types/context';
+import type { Middleware, NextFunction } from '@blaize-types/middleware';
 
 // Mock the execute function
 vi.mock('./execute', () => ({

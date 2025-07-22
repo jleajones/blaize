@@ -6,13 +6,8 @@ import { Readable } from 'node:stream';
 
 import { extractBoundary, parseContentDisposition, parseContentType } from './utils';
 
-import type {
-  UploadedFile,
-  MultipartData,
-  ParseOptions,
-  ParserState,
-  UnifiedRequest,
-} from '../index';
+import type { UnifiedRequest } from '@blaize-types/context';
+import type { UploadedFile, MultipartData, ParseOptions, ParserState } from '@blaize-types/upload';
 
 // Default options with sensible defaults
 const DEFAULT_OPTIONS: Required<ParseOptions> = {
@@ -85,8 +80,12 @@ async function processCurrentStage(state: ParserState): Promise<ParserState> {
       return processHeaders(state);
     case 'content':
       return processContent(state);
-    default:
-      throw new Error(`Invalid parser stage: ${state.stage}`);
+    default: {
+      const { InternalServerError } = await import('../errors/internal-server-error');
+      throw new InternalServerError(`Invalid parser stage`, {
+        operation: state.stage,
+      });
+    }
   }
 }
 
@@ -105,12 +104,12 @@ function processBoundary(state: ParserState): ParserState {
 
   // Check for end boundary (-- after boundary)
   if (buffer.length >= 2 && buffer.subarray(0, 2).equals(Buffer.from('--'))) {
-    return { 
-      ...state, 
-      buffer, 
+    return {
+      ...state,
+      buffer,
       hasFoundValidBoundary,
       isFinished: true,
-      stage: 'boundary'
+      stage: 'boundary',
     };
   }
 
@@ -131,7 +130,7 @@ function processBoundary(state: ParserState): ParserState {
 /**
  * Process headers section
  */
-function processHeaders(state: ParserState): ParserState {
+async function processHeaders(state: ParserState): Promise<ParserState> {
   const headerEnd = state.buffer.indexOf('\r\n\r\n');
   if (headerEnd === -1) return state;
 
@@ -140,7 +139,9 @@ function processHeaders(state: ParserState): ParserState {
 
   const disposition = parseContentDisposition(headers);
   if (!disposition) {
-    throw new Error('Missing Content-Disposition header');
+    // ✅ HTTP 400 - Bad Request for malformed headers
+    const { ValidationError } = await import('../errors/validation-error');
+    throw new ValidationError('Missing or invalid Content-Disposition header');
   }
 
   const mimetype = parseContentType(headers);
@@ -148,7 +149,12 @@ function processHeaders(state: ParserState): ParserState {
 
   // Validation
   if (isFile && state.fileCount >= state.options.maxFiles) {
-    throw new Error(`Too many files. Maximum ${state.options.maxFiles} allowed`);
+    const { PayloadTooLargeError } = await import('../errors/payload-too-large-error');
+    throw new PayloadTooLargeError('Too many files in upload', {
+      fileCount: state.fileCount + 1,
+      maxFiles: state.options.maxFiles,
+      filename: disposition.filename,
+    });
   }
 
   if (
@@ -156,7 +162,12 @@ function processHeaders(state: ParserState): ParserState {
     state.options.allowedMimeTypes.length > 0 &&
     !state.options.allowedMimeTypes.includes(mimetype)
   ) {
-    throw new Error(`File type ${mimetype} not allowed`);
+    const { UnsupportedMediaTypeError } = await import('../errors/unsupported-media-type-error');
+    throw new UnsupportedMediaTypeError('File type not allowed', {
+      receivedMimeType: mimetype,
+      allowedMimeTypes: state.options.allowedMimeTypes,
+      filename: disposition.filename,
+    });
   }
 
   return {
@@ -207,10 +218,10 @@ async function processContent(state: ParserState): Promise<ParserState> {
 
   if (isComplete) {
     updatedState = await finalizeCurrentPart(updatedState);
-    updatedState = { 
-      ...updatedState, 
+    updatedState = {
+      ...updatedState,
       stage: 'boundary' as const,
-      hasProcessedAnyPart: true // Mark that we've processed at least one part
+      hasProcessedAnyPart: true, // Mark that we've processed at least one part
     };
   }
 
@@ -228,8 +239,26 @@ async function processContentChunk(state: ParserState, chunk: Buffer): Promise<P
     state.currentFilename !== undefined ? state.options.maxFileSize : state.options.maxFieldSize;
 
   if (newContentLength > maxSize) {
-    const type = state.currentFilename !== undefined ? 'file' : 'field';
-    throw new Error(`${type} too large. Maximum ${maxSize} bytes allowed`);
+    const isFile = state.currentFilename !== undefined;
+    const { PayloadTooLargeError } = await import('../errors/payload-too-large-error');
+    const payloadErrorDetals = state.currentField
+      ? {
+          contentType: isFile ? 'file' : 'field',
+          currentSize: newContentLength,
+          maxSize,
+          field: state.currentField,
+          filename: state.currentFilename,
+        }
+      : {
+          contentType: isFile ? 'file' : 'field',
+          currentSize: newContentLength,
+          maxSize,
+          filename: state.currentFilename,
+        };
+    throw new PayloadTooLargeError(
+      `${isFile ? 'File' : 'Field'} size exceeds limit`,
+      payloadErrorDetals
+    );
   }
 
   if (state.currentFilename !== undefined) {
@@ -271,8 +300,15 @@ async function processFileChunk(
       }
       return { ...state, currentContentLength: newContentLength };
 
-    default:
-      throw new Error(`Invalid strategy: ${state.options.strategy}`);
+    default: {
+      const { ValidationError } = await import('../errors/validation-error');
+      throw new ValidationError(`Invalid parsing strategy`);
+      // TODO: create new error type to support "strategy" + "supportedStrategies"
+      // throw new ValidationError(`Invalid parsing strategy`, {
+      //   strategy: state.options.strategy,
+      //   supportedStrategies: ['memory', 'stream', 'temp'],
+      // });
+    }
   }
 }
 
@@ -321,8 +357,13 @@ async function initializeFileProcessing(state: ParserState): Promise<ParserState
       };
     }
 
-    default:
-      throw new Error(`Invalid strategy: ${state.options.strategy}`);
+    default: {
+      const { ValidationError } = await import('../errors/validation-error');
+      throw new ValidationError(`Invalid file processing strategy`);
+      // throw new ValidationError(`Invalid file processing strategy`, {
+      //   strategy: state.options.strategy,
+      // });
+    }
   }
 }
 
@@ -372,8 +413,14 @@ async function finalizeFile(state: ParserState): Promise<ParserState> {
       stream = Readable.from(Buffer.alloc(0)); // Placeholder
       break;
 
-    default:
-      throw new Error(`Invalid strategy: ${state.options.strategy}`);
+    default: {
+      // ✅ HTTP 400 - Bad Request for invalid strategy
+      const { ValidationError } = await import('../errors/validation-error');
+      throw new ValidationError(`Invalid file finalization strategy`);
+      // throw new ValidationError(`Invalid file finalization strategy`, {
+      //   strategy: state.options.strategy,
+      // });
+    }
   }
 
   const file: UploadedFile = {
@@ -439,15 +486,25 @@ function addToCollection<T>(collection: Map<string, T[]>, key: string, value: T)
 /**
  * Finalize parsing and return results
  */
-function finalize(state: ParserState): MultipartData {
+async function finalize(state: ParserState): Promise<MultipartData> {
   // Validate that we found valid multipart data
   if (!state.hasFoundValidBoundary) {
-    throw new Error('No valid multipart data found');
+    const { ValidationError } = await import('../errors/validation-error');
+    throw new ValidationError('No valid multipart boundary found');
+    // throw new ValidationError('No valid multipart boundary found', {
+    //   errorType: 'invalid_multipart',
+    //   reason: 'Missing or malformed boundary markers',
+    // });`
   }
 
   // If we found boundaries but didn't process any parts, it's empty/invalid
   if (state.hasFoundValidBoundary && !state.hasProcessedAnyPart) {
-    throw new Error('No valid multipart data found');
+    const { ValidationError } = await import('../errors/validation-error');
+    throw new ValidationError('Empty multipart request');
+    // throw new ValidationError('Empty multipart request', {
+    //   errorType: 'empty_multipart',
+    //   reason: 'Valid boundaries found but no data parts processed',
+    // });
   }
 
   const fields: Record<string, string | string[]> = {};
@@ -507,7 +564,11 @@ export async function parseMultipartRequest(
   const boundary = extractBoundary(contentType);
 
   if (!boundary) {
-    throw new Error('Missing boundary in multipart content-type');
+    const { UnsupportedMediaTypeError } = await import('../errors/unsupported-media-type-error');
+    throw new UnsupportedMediaTypeError('Missing boundary in multipart content-type', {
+      receivedContentType: contentType,
+      expectedFormat: 'multipart/form-data; boundary=...',
+    });
   }
 
   let state = createParserState(boundary, options);
