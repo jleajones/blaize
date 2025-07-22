@@ -1,5 +1,15 @@
 # blaizejs
 
+## 0.3.0
+
+### Minor Changes
+
+- 5f595d1: ✨ Add automatic type-safe error handling system with correlation tracking
+
+### Patch Changes
+
+- 0d4bc0d: ✨ New Feature: Support for file upload and multipart formdata
+
 ## 0.2.3
 
 ### Patch Changes
