@@ -9,7 +9,7 @@ export const getHello = createGetRoute({
   },
   handler: async () => {
     return {
-      message: 'Hello from BlaizeJS!',
+      message: 'Hi, it is BlaizeJS!',
     };
   },
 });
