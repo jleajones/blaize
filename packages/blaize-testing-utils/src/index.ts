@@ -10,6 +10,12 @@ import {
   createMockServerWithPlugins,
   createMockHttpServer,
   resetServerMocks,
+  createMockRoutesSet,
+  mockGetRoute,
+  mockDeleteRoute,
+  mockPatchRoute,
+  mockPostRoute,
+  mockPutRoute,
 } from './mocks';
 
 export {
@@ -24,4 +30,10 @@ export {
   createMockServerWithPlugins,
   createMockHttpServer,
   resetServerMocks,
+  createMockRoutesSet,
+  mockGetRoute,
+  mockDeleteRoute,
+  mockPatchRoute,
+  mockPostRoute,
+  mockPutRoute,
 };

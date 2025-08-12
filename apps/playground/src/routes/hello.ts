@@ -4,12 +4,12 @@ import { z } from 'zod';
 export const getHello = createGetRoute({
   schema: {
     response: z.object({
-      message: z.string(),
+      name: z.string(),
     }),
   },
   handler: async () => {
     return {
-      message: 'Hello from BlaizeJS!',
+      name: 'Hi, it is BlaizeJS!',
     };
   },
 });

@@ -7,6 +7,12 @@ import {
   createMockRouteHandler,
   createMockRoute,
   createMockRoutes,
+  createMockRoutesSet,
+  mockGetRoute,
+  mockDeleteRoute,
+  mockPatchRoute,
+  mockPostRoute,
+  mockPutRoute,
 } from './router';
 import {
   createMockServer,
@@ -37,4 +43,10 @@ export {
   testServerLifecycle,
   spyOnServerEvents,
   resetServerMocks,
+  createMockRoutesSet,
+  mockGetRoute,
+  mockDeleteRoute,
+  mockPatchRoute,
+  mockPostRoute,
+  mockPutRoute,
 };

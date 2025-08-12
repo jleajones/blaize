@@ -1,21 +1,23 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["**/.env.*local", "tsconfig.json"],
+  "globalDependencies": ["**/.env.*local", "tsconfig.json", "packages/blaize-types/src/**"],
   "ui": "tui",
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
-      "inputs": ["src/**", "package.json", "tsconfig.json"]
+      "inputs": ["src/**", "package.json", "tsconfig.json", "tsup.config.ts"]
     },
     "type-check": {
       "dependsOn": [],
       "outputs": [],
-      "inputs": ["src/**/*.ts", "src/**/*.tsx"]
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json"],
+      "cache": true
     },
     "format:check": {
       "outputs": [],
-      "cache": true
+      "cache": true,
+      "inputs": ["**/*.{ts,tsx,js,jsx,json,md}"]
     },
     "format": {
       "outputs": [],
@@ -25,7 +27,7 @@
       "dependsOn": ["format:check"],
       "outputs": [],
       "cache": true,
-      "inputs": ["src/**/*.ts", "src/**/*.tsx", ".eslintrc.*"]
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", ".eslintrc.*", "eslint.config.js"]
     },
     "lint:fix": {
       "outputs": [],
@@ -34,26 +36,30 @@
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": ["NODE_ENV"]
     },
     "clean": {
       "cache": false
     },
     "test": {
-      "dependsOn": ["^build"],
-      "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx"],
-      "cache": false
+      "dependsOn": ["@blaizejs/testing-utils#build"],
+      "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx", "vitest.config.ts"],
+      "outputs": [],
+      "cache": false,
+      "env": ["NODE_ENV"]
     },
     "test:watch": {
-      "dependsOn": [],
+      "dependsOn": ["@blaizejs/testing-utils#build"],
       "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx"],
-      "cache": false
-    },
-    "test:coverage": {
-      "dependsOn": ["^build"],
-      "outputs": ["coverage/**"],
       "cache": false,
       "persistent": true
+    },
+    "test:coverage": {
+      "dependsOn": ["@blaizejs/testing-utils#build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.test.ts", "src/**/*.test.tsx"],
+      "cache": true
     }
   }
 }

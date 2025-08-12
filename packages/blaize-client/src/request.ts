@@ -7,7 +7,7 @@ import { buildUrl } from './url';
 import {
   BlaizeError,
   type ClientConfig,
-  type RequestArgs,
+  type InternalRequestArgs,
   type RequestOptions,
 } from '../../blaize-types/src/index';
 
@@ -15,7 +15,7 @@ export async function makeRequest(
   config: ClientConfig,
   method: string,
   routeName: string,
-  args?: RequestArgs,
+  args?: InternalRequestArgs,
   routeRegistry?: any
 ): Promise<any> {
   const correlationId = generateClientCorrelationId();
@@ -59,7 +59,7 @@ function extractRoutePath(routeRegistry: any, method: string, routeName: string)
 function prepareRequestOptions(
   config: ClientConfig,
   method: string,
-  args?: RequestArgs,
+  args?: InternalRequestArgs,
   correlationId?: string
 ): RequestOptions {
   // Methods that shouldn't have bodies

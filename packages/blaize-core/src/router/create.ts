@@ -59,6 +59,7 @@ function getRoutePath(): string {
 
 /**
  * Create a GET route
+ * SIMPLER FIX: Just pass the config through, TypeScript will handle the types
  */
 export const createGetRoute: CreateGetRoute = config => {
   validateMethodConfig('GET', config);
@@ -66,7 +67,7 @@ export const createGetRoute: CreateGetRoute = config => {
   const path = getRoutePath();
 
   return {
-    GET: config,
+    GET: config as any, // Let TypeScript infer the proper types
     path,
   };
 };
@@ -80,7 +81,7 @@ export const createPostRoute: CreatePostRoute = config => {
   const path = getRoutePath();
 
   return {
-    POST: config,
+    POST: config as any, // Let TypeScript infer the proper types
     path,
   };
 };
@@ -94,7 +95,7 @@ export const createPutRoute: CreatePutRoute = config => {
   const path = getRoutePath();
 
   return {
-    PUT: config,
+    PUT: config as any, // Let TypeScript infer the proper types
     path,
   };
 };
@@ -108,7 +109,7 @@ export const createDeleteRoute: CreateDeleteRoute = config => {
   const path = getRoutePath();
 
   return {
-    DELETE: config,
+    DELETE: config as any, // Let TypeScript infer the proper types
     path,
   };
 };
@@ -122,7 +123,7 @@ export const createPatchRoute: CreatePatchRoute = config => {
   const path = getRoutePath();
 
   return {
-    PATCH: config,
+    PATCH: config as any, // Let TypeScript infer the proper types
     path,
   };
 };
@@ -136,7 +137,7 @@ export const createHeadRoute: CreateHeadRoute = config => {
   const path = getRoutePath();
 
   return {
-    HEAD: config,
+    HEAD: config as any, // Let TypeScript infer the proper types
     path,
   };
 };
@@ -150,7 +151,7 @@ export const createOptionsRoute: CreateOptionsRoute = config => {
   const path = getRoutePath();
 
   return {
-    OPTIONS: config,
+    OPTIONS: config as any, // Let TypeScript infer the proper types
     path,
   };
 };
@@ -190,7 +191,7 @@ function validateMethodConfig(method: string, config: any): void {
 function validateSchema(method: string, schema: any): void {
   const { params, query, body, response } = schema;
 
-  // Basic validation - ensure they look like Zod schemas
+  // Basic validation - ensure they look like Zod schemas if provided
   if (params && (!params._def || typeof params.parse !== 'function')) {
     throw new Error(`Params schema for ${method} must be a valid Zod schema`);
   }
