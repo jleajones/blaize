@@ -273,7 +273,7 @@ export type CreateGetRoute = <
     P extends z.ZodType ? Infer<P> : Record<string, string>,
     Q extends z.ZodType ? Infer<Q> : QueryParams,
     never,
-    R extends z.ZodType ? Infer<R> : unknown
+    R extends z.ZodType ? Infer<R> : void
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
