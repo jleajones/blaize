@@ -1,307 +1,548 @@
 # 🔥 BlaizeJS
 
-> A blazing-fast, type-safe Node.js framework with file-based routing, powerful middleware, and end-to-end type safety
+> **Modern, type-safe Node.js framework** for building blazing-fast APIs with end-to-end type safety, HTTP/2 support, and zero-configuration development
 
 [![npm version](https://badge.fury.io/js/blaizejs.svg)](https://badge.fury.io/js/blaizejs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-23.0+-green.svg)](https://nodejs.org/)
 [![Build Status](https://github.com/jleajones/blaize/workflows/Test/badge.svg)](https://github.com/jleajones/blaize/actions)
 
-## 🌟 Features
+## 🌟 Why BlaizeJS?
 
-- ⚡ **HTTP/2 by default** with automatic HTTP/1.1 fallback
-- 🔒 **End-to-end type safety** from API to client
-- 📁 **File-based routing** with automatic path generation
-- 🔗 **Composable middleware** with onion-style execution
-- 🧩 **Plugin architecture** with lifecycle management
-- 🌐 **Context management** with AsyncLocalStorage
-- 🔄 **Hot reloading** in development
-- 🛡️ **Schema validation** with built-in Zod integration
+BlaizeJS is a next-generation Node.js framework that brings together the best of modern web development:
 
-## 📦 Quick Start
+- **🚀 Blazing Performance** - HTTP/2 by default with automatic HTTPS in development
+- **🔒 End-to-End Type Safety** - Full TypeScript support from server to client with automatic type inference
+- **⚡ Zero Configuration** - Works out of the box with sensible defaults and auto-discovery
+- **🎯 Developer Experience** - Hot reloading, intelligent error messages, and powerful debugging
+- **🏗️ Production Ready** - Built-in error handling, validation, middleware, and plugin system
+
+## 📋 Table of Contents
+
+- [🚀 Quick Start](#-quick-start)
+- [⚙️ Core Technologies](#️-core-technologies)
+- [📦 Project Structure](#-project-structure)
+- [🎯 Getting Started](#-getting-started)
+- [🔗 Advanced Usage with Client](#-advanced-usage-with-client)
+- [🧪 Testing](#-testing)
+- [🤝 Contributing](#-contributing)
+- [📦 Release Management](#-release-management)
+- [📚 Documentation](#-documentation)
+- [📄 License](#-license)
+
+## 🚀 Quick Start
+
+Get up and running with BlaizeJS in under a minute:
 
 ```bash
-pnpm add blaizejs
+# Create a new project
+npx create-blaize-app my-api
+cd my-api
+
+# Install dependencies
+pnpm install
+
+# Start development server
+pnpm dev
+
+# Your API is now running at https://localhost:3000 🎉
 ```
 
-```typescript
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+## ⚙️ Core Technologies
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+BlaizeJS leverages modern, battle-tested technologies:
 
-const server = createServer({
-  routesDir: path.resolve(__dirname, './routes'),
-});
+### 🏗️ Framework Foundation
+- **Node.js 23+** - Latest JavaScript runtime features
+- **TypeScript 5.3+** - Advanced type system with full inference
+- **HTTP/2** - Modern protocol with multiplexing and server push
+- **Zod** - Runtime type validation with TypeScript integration
 
-await server.listen();
-// 🚀 Server running on https://localhost:3000
-```
+### 🛠️ Development Tools
+- **pnpm** - Fast, disk space efficient package manager
+- **Turbo** - High-performance build system for monorepos
+- **Vitest** - Blazing fast unit testing framework
+- **ESLint & Prettier** - Code quality and formatting
+- **Changesets** - Automated versioning and changelogs
 
-**Create a route** (`routes/users.ts`):
+### 🎨 Architecture Patterns
+- **File-based Routing** - Automatic route discovery from file structure
+- **Middleware Pipeline** - Composable request/response processing
+- **Plugin System** - Extend functionality with lifecycle hooks
+- **AsyncLocalStorage** - Isolated context management per request
 
-```typescript
-import { createGetRoute } from 'blaizejs';
-import { z } from 'zod';
+## 📦 Project Structure
 
-export const getUsers = createGetRoute({
-  schema: {
-    query: z.object({
-      limit: z.coerce.number().default(10),
-    }),
-    response: z.object({
-      users: z.array(
-        z.object({
-          id: z.string(),
-          name: z.string(),
-        })
-      ),
-    }),
-  },
-  handler: async ctx => {
-    const { limit } = ctx.request.query;
-    return { users: await findUsers(limit) };
-  },
-});
-```
-
-## 🏗️ Monorepo Structure
+BlaizeJS is organized as a monorepo with clear separation of concerns:
 
 ```
 blaize/
 ├── 📦 packages/                    # Core framework packages
-│   ├── blaize-core/               # Main framework (blaizejs)
-│   ├── blaize-client/             # Type-safe client generator
-│   ├── blaize-types/              # Shared TypeScript types
+│   ├── blaize-core/               # Main framework (published as 'blaizejs')
+│   │   ├── src/
+│   │   │   ├── server/           # HTTP/2 server implementation
+│   │   │   ├── router/           # File-based routing engine
+│   │   │   ├── middleware/       # Middleware system
+│   │   │   ├── plugins/          # Plugin architecture
+│   │   │   ├── context/          # Request context management
+│   │   │   └── errors/           # Semantic error classes
+│   │   └── package.json
+│   │
+│   ├── blaize-client/             # Type-safe API client
+│   │   ├── src/
+│   │   │   ├── client.ts         # Proxy-based client creation
+│   │   │   ├── request.ts        # HTTP request handling
+│   │   │   └── errors/           # Client-side error handling
+│   │   └── package.json
+│   │
+│   ├── blaize-types/              # Shared TypeScript definitions
 │   └── blaize-testing-utils/      # Testing utilities
-├── 🧩 plugins/                    # Official plugins
-│   ├── blaize-auth-plugin/        # Authentication (coming soon)
-│   └── blaize-database-plugin/    # Database integration (coming soon)
+│
+├── 🧩 plugins/                    # Official plugins (coming soon)
+│   ├── blaize-auth-plugin/        # Authentication & authorization
+│   └── blaize-database-plugin/    # Database integrations
+│
 ├── 🎯 apps/                       # Applications & examples
 │   ├── docs/                      # Documentation website
 │   ├── examples/                  # Example applications
 │   └── playground/                # Development playground
-└── ⚙️ configs/                    # Shared configurations
+│
+├── ⚙️ configs/                    # Shared configurations
+│   ├── eslint-config/             # ESLint presets
+│   ├── typescript-config/         # TypeScript configs
+│   └── vitest-config/             # Test configuration
+│
+└── 📄 Root files
+    ├── package.json               # Workspace configuration
+    ├── pnpm-workspace.yaml       # pnpm workspace settings
+    ├── turbo.json                # Turbo build configuration
+    └── .changeset/               # Version management
 ```
 
-## 📁 Core Packages
-
-### 🔥 [`blaizejs`](packages/blaize-core) - Main Framework
-
-The core framework providing servers, routing, middleware, and plugins.
-
-```typescript
-import { createServer, createGetRoute, createMiddleware, createPlugin } from 'blaizejs';
-```
-
-### 🔗 [`@blaizejs/client`](packages/blaize-client) - Type-Safe Client
-
-Automatic API client generation with full type inference.
-
-```typescript
-import { createClient } from '@blaizejs/client';
-
-const client = createClient('http://localhost:3000', routes);
-const users = await client.$get.getUsers({ query: { limit: 10 } });
-```
-
-### 🧪 [`@blaizejs/testing-utils`](packages/blaize-testing-utils) - Testing Tools
-
-Utilities for testing BlaizeJS applications.
-
-```typescript
-import { createTestContext } from '@blaizejs/testing-utils';
-
-const ctx = createTestContext({ method: 'GET', path: '/users' });
-const result = await getUsers.handler(ctx, {});
-```
-
-### 🏷️ [`@blaizejs/types`](packages/blaize-types) - Type Definitions
-
-Shared TypeScript types and interfaces.
-
-```typescript
-import type { Context, Middleware, Plugin } from 'blaizejs';
-```
-
-## 🛠️ Development
+## 🎯 Getting Started
 
 ### 📋 Prerequisites
 
 - **Node.js**: >= 23.0.0
 - **pnpm**: >= 9.7.0
 
-### 🏁 Setup
+### 🏁 Installation
 
 ```bash
-git clone https://github.com/jleajones/blaize.git
-cd blaize
-pnpm install
+# Using pnpm (recommended)
+pnpm add blaizejs
+
+# Using npm
+npm install blaizejs
+
+# Using yarn
+yarn add blaizejs
 ```
 
-### 🔧 Scripts
+### 🔨 Create Your First Server
 
-```bash
-# Development
-pnpm dev                    # Start all packages in dev mode
-pnpm build                  # Build all packages
+```typescript
+// server.ts
+import { createServer } from 'blaizejs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
-# Testing
-pnpm test                   # Run all tests
-pnpm test:watch            # Watch mode
-pnpm test:coverage         # Coverage reports
+// ESM path resolution
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-# Code Quality
-pnpm lint                   # ESLint
-pnpm format                # Prettier
-pnpm type-check            # TypeScript
+// Create server with file-based routing
+const server = createServer({
+  port: 3000,
+  routesDir: path.resolve(__dirname, './routes'),
+  http2: { enabled: true }  // Auto-generates dev certificates
+});
 
-# Package Management
-pnpm changeset             # Create changeset
-pnpm version-packages      # Version packages
-pnpm release               # Publish to npm
+await server.listen();
+console.log('🚀 Server running at https://localhost:3000');
 ```
 
-### 🎯 Package-Specific Development
+### 📁 Define Routes
+
+Create route files in your `routes` directory:
+
+```typescript
+// routes/users/[userId].ts
+import { createGetRoute, createPutRoute, NotFoundError } from 'blaizejs';
+import { z } from 'zod';
+
+// GET /users/:userId
+export const GET = createGetRoute({
+  schema: {
+    params: z.object({
+      userId: z.string().uuid()
+    }),
+    response: z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string(),
+      createdAt: z.string()
+    })
+  },
+  handler: async (ctx, params) => {
+    const user = await db.users.findById(params.userId);
+    
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'user',
+        resourceId: params.userId
+      });
+    }
+    
+    return user;
+  }
+});
+
+// PUT /users/:userId
+export const PUT = createPutRoute({
+  schema: {
+    params: z.object({
+      userId: z.string().uuid()
+    }),
+    body: z.object({
+      name: z.string().min(1).optional(),
+      email: z.string().email().optional()
+    })
+  },
+  handler: async (ctx, params) => {
+    const updatedUser = await db.users.update(params.userId, ctx.body);
+    return updatedUser;
+  }
+});
+```
+
+### 🔧 Add Middleware
+
+```typescript
+import { createMiddleware, compose } from 'blaizejs';
+
+// Logging middleware
+const logger = createMiddleware(async (ctx, next) => {
+  const start = Date.now();
+  console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
+  
+  await next();
+  
+  const duration = Date.now() - start;
+  console.log(`← ${ctx.response.statusCode} (${duration}ms)`);
+});
+
+// Authentication middleware
+const auth = createMiddleware({
+  name: 'auth',
+  handler: async (ctx, next) => {
+    const token = ctx.request.header('authorization');
+    
+    if (!token) {
+      throw new UnauthorizedError('No token provided');
+    }
+    
+    ctx.state.user = await verifyToken(token);
+    await next();
+  }
+});
+
+// Apply to server
+const server = createServer({
+  middleware: [logger, auth],
+  routesDir: './routes'
+});
+```
+
+## 🔗 Advanced Usage with Client
+
+BlaizeJS provides automatic client generation with full type safety:
+
+### 🎯 Server Setup
+
+First, export your route registry from the server:
+
+```typescript
+// server/routes/index.ts
+import { createGetRoute, createPostRoute } from 'blaizejs';
+import { z } from 'zod';
+
+export const getUsers = createGetRoute({
+  schema: {
+    query: z.object({
+      page: z.number().default(1),
+      limit: z.number().default(10)
+    }),
+    response: z.object({
+      users: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        email: z.string()
+      })),
+      total: z.number()
+    })
+  },
+  handler: async (ctx) => {
+    const { page, limit } = ctx.request.query;
+    return await db.users.paginate(page, limit);
+  }
+});
+
+export const createUser = createPostRoute({
+  schema: {
+    body: z.object({
+      name: z.string().min(1),
+      email: z.string().email(),
+      password: z.string().min(8)
+    }),
+    response: z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string()
+    })
+  },
+  handler: async (ctx) => {
+    return await db.users.create(ctx.body);
+  }
+});
+
+// Export route registry for client
+export const routes = {
+  getUsers,
+  createUser
+} as const;
+```
+
+### 🔌 Client Usage
+
+Install the client package:
 
 ```bash
-# Work on specific packages
-pnpm --filter blaizejs dev
-pnpm --filter @blaizejs/client test
-pnpm --filter playground start
+pnpm add @blaizejs/client
+```
+
+Create a type-safe client:
+
+```typescript
+// client/api.ts
+import bc from '@blaizejs/client';
+import { routes } from '../server/routes';
+
+// Create client with automatic type inference
+const api = bc.create('https://api.example.com', routes);
+
+// Use with full type safety and autocompletion
+async function example() {
+  // GET request with query parameters
+  const { users, total } = await api.$get.getUsers({
+    query: { 
+      page: 2,      // ✅ Typed as number
+      limit: 20     // ✅ Typed as number
+    }
+  });
+  
+  console.log(users[0].name);  // ✅ Fully typed
+  console.log(users[0].age);   // ❌ TypeScript error - property doesn't exist
+  
+  // POST request with body
+  const newUser = await api.$post.createUser({
+    body: {
+      name: 'Jane Doe',         // ✅ Required string
+      email: 'jane@example.com', // ✅ Valid email required
+      password: 'secure123'      // ✅ Min 8 characters
+    }
+  });
+  
+  return newUser; // ✅ Return type is inferred
+}
+```
+
+### 🛡️ Error Handling
+
+```typescript
+import { BlaizeError } from 'blaizejs';
+
+try {
+  const user = await api.$get.getUser({ 
+    params: { userId: '123' } 
+  });
+} catch (error) {
+  if (error instanceof BlaizeError) {
+    switch (error.status) {
+      case 404:
+        console.log('User not found');
+        break;
+      case 401:
+        console.log('Authentication required');
+        break;
+      case 500:
+        console.log('Server error:', error.correlationId);
+        break;
+    }
+  }
+}
 ```
 
 ## 🧪 Testing
 
-Uses Vitest across all packages with shared configuration:
+BlaizeJS provides comprehensive testing utilities:
 
 ```typescript
-// Example test
 import { describe, test, expect } from 'vitest';
 import { createTestContext } from '@blaizejs/testing-utils';
+import { GET } from './routes/users/[userId]';
 
-describe('API Tests', () => {
-  test('should handle requests', async () => {
-    const ctx = createTestContext({ method: 'GET', path: '/test' });
-    const result = await handler(ctx, {});
-    expect(result).toBeDefined();
+describe('User Routes', () => {
+  test('should return user by ID', async () => {
+    const ctx = createTestContext({
+      method: 'GET',
+      path: '/users/123',
+      params: { userId: '123' }
+    });
+    
+    const result = await GET.handler(ctx, { userId: '123' });
+    
+    expect(result).toEqual({
+      id: '123',
+      name: 'Test User',
+      email: 'test@example.com'
+    });
+  });
+  
+  test('should handle not found', async () => {
+    const ctx = createTestContext({
+      method: 'GET',
+      path: '/users/999'
+    });
+    
+    await expect(
+      GET.handler(ctx, { userId: '999' })
+    ).rejects.toThrow(NotFoundError);
   });
 });
 ```
 
-## 📦 Release Management
+### 🔧 Running Tests
 
-BlaizeJS uses **Changesets** with **GitHub Actions** for automated, coordinated releases. Our workflow supports both individual releases and batching multiple features together.
+```bash
+# Run all tests
+pnpm test
 
-### 🔄 Release Workflow
+# Run tests in watch mode
+pnpm test:watch
 
+# Generate coverage report
+pnpm test:coverage
+
+# Test specific package
+pnpm --filter blaizejs test
 ```
-1. 🔧 Create feature branch with changes
-2. 📝 Add changeset for published package changes
-3. 🔀 Submit and merge pull request
-4. 🤖 GitHub Actions automatically creates/updates "Version Packages" PR
-5. 👀 Review and merge "Version Packages" PR when ready to release
-6. 🚀 Packages automatically published to npm with changelog generation
-```
-
-### ✨ Key Features
-
-- **Automatic version bumping** based on semantic versioning
-- **Coordinated releases** across multiple packages
-- **Changelog generation** from changeset summaries
-- **Git tagging** and GitHub releases
-- **Smart accumulation** - batch multiple features into one release
-
-### 📝 When to Create Changesets
-
-Create changesets for changes to **published packages** (`blaizejs`, `@blaizejs/client`, `@blaizejs/testing-utils`):
-
-- 🐛 **Bug fixes** → `patch`
-- 🚀 **New features** → `minor`  
-- 💥 **Breaking changes** → `major`
-
-No changesets needed for documentation, tooling, or internal changes.
-
-### 📖 Learn More
-
-For complete release workflow documentation, troubleshooting, and best practices:
-
-**→ [RELEASE-MANAGEMENT.md](RELEASE-MANAGEMENT.md)**
 
 ## 🤝 Contributing
 
-We welcome contributions to BlaizeJS! Whether you're fixing bugs, adding features, or improving documentation, your help makes the framework better for everyone.
+We welcome contributions! BlaizeJS is built by the community, for the community.
 
-### 🚀 Quick Start for Contributors
+### 🚀 Quick Contribution Guide
 
-1. **Fork & clone** the repository
-2. **Install dependencies**: `pnpm install`
-3. **Create feature branch**: `git checkout -b feature/your-feature-name`
-4. **Make changes** with tests and documentation
-5. **Run quality checks**: `pnpm test && pnpm lint && pnpm type-check`
-6. **Create changeset** (if modifying published packages): `pnpm changeset`
-7. **Submit pull request** with clear description
+1. **Fork & Clone**
+   ```bash
+   git clone https://github.com/[your-username]/blaize.git
+   cd blaize
+   pnpm install
+   ```
 
-### 🎯 Contribution Areas
+2. **Create Feature Branch**
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
 
-- **Core Framework**: Improve performance, add features, fix bugs
-- **Type System**: Enhance TypeScript integration and inference
-- **Documentation**: API docs, examples, guides
-- **Testing**: Expand test coverage, testing utilities
-- **Tooling**: Developer experience improvements
+3. **Make Changes**
+   - Write code with tests
+   - Update documentation
+   - Follow TypeScript strict mode
 
-### 📝 Development Standards
+4. **Run Quality Checks**
+   ```bash
+   pnpm test
+   pnpm lint
+   pnpm type-check
+   ```
 
-- ✅ **TypeScript strict mode** with comprehensive typing
-- ✅ **Comprehensive tests** using Vitest
-- ✅ **Code quality** with ESLint + Prettier
-- ✅ **Commit conventions** with descriptive emoji-prefixed messages
-- ✅ **Changesets** for package versioning
+5. **Create Changeset**
+   ```bash
+   pnpm changeset
+   ```
 
-### 📚 Detailed Guidelines
+6. **Submit Pull Request**
 
-For comprehensive contribution guidelines, development setup, changeset workflow, and coding standards:
+### 📚 Full Guidelines
+
+For detailed contribution guidelines, code standards, and development workflow:
 
 **→ [CONTRIBUTING.md](CONTRIBUTING.md)**
 
-### 🗺️ Roadmap
+## 📦 Release Management
 
-### 🚀 Current (v0.2.x)
+BlaizeJS uses an automated release workflow with Changesets and GitHub Actions.
 
-- ✅ Core framework with HTTP/2, routing, middleware
-- ✅ Type-safe client generation
-- ✅ Plugin system and testing utilities
-- ✅ Automated release workflow
+### 🔄 Release Process
 
-### 🎯 Next (v0.3.x)
+1. Merge PRs with changesets to `main`
+2. Bot creates/updates "Version Packages" PR
+3. Review and merge when ready to release
+4. Packages automatically published to npm
 
-- 🔄 Official auth and database plugins
-- 🔄 CLI for project scaffolding
-- 🔄 Performance optimizations
-- 🔄 Enhanced deployment tooling
+### 📖 Detailed Documentation
 
-### 🔮 Future (v0.4.x+)
+For complete release workflow, versioning strategy, and troubleshooting:
 
-- 🔄 GraphQL integration
-- 🔄 WebSocket support
-- 🔄 Edge runtime deployment
-- 🔄 Microservices toolkit
+**→ [RELEASE-MANAGEMENT.md](RELEASE-MANAGEMENT.md)**
 
-## 📞 Community & Support
+## 📚 Documentation
 
-- 📖 **Documentation**: Comprehensive guides in each package
-- 🐛 **Issues**: [GitHub Issues](https://github.com/jleajones/blaize/issues) for bugs and feature requests
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/jleajones/blaize/discussions) for questions and ideas
-- 📧 **Contact**: jason@careymarcel.com
-- 🤝 **Contributing**: See [CONTRIBUTING.md](CONTRIBUTING.md)
-- 📦 **Releases**: See [RELEASE-MANAGEMENT.md](RELEASE-MANAGEMENT.md)
+- 📖 **[API Reference](packages/blaize-core/README.md)** - Complete framework API
+- 🔗 **[Client Documentation](packages/blaize-client/README.md)** - Type-safe client usage
+- 🧪 **[Testing Guide](packages/blaize-testing-utils/README.md)** - Testing utilities
+- 💡 **[Examples](apps/examples)** - Sample applications
+- 🎓 **[Tutorials](docs/tutorials)** - Step-by-step guides
+
+## 🗺️ Roadmap
+
+### ✅ Current (v0.3.x)
+- Core framework with HTTP/2
+- Type-safe client generation
+- Testing utilities
+- Error handling system
+- Middleware & plugins
+
+### 🎯 MVP/1.0 Release
+- WebSocket support
+- Built-in auth plugin
+- Database integrations
+- CLI scaffolding tool
+- Performance monitoring
+
+### 🔮 Future (v1.1+)
+- GraphQL integration
+- gRPC support
+- Edge runtime compatibility
+- OpenAPI generation
+- Distributed tracing
+
+## 📞 Support
+
+- 🐛 **[Issues](https://github.com/jleajones/blaize/issues)** - Bug reports and feature requests
+- 💬 **[Discussions](https://github.com/jleajones/blaize/discussions)** - Questions and ideas
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT © [BlaizeJS Team](https://github.com/jleajones)
 
 ---
 
-**Built with ❤️ by the BlaizeJS team**
+<div align="center">
+  <strong>Built with ❤️ by the BlaizeJS team</strong>
+  <br />
+  <sub>Fast, safe, and delightful API development for the modern web</sub>
+</div>

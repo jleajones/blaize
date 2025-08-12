@@ -1,6 +1,8 @@
 # 🚀 BlaizeJS Router Module
 
-> A blazing-fast, type-safe file-based routing system for Node.js applications
+> **Type-safe, file-based routing system** for building blazing-fast APIs with automatic validation, middleware integration, and full TypeScript support
+>
+> Create RESTful endpoints with schema validation, dynamic parameters, and seamless middleware composition
 
 [![npm version](https://badge.fury.io/js/blaizejs.svg)](https://badge.fury.io/js/blaizejs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,30 +13,32 @@
 - [🌟 Features](#-features)
 - [📦 Installation](#-installation)
 - [🚀 Quick Start](#-quick-start)
-- [📁 ESM Path Resolution](#-esm-path-resolution)
-- [📂 File-Based Routing](#-file-based-routing)
-- [🔒 Type-Safe Route Creation](#-type-safe-route-creation)
-- [🔧 API Reference](#-api-reference)
-- [🧩 Plugin Route Creation](#-plugin-route-creation)
-- [🔍 Error Handling](#-error-handling)
-- [✅ Testing](#-testing)
-- [🤝 Contributing](#-contributing)
+- [📖 Core Concepts](#-core-concepts)
+- [🎯 Core APIs](#-core-apis)
+- [💡 Common Patterns](#-common-patterns)
+- [🛡️ Schema Validation](#️-schema-validation)
+- [🔧 Advanced Usage](#-advanced-usage)
+- [🧪 Testing](#-testing)
+- [📚 Type Reference](#-type-reference)
 - [🗺️ Roadmap](#️-roadmap)
+- [🤝 Contributing](#-contributing)
 
 ## 🌟 Features
 
-- ⚡ **File-based routing** with automatic path generation
-- 🔒 **End-to-end type safety** with Zod schema validation
-- 🔥 **Hot reloading** in development mode
-- 🧩 **Plugin system** for extensible functionality
-- 🛡️ **Built-in error handling** with custom error types
-- 📊 **Route conflict detection** for plugin management
-- 🎯 **Route-specific middleware** support
-- 🚀 **High performance** with radix tree matching
-- 🔗 **Type-safe client generation** from route definitions
-- 📁 **ESM module support** with proper path resolution
+- 📁 **File-Based Routing** - Routes automatically discovered from file structure
+- 🎯 **Type-Safe Handlers** - Full TypeScript support with type inference
+- ✅ **Schema Validation** - Built-in Zod validation for params, query, body, and response
+- 🔗 **Dynamic Parameters** - Support for `/users/[userId]` style routes
+- 🧩 **Middleware Integration** - Composable middleware at route and method level
+- 🚦 **All HTTP Methods** - GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+- ⚡ **Zero Configuration** - Works out of the box with sensible defaults
+- 🔄 **Hot Reloading** - Automatic route updates in development mode
+- 🛡️ **Error Handling** - Built-in error handling with typed responses
+- 📊 **Route Conflicts Detection** - Automatic detection of overlapping routes
 
 ## 📦 Installation
+
+The router module is included with the main BlaizeJS package:
 
 ```bash
 # Using pnpm (recommended)
@@ -49,1188 +53,557 @@ yarn add blaizejs
 
 ## 🚀 Quick Start
 
-### Basic Setup
+### Creating Your First Route
+
+Create a file-based route in your routes directory:
+
+```typescript
+// routes/users/[userId]/index.ts
+import { createGetRoute, createPutRoute } from 'blaizejs';
+import { z } from 'zod';
+
+// Schema definitions
+const userParamsSchema = z.object({
+  userId: z.string().uuid(),
+});
+
+const updateUserBodySchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  age: z.number().int().positive().optional(),
+});
+
+const userResponseSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  email: z.string(),
+  age: z.number().optional(),
+  createdAt: z.string(),
+});
+
+// GET /users/:userId
+export const getUserRoute = createGetRoute({
+  schema: {
+    params: userParamsSchema,
+    response: userResponseSchema,
+  },
+  handler: async (ctx, params) => {
+    // params is fully typed: { userId: string }
+    const user = await db.users.findById(params.userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Response is validated against schema
+    return user;
+  },
+});
+
+// PUT /users/:userId
+export const updateUserRoute = createPutRoute({
+  schema: {
+    params: userParamsSchema,
+    body: updateUserBodySchema,
+    response: userResponseSchema,
+  },
+  handler: async (ctx, params) => {
+    // ctx.body is fully typed based on schema
+    const updatedUser = await db.users.update(params.userId, ctx.body);
+    return updatedUser;
+  },
+});
+```
+
+### Using Routes in Your Server
 
 ```typescript
 import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 
-// Get the directory name of the current module (required for ESM)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Create and start server - router is created automatically!
 const server = createServer({
   port: 3000,
-  routesDir: path.resolve(__dirname, './routes')  // Proper ESM path resolution
+  routesDir: './routes', // Routes are auto-discovered
 });
 
 await server.listen();
-console.log('🚀 Server running on https://localhost:3000');
 ```
 
-> **💡 How it works:** BlaizeJS automatically creates and configures a router behind the scenes when you create a server. The router discovers all route files in your `routesDir` and sets up the routing table with hot reloading in development mode.
+## 📖 Core Concepts
 
-### Advanced Router Access
+### 🗂️ File-Based Routing
 
-For advanced use cases, you can access the router directly:
-
-```typescript
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const server = createServer({
-  routesDir: path.resolve(__dirname, './routes')
-});
-
-// Access the router for advanced operations
-const router = server.router;
-
-// Check for route conflicts
-const conflicts = router.getRouteConflicts();
-console.log('Route conflicts:', conflicts);
-
-// Add additional route directories (for plugins, etc.)
-await router.addRouteDirectory(
-  path.resolve(__dirname, './api-routes'),
-  { prefix: '/api' }
-);
-```
-
-## 📁 ESM Path Resolution
-
-### 🛠️ Why Path Resolution Matters
-
-Since BlaizeJS is built for modern ESM modules, proper path resolution is crucial for reliable route discovery:
-
-```typescript
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-// ✅ REQUIRED: Get __dirname equivalent in ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// ✅ CORRECT: Use path.resolve() for absolute paths
-const server = createServer({
-  routesDir: path.resolve(__dirname, './routes')
-});
-
-// ❌ AVOID: Relative paths are unreliable in ESM
-const badServer = createServer({
-  routesDir: './routes'  // May not work in all environments
-});
-```
-
-### 📂 Common Project Structures
-
-```typescript
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Pattern 1: Routes alongside server file
-// src/
-// ├── server.ts
-// └── routes/
-//     ├── index.ts
-//     └── users.ts
-const server1 = createServer({
-  routesDir: path.resolve(__dirname, './routes')
-});
-
-// Pattern 2: Nested API structure
-// src/
-// ├── server.ts
-// ├── api/
-// │   └── routes/
-// │       ├── v1/
-// │       └── v2/
-const server2 = createServer({
-  routesDir: path.resolve(__dirname, './api/routes')
-});
-
-// Pattern 3: Monorepo structure
-// apps/
-// ├── api-server/
-// │   ├── index.ts
-// │   └── routes/
-// └── shared/
-//     └── routes/
-const server3 = createServer({
-  routesDir: path.resolve(__dirname, './routes')
-});
-
-// Pattern 4: TypeScript build output
-// dist/
-// ├── server.js
-// └── routes/
-//     └── compiled-routes.js
-const productionServer = createServer({
-  routesDir: path.resolve(__dirname, './routes')
-});
-```
-
-### 🌍 Environment-Aware Path Resolution
-
-```typescript
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const getRoutesDirectory = () => {
-  const env = process.env.NODE_ENV || 'development';
-  
-  switch (env) {
-    case 'development':
-      // Source TypeScript files
-      return path.resolve(__dirname, './routes');
-    
-    case 'production':
-      // Compiled JavaScript files
-      return path.resolve(__dirname, './dist/routes');
-    
-    case 'test':
-      // Test fixtures
-      return path.resolve(__dirname, './test-fixtures/routes');
-    
-    default:
-      return path.resolve(__dirname, './routes');
-  }
-};
-
-const server = createServer({
-  routesDir: getRoutesDirectory()
-});
-```
-
-### 🔗 Multiple Route Directories
-
-```typescript
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const server = createServer({
-  // Primary routes directory
-  routesDir: path.resolve(__dirname, './routes')
-});
-
-// Add additional route directories
-await server.router.addRouteDirectory(
-  path.resolve(__dirname, './api-v2-routes'),
-  { prefix: '/api/v2' }
-);
-
-await server.router.addRouteDirectory(
-  path.resolve(__dirname, './admin-routes'),
-  { 
-    prefix: '/admin',
-    middleware: [adminAuthMiddleware]
-  }
-);
-
-// Result:
-// ./routes/users.ts           → /users
-// ./api-v2-routes/posts.ts    → /api/v2/posts  
-// ./admin-routes/dashboard.ts → /admin/dashboard
-```
-
-### ⚙️ Plugin Route Registration
-
-```typescript
-import { createPlugin } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const blogPlugin = createPlugin('blog', '1.0.0', async (server, options) => {
-  // Register plugin routes with proper path resolution
-  await server.router.addRouteDirectory(
-    path.resolve(__dirname, './blog-routes'),
-    { prefix: '/blog' }
-  );
-  
-  return {
-    initialize: async () => {
-      console.log('Blog routes loaded from:', path.resolve(__dirname, './blog-routes'));
-    }
-  };
-});
-
-// Plugin directory structure:
-// plugins/blog/
-// ├── index.ts
-// └── blog-routes/
-//     ├── index.ts       → /blog
-//     ├── [slug].ts      → /blog/:slug
-//     └── admin/
-//         └── posts.ts   → /blog/admin/posts
-```
-
-## 📂 File-Based Routing
-
-The router automatically maps file structure to URL paths:
+Routes are automatically discovered based on your file structure:
 
 ```
 routes/
-├── index.ts          → /
-├── users.ts          → /users
+├── index.ts              → /
 ├── users/
-│   ├── [id].ts       → /users/:id
-│   └── profile.ts    → /users/profile
-├── api/
-│   ├── v1/
-│   │   └── posts.ts  → /api/v1/posts
-│   └── health.ts     → /api/health
-└── products/
-    └── [category]/
-        └── [id].ts   → /products/:category/:id
+│   ├── index.ts         → /users
+│   └── [userId]/
+│       ├── index.ts     → /users/:userId
+│       └── posts.ts     → /users/:userId/posts
+├── posts/
+│   ├── index.ts         → /posts
+│   └── [postId].ts      → /posts/:postId
+└── api/
+    └── v1/
+        └── status.ts     → /api/v1/status
 ```
 
-### 🏷️ Route Parameters
+### 🎭 Route Handlers
+
+Each route file exports handlers for different HTTP methods:
 
 ```typescript
-// routes/users/[id].ts - Dynamic route parameter
-import { createGetRoute } from 'blaizejs';
-import { z } from 'zod';
+// routes/posts/index.ts
+import { createGetRoute, createPostRoute } from 'blaizejs';
 
-export const getUserById = createGetRoute({
-  schema: {
-    params: z.object({
-      id: z.string().uuid()
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string()
-    })
+// GET /posts - List all posts
+export const listPostsRoute = createGetRoute({
+  handler: async ctx => {
+    const posts = await db.posts.findAll();
+    return posts;
   },
-  handler: async (ctx, params) => {
-    // params.id is automatically typed as string & validated as UUID
-    const user = await findUserById(params.id);
-    return user;
-  }
+});
+
+// POST /posts - Create a new post
+export const createPostRoute = createPostRoute({
+  schema: {
+    body: postSchema,
+  },
+  handler: async ctx => {
+    const newPost = await db.posts.create(ctx.body);
+    ctx.response.status(201);
+    return newPost;
+  },
 });
 ```
 
-### 🌐 Multiple Parameters
+### 🔗 Dynamic Parameters
+
+Use brackets for dynamic route segments:
 
 ```typescript
-// routes/products/[category]/[id].ts
-import { createGetRoute } from 'blaizejs';
-import { z } from 'zod';
+// routes/teams/[teamId]/members/[memberId].ts
+// Matches: /teams/123/members/456
 
-export const getProduct = createGetRoute({
+export const getMemberRoute = createGetRoute({
   schema: {
     params: z.object({
-      category: z.enum(['electronics', 'clothing', 'books']),
-      id: z.string().uuid()
+      teamId: z.string(),
+      memberId: z.string(),
     }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      category: z.string(),
-      price: z.number()
-    })
   },
   handler: async (ctx, params) => {
-    // params: { category: "electronics" | "clothing" | "books", id: string }
-    const product = await findProduct(params.category, params.id);
-    return product;
-  }
+    // params: { teamId: string, memberId: string }
+    return await getTeamMember(params.teamId, params.memberId);
+  },
 });
 ```
 
-### 🔥 Hot Reloading in Development
+## 🎯 Core APIs
 
-BlaizeJS watches your routes directory and automatically reloads routes when files change:
+### Route Creation Functions
 
-```typescript
-// NODE_ENV=development
-const server = createServer({
-  routesDir: path.resolve(__dirname, './routes')
-});
+All route creators are exported from the main package:
 
-await server.listen();
-
-// The server will automatically:
-// ✅ Watch for file changes in routes directory
-// ✅ Reload routes when files are added/modified/deleted
-// ✅ Emit 'routes:reloaded' events
-// ✅ Preserve server connections during reload
-
-server.events.on('routes:reloaded', (count) => {
-  console.log(`🔄 Reloaded ${count} routes`);
-});
-```
-
-## 🔒 Type-Safe Route Creation
-
-BlaizeJS provides two patterns for creating routes, with **route creator functions being the recommended approach** for maximum type safety and client generation capabilities.
-
-### ⭐ Pattern 1: Route Creator Functions (Recommended)
-
-**Why route creators are preferred:**
-- 🔒 **End-to-end type safety** from API to client
-- 🔗 **Automatic client generation** with full type inference
-- 📝 **Schema-driven development** with Zod validation
-- ⚡ **Compile-time error catching** vs runtime failures
-- 🎯 **Better IDE experience** with autocomplete and refactoring
-
-```typescript
-// routes/users.ts
-import { 
-  createGetRoute, 
-  createPostRoute,
-  createPutRoute,
-  createDeleteRoute,
-  createPatchRoute,
-  createHeadRoute,
-  createOptionsRoute
-} from 'blaizejs';
-import { z } from 'zod';
-
-// GET /users - List users with pagination
-export const getUsers = createGetRoute({
-  schema: {
-    query: z.object({
-      limit: z.coerce.number().min(1).max(100).default(10),
-      offset: z.coerce.number().min(0).default(0),
-      search: z.string().optional()
-    }),
-    response: z.object({
-      users: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        email: z.string(),
-        createdAt: z.string().datetime()
-      })),
-      total: z.number(),
-      hasMore: z.boolean()
-    })
-  },
-  handler: async (ctx, params) => {
-    // Query params are automatically typed and validated
-    const { limit, offset, search } = ctx.request.query;
-    
-    const result = await getUsersWithPagination({ limit, offset, search });
-    return result; // Return type is automatically inferred and validated
-  }
-});
-
-// POST /users - Create new user
-export const createUser = createPostRoute({
-  schema: {
-    body: z.object({
-      name: z.string().min(1).max(100),
-      email: z.string().email(),
-      age: z.number().min(13).max(120).optional()
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string(),
-      age: z.number().optional(),
-      createdAt: z.string().datetime()
-    })
-  },
-  handler: async (ctx, params) => {
-    // Request body is typed and validated automatically
-    const userData = ctx.request.body;
-    
-    const newUser = await createNewUser(userData);
-    return newUser; // Response automatically validated
-  }
-});
-
-// PUT /users/:id - Update user completely
-export const updateUser = createPutRoute({
-  schema: {
-    params: z.object({
-      id: z.string().uuid()
-    }),
-    body: z.object({
-      name: z.string().min(1).max(100),
-      email: z.string().email(),
-      age: z.number().min(13).max(120).optional()
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string(),
-      age: z.number().optional(),
-      updatedAt: z.string().datetime()
-    })
-  },
-  handler: async (ctx, params) => {
-    // Both params and body are fully typed
-    const updates = ctx.request.body;
-    const userId = params.id;
-    
-    const updatedUser = await updateUserById(userId, updates);
-    return updatedUser;
-  }
-});
-
-// PATCH /users/:id - Partial user update
-export const patchUser = createPatchRoute({
-  schema: {
-    params: z.object({
-      id: z.string().uuid()
-    }),
-    body: z.object({
-      name: z.string().min(1).max(100).optional(),
-      email: z.string().email().optional(),
-      age: z.number().min(13).max(120).optional()
-    }).refine(data => Object.keys(data).length > 0, {
-      message: "At least one field must be provided for update"
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string(),
-      age: z.number().optional(),
-      updatedAt: z.string().datetime()
-    })
-  },
-  handler: async (ctx, params) => {
-    const patches = ctx.request.body;
-    const userId = params.id;
-    
-    const patchedUser = await patchUserById(userId, patches);
-    return patchedUser;
-  }
-});
-
-// DELETE /users/:id - Remove user
-export const deleteUser = createDeleteRoute({
-  schema: {
-    params: z.object({
-      id: z.string().uuid()
-    }),
-    response: z.object({
-      success: z.boolean(),
-      message: z.string(),
-      deletedAt: z.string().datetime()
-    })
-  },
-  handler: async (ctx, params) => {
-    await deleteUserById(params.id);
-    
-    return {
-      success: true,
-      message: `User ${params.id} deleted successfully`,
-      deletedAt: new Date().toISOString()
-    };
-  }
-});
-
-// HEAD /users/:id - Check if user exists (no response body)
-export const checkUser = createHeadRoute({
-  schema: {
-    params: z.object({
-      id: z.string().uuid()
-    })
-  },
-  handler: async (ctx, params) => {
-    const userExists = await checkUserExists(params.id);
-    
-    if (!userExists) {
-      ctx.response.status(404);
-    } else {
-      ctx.response.status(200);
-    }
-    // HEAD requests don't return data
-  }
-});
-
-// OPTIONS /users - CORS preflight handling
-export const usersOptions = createOptionsRoute({
-  handler: async (ctx) => {
-    ctx.response
-      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS')
-      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-      .status(204);
-  }
-});
-```
-
-### 📝 Pattern 2: Default Export (Simple)
-
-For simpler use cases or when client generation isn't needed:
-
-```typescript
-// routes/health.ts
-import { z } from 'zod';
-
-export default {
-  GET: {
-    schema: {
-      response: z.object({
-        status: z.literal('ok'),
-        timestamp: z.string(),
-        uptime: z.number()
-      })
-    },
-    handler: async (ctx, params) => {
-      return {
-        status: 'ok' as const,
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-      };
-    }
-  },
-
-  // Multiple methods in one file
-  POST: {
-    schema: {
-      body: z.object({
-        service: z.string()
-      }),
-      response: z.object({
-        service: z.string(),
-        healthy: z.boolean()
-      })
-    },
-    handler: async (ctx, params) => {
-      const { service } = ctx.request.body;
-      const isHealthy = await checkServiceHealth(service);
-      
-      return {
-        service,
-        healthy: isHealthy
-      };
-    }
-  }
-};
-```
-
-## 🔧 API Reference
-
-### Route Creator Functions
-
-All HTTP methods are supported with their respective creator functions:
-
-```typescript
-import {
-  createGetRoute,      // GET requests
-  createPostRoute,     // POST requests  
-  createPutRoute,      // PUT requests (full updates)
-  createDeleteRoute,   // DELETE requests
-  createPatchRoute,    // PATCH requests (partial updates)
-  createHeadRoute,     // HEAD requests (metadata only)
-  createOptionsRoute   // OPTIONS requests (CORS, capabilities)
-} from 'blaizejs';
-```
+| Function             | HTTP Method | Body Support | Description                |
+| -------------------- | ----------- | ------------ | -------------------------- |
+| `createGetRoute`     | GET         | ❌           | Retrieve resources         |
+| `createPostRoute`    | POST        | ✅           | Create new resources       |
+| `createPutRoute`     | PUT         | ✅           | Replace resources          |
+| `createPatchRoute`   | PATCH       | ✅           | Partially update resources |
+| `createDeleteRoute`  | DELETE      | ❌           | Remove resources           |
+| `createHeadRoute`    | HEAD        | ❌           | Check resource existence   |
+| `createOptionsRoute` | OPTIONS     | ❌           | Get allowed methods        |
 
 ### Route Configuration
 
+Each route creator accepts a configuration object:
+
 ```typescript
-interface RouteConfig<P, Q, B, R> {
+interface RouteConfig<TParams, TQuery, TBody, TResponse> {
+  // Schema validation (all optional)
   schema?: {
-    params?: P;    // URL parameters schema (Zod schema)
-    query?: Q;     // Query string schema (Zod schema)
-    body?: B;      // Request body schema (Zod schema)
-    response?: R;  // Response schema (Zod schema)
+    params?: ZodSchema; // URL parameters
+    query?: ZodSchema; // Query string
+    body?: ZodSchema; // Request body (POST/PUT/PATCH only)
+    response?: ZodSchema; // Response validation
   };
-  handler: RouteHandler<P, Q, B, R>;
-  middleware?: Middleware[];           // Route-specific middleware
-  options?: Record<string, unknown>;   // Additional route options
+
+  // Route handler function
+  handler: (ctx: Context, params: TParams) => Promise<TResponse> | TResponse;
+
+  // Route-specific middleware
+  middleware?: Middleware[];
+
+  // Additional options
+  options?: Record<string, unknown>;
 }
 ```
 
-### Route-Specific Middleware
+## 💡 Common Patterns
 
-Routes can have their own middleware that runs before the handler:
+### 🔒 Protected Routes with Middleware
 
 ```typescript
-// routes/protected.ts
 import { createGetRoute, createMiddleware } from 'blaizejs';
-import { z } from 'zod';
 
-const authMiddleware = createMiddleware({
-  name: 'auth',
+// Auth middleware
+const requireAuth = createMiddleware({
+  name: 'require-auth',
   handler: async (ctx, next) => {
     const token = ctx.request.header('authorization');
-    if (!token?.startsWith('Bearer ')) {
-      return ctx.response.status(401).json({ error: 'Unauthorized' });
-    }
-    
-    // Validate token and attach user to context
-    const user = await validateToken(token);
-    ctx.state.user = user;
-    
-    await next();
-  }
-});
 
-const rateLimitMiddleware = createMiddleware({
-  name: 'rateLimit',
-  handler: async (ctx, next) => {
-    const remaining = await checkRateLimit(ctx.request.ip);
-    if (remaining <= 0) {
-      return ctx.response.status(429).json({ error: 'Rate limit exceeded' });
+    if (!token) {
+      throw new UnauthorizedError('Authentication required');
     }
-    await next();
-  }
-});
 
-export const getProtectedData = createGetRoute({
-  middleware: [authMiddleware, rateLimitMiddleware], // Runs in order
-  schema: {
-    response: z.object({
-      message: z.string(),
-      user: z.object({
-        id: z.string(),
-        name: z.string()
-      }),
-      sensitiveData: z.array(z.string())
-    })
+    ctx.state.user = await verifyToken(token);
+    await next();
   },
-  handler: async (ctx) => {
-    // User is available from auth middleware
-    const user = ctx.state.user;
-    
-    const data = await getSensitiveUserData(user.id);
-    
-    return {
-      message: 'Protected data accessed successfully',
-      user,
-      sensitiveData: data
-    };
-  }
+});
+
+// Protected route
+export const getProfileRoute = createGetRoute({
+  middleware: [requireAuth],
+  handler: async ctx => {
+    // ctx.state.user is available from middleware
+    return await getUserProfile(ctx.state.user.id);
+  },
 });
 ```
 
-> **ℹ️ Global Middleware:** For server-wide middleware (CORS, logging, etc.), see the [Server Module documentation](../server/README.md).
-
-## 🧩 Plugin Route Creation
-
-Plugins create routes using the exact same patterns as your main application. This ensures consistency and type safety across your entire codebase.
-
-### Plugin Route Example
+### 📄 Pagination Pattern
 
 ```typescript
-// plugins/auth/routes/login.ts
+const paginationSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  sort: z.enum(['asc', 'desc']).default('desc'),
+});
+
+export const listItemsRoute = createGetRoute({
+  schema: {
+    query: paginationSchema,
+  },
+  handler: async (ctx, params) => {
+    const { page, limit, sort } = ctx.query;
+
+    const items = await db.items.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { createdAt: sort },
+    });
+
+    const total = await db.items.count();
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  },
+});
+```
+
+### 🔍 Search and Filtering
+
+```typescript
+const searchSchema = z.object({
+  q: z.string().optional(),
+  category: z.string().optional(),
+  minPrice: z.coerce.number().optional(),
+  maxPrice: z.coerce.number().optional(),
+  inStock: z.coerce.boolean().optional(),
+});
+
+export const searchProductsRoute = createGetRoute({
+  schema: {
+    query: searchSchema,
+  },
+  handler: async ctx => {
+    const filters = ctx.query;
+
+    const products = await db.products.search({
+      where: {
+        ...(filters.q && { name: { contains: filters.q } }),
+        ...(filters.category && { category: filters.category }),
+        ...(filters.minPrice && { price: { gte: filters.minPrice } }),
+        ...(filters.maxPrice && { price: { lte: filters.maxPrice } }),
+        ...(filters.inStock !== undefined && { inStock: filters.inStock }),
+      },
+    });
+
+    return products;
+  },
+});
+```
+
+### 📤 File Upload Routes
+
+```typescript
 import { createPostRoute } from 'blaizejs';
-import { z } from 'zod';
 
-export const login = createPostRoute({
+export const uploadFileRoute = createPostRoute({
   schema: {
     body: z.object({
-      email: z.string().email(),
-      password: z.string().min(8)
+      file: z.instanceof(File),
+      description: z.string().optional(),
     }),
-    response: z.object({
-      token: z.string(),
-      user: z.object({
-        id: z.string(),
-        email: z.string(),
-        name: z.string()
-      }),
-      expiresAt: z.string().datetime()
-    })
   },
-  handler: async (ctx, params) => {
-    const { email, password } = ctx.request.body;
-    
-    const authResult = await authenticateUser(email, password);
-    
-    if (!authResult.success) {
-      return ctx.response.status(401).json({ 
-        error: 'Invalid credentials' 
-      });
-    }
-    
+  handler: async ctx => {
+    const { file, description } = ctx.body;
+
+    // Process file upload
+    const uploadedFile = await storage.upload(file);
+
     return {
-      token: authResult.token,
-      user: authResult.user,
-      expiresAt: authResult.expiresAt
+      id: uploadedFile.id,
+      url: uploadedFile.url,
+      description,
     };
-  }
-});
-
-// plugins/auth/routes/profile.ts  
-export const getProfile = createGetRoute({
-  middleware: [authMiddleware], // Same middleware system
-  schema: {
-    response: z.object({
-      user: z.object({
-        id: z.string(),
-        email: z.string(),
-        name: z.string(),
-        lastLogin: z.string().datetime()
-      })
-    })
   },
-  handler: async (ctx) => {
-    const user = await getUserProfile(ctx.state.user.id);
-    return { user };
-  }
 });
 ```
 
-### Plugin Integration with ESM Paths
+## 🛡️ Schema Validation
+
+### Comprehensive Validation Example
 
 ```typescript
-// plugins/auth/index.ts
-import { createPlugin } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const authPlugin = createPlugin('auth', '1.0.0', async (server, options) => {
-  // Register plugin routes with proper ESM path resolution
-  await server.router.addRouteDirectory(
-    path.resolve(__dirname, './routes'),
-    { prefix: '/auth' }
-  );
-  
-  return {
-    initialize: async () => {
-      console.log('Auth routes loaded from:', path.resolve(__dirname, './routes'));
-    }
-  };
-});
-
-// When plugin routes are added, they get prefixed automatically
-// POST /auth/login
-// GET /auth/profile
-```
-
-> **🔗 Learn More:** For complete plugin system documentation including lifecycle management, dependency injection, and configuration, see the [Plugins Module documentation](../plugins/README.md).
-
-## 🔍 Error Handling
-
-### Built-in Validation
-
-Route creators automatically validate requests using your Zod schemas:
-
-```typescript
-export const createUser = createPostRoute({
-  schema: {
-    body: z.object({
-      email: z.string().email(),
-      age: z.number().min(13)
-    })
-  },
-  handler: async (ctx, params) => {
-    // If we reach here, body is guaranteed to be valid
-    const { email, age } = ctx.request.body;
-    // ...
-  }
-});
-
-// Invalid request (age < 13) automatically returns:
-// 400 Bad Request
-// {
-//   "error": "Validation Error", 
-//   "details": [
-//     {
-//       "path": ["age"],
-//       "message": "Number must be greater than or equal to 13"
-//     }
-//   ]
-// }
-```
-
-### Custom Error Handling
-
-```typescript
-import { createGetRoute } from 'blaizejs';
 import { z } from 'zod';
+import { createPostRoute, ValidationError } from 'blaizejs';
 
-// Custom error types
-class UserNotFoundError extends Error {
-  constructor(userId: string) {
-    super(`User ${userId} not found`);
-    this.name = 'UserNotFoundError';
-  }
-}
+// Define schemas with custom error messages
+const createUserSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(20, 'Username must be at most 20 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
 
-export const getUserById = createGetRoute({
+  email: z.string().email('Invalid email address'),
+
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
+
+  age: z
+    .number()
+    .int('Age must be a whole number')
+    .min(13, 'Must be at least 13 years old')
+    .max(120, 'Invalid age')
+    .optional(),
+
+  preferences: z
+    .object({
+      newsletter: z.boolean().default(false),
+      notifications: z.boolean().default(true),
+    })
+    .optional(),
+});
+
+export const createUserRoute = createPostRoute({
   schema: {
-    params: z.object({
-      id: z.string().uuid()
-    }),
+    body: createUserSchema,
     response: z.object({
       id: z.string(),
-      name: z.string(),
-      email: z.string()
-    })
+      username: z.string(),
+      email: z.string(),
+      createdAt: z.string(),
+    }),
+  },
+  handler: async ctx => {
+    // Input is fully validated and typed
+    const user = await db.users.create(ctx.body);
+
+    // Response is validated before sending
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      createdAt: user.createdAt.toISOString(),
+    };
+  },
+});
+```
+
+### Custom Validation Logic
+
+```typescript
+const customValidationSchema = z
+  .object({
+    startDate: z.string().datetime(),
+    endDate: z.string().datetime(),
+  })
+  .refine(data => new Date(data.endDate) > new Date(data.startDate), {
+    message: 'End date must be after start date',
+    path: ['endDate'],
+  });
+```
+
+## 🔧 Advanced Usage
+
+### Route Composition
+
+```typescript
+// Shared route configuration
+const baseRouteConfig = {
+  middleware: [authMiddleware, loggingMiddleware],
+  options: { rateLimit: 100 },
+};
+
+// Compose routes with shared config
+export const getRoute = createGetRoute({
+  ...baseRouteConfig,
+  handler: async ctx => {
+    // Implementation
+  },
+});
+
+export const postRoute = createPostRoute({
+  ...baseRouteConfig,
+  schema: { body: createSchema },
+  handler: async ctx => {
+    // Implementation
+  },
+});
+```
+
+### Conditional Middleware
+
+```typescript
+const conditionalAuth = createMiddleware({
+  name: 'conditional-auth',
+  handler: async (ctx, next) => {
+    // Skip auth for public endpoints
+    if (ctx.request.path.startsWith('/public')) {
+      return next();
+    }
+
+    // Require auth for other endpoints
+    const token = ctx.request.header('authorization');
+    if (!token) {
+      throw new UnauthorizedError();
+    }
+
+    ctx.state.user = await verifyToken(token);
+    await next();
+  },
+});
+```
+
+### Error Response Handling
+
+```typescript
+import { ValidationError, NotFoundError, UnauthorizedError, ConflictError } from 'blaizejs';
+
+export const updateRoute = createPutRoute({
+  schema: {
+    params: z.object({ id: z.string() }),
+    body: updateSchema,
   },
   handler: async (ctx, params) => {
-    const user = await findUser(params.id);
-    
-    if (!user) {
-      // Custom error handling
-      throw new UserNotFoundError(params.id);
+    try {
+      const resource = await db.resources.findById(params.id);
+
+      if (!resource) {
+        throw new NotFoundError('Resource not found');
+      }
+
+      if (resource.ownerId !== ctx.state.user.id) {
+        throw new UnauthorizedError('Not authorized to update this resource');
+      }
+
+      if (await isDuplicate(ctx.body.name)) {
+        throw new ConflictError('A resource with this name already exists');
+      }
+
+      return await db.resources.update(params.id, ctx.body);
+    } catch (error) {
+      // Framework automatically handles error responses
+      throw error;
     }
-    
-    return user;
-  }
+  },
 });
 ```
 
-### Error Response Formats
+## 🧪 Testing
 
-BlaizeJS provides consistent error responses:
-
-```typescript
-// Validation Error (400)
-{
-  "error": "Validation Error",
-  "details": [
-    {
-      "path": ["email"],
-      "message": "Invalid email format"
-    }
-  ]
-}
-
-// Not Found (404)
-{
-  "error": "Not Found",
-  "message": "Route not found: GET /nonexistent"
-}
-
-// Method Not Allowed (405)  
-{
-  "error": "Method Not Allowed",
-  "allowed": ["GET", "POST"],
-  "message": "DELETE method not allowed for /users"
-}
-
-// Internal Server Error (500)
-{
-  "error": "Internal Server Error",
-  "message": "An unexpected error occurred"
-}
-```
-
-> **🛡️ Error Middleware:** For global error handling and custom error processing, see the [Middleware Module documentation](../middleware/README.md).
-
-## ✅ Testing
-
-### Testing Route Creator Functions
+### Testing Route Handlers
 
 ```typescript
-// tests/routes/users.test.ts
 import { describe, test, expect, vi } from 'vitest';
-import { createTestContext } from '@blaizejs/testing-utils';
-import { getUsers, createUser } from '../routes/users';
+import { createMockContext } from '@blaizejs/testing-utils';
+import { getUserRoute } from './routes/users/[userId]';
 
-describe('Users Routes', () => {
-  test('should return paginated users list', async () => {
-    // Arrange
-    const ctx = createTestContext({
+describe('User Routes', () => {
+  test('GET /users/:userId returns user', async () => {
+    const mockUser = {
+      id: '123',
+      name: 'John Doe',
+      email: 'john@example.com',
+    };
+
+    // Mock database call
+    vi.mocked(db.users.findById).mockResolvedValue(mockUser);
+
+    // Create mock context
+    const ctx = createMockContext({
       method: 'GET',
-      path: '/users',
-      query: { limit: '5', offset: '10' }
+      path: '/users/123',
     });
 
-    // Mock the database call
-    vi.mock('../services/userService', () => ({
-      getUsersWithPagination: vi.fn().mockResolvedValue({
-        users: [
-          { id: '1', name: 'John', email: 'john@example.com', createdAt: '2023-01-01T00:00:00Z' }
-        ],
-        total: 1,
-        hasMore: false
-      })
-    }));
+    // Execute handler
+    const result = await getUserRoute.GET.handler(ctx, { userId: '123' });
 
-    // Act
-    const result = await getUsers.handler(ctx, {});
-
-    // Assert
-    expect(result).toEqual({
-      users: expect.arrayContaining([
-        expect.objectContaining({
-          id: expect.any(String),
-          name: expect.any(String),
-          email: expect.any(String)
-        })
-      ]),
-      total: expect.any(Number),
-      hasMore: expect.any(Boolean)
-    });
-
-    // Verify query parameters were properly typed
-    expect(ctx.request.query.limit).toBe(5); // Coerced to number
-    expect(ctx.request.query.offset).toBe(10);
+    expect(result).toEqual(mockUser);
+    expect(db.users.findById).toHaveBeenCalledWith('123');
   });
 
-  test('should create user with valid data', async () => {
-    const ctx = createTestContext({
+  test('GET /users/:userId throws 404 for missing user', async () => {
+    vi.mocked(db.users.findById).mockResolvedValue(null);
+
+    const ctx = createMockContext({
+      method: 'GET',
+      path: '/users/999',
+    });
+
+    await expect(getUserRoute.GET.handler(ctx, { userId: '999' })).rejects.toThrow(NotFoundError);
+  });
+});
+```
+
+### Testing with Validation
+
+```typescript
+import { createMockRoute } from '@blaizejs/testing-utils';
+
+describe('Route Validation', () => {
+  test('validates request body', async () => {
+    const route = createPostRoute({
+      schema: {
+        body: z.object({
+          email: z.string().email(),
+        }),
+      },
+      handler: async ctx => ctx.body,
+    });
+
+    const ctx = createMockContext({
       method: 'POST',
-      path: '/users',
-      body: {
-        name: 'Jane Doe',
-        email: 'jane@example.com',
-        age: 25
-      }
+      body: { email: 'invalid-email' },
     });
 
-    const result = await createUser.handler(ctx, {});
-
-    expect(result).toMatchObject({
-      id: expect.any(String),
-      name: 'Jane Doe',
-      email: 'jane@example.com',
-      age: 25,
-      createdAt: expect.any(String)
-    });
-  });
-
-  test('should validate request body schema', async () => {
-    const ctx = createTestContext({
-      method: 'POST',
-      path: '/users',
-      body: {
-        name: '', // Invalid: empty string
-        email: 'invalid-email', // Invalid: not an email
-        age: 12 // Invalid: under 13
-      }
-    });
-
-    // Schema validation should catch these errors
-    await expect(createUser.handler(ctx, {})).rejects.toThrow();
-  });
-});
-```
-
-### Testing Default Export Routes
-
-```typescript
-// tests/routes/health.test.ts
-import { describe, test, expect } from 'vitest';
-import { createTestContext } from '@blaizejs/testing-utils';
-import healthRoute from '../routes/health';
-
-describe('Health Route', () => {
-  test('should return health status', async () => {
-    const ctx = createTestContext({
-      method: 'GET',
-      path: '/health'
-    });
-
-    const result = await healthRoute.GET.handler(ctx, {});
-
-    expect(result).toEqual({
-      status: 'ok',
-      timestamp: expect.any(String),
-      uptime: expect.any(Number)
-    });
-  });
-});
-```
-
-### Testing Route Parameters
-
-```typescript
-// tests/routes/users-params.test.ts
-import { describe, test, expect } from 'vitest';
-import { createTestContext } from '@blaizejs/testing-utils';
-import { getUserById, updateUser } from '../routes/users/[id]';
-
-describe('User Parameter Routes', () => {
-  test('should handle valid UUID parameter', async () => {
-    const validUuid = '123e4567-e89b-12d3-a456-426614174000';
-    const ctx = createTestContext({
-      method: 'GET',
-      path: `/users/${validUuid}`
-    });
-
-    // Mock successful user lookup
-    vi.mock('../services/userService', () => ({
-      findUserById: vi.fn().mockResolvedValue({
-        id: validUuid,
-        name: 'Test User',
-        email: 'test@example.com'
-      })
-    }));
-
-    const result = await getUserById.handler(ctx, { id: validUuid });
-
-    expect(result.id).toBe(validUuid);
-  });
-
-  test('should reject invalid UUID parameter', async () => {
-    const ctx = createTestContext({
-      method: 'GET',
-      path: '/users/invalid-uuid'
-    });
-
-    // Schema validation should reject invalid UUID
-    await expect(
-      getUserById.handler(ctx, { id: 'invalid-uuid' })
-    ).rejects.toThrow(/uuid/i);
-  });
-});
-```
-
-### Testing All HTTP Methods
-
-```typescript
-// tests/routes/crud-operations.test.ts
-import { describe, test, expect } from 'vitest';
-import { createTestContext } from '@blaizejs/testing-utils';
-import { 
-  getUsers,
-  createUser,
-  updateUser,
-  patchUser,
-  deleteUser,
-  checkUser
-} from '../routes/users';
-
-describe('CRUD Operations', () => {
-  const validUserId = '123e4567-e89b-12d3-a456-426614174000';
-
-  test('GET: should list users', async () => {
-    const ctx = createTestContext({ method: 'GET', path: '/users' });
-    const result = await getUsers.handler(ctx, {});
-    
-    expect(result).toHaveProperty('users');
-    expect(result).toHaveProperty('total');
-    expect(result).toHaveProperty('hasMore');
-  });
-
-  test('POST: should create user', async () => {
-    const ctx = createTestContext({
-      method: 'POST',
-      path: '/users',
-      body: { name: 'New User', email: 'new@example.com' }
-    });
-    
-    const result = await createUser.handler(ctx, {});
-    expect(result).toHaveProperty('id');
-    expect(result.name).toBe('New User');
-  });
-
-  test('PUT: should update entire user', async () => {
-    const ctx = createTestContext({
-      method: 'PUT',
-      path: `/users/${validUserId}`,
-      body: { name: 'Updated User', email: 'updated@example.com' }
-    });
-    
-    const result = await updateUser.handler(ctx, { id: validUserId });
-    expect(result.name).toBe('Updated User');
-  });
-
-  test('PATCH: should partially update user', async () => {
-    const ctx = createTestContext({
-      method: 'PATCH',
-      path: `/users/${validUserId}`,
-      body: { name: 'Patched Name' } // Only updating name
-    });
-    
-    const result = await patchUser.handler(ctx, { id: validUserId });
-    expect(result.name).toBe('Patched Name');
-  });
-
-  test('DELETE: should remove user', async () => {
-    const ctx = createTestContext({
-      method: 'DELETE',
-      path: `/users/${validUserId}`
-    });
-    
-    const result = await deleteUser.handler(ctx, { id: validUserId });
-    expect(result.success).toBe(true);
-  });
-
-  test('HEAD: should check user existence', async () => {
-    const ctx = createTestContext({
-      method: 'HEAD',
-      path: `/users/${validUserId}`
-    });
-    
-    await checkUser.handler(ctx, { id: validUserId });
-    
-    // HEAD requests set status but don't return data
-    expect(ctx.response.status).toHaveBeenCalledWith(200);
-  });
-});
-```
-
-### Testing ESM Path Resolution
-
-```typescript
-// tests/integration/router-paths.test.ts
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-describe('Router Path Resolution', () => {
-  let server: ReturnType<typeof createServer>;
-
-  afterEach(async () => {
-    if (server) {
-      await server.close();
-    }
-  });
-
-  test('should resolve routes directory correctly', async () => {
-    server = createServer({ 
-      port: 0,
-      routesDir: path.resolve(__dirname, '../test-fixtures/routes'),
-      watchMode: false 
-    });
-    
-    // Wait for routes to load
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    expect(server.router).toBeDefined();
-    // Routes should be loaded from the correct directory
-  });
-
-  test('should handle multiple route directories', async () => {
-    server = createServer({ 
-      port: 0,
-      routesDir: path.resolve(__dirname, '../test-fixtures/routes'),
-      watchMode: false 
-    });
-
-    // Add additional route directory
-    await server.router.addRouteDirectory(
-      path.resolve(__dirname, '../test-fixtures/api-routes'),
-      { prefix: '/api' }
-    );
-
-    await server.listen();
-
-    // Test routes from both directories
-    const mainResponse = await fetch(`http://localhost:${server.port}/test`);
-    const apiResponse = await fetch(`http://localhost:${server.port}/api/test`);
-
-    expect(mainResponse.ok).toBe(true);
-    expect(apiResponse.ok).toBe(true);
+    // Validation should fail
+    await expect(route.POST.handler(ctx, {})).rejects.toThrow(ValidationError);
   });
 });
 ```
@@ -1238,187 +611,207 @@ describe('Router Path Resolution', () => {
 ### Integration Testing
 
 ```typescript
-// tests/integration/router.test.ts
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { createTestContext } from '@blaizejs/testing-utils';
+import { createTestServer } from '@blaizejs/testing-utils';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-describe('Router Integration', () => {
-  let server: ReturnType<typeof createServer>;
-
-  beforeEach(async () => {
-    server = createServer({ 
-      port: 0,
-      routesDir: path.resolve(__dirname, '../test-fixtures/routes'),
-      watchMode: false 
+describe('API Integration', () => {
+  test('complete user flow', async () => {
+    const server = await createTestServer({
+      routesDir: './routes',
     });
-    
-    // Wait for routes to load
-    await new Promise(resolve => setTimeout(resolve, 100));
-  });
 
-  afterEach(async () => {
-    if (server) {
-      await server.close();
-    }
-  });
+    // Create user
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/users',
+      payload: {
+        name: 'Jane Doe',
+        email: 'jane@example.com',
+      },
+    });
 
-  test('should handle successful route resolution', async () => {
-    const ctx = createTestContext({
+    expect(createResponse.statusCode).toBe(201);
+    const user = JSON.parse(createResponse.payload);
+
+    // Get user
+    const getResponse = await server.inject({
       method: 'GET',
-      path: '/users'
+      url: `/users/${user.id}`,
     });
 
-    await server.router.handleRequest(ctx);
+    expect(getResponse.statusCode).toBe(200);
+    expect(JSON.parse(getResponse.payload)).toEqual(user);
 
-    expect(ctx.response.status).toHaveBeenCalledWith(200);
-  });
-
-  test('should return 404 for unknown routes', async () => {
-    const ctx = createTestContext({
-      method: 'GET',
-      path: '/nonexistent'
-    });
-
-    await server.router.handleRequest(ctx);
-
-    expect(ctx.response.status).toHaveBeenCalledWith(404);
-    expect(ctx.response.json).toHaveBeenCalledWith(
-      expect.objectContaining({ error: 'Not Found' })
-    );
-  });
-
-  test('should return 405 for unsupported methods', async () => {
-    const ctx = createTestContext({
-      method: 'DELETE',
-      path: '/users' // Assuming only GET/POST are supported
-    });
-
-    await server.router.handleRequest(ctx);
-
-    expect(ctx.response.status).toHaveBeenCalledWith(405);
-    expect(ctx.response.header).toHaveBeenCalledWith(
-      'Allow', 
-      expect.stringContaining('GET')
-    );
+    await server.close();
   });
 });
 ```
 
-### Running Tests
+## 📚 Type Reference
 
-```bash
-# Run all tests
-pnpm test
+### Core Types (Exported)
 
-# Run tests in watch mode
-pnpm test:watch
+```typescript
+// Route handler function
+export type RouteHandler<
+  TParams = Record<string, string>,
+  TQuery = Record<string, string | string[] | undefined>,
+  TBody = unknown,
+  TResponse = unknown,
+> = (ctx: Context<State, TBody, TQuery>, params: TParams) => Promise<TResponse> | TResponse;
 
-# Run tests with coverage
-pnpm test:coverage
+// Route method options
+export interface RouteMethodOptions<P, Q, B, R> {
+  schema?: RouteSchema<P, Q, B, R>;
+  handler: RouteHandler;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}
 
-# Run only router tests
-pnpm test router
+// Route definition
+export interface Route {
+  path: string;
+  GET?: RouteMethodOptions;
+  POST?: RouteMethodOptions;
+  PUT?: RouteMethodOptions;
+  DELETE?: RouteMethodOptions;
+  PATCH?: RouteMethodOptions;
+  HEAD?: RouteMethodOptions;
+  OPTIONS?: RouteMethodOptions;
+}
 
-# Run specific test file
-pnpm test tests/routes/users.test.ts
+// HTTP Methods
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
 ```
+
+### Internal Types (Not Exported)
+
+The following are used internally but not exported from the main package:
+
+- `Router` interface - Used internally by the server
+- `RouteMatch` - Internal matching result
+- `Matcher` - Internal route matching engine
+- `RouteNode` - Internal radix tree structure
+- File system utilities (`findRouteFiles`, `loadRoute`, etc.)
+
+To use the router, work with the exported route creation functions and let the server handle routing internally.
+
+## 🗺️ Roadmap
+
+### 🚀 Current (v0.3.1) - Beta
+
+- ✅ **Route Creation Functions** - All HTTP methods supported
+- ✅ **Schema Validation** - Zod integration for type safety
+- ✅ **Dynamic Parameters** - Bracket-based dynamic routes
+- ✅ **File-Based Discovery** - Automatic route loading
+- ✅ **Middleware Support** - Route-level middleware
+- ✅ **Type Inference** - Full TypeScript support
+- ✅ **Error Classes** - Built-in error types
+
+### 🎯 MVP/1.0 Release
+
+#### Core Router Exports _(Need to Export)_
+
+- 🔄 **Router Interface** - Export for plugin/extension use
+- 🔄 **Route Matching Utilities** - Export `extractParams`, `compilePathPattern`
+- 🔄 **Route Registry** - Export route management utilities
+
+#### Enhanced Features
+
+- 🔄 **Route Groups** - Logical grouping with shared middleware
+- 🔄 **Route Versioning** - Built-in API versioning support
+- 🔄 **Response Helpers** - Utility functions for common responses
+- 🔄 **Route Metadata** - Attach custom metadata to routes
+- 🔄 **Async Route Loading** - Lazy load route handlers
+
+### 🔮 Post-MVP (v1.1+)
+
+#### Advanced Routing
+
+- 🔄 **Route Inheritance** - Extend and override routes
+- 🔄 **Conditional Routes** - Environment-based route activation
+- 🔄 **Route Aliases** - Multiple paths to same handler
+- 🔄 **Regex Path Patterns** - Advanced path matching
+- 🔄 **Route Namespacing** - Modular route organization
+
+#### Developer Experience
+
+- 🔄 **Route CLI Generator** - Scaffold routes from CLI
+- 🔄 **Route Documentation** - Auto-generate API docs
+- 🔄 **Route Testing Helpers** - Enhanced testing utilities
+- 🔄 **Route Visualization** - Visual route tree explorer
+- 🔄 **Type-Safe Client** - Auto-generated client SDK
+
+#### Performance & Monitoring
+
+- 🔄 **Route Caching** - Response caching strategies
+- 🔄 **Route Analytics** - Usage metrics and monitoring
+- 🔄 **Route Rate Limiting** - Per-route rate limits
+- 🔄 **Route Compression** - Automatic response compression
+
+### 🌟 Future Considerations
+
+- 🔄 **GraphQL Integration** - GraphQL endpoint support
+- 🔄 **WebSocket Routes** - Real-time communication
+- 🔄 **gRPC Support** - Protocol buffer integration
+- 🔄 **OpenAPI Generation** - Automatic OpenAPI specs
+- 🔄 **Route Federation** - Distributed routing
+- 🔄 **AI-Powered Routing** - Intelligent route suggestions
 
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
 
-### 🛠️ Development Setup
+### Development Setup
 
 ```bash
 # Clone the repository
 git clone https://github.com/jleajones/blaize.git
 cd blaize
 
-# Install dependencies
+# Install dependencies (using pnpm)
 pnpm install
 
-# Run tests
-pnpm test
+# Run tests for router module
+pnpm test router
 
-# Start development
-pnpm dev
+# Run tests in watch mode
+pnpm test:watch router
+
+# Build the package
+pnpm build
+
+# Run linting
+pnpm lint
 ```
 
-### 📝 Code Standards
+### Important Notes for Contributors
 
-- ✅ Use TypeScript for all source code
-- ✅ Follow existing code patterns and naming conventions
-- ✅ Write comprehensive tests using Vitest
-- ✅ Update documentation for new features
-- ✅ Use conventional commits for clear history
-- ✅ Test ESM path resolution in different environments
+When adding router features:
 
-### 🔧 Available Scripts
+1. **Check exports**: Currently, only route creation functions are exported
+2. **Internal utilities**: Router, Matcher, and utilities are internal
+3. **Type location**: Router types are in `packages/blaize-types/src/router.ts`
+4. **Testing**: Use `@blaizejs/testing-utils` for testing routes
+5. **File structure**: Follow the file-based routing conventions
 
-```bash
-pnpm build          # Build all packages
-pnpm dev            # Start development mode
-pnpm lint           # Run ESLint
-pnpm format         # Format code with Prettier
-pnpm type-check     # Run TypeScript checks
-pnpm clean          # Clean build artifacts
-```
+### Testing Your Changes
 
-## 🗺️ Roadmap
-
-### 🚀 Current (v0.1.x)
-- ✅ File-based routing with automatic path generation
-- ✅ Type-safe route handlers with Zod schema validation
-- ✅ All HTTP method support (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
-- ✅ Route creator functions for enhanced type safety
-- ✅ Plugin route creation with same patterns as main app
-- ✅ Hot reloading in development mode with chokidar
-- ✅ Built-in error handling with custom error types
-- ✅ Radix tree routing for high performance matching
-- ✅ Request/response validation middleware
-- ✅ Multiple route definition patterns (default export + creators)
-- ✅ Route-specific middleware support
-- ✅ ESM module support with proper path resolution
-
-### 🎯 Next Release (v0.2.x)
-- 🔄 **Route Groups** - Organize routes with shared middleware and prefixes
-- 🔄 **Advanced Caching** - Built-in response caching strategies with TTL
-- 🔄 **Route Metadata** - Enhanced route introspection and documentation
-- 🔄 **Performance Metrics** - Built-in timing and performance monitoring
-- 🔄 **Router Composition** - Combine multiple routers with namespace isolation
-
-### 🔮 Future (v0.3.x+)
-- 🔄 **Wildcard Routes** - Support for catch-all route patterns
-- 🔄 **Route Inheritance** - Composable route definitions and inheritance
-- 🔄 **OpenAPI Generation** - Automatic API documentation from Zod schemas
-- 🔄 **Advanced Parameter Types** - Complex parameter validation and coercion
-- 🔄 **Route Versioning** - Built-in API versioning support
-
-### 🌟 Long-term Vision
-- 🔄 **GraphQL Integration** - File-based GraphQL resolvers alongside REST routes
-- 🔄 **WebSocket Routing** - Real-time endpoint management with type safety
-- 🔄 **Visual Route Designer** - GUI tool for route management and visualization
-- 🔄 **Multi-tenancy Support** - Route isolation and customization per tenant
-
----
+1. Write tests for new features
+2. Ensure all tests pass: `pnpm test`
+3. Check type safety: `pnpm type-check`
+4. Verify linting: `pnpm lint`
 
 ## 📚 Related Documentation
 
 - 🏠 [BlaizeJS Main Documentation](../../README.md)
-- 🌐 [Server Module](../server/README.md) - HTTP server creation and global middleware
-- 🔗 [Client Module](../client/README.md) - Type-safe API client generation
-- 🔧 [Context Module](../context/README.md) - Request/response context management
-- 🧩 [Plugins Module](../plugins/README.md) - Plugin system and lifecycle management
-- 🛡️ [Middleware Module](../middleware/README.md) - Middleware creation and composition
+- 🔧 [Middleware Module](../middleware/README.md) - Route middleware
+- 🔗 [Context Module](../context/README.md) - Request/response context
+- 🌐 [Server Module](../server/README.md) - Server configuration
+- 🧩 [Plugins Module](../plugins/README.md) - Extending routing
+- 🧪 [Testing Utils](../../../blaize-testing-utils/README.md) - Testing utilities
 
 ---
 
 **Built with ❤️ by the BlaizeJS team**
 
-For questions, feature requests, or bug reports, please [open an issue](https://github.com/jleajones/blaize/issues) on GitHub.
+_The router module powers BlaizeJS with type-safe, file-based routing - making API development fast, safe, and enjoyable._

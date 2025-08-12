@@ -1,112 +1,123 @@
-[![npm version](https://badge.fury.io/js/%40blaizejs%2Fclient.svg)](https://www.npmjs.com/package/@blaizejs/client)
-[![npm downloads](https://img.shields.io/npm/dm/@blaizejs/client.svg)](https://www.npmjs.com/package/@blaizejs/client)
+# 🔥 BlaizeJS Client
+
+> **Type-safe, universal HTTP client** for BlaizeJS APIs with automatic route inference, end-to-end type safety, and zero configuration
+
+[![npm version](https://badge.fury.io/js/%40blaizejs%2Fclient.svg)](https://badge.fury.io/js/%40blaizejs%2Fclient)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-# @blaizejs/client
+## 📋 Table of Contents
 
-A type-safe, universal HTTP client for BlaizeJS APIs with end-to-end type safety and zero configuration. Works seamlessly in browsers, Node.js, serverless functions, and edge environments.
+- [🌟 Features](#-features)
+- [📦 Installation](#-installation)
+- [🚀 Quick Start](#-quick-start)
+- [📖 Core API](#-core-api)
+- [🛡️ Error Handling](#️-error-handling)
+- [🎯 API Reference](#-api-reference)
+- [💡 Common Patterns](#-common-patterns)
+- [🧪 Testing](#-testing)
+- [📚 Type System](#-type-system)
+- [🗺️ Roadmap](#️-roadmap)
+- [🤝 Contributing](#-contributing)
 
-## 🔥 Features
+## 🌟 Features
 
-- **End-to-End Type Safety**: Automatically inferred types from your BlaizeJS server routes
-- **Universal Runtime**: Works in browsers, Node.js 18+, serverless, and edge environments
-- **Zero Configuration**: Auto-generates client methods from your route definitions
-- **Intelligent URL Construction**: Automatic path parameter replacement and query string handling
-- **Built-in Error Handling**: Proper error classification for network, HTTP, and application errors
-- **Modern Standards**: Uses native fetch API with HTTP/2 support
-- **TypeScript First**: Designed for TypeScript with full IntelliSense support
+- 🔒 **End-to-End Type Safety** - Automatically inferred types from your BlaizeJS server routes
+- 🌍 **Universal Runtime** - Works in browsers, Node.js 18+, serverless, and edge environments
+- ⚡ **Zero Configuration** - Auto-generates client methods from your route definitions
+- 🎯 **Intelligent URL Construction** - Automatic path parameter replacement and query string handling
+- 🛡️ **Built-in Error Handling** - Proper error classification for network, HTTP, and application errors
+- 🚀 **Modern Standards** - Uses native fetch API with HTTP/2 support
+- 📊 **TypeScript First** - Designed for TypeScript with full IntelliSense support
+- 🔄 **Lightweight** - Minimal runtime overhead with proxy-based implementation
 
 ## 📦 Installation
 
 ```bash
-# npm
+# Using pnpm (recommended)
+pnpm add @blaizejs/client
+
+# Using npm
 npm install @blaizejs/client
 
-# yarn
+# Using yarn
 yarn add @blaizejs/client
-
-# pnpm
-pnpm add @blaizejs/client
 ```
 
 ## 🚀 Quick Start
 
-### Server Setup (BlaizeJS)
+### Server Setup
 
 First, create your BlaizeJS server with typed routes:
 
 ```typescript
 // server/routes.ts
-import { createGetRoute, createPostRoute, BuildRoutesRegistry } from '@blaizejs/core';
+import { createGetRoute, createPostRoute } from 'blaizejs';
 import { z } from 'zod';
 
-export const getUserRoute = createGetRoute({
+// GET /users/:userId
+export const getUser = createGetRoute({
   schema: {
     params: z.object({
-      userId: z.string(),
+      userId: z.string().uuid(),
     }),
     query: z.object({
       include: z.string().optional(),
     }),
     response: z.object({
-      user: z.object({
-        id: z.string(),
-        name: z.string(),
-        email: z.string(),
-      }),
+      id: z.string(),
+      name: z.string(),
+      email: z.string(),
     }),
   },
-  handler: async ({ request }, params) => {
-    const user = await getUserById(params.userId);
-    return { user };
+  handler: async (ctx, params) => {
+    const user = await db.users.findById(params.userId);
+    return user;
   },
 });
 
-export const createUserRoute = createPostRoute({
+// POST /users
+export const createUser = createPostRoute({
   schema: {
     body: z.object({
-      name: z.string(),
+      name: z.string().min(1),
       email: z.string().email(),
     }),
     response: z.object({
-      user: z.object({
-        id: z.string(),
-        name: z.string(),
-        email: z.string(),
-      }),
+      id: z.string(),
+      name: z.string(),
+      email: z.string(),
     }),
   },
-  handler: async ({ request }) => {
-    const newUser = await createUser(request.body);
-    return { user: newUser };
+  handler: async ctx => {
+    const newUser = await db.users.create(ctx.body);
+    return newUser;
   },
 });
 
 // Export your routes registry
 export const routes = {
-  getUser: getUserRoute,
-  createUser: createUserRoute,
+  getUser,
+  createUser,
 } as const;
-
-// Export the auto-generated type (optional - client can infer this)
-export type AppRoutes = BuildRoutesRegistry<typeof routes>;
 ```
 
 ### Client Usage
 
 ```typescript
 // client/api.ts
-import { createClient } from '@blaizejs/client';
+import bc from '@blaizejs/client';
+
+// Import your server routes
 import { routes } from '../server/routes';
 
 // Create type-safe client - TypeScript automatically infers all types!
-const api = createClient('https://api.example.com', routes);
+const client = bc.create('https://api.example.com', routes);
 
-// Usage with full type safety and autocompletion
+// Use with full type safety and autocompletion
 async function example() {
   // GET request with path parameters and query
-  const { user } = await api.$get.getUser({
+  const user = await client.$get.getUser({
     params: { userId: '123' }, // ✅ Typed - userId: string
     query: { include: 'profile' }, // ✅ Typed - include?: string
   });
@@ -115,118 +126,68 @@ async function example() {
   console.log(user.age); // ❌ TypeScript error - age doesn't exist
 
   // POST request with body
-  const newUser = await api.$post.createUser({
+  const newUser = await client.$post.createUser({
     body: {
       name: 'John Doe', // ✅ Typed - name: string
       email: 'john@example.com', // ✅ Typed - email: string (validated)
     },
   });
 
-  return newUser.user; // ✅ Typed return value
+  return newUser; // ✅ Typed return value
 }
 ```
 
-## 🏗️ Architecture
+## 📖 Core API
 
-### Package Structure
+### Default Export _(Available)_
 
-```
-packages/blaize-client/
-├── src/
-│   ├── client.test.ts      # Client creation and proxy tests
-│   ├── client.ts           # Main createClient function with Proxy-based API
-│   ├── request.test.ts     # HTTP request logic tests
-│   ├── request.ts          # HTTP request logic and fetch wrapper
-│   ├── url.test.ts         # URL construction tests
-│   ├── url.ts              # URL construction and parameter handling
-│   └── errors.test.ts      # Error handling tests
-│   ├── errors.ts           # Error classes and handling
-│   └── index.ts            # Public API exports
-├── test/
-├── eslint.config.js
-├── package.json
-├── README.md
-├── tsconfig.json
-├── tsconfig.test.json
-├── tsup.config.mjs
-├── viest.config.ts
-└── README.md
-```
-
-### Key Components
-
-- **Client Factory**: Creates type-safe client instances with automatic method generation
-- **Request Engine**: Handles HTTP requests, parameter replacement, and error management
-- **URL Builder**: Constructs URLs with path parameters and query strings
-- **Type System**: Provides end-to-end type safety from server routes to client calls
-- **Error Handling**: Classifies and handles network, HTTP, and application errors
-
-## 📖 API Reference
-
-### `createClient<TRoutes>(config, routes)`
-
-Creates a type-safe client for your BlaizeJS API.
+The client package uses a default export pattern:
 
 ```typescript
-function createClient<TRoutes extends Record<string, any>>(
-  config: string | ClientConfig,
-  routes: TRoutes
-): CreateClient<BuildRoutesRegistry<TRoutes>>;
+import bc from '@blaizejs/client';
+
+// Access client features
+const client = bc.create(config, routes); // Create client
+console.log(bc.version); // Get version
 ```
 
-#### Parameters
+### Creating Clients
 
-- **`config`**: Base URL string or configuration object
-- **`routes`**: Your BlaizeJS routes registry (exported from server)
-
-#### Configuration Options
+The main API for creating clients is through the default export:
 
 ```typescript
-interface ClientConfig {
-  baseUrl: string;
-  defaultHeaders?: Record<string, string>;
-  timeout?: number; // milliseconds, default: 5000
-}
-```
+import bc from '@blaizejs/client';
 
-#### Examples
-
-```typescript
-// Simple string configuration
-const client = createClient('https://api.example.com', routes);
+// Simple configuration
+const client = bc.create('https://api.example.com', routes);
 
 // Advanced configuration
-const client = createClient(
+const client = bc.create(
   {
     baseUrl: 'https://api.example.com',
     timeout: 10000,
     defaultHeaders: {
-      'User-Agent': 'MyApp/1.0',
-      Accept: 'application/json',
+      Authorization: 'Bearer token',
+      'X-API-Key': 'secret',
     },
   },
   routes
 );
 ```
 
-### Generated Client Methods
+### Client Method Structure
 
-The client automatically generates methods based on your route definitions:
+The client organizes methods by HTTP verb using the `$method` pattern:
 
 ```typescript
-// For each HTTP method, you get a $method property
-client.$get      // GET requests
-client.$post     // POST requests
-client.$put      // PUT requests
-client.$delete   // DELETE requests
-client.$patch    // PATCH requests
-client.$head     // HEAD requests
-client.$options  // OPTIONS requests
-
-// Each method contains your route functions
-client.$get.routeName(args?)
-client.$post.routeName(args?)
-// etc.
+// Available client methods
+client.$get.routeName(); // GET requests
+client.$post.routeName(); // POST requests
+client.$put.routeName(); // PUT requests
+client.$delete.routeName(); // DELETE requests
+client.$patch.routeName(); // PATCH requests
+client.$head.routeName(); // HEAD requests
+client.$options.routeName(); // OPTIONS requests
 ```
 
 ### Request Arguments
@@ -238,7 +199,7 @@ interface RequestArgs {
   body?: unknown; // Request body (POST/PUT/PATCH)
 }
 
-// Usage
+// Usage examples
 await client.$get.getUser({
   params: { userId: '123' }, // Replaces :userId in path
   query: { include: 'profile' }, // Adds ?include=profile
@@ -249,340 +210,396 @@ await client.$post.createUser({
 });
 ```
 
-## 🌟 Advanced Features
+## 🛡️ Error Handling
 
-### Authentication & Headers
+### Error Classification System
 
-Handle authentication by configuring headers at client creation or per-request:
+**⚠️ Note**: Error classes are used internally for error transformation. Client errors are automatically transformed to BlaizeError instances.
+
+The client internally uses several error classes to classify failures:
+
+- **NetworkError** - Connection failures, DNS issues, network timeouts _(internal)_
+- **TimeoutError** - Request timeout exceeded _(internal)_
+- **ParseError** - Response parsing failures _(internal)_
+- **BlaizeError** - Server-side errors with status codes _(thrown to client)_
+
+### Handling Errors
+
+All errors thrown to your application are BlaizeError instances:
 
 ```typescript
-// Option 1: Configure default headers at creation
-const authenticatedClient = createClient(
+import bc from '@blaizejs/client';
+import { BlaizeError } from 'blaizejs'; // Import from core package
+
+try {
+  const user = await client.$get.getUser({ params: { userId: '123' } });
+} catch (error) {
+  if (error instanceof BlaizeError) {
+    // All client errors are transformed to BlaizeError
+    console.log(`Error ${error.status}: ${error.title}`);
+    console.log(`Correlation ID: ${error.correlationId}`);
+    console.log(`Details:`, error.details);
+
+    // Check specific error types
+    if (error.status === 404) {
+      console.log('User not found');
+    } else if (error.status === 0) {
+      // Client-side errors (network, timeout, parse)
+      console.log('Client-side error occurred');
+    }
+  }
+}
+```
+
+### Error Response Format
+
+All errors follow a consistent format:
+
+```typescript
+{
+  type: 'NETWORK_ERROR',               // Error type enum
+  title: 'Network request failed',     // Human-readable message
+  status: 0,                           // HTTP status (0 for client errors)
+  correlationId: 'client_k3x2m1_9z8',  // Tracking ID
+  timestamp: '2024-01-15T10:30:00Z',   // When error occurred
+  details: {                           // Error-specific details
+    url: 'https://api.example.com',
+    method: 'GET',
+    originalError: Error
+  }
+}
+```
+
+## 🎯 API Reference
+
+### Exported Functions
+
+| Function                    | Description                      |
+| --------------------------- | -------------------------------- |
+| **Default Export**          |                                  |
+| `bc.create(config, routes)` | Create type-safe client instance |
+| `bc.version`                | Get client package version       |
+
+### Configuration Types
+
+```typescript
+interface ClientConfig {
+  baseUrl: string; // API base URL
+  defaultHeaders?: Record<string, string>; // Headers for all requests
+  timeout?: number; // Request timeout in ms (default: 5000)
+}
+```
+
+### Internal Types _(Not Exported)_
+
+The following types are used internally but not exported:
+
+- ❌ `CreateClient` - Client creation type (inferred automatically)
+- ❌ `BuildRoutesRegistry` - Route registry builder (internal transformation)
+- ❌ `InternalRequestArgs` - Internal request arguments
+- ❌ `RequestOptions` - Internal fetch options
+- ❌ Error classes (`NetworkError`, `TimeoutError`, `ParseError`) - Internal error handling
+
+**Note**: You don't need these types - TypeScript automatically infers everything from your route definitions!
+
+## 💡 Common Patterns
+
+### Authentication
+
+```typescript
+import bc from '@blaizejs/client';
+
+// Configure default headers at creation
+const authenticatedClient = bc.create(
   {
     baseUrl: 'https://api.example.com',
     defaultHeaders: {
-      Authorization: 'Bearer ' + getAuthToken(),
+      Authorization: `Bearer ${getAuthToken()}`,
     },
   },
   routes
 );
 
-// Option 2: Per-request headers (Coming Soon)
-await client.$get.getUser(
-  { params: { userId: '123' } },
-  { headers: { Authorization: 'Bearer ' + freshToken } }
-);
+// All requests will include the auth header
+const user = await authenticatedClient.$get.getProfile();
 ```
 
-### Error Handling
-
-The client provides structured error handling for different failure scenarios:
+### Error Recovery
 
 ```typescript
-import { ClientError, NetworkError } from '@blaizejs/client';
+async function fetchWithRetry(userId: string, maxRetries = 3) {
+  let attempt = 0;
 
-try {
-  const user = await client.$get.getUser({ params: { userId: '123' } });
-} catch (error) {
-  if (error instanceof ClientError) {
-    // HTTP errors (4xx, 5xx)
-    console.log(`HTTP ${error.status}: ${error.message}`);
-    console.log('Response:', error.response);
-  } else if (error instanceof NetworkError) {
-    // Network failures (timeout, connection refused, etc.)
-    console.log('Network error:', error.message);
-    console.log('Cause:', error.cause);
-  } else {
-    // Other errors
-    console.log('Unexpected error:', error);
+  while (attempt < maxRetries) {
+    try {
+      return await client.$get.getUser({ params: { userId } });
+    } catch (error) {
+      attempt++;
+
+      if (error instanceof BlaizeError) {
+        // Don't retry client errors (4xx)
+        if (error.status >= 400 && error.status < 500) {
+          throw error;
+        }
+
+        // Retry on server errors (5xx) or network issues (0)
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+    }
   }
 }
 ```
 
-### Universal Environment Support
-
-The client works seamlessly across different JavaScript environments:
-
-#### Browser/Frontend
+### Request Interceptors
 
 ```typescript
-// React, Vue, Svelte, etc.
-import { createClient } from '@blaizejs/client';
-import { routes } from '../shared/routes';
+// Wrap client for custom behavior
+function createInterceptedClient(baseUrl: string, routes: any) {
+  const client = bc.create(baseUrl, routes);
 
-const api = createClient('https://api.example.com', routes);
+  // Create proxy to intercept calls
+  return new Proxy(client, {
+    get(target, prop) {
+      const original = target[prop];
 
-function UserProfile({ userId }: { userId: string }) {
-  const [user, setUser] = useState(null);
+      if (typeof original === 'object') {
+        return new Proxy(original, {
+          get(methodTarget, methodProp) {
+            const method = methodTarget[methodProp];
 
-  useEffect(() => {
-    api.$get.getUser({ params: { userId } })
-      .then(({ user }) => setUser(user));
-  }, [userId]);
+            if (typeof method === 'function') {
+              return async (...args) => {
+                console.log(`Calling ${String(prop)}.${String(methodProp)}`);
+                const start = Date.now();
 
-  return <div>{user?.name}</div>;
+                try {
+                  const result = await method(...args);
+                  console.log(`Success in ${Date.now() - start}ms`);
+                  return result;
+                } catch (error) {
+                  console.log(`Failed in ${Date.now() - start}ms`);
+                  throw error;
+                }
+              };
+            }
+
+            return method;
+          },
+        });
+      }
+
+      return original;
+    },
+  });
 }
 ```
 
-#### Node.js Server (Server-to-Server)
+## 🧪 Testing
+
+### Testing with Mock Clients
 
 ```typescript
-// BlaizeJS server calling another BlaizeJS server
-import { createClient } from '@blaizejs/client';
-import { externalServiceRoutes } from './external-routes';
+import { describe, test, expect, vi } from 'vitest';
+import bc from '@blaizejs/client';
 
-const externalAPI = createClient('https://external-service.com', externalServiceRoutes);
-
-export const enrichUserRoute = createGetRoute({
-  // ... route definition
-  handler: async ({ request }, params) => {
-    // Call external service from your server
-    const userData = await externalAPI.$get.getUser({
-      params: { userId: params.userId },
+describe('API Client Tests', () => {
+  test('should fetch user data', async () => {
+    // Mock the fetch function
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: '123',
+        name: 'Test User',
+        email: 'test@example.com',
+      }),
     });
 
-    // Enrich and return
-    return {
-      user: {
-        ...userData.user,
-        enrichedBy: 'our-service',
-      },
-    };
-  },
+    const client = bc.create('https://api.example.com', routes);
+    const user = await client.$get.getUser({ params: { userId: '123' } });
+
+    expect(user.name).toBe('Test User');
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/users/123',
+      expect.objectContaining({
+        method: 'GET',
+      })
+    );
+  });
+
+  test('should handle errors', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      json: async () => ({
+        type: 'NOT_FOUND',
+        title: 'User not found',
+        status: 404,
+      }),
+    });
+
+    const client = bc.create('https://api.example.com', routes);
+
+    await expect(client.$get.getUser({ params: { userId: '999' } })).rejects.toThrow();
+  });
 });
 ```
 
-#### Serverless Functions
+## 📚 Type System
+
+### Automatic Type Inference
+
+The client automatically infers all types from your server routes:
 
 ```typescript
-// Vercel, Netlify, AWS Lambda
-import { createClient } from '@blaizejs/client';
-
-export default async function handler(req, res) {
-  const api = createClient('https://api.example.com', routes);
-  const data = await api.$get.getData({ params: { id: req.query.id } });
-  res.json(data);
-}
-```
-
-#### Edge Functions
-
-```typescript
-// Cloudflare Workers, Vercel Edge
-export default {
-  async fetch(request, env, ctx) {
-    const api = createClient('https://api.example.com', routes);
-    const data = await api.$get.getData({ params: { id: '123' } });
-    return new Response(JSON.stringify(data));
+// Server route definition
+const getUserRoute = createGetRoute({
+  schema: {
+    params: z.object({ id: z.string() }),
+    response: z.object({
+      user: z.object({
+        id: z.string(),
+        name: z.string(),
+      }),
+    }),
   },
-};
+  handler: async (ctx, params) => {
+    // Implementation
+  },
+});
+
+// Client usage - types are automatically inferred!
+const result = await client.$get.getUser({
+  params: { id: '123' }, // TypeScript knows this needs { id: string }
+});
+
+// result is typed as { user: { id: string, name: string } }
+console.log(result.user.name); // ✅ TypeScript knows this exists
+console.log(result.user.age); // ❌ TypeScript error - property doesn't exist
 ```
 
-### Microservices Architecture
+### Working with Generic Routes
 
-Perfect for microservices built with BlaizeJS:
+For routes without schemas, the client still provides type safety:
 
 ```typescript
-// Service A calling Service B
-const userService = createClient('https://user-service.com', userRoutes);
-const orderService = createClient('https://order-service.com', orderRoutes);
-const paymentService = createClient('https://payment-service.com', paymentRoutes);
+// Route without schemas
+const healthCheck = createGetRoute({
+  handler: async () => ({ status: 'ok' }),
+});
 
-// Compose data from multiple services with full type safety
-async function getOrderSummary(orderId: string) {
-  const order = await orderService.$get.getOrder({ params: { orderId } });
-  const user = await userService.$get.getUser({ params: { userId: order.userId } });
-  const payment = await paymentService.$get.getPayment({ params: { orderId } });
-
-  return {
-    order: order.order,
-    customer: user.user,
-    payment: payment.payment,
-  };
-}
+// Client usage - no arguments needed
+const health = await client.$get.healthCheck();
+// health is typed as unknown (no schema defined)
 ```
 
-## 🔧 Development
+## 🗺️ Roadmap
 
-### Prerequisites
+### 🚀 Current Beta (v0.3.1)
 
-- Node.js v18.0.0 or higher
-- TypeScript 4.7+
-- A BlaizeJS server to connect to
+- ✅ Core client with automatic type inference
+- ✅ Proxy-based method generation
+- ✅ URL construction with parameter replacement
+- ✅ Error transformation to BlaizeError
+- ✅ Native fetch with timeout support
+- ✅ Default export pattern
+- ✅ Correlation ID generation
 
-### Local Development
+### 🎯 MVP/1.0 Release
 
-```bash
-# Clone the repository
-git clone https://github.com/blaizejs/blaizejs.git
-cd blaizejs
+#### Core Improvements
 
-# Install dependencies
-pnpm install
+- 🔄 **Export Error Classes** - Make client error types available for instanceof checks
+- 🔄 **Request Interceptors** - Official API for request/response interceptors
+- 🔄 **Retry Logic** - Built-in retry with exponential backoff
+- 🔄 **Request Cancellation** - AbortController support for canceling requests
+- 🔄 **Progress Tracking** - Upload/download progress for large payloads
 
-# Build the client package
-pnpm build --filter @blaizejs/client
+#### New Features
 
-# Run tests
-pnpm test --filter @blaizejs/client
+- 🔄 **WebSocket Client** - Type-safe WebSocket connections
+- 🔄 **Request Caching** - Intelligent request caching with TTL
+- 🔄 **Batch Requests** - Send multiple requests in a single HTTP call
+- 🔄 **Custom Headers per Request** - Override headers for specific calls
+- 🔄 **Response Transformers** - Transform responses before returning
 
-# Run tests in watch mode
-pnpm test:watch --filter @blaizejs/client
-```
+### 🔮 Post-MVP (v1.1+)
 
-### Testing
-
-The client package includes comprehensive tests:
-
-```bash
-# Run all tests
-pnpm test
-
-# Run specific test suites
-pnpm test url        # URL construction tests
-pnpm test client     # Client creation tests
-pnpm test request    # HTTP request tests
-pnpm test errors     # Error handling tests
-
-# Coverage report
-pnpm test:coverage
-```
+- 🔄 **GraphQL Client** - Type-safe GraphQL queries and mutations
+- 🔄 **gRPC-Web Support** - Connect to gRPC services from browsers
+- 🔄 **OpenAPI Integration** - Generate clients from OpenAPI specs
+- 🔄 **Offline Support** - Queue requests when offline, sync when online
+- 🔄 **Request Deduplication** - Prevent duplicate in-flight requests
+- 🔄 **React Query Integration** - First-class React Query adapter
+- 🔄 **SWR Integration** - First-class SWR adapter
 
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
 
-### Development Workflow
+### Development Setup
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes with tests
-4. Run the test suite: `pnpm test`
-5. Submit a pull request
+```bash
+# Clone the repository
+git clone https://github.com/jleajones/blaize.git
+cd blaize
 
-### Reporting Issues
+# Install dependencies
+pnpm install
 
-Found a bug or have a feature request? Please check our [GitHub Issues](https://github.com/blaizejs/blaizejs/issues) and create a new issue if needed.
+# Run tests for client package
+pnpm --filter @blaizejs/client test
 
-## 📝 Examples
+# Build client package
+pnpm --filter @blaizejs/client build
 
-### Basic CRUD Operations
-
-```typescript
-// Create
-const newUser = await api.$post.createUser({
-  body: { name: 'Alice', email: 'alice@example.com' },
-});
-
-// Read
-const user = await api.$get.getUser({
-  params: { userId: newUser.user.id },
-});
-
-// Update
-const updatedUser = await api.$put.updateUser({
-  params: { userId: user.user.id },
-  body: { name: 'Alice Smith' },
-});
-
-// Delete
-await api.$delete.deleteUser({
-  params: { userId: user.user.id },
-});
+# Run in watch mode
+pnpm --filter @blaizejs/client dev
 ```
 
-### Complex Queries
+### Package Structure
 
-```typescript
-// Search with filters and pagination
-const results = await api.$get.searchUsers({
-  query: {
-    q: 'john',
-    status: 'active',
-    limit: 20,
-    offset: 0,
-    sortBy: 'created_at',
-    order: 'desc',
-  },
-});
-
-// Nested resource access
-const userPosts = await api.$get.getUserPosts({
-  params: { userId: '123' },
-  query: {
-    published: true,
-    limit: 10,
-  },
-});
+```
+packages/blaize-client/
+├── src/
+│   ├── client.ts            # Main client creation (proxy-based)
+│   ├── request.ts           # HTTP request logic
+│   ├── url.ts              # URL construction
+│   ├── error-transformer.ts # Error transformation system
+│   ├── errors/             # Internal error classes
+│   │   ├── network-error.ts
+│   │   ├── timeout-error.ts
+│   │   └── parse-error.ts
+│   └── index.ts            # Default export
+├── test/                   # Test files
+├── tsconfig.json          # TypeScript config
+└── package.json
 ```
 
-### Error Handling Patterns
+### Important Notes
 
-```typescript
-// Retry pattern
-async function getUserWithRetry(userId: string, maxRetries = 3) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await api.$get.getUser({ params: { userId } });
-    } catch (error) {
-      if (error instanceof NetworkError && attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        continue;
-      }
-      throw error;
-    }
-  }
-}
+When contributing to BlaizeJS Client:
 
-// Graceful degradation
-async function getUserProfile(userId: string) {
-  try {
-    const user = await api.$get.getUser({ params: { userId } });
-    return user;
-  } catch (error) {
-    if (error instanceof ClientError && error.status === 404) {
-      return { user: { id: userId, name: 'Unknown User', email: '' } };
-    }
-    throw error;
-  }
-}
-```
+1. **Maintain Type Safety**: Ensure all changes preserve automatic type inference
+2. **Error Handling**: All errors must be transformed to BlaizeError instances
+3. **No Breaking Changes**: The default export pattern must be maintained
+4. **Test Coverage**: Add tests for new features using Vitest
+5. **Documentation**: Update README for any API changes
 
-## 🔗 Related Packages
+### Current Limitations
 
-- **[@blaizejs/core](../core)** - The core BlaizeJS framework for building APIs
-- **[@blaizejs/cli](../cli)** - Command-line tools for BlaizeJS development
-- **[@blaizejs/testing](../testing)** - Testing utilities for BlaizeJS applications
-
-## 📄 License
-
-MIT © [BlaizeJS](../../LICENSE)
-
-## 🌟 Why BlaizeJS Client?
-
-### vs. axios
-
-- ✅ **Type Safety**: Full TypeScript integration vs. manual typing
-- ✅ **Auto-generated API**: No manual endpoint configuration
-- ✅ **Modern**: Built on fetch vs. XMLHttpRequest
-- ✅ **Universal**: Works everywhere vs. Node.js focused
-
-### vs. fetch
-
-- ✅ **Type Safety**: End-to-end typing vs. untyped
-- ✅ **Developer Experience**: Auto-completion and error handling
-- ✅ **Convenience**: Automatic URL construction and parameter handling
-- ✅ **Error Handling**: Structured error classification
-
-### vs. tRPC Client
-
-- ✅ **HTTP Standard**: Uses standard REST vs. custom protocol
-- ✅ **Framework Agnostic**: Works with any frontend vs. React focused
-- ✅ **Simpler**: No complex setup or code generation
-- ✅ **Cacheable**: Standard HTTP caching vs. custom implementation
+- **No Direct Error Exports**: Error classes are internal only (planned for 1.0)
+- **No Request Cancellation**: AbortController support coming in 1.0
+- **No Built-in Retry**: Manual retry logic required (planned for 1.0)
+- **Single Request Headers**: Can't override headers per request (planned for 1.0)
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ for the modern web. Made by the BlaizeJS team.</sub>
-</div>
+**Built with ❤️ by the BlaizeJS team**
+
+_For questions or issues, please [open an issue](https://github.com/jleajones/blaize/issues) on GitHub._

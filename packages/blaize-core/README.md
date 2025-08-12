@@ -1,6 +1,6 @@
-# 🚀 BlaizeJS Core
+# 🔥 BlaizeJS Core
 
-> A blazing-fast, type-safe Node.js framework with file-based routing, powerful middleware, and end-to-end type safety
+> **Type-safe, blazing-fast Node.js framework** with HTTP/2 support, file-based routing, powerful middleware system, and end-to-end type safety for building modern APIs
 
 [![npm version](https://badge.fury.io/js/blaizejs.svg)](https://badge.fury.io/js/blaizejs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,28 +11,27 @@
 - [🌟 Features](#-features)
 - [📦 Installation](#-installation)
 - [🚀 Quick Start](#-quick-start)
-- [🏗️ Architecture Overview](#️-architecture-overview)
-- [📁 Project Structure](#-project-structure)
-- [🌐 Production Deployment](#-production-deployment)
-- [🔗 Framework Modules](#-framework-modules)
-- [🧩 Plugin Ecosystem](#-plugin-ecosystem)
-- [📡 Type-Safe Client](#-type-safe-client)
-- [✅ Testing](#-testing)
-- [🤝 Contributing](#-contributing)
+- [📖 Core Modules](#-core-modules)
+- [🛡️ Error Handling](#️-error-handling)
+- [🎯 API Reference](#-api-reference)
+- [💡 Common Patterns](#-common-patterns)
+- [🧪 Testing](#-testing)
+- [📚 Type System](#-type-system)
 - [🗺️ Roadmap](#️-roadmap)
+- [🤝 Contributing](#-contributing)
 
 ## 🌟 Features
 
-- ⚡ **Blazing Fast Performance** - HTTP/2 by default with HTTP/1.1 fallback
-- 🔒 **End-to-End Type Safety** - Full TypeScript support from API to client
-- 📁 **File-Based Routing** - Intuitive routing based on file structure
-- 🔗 **Powerful Middleware System** - Composable middleware with onion-style execution
-- 🧩 **Plugin Architecture** - Extensible with lifecycle management
-- 🌐 **Context Management** - AsyncLocalStorage for automatic context propagation
-- 🔄 **Hot Reloading** - Instant development feedback
-- 🛡️ **Schema Validation** - Built-in Zod integration for request/response validation
-- 🔗 **Client Generation** - Automatic type-safe API client generation
-- 🚀 **Production Ready** - Graceful shutdown, error handling, and monitoring
+- 🚀 **HTTP/2 by Default** - Modern protocol with automatic HTTPS in development
+- 📁 **File-Based Routing** - Routes auto-discovered from file structure *(internal)*
+- 🔧 **Composable Middleware** - Build reusable request/response pipelines
+- 🧩 **Plugin System** - Extend server functionality with lifecycle hooks
+- ✅ **Schema Validation** - Built-in Zod validation for type safety
+- 🛡️ **Semantic Errors** - Rich error classes with automatic formatting
+- 🔗 **Context Management** - AsyncLocalStorage-powered state isolation *(internal)*
+- ⚡ **Zero Configuration** - Works out of the box with sensible defaults
+- 📊 **Type Inference** - Full TypeScript support with automatic types
+- 🔄 **Hot Reloading** - Development mode with automatic route updates
 
 ## 📦 Installation
 
@@ -47,389 +46,177 @@ npm install blaizejs
 yarn add blaizejs
 ```
 
-### 📋 Requirements
-
-- **Node.js**: >= 22.0.0 (LTS recommended)
-- **TypeScript**: >= 5.8.3 (for development)
-- **Package Manager**: pnpm 9.7.0+ (recommended)
-
 ## 🚀 Quick Start
 
-### 🎯 Create Your First Server
+### Creating Your First Server
 
 ```typescript
-import { createServer } from 'blaizejs';
+import { createServer, createGetRoute, createPostRoute } from 'blaizejs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { z } from 'zod';
 
-// Required for ESM module path resolution
+// ESM path resolution (required for route discovery)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create server with automatic routing
+// Create server with file-based routing
 const server = createServer({
-  routesDir: path.resolve(__dirname, './routes'),
+  port: 3000,
+  host: 'localhost',
+  routesDir: path.resolve(__dirname, './routes')
 });
 
 await server.listen();
-console.log('🚀 Server running on https://localhost:3000');
+console.log(`🚀 Server running at https://localhost:3000`);
 ```
 
-### 📁 Create Your First Route
+### Creating Routes
+
+Create route files in your routes directory:
 
 ```typescript
-// routes/users.ts
-import { createGetRoute, createPostRoute } from 'blaizejs';
+// routes/users/[userId].ts
+import { createGetRoute, createPutRoute, NotFoundError } from 'blaizejs';
 import { z } from 'zod';
 
-// GET /users - List users with type safety
-export const getUsers = createGetRoute({
+// GET /users/:userId
+export const GET = createGetRoute({
   schema: {
-    query: z.object({
-      limit: z.coerce.number().min(1).max(100).default(10),
-      search: z.string().optional(),
-    }),
-    response: z.object({
-      users: z.array(
-        z.object({
-          id: z.string(),
-          name: z.string(),
-          email: z.string(),
-        })
-      ),
-      total: z.number(),
-    }),
-  },
-  handler: async ctx => {
-    // Query params are automatically typed and validated
-    const { limit, search } = ctx.request.query;
-
-    const users = await findUsers({ limit, search });
-    return { users, total: users.length };
-  },
-});
-
-// POST /users - Create user with validation
-export const createUser = createPostRoute({
-  schema: {
-    body: z.object({
-      name: z.string().min(1),
-      email: z.string().email(),
+    params: z.object({
+      userId: z.string().uuid()
     }),
     response: z.object({
       id: z.string(),
       name: z.string(),
-      email: z.string(),
-      createdAt: z.string(),
-    }),
+      email: z.string()
+    })
   },
-  handler: async ctx => {
-    // Request body is automatically validated
-    const userData = ctx.request.body;
-
-    const user = await createNewUser(userData);
+  handler: async (ctx, params) => {
+    const user = await db.users.findById(params.userId);
+    
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'user',
+        resourceId: params.userId
+      });
+    }
+    
     return user;
-  },
-});
-```
-
-### 🔗 Add Middleware
-
-```typescript
-import { createServer, createMiddleware } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Create logging middleware
-const logger = createMiddleware({
-  name: 'logger',
-  handler: async (ctx, next) => {
-    const start = Date.now();
-    console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
-
-    await next();
-
-    const duration = Date.now() - start;
-    console.log(`← ${ctx.response.raw.statusCode} (${duration}ms)`);
-  },
-});
-
-// Create server with middleware
-const server = createServer({
-  routesDir: path.resolve(__dirname, './routes'),
-  middleware: [logger],
-});
-
-await server.listen();
-```
-
-## 🏗️ Architecture Overview
-
-BlaizeJS is built around five core modules that work together seamlessly:
-
-```mermaid
-graph TD
-    A[Server] --> B[Router]
-    A --> C[Context]
-    B --> D[Middleware]
-    A --> E[Plugins]
-
-    B --> F[File-based Routes]
-    C --> G[AsyncLocalStorage]
-    D --> H[Composable Pipeline]
-    E --> I[Lifecycle Management]
-
-    F --> J[Type-safe Handlers]
-    G --> K[State Management]
-    H --> L[Request/Response Flow]
-    I --> M[Plugin Integration]
-```
-
-### 🔄 Request Lifecycle
-
-1. **Server** receives HTTP request
-2. **Context** creates request/response wrappers with AsyncLocalStorage
-3. **Router** matches request to file-based route
-4. **Middleware** executes in onion-style pattern
-5. **Route Handler** processes request with full type safety
-6. **Context** sends validated response
-
-## 📁 Project Structure
-
-### 🎯 Recommended Structure
-
-```
-my-blaize-app/
-├── src/
-│   ├── server.ts           # Server entry point
-│   ├── app-routes.ts       # Route registry for blaize client
-│   ├── routes/             # File-based routes
-│   │   ├── index.ts        # → /
-│   │   ├── users.ts        # → /users
-│   │   ├── users/
-│   │   │   └── [id].ts     # → /users/:id
-│   │   └── api/
-│   │       └── v1/
-│   │           └── posts.ts # → /api/v1/posts
-│   ├── middleware/         # Custom middleware
-│   ├── plugins/            # Custom plugins
-│   └── types/              # Shared types
-├── tests/                  # Test files
-├── package.json
-└── tsconfig.json
-```
-
-### 📊 Module Responsibilities
-
-| Module         | Purpose                   | Key Features               |
-| -------------- | ------------------------- | -------------------------- |
-| **Server**     | HTTP server management    | HTTP/2, SSL, lifecycle     |
-| **Router**     | Request routing           | File-based, type-safe      |
-| **Context**    | Request/response handling | AsyncLocalStorage, state   |
-| **Middleware** | Request processing        | Composable, error handling |
-| **Plugins**    | Framework extension       | Lifecycle, validation      |
-
-## 🌐 Production Deployment
-
-### ⚠️ HTTP/2 Hosting Limitations
-
-BlaizeJS defaults to HTTP/2 for optimal performance, but many hosting providers don't expose SSL certificate access required for HTTP/2:
-
-```typescript
-// Production configuration for hosting providers
-const server = createServer({
-  routesDir: path.resolve(__dirname, './routes'),
-  http2: {
-    // Disable HTTP/2 if certificates aren't accessible
-    enabled: process.env.HTTP2_ENABLED === 'true',
-  },
-});
-```
-
-### 🔧 Hosting Provider Configurations
-
-```typescript
-// Vercel/Netlify (HTTP/1.1 only)
-const server = createServer({
-  port: parseInt(process.env.PORT || '3000'),
-  routesDir: path.resolve(__dirname, './routes'),
-  http2: { enabled: false },
-});
-
-// VPS/Dedicated (HTTP/2 with Let's Encrypt)
-const server = createServer({
-  port: 443,
-  host: '0.0.0.0',
-  routesDir: path.resolve(__dirname, './routes'),
-  http2: {
-    enabled: true,
-    keyFile: '/etc/letsencrypt/live/yourdomain.com/privkey.pem',
-    certFile: '/etc/letsencrypt/live/yourdomain.com/fullchain.pem',
-  },
-});
-
-// Docker Container
-const server = createServer({
-  port: parseInt(process.env.PORT || '3000'),
-  host: '0.0.0.0',
-  routesDir: path.resolve(__dirname, './routes'),
-  http2: {
-    enabled: process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH,
-    keyFile: process.env.SSL_KEY_PATH,
-    certFile: process.env.SSL_CERT_PATH,
-  },
-});
-```
-
-### 🚀 Environment Configuration
-
-```typescript
-// Environment-aware server setup
-const getServerConfig = () => {
-  const env = process.env.NODE_ENV || 'development';
-
-  switch (env) {
-    case 'development':
-      return {
-        port: 3000,
-        routesDir: path.resolve(__dirname, './routes'),
-        http2: { enabled: true }, // Auto-generates certs
-      };
-
-    case 'production':
-      return {
-        port: parseInt(process.env.PORT || '443'),
-        host: '0.0.0.0',
-        routesDir: path.resolve(__dirname, './dist/routes'),
-        http2: {
-          enabled: !!process.env.SSL_CERT_PATH,
-          keyFile: process.env.SSL_KEY_PATH,
-          certFile: process.env.SSL_CERT_PATH,
-        },
-      };
-
-    case 'test':
-      return {
-        port: 0,
-        routesDir: path.resolve(__dirname, './test-fixtures/routes'),
-        http2: { enabled: false },
-      };
   }
-};
+});
 
-const server = createServer(getServerConfig());
+// PUT /users/:userId
+export const PUT = createPutRoute({
+  schema: {
+    params: z.object({
+      userId: z.string().uuid()
+    }),
+    body: z.object({
+      name: z.string().min(1),
+      email: z.string().email()
+    })
+  },
+  handler: async (ctx, params) => {
+    const updatedUser = await db.users.update(params.userId, ctx.body);
+    return updatedUser;
+  }
+});
 ```
 
-> **🔄 HTTP/2 Workaround:** We're actively working on solutions for HTTP/2 deployment in constrained hosting environments. Follow our roadmap for updates.
+## 📖 Core Modules
 
-## 🔗 Framework Modules
+BlaizeJS Core consists of several integrated modules. Some are exported for direct use, while others work internally:
 
-### 🌐 Server Module
+### 🌐 Server Module *(Exported)*
 
-High-performance HTTP/2 server with graceful lifecycle management.
+Create HTTP/2 servers with automatic HTTPS, middleware, and plugins:
 
 ```typescript
-import { createServer } from 'blaizejs';
+import { createServer, createMiddleware, createPlugin } from 'blaizejs';
 
 const server = createServer({
   port: 3000,
   routesDir: './routes',
-  http2: { enabled: true },
+  http2: { enabled: true },  // Auto-generates dev certificates
+  middleware: [loggingMiddleware],
+  plugins: [metricsPlugin()]
 });
 
-// Event-driven lifecycle
-server.events.on('started', () => console.log('Server ready'));
-server.events.on('stopping', () => console.log('Graceful shutdown'));
+// Add middleware after creation
+server.use(corsMiddleware);
+
+// Register plugins dynamically
+await server.register(databasePlugin());
 
 await server.listen();
 ```
 
-[📖 Server Module Documentation](./src/server/README.md)
+### 🚀 Router Module *(Partially Exported)*
 
-### 🚀 Router Module
+**⚠️ Note**: The router itself is internal. Only route creation functions are exported.
 
-File-based routing with automatic path generation and type safety.
+#### Available Exports:
+- ✅ `createGetRoute` - Create GET endpoints
+- ✅ `createPostRoute` - Create POST endpoints  
+- ✅ `createPutRoute` - Create PUT endpoints
+- ✅ `createPatchRoute` - Create PATCH endpoints
+- ✅ `createDeleteRoute` - Create DELETE endpoints
+- ✅ `createHeadRoute` - Create HEAD endpoints
+- ✅ `createOptionsRoute` - Create OPTIONS endpoints
+
+#### Internal (Not Exported):
+- ❌ `Router` interface - Used internally by server
+- ❌ `Matcher` - Internal route matching
+- ❌ `extractParams` - Internal parameter extraction
+- ❌ Route discovery utilities - Internal file system operations
 
 ```typescript
-import { createGetRoute } from 'blaizejs';
-import { z } from 'zod';
-
-// routes/posts/[id].ts → GET /posts/:id
-export const getPost = createGetRoute({
-  schema: {
-    params: z.object({ id: z.string().uuid() }),
-    response: z.object({
-      id: z.string(),
-      title: z.string(),
-      content: z.string(),
-    }),
-  },
-  handler: async (ctx, params) => {
-    return await findPost(params.id);
-  },
+// ✅ This is how you use routing:
+export const GET = createGetRoute({
+  schema: { /* ... */ },
+  handler: async (ctx) => { /* ... */ }
 });
+
+// ❌ You cannot directly access the router:
+// import { Router } from 'blaizejs'; // NOT AVAILABLE
 ```
 
-[📖 Router Module Documentation](./src/router/README.md)
+### 🔧 Middleware Module *(Exported)*
 
-### 🔗 Context Module
-
-Request/response context with AsyncLocalStorage integration.
-
-```typescript
-import { getCurrentContext, setState, getState } from 'blaizejs';
-
-export const handler = async () => {
-  const ctx = getCurrentContext(); // Available anywhere
-
-  // Request data
-  const userAgent = ctx.request.header('user-agent');
-  const body = ctx.request.body;
-
-  // State management
-  setState('userId', '123');
-  const userId = getState<string>('userId');
-
-  // Response
-  return ctx.response.json({ success: true });
-};
-```
-
-[📖 Context Module Documentation](./src/context/README.md)
-
-### 🔗 Middleware Module
-
-Composable middleware with onion-style execution.
+Build composable request/response pipelines:
 
 ```typescript
 import { createMiddleware, compose } from 'blaizejs';
 
+// Simple middleware
+const logger = createMiddleware(async (ctx, next) => {
+  console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
+  await next();
+  console.log(`← ${ctx.response.statusCode}`);
+});
+
+// Middleware with options
 const auth = createMiddleware({
   name: 'auth',
   handler: async (ctx, next) => {
-    // Pre-processing
     const token = ctx.request.header('authorization');
-    if (!token) return ctx.response.status(401).json({ error: 'Unauthorized' });
-
+    if (!token) {
+      throw new UnauthorizedError('No token provided');
+    }
+    ctx.state.user = await verifyToken(token);
     await next();
-
-    // Post-processing
-    ctx.response.header('X-Authenticated', 'true');
   },
+  skip: ctx => ctx.request.path.startsWith('/public')
 });
 
 // Compose multiple middleware
 const apiMiddleware = compose([cors, auth, rateLimit]);
 ```
 
-[📖 Middleware Module Documentation](./src/middleware/README.md)
+### 🧩 Plugins Module *(Exported)*
 
-### 🧩 Plugins Module
-
-Extensible plugin system with lifecycle management.
+Extend server functionality with lifecycle hooks:
 
 ```typescript
 import { createPlugin } from 'blaizejs';
@@ -437,420 +224,449 @@ import { createPlugin } from 'blaizejs';
 const databasePlugin = createPlugin(
   'database',
   '1.0.0',
-  async (server, options) => {
-    let db: Database;
-
+  (server) => {
+    let connection;
+    
     return {
       initialize: async () => {
-        db = await connectToDatabase(options.connectionString);
-        server.context.setGlobal('db', db);
+        connection = await db.connect();
+        console.log('Database connected');
+      },
+      onServerStart: async () => {
+        await connection.migrate();
+      },
+      onServerStop: async () => {
+        await connection.close();
       },
       terminate: async () => {
-        await db.close();
-      },
+        console.log('Database plugin terminated');
+      }
     };
-  },
-  { connectionString: 'mongodb://localhost:27017/app' }
-);
-
-const server = createServer({
-  routesDir: './routes',
-  plugins: [databasePlugin()],
-});
-```
-
-[📖 Plugins Module Documentation](./src/plugins/README.md)
-
-## 🧩 Plugin Ecosystem
-
-### 🏗️ Official Plugins
-
-| Plugin                        | Purpose                        | Status         |
-| ----------------------------- | ------------------------------ | -------------- |
-| `@blaizejs/auth-plugin`       | Authentication & authorization | 🔄 Coming Soon |
-| `@blaizejs/database-plugin`   | Database integration           | 🔄 Coming Soon |
-| `@blaizejs/cache-plugin`      | Caching strategies             | 🔄 Coming Soon |
-| `@blaizejs/validation-plugin` | Enhanced validation            | 🔄 Coming Soon |
-| `@blaizejs/monitoring-plugin` | Metrics & observability        | 🔄 Coming Soon |
-
-### 🛠️ Creating Custom Plugins
-
-```typescript
-import { createPlugin } from 'blaizejs';
-
-export const myPlugin = createPlugin(
-  'my-plugin',
-  '1.0.0',
-  (server, options) => {
-    // Add middleware
-    server.use(
-      createMiddleware({
-        name: 'my-middleware',
-        handler: async (ctx, next) => {
-          // Plugin logic
-          await next();
-        },
-      })
-    );
-
-    // Add routes
-    server.router.addRoute('GET', '/plugin-route', {
-      handler: () => ({ message: 'From plugin' }),
-    });
-  },
-  {
-    /* default options */
   }
 );
+
+// Use in server
+const server = createServer({
+  plugins: [databasePlugin()]
+});
 ```
 
-## 📡 Type-Safe Client
+### 🔗 Context Module *(Internal)*
 
-BlaizeJS provides seamless client generation with the `@blaizejs/client` package for consuming your APIs with full type safety:
+**⚠️ Note**: Context is automatically managed. You interact with it in handlers.
 
-### 📦 Client Installation
-
-```bash
-# Install the client package
-pnpm add @blaizejs/client
-```
-
-### 🎯 Export Your Routes
-
-First, export your routes from your server for client consumption:
+Context is automatically provided to all route handlers and middleware:
 
 ```typescript
-// routes/hello.ts
-import { createGetRoute, createPostRoute } from 'blaizejs';
-import { z } from 'zod';
+// Context is the first parameter in handlers
+export const GET = createGetRoute({
+  handler: async (ctx) => {
+    // Request information
+    const userId = ctx.request.header('x-user-id');
+    const query = ctx.request.query;
+    
+    // State management
+    ctx.state.requestStart = Date.now();
+    
+    // Response methods (usually return instead)
+    // ctx.response.json({ data });
+    // ctx.response.redirect('/login');
+    
+    return { message: 'Hello' };
+  }
+});
+```
 
-export const getHello = createGetRoute({
-  schema: {
-    query: z.object({
-      name: z.string().optional(),
-    }),
-    response: z.object({
-      message: z.string(),
-      timestamp: z.string(),
-    }),
-  },
-  handler: async ctx => {
-    const { name } = ctx.request.query;
-    return {
-      message: `Hello ${name || 'World'}!`,
-      timestamp: new Date().toISOString(),
-    };
-  },
+## 🛡️ Error Handling
+
+### Available Error Classes
+
+BlaizeJS exports semantic error classes that automatically format responses:
+
+```typescript
+import {
+  ValidationError,            // 400 - Bad Request
+  UnauthorizedError,          // 401 - Authentication Required
+  ForbiddenError,             // 403 - Access Denied
+  NotFoundError,              // 404 - Resource Not Found
+  RequestTimeoutError,        // 408 - Request Timeout
+  ConflictError,              // 409 - Resource Conflict
+  PayloadTooLargeError,       // 413 - Payload Too Large
+  UnsupportedMediaTypeError,  // 415 - Unsupported Media Type
+  UnprocessableEntityError,   // 422 - Unprocessable Entity
+  RateLimitError,             // 429 - Too Many Requests
+  InternalServerError         // 500 - Server Error
+} from 'blaizejs';
+
+// Throw semantic errors
+throw new NotFoundError('User not found', {
+  resourceType: 'user',
+  resourceId: params.userId,
+  suggestion: 'Check the user ID'
 });
 
-export const postHello = createPostRoute({
+// Automatic response format:
+// {
+//   "type": "NOT_FOUND",
+//   "title": "User not found", 
+//   "status": 404,
+//   "correlationId": "req_abc123",
+//   "timestamp": "2024-01-15T10:30:00.000Z",
+//   "details": { ... }
+// }
+```
+
+### Additional Error Classes
+
+The following error classes are also available for specific scenarios:
+
+```typescript
+import {
+  PayloadTooLargeError,      // 413 - Request Entity Too Large
+  UnsupportedMediaTypeError,  // 415 - Unsupported Media Type
+  RequestTimeoutError,        // 408 - Request Timeout
+  UnprocessableEntityError    // 422 - Unprocessable Entity
+} from 'blaizejs';
+
+// File size exceeded
+throw new PayloadTooLargeError('File too large', {
+  fileCount: 11,
+  maxFiles: 10,
+  filename: 'huge-video.mp4',
+  currentSize: 104857600,  // 100MB
+  maxSize: 52428800        // 50MB
+});
+
+// Wrong content type
+throw new UnsupportedMediaTypeError('File type not allowed', {
+  receivedMimeType: 'application/x-executable',
+  allowedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
+  filename: 'virus.exe'
+});
+
+// Request timeout
+throw new RequestTimeoutError('Upload timeout', {
+  timeoutMs: 30000,
+  elapsedMs: 31000,
+  operation: 'file-upload'
+});
+
+// Business rule violation
+throw new UnprocessableEntityError('Business rule violation', {
+  rule: 'minimum_order_amount',
+  currentValue: 5.00,
+  requiredValue: 10.00,
+  message: 'Order total must be at least $10.00'
+});
+```
+
+## 🎯 API Reference
+
+### Exported Functions
+
+| Function | Description |
+|----------|-------------|
+| **Server** | |
+| `createServer(options?)` | Create HTTP/2 server instance |
+| **Routing** | |
+| `createGetRoute(config)` | Create GET endpoint |
+| `createPostRoute(config)` | Create POST endpoint |
+| `createPutRoute(config)` | Create PUT endpoint |
+| `createPatchRoute(config)` | Create PATCH endpoint |
+| `createDeleteRoute(config)` | Create DELETE endpoint |
+| `createHeadRoute(config)` | Create HEAD endpoint |
+| `createOptionsRoute(config)` | Create OPTIONS endpoint |
+| **Middleware** | |
+| `createMiddleware(handler)` | Create middleware instance |
+| `compose(middleware[])` | Compose multiple middleware |
+| **Plugins** | |
+| `createPlugin(name, version, factory)` | Create server plugin |
+| **Errors** | |
+| `ValidationError` | 400 Bad Request |
+| `UnauthorizedError` | 401 Unauthorized |
+| `ForbiddenError` | 403 Forbidden |
+| `NotFoundError` | 404 Not Found |
+| `RequestTimeoutError` | 408 Request Timeout |
+| `ConflictError` | 409 Conflict |
+| `PayloadTooLargeError` | 413 Payload Too Large |
+| `UnsupportedMediaTypeError` | 415 Unsupported Media Type |
+| `UnprocessableEntityError` | 422 Unprocessable Entity |
+| `RateLimitError` | 429 Too Many Requests |
+| `InternalServerError` | 500 Internal Server Error |
+
+### Exported Types
+
+All types are re-exported from `@blaize-types`:
+
+```typescript
+import type {
+  // Server types
+  Server,
+  ServerOptionsInput,
+  
+  // Middleware types
+  Middleware,
+  MiddlewareFunction,
+  MiddlewareOptions,
+  NextFunction,
+  
+  // Plugin types
+  Plugin,
+  PluginFactory,
+  PluginHooks,
+  
+  // Router types (limited export)
+  HttpMethod,
+  RouteHandler,
+  RouteMethodOptions,
+  
+  // Context types
+  Context,
+  
+  // Error types
+  BlaizeError,
+  ErrorType
+} from 'blaizejs';
+```
+
+## 💡 Common Patterns
+
+### Protected Routes
+
+```typescript
+const authMiddleware = createMiddleware({
+  name: 'auth',
+  handler: async (ctx, next) => {
+    const token = ctx.request.header('authorization');
+    if (!token) {
+      throw new UnauthorizedError('Authentication required');
+    }
+    ctx.state.user = await verifyToken(token);
+    await next();
+  }
+});
+
+export const GET = createGetRoute({
+  middleware: [authMiddleware],
+  handler: async (ctx) => {
+    return { user: ctx.state.user };
+  }
+});
+```
+
+### Request Validation
+
+```typescript
+export const POST = createPostRoute({
   schema: {
     body: z.object({
-      message: z.string(),
-    }),
-    response: z.object({
-      id: z.string(),
-      echo: z.string(),
-    }),
+      email: z.string().email(),
+      password: z.string().min(8),
+      age: z.number().int().positive().optional()
+    })
   },
-  handler: async ctx => {
-    const { message } = ctx.request.body;
-    return {
-      id: crypto.randomUUID(),
-      echo: message,
-    };
-  },
+  handler: async (ctx) => {
+    // Body is fully validated and typed
+    const user = await createUser(ctx.body);
+    return user;
+  }
 });
 ```
 
-```typescript
-// app-routes.ts - Export all your routes
-import { getHello, postHello } from './routes/hello.js';
-
-export const routes = {
-  getHello,
-  postHello,
-} as const;
-```
-
-### 🔗 Create Type-Safe Client
+### Error Handling
 
 ```typescript
-// client.ts
-import { createClient } from '@blaizejs/client';
-import { routes } from './app-routes.js';
-
-// Create client with full type safety
-const client = createClient('http://localhost:3000', routes);
-
-// Fully typed API calls with method grouping
-const helloData = await client.$get.getHello({
-  query: { name: 'TypeScript' }, // Typed and validated
+export const GET = createGetRoute({
+  handler: async (ctx, params) => {
+    try {
+      const resource = await findResource(params.id);
+      
+      if (!resource) {
+        throw new NotFoundError('Resource not found', {
+          resourceType: 'item',
+          resourceId: params.id
+        });
+      }
+      
+      if (!hasPermission(ctx.state.user, resource)) {
+        throw new ForbiddenError('Access denied', {
+          resource: resource.id,
+          requiredPermission: 'read'
+        });
+      }
+      
+      return resource;
+    } catch (error) {
+      // Framework automatically handles error responses
+      throw error;
+    }
+  }
 });
-
-console.log(helloData.message); // Type: string
-console.log(helloData.timestamp); // Type: string
-
-// POST request with body validation
-const postData = await client.$post.postHello({
-  body: { message: 'Hello from client!' }, // Typed and validated
-});
-
-console.log(postData.id); // Type: string
-console.log(postData.echo); // Type: string
 ```
 
-### 🎛️ Client Configuration
+## 🧪 Testing
+
+Use `@blaizejs/testing-utils` for testing:
 
 ```typescript
-import { createClient } from '@blaizejs/client';
-import type { ClientConfig } from '@blaizejs/client';
-
-// Advanced client configuration
-const config: ClientConfig = {
-  baseUrl: 'https://api.example.com',
-  defaultHeaders: {
-    Authorization: 'Bearer your-token',
-    'User-Agent': 'MyApp/1.0.0',
-  },
-  timeout: 10000,
-};
-
-const client = createClient(config, routes);
-
-// All requests will use the configured headers and timeout
-const data = await client.$get.getHello();
-```
-
-### 🔍 Client Method Structure
-
-The client organizes methods by HTTP verb using the `$method` pattern:
-
-```typescript
-// Available client methods
-client.$get.routeName(); // GET requests
-client.$post.routeName(); // POST requests
-client.$put.routeName(); // PUT requests
-client.$delete.routeName(); // DELETE requests
-client.$patch.routeName(); // PATCH requests
-client.$head.routeName(); // HEAD requests
-client.$options.routeName(); // OPTIONS requests
-```
-
-**Key Client Features:**
-
-- 🔒 **Full Type Safety** - Automatically inferred from your route schemas
-- ✅ **Request Validation** - Client-side validation before sending requests
-- 📊 **Response Validation** - Runtime validation of API responses
-- 🎯 **IntelliSense Support** - Complete autocomplete for all routes and parameters
-- 🔄 **Error Handling** - Typed error responses with detailed validation messages
-- ⚡ **Lightweight** - Minimal runtime overhead with proxy-based implementation
-
-[📖 Client Package Documentation](https://github.com/jleajones/blaize/tree/main/packages/blaize-client#readme)
-
-## ✅ Testing
-
-### 🧪 Framework Testing Tools
-
-BlaizeJS provides comprehensive testing utilities:
-
-```typescript
-import { describe, test, expect } from 'vitest';
 import { createTestContext } from '@blaizejs/testing-utils';
-import { getUsers } from '../routes/users';
+import { describe, test, expect } from 'vitest';
 
-describe('Users API', () => {
-  test('should return paginated users', async () => {
+describe('User Routes', () => {
+  test('GET /users/:id returns user', async () => {
     const ctx = createTestContext({
       method: 'GET',
-      path: '/users',
-      query: { limit: '5', offset: '0' },
+      path: '/users/123'
     });
-
-    const result = await getUsers.handler(ctx, {});
-
-    expect(result).toEqual({
-      users: expect.arrayContaining([
-        expect.objectContaining({
-          id: expect.any(String),
-          name: expect.any(String),
-          email: expect.any(String),
-        }),
-      ]),
-      total: expect.any(Number),
+    
+    const handler = createGetRoute({
+      handler: async (ctx, params) => {
+        return { id: params.userId, name: 'Test User' };
+      }
     });
+    
+    const result = await handler.handler(ctx, { userId: '123' });
+    expect(result.id).toBe('123');
   });
 });
 ```
 
-### 🔧 Testing Configuration
+## 📚 Type System
 
-```json
-{
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+BlaizeJS provides full type safety through TypeScript:
+
+### Automatic Type Inference
+
+```typescript
+const route = createPostRoute({
+  schema: {
+    body: z.object({
+      name: z.string(),
+      age: z.number()
+    }),
+    response: z.object({
+      id: z.string(),
+      created: z.boolean()
+    })
+  },
+  handler: async (ctx) => {
+    // ctx.body is typed as { name: string; age: number }
+    // Return type must match response schema
+    return {
+      id: '123',
+      created: true
+    };
+  }
+});
+```
+
+### Custom Type Extensions
+
+```typescript
+// Extend context state
+declare module 'blaizejs' {
+  interface State {
+    user?: {
+      id: string;
+      role: string;
+    };
   }
 }
 ```
 
-### 🏃‍♂️ Running Tests
+## 🗺️ Roadmap
 
-```bash
-# Run all tests
-pnpm test
+### 🚀 Current Beta (v0.3.1)
 
-# Watch mode
-pnpm test:watch
+- ✅ Core server with HTTP/2 support
+- ✅ File-based routing (internal)
+- ✅ Middleware system
+- ✅ Plugin architecture
+- ✅ 11 semantic error classes (400-500 status codes)
+- ✅ Schema validation with Zod
+- ✅ Context management (internal)
+- ✅ Type-safe route creation
 
-# Coverage report
-pnpm test:coverage
+### 🎯 MVP/1.0 Release
 
-# Test specific modules
-pnpm test server
-pnpm test router
-pnpm test middleware
-```
+#### Core Improvements
+- 🔄 **Export Router Utilities** - Parameter extraction, route matching for extensions
+- 🔄 **Custom Error Factory** - Allow user-defined error classes
+- 🔄 **Enhanced Testing Utils** - More comprehensive testing helpers
+- 🔄 **Performance Monitoring** - Built-in metrics and profiling
+- 🔄 **Additional HTTP Status Codes** - 405, 502, 503, 504 error classes
+
+#### New Features
+- 🔄 **WebSocket Support** - Real-time communication
+- 🔄 **Response Helpers** - Utility functions for common responses
+- 🔄 **Route Metadata** - Attach custom metadata to routes
+- 🔄 **Built-in Middleware** - CORS, compression, security headers
+- 🔄 **Request Streaming** - Handle large payloads efficiently
+
+### 🔮 Post-MVP (v1.1+)
+
+- 🔄 **GraphQL Integration** - Built-in GraphQL support
+- 🔄 **gRPC Support** - Protocol buffer services
+- 🔄 **OpenAPI Generation** - Automatic API documentation
+- 🔄 **Distributed Tracing** - OpenTelemetry integration
+- 🔄 **Edge Runtime Support** - Cloudflare Workers, Deno Deploy
+- 🔄 **Bun Compatibility** - Native Bun.serve integration
 
 ## 🤝 Contributing
 
-We welcome contributions to BlaizeJS! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
+We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
 
-### 🛠️ Development Setup
+### Development Setup
 
 ```bash
 # Clone the repository
 git clone https://github.com/jleajones/blaize.git
 cd blaize
 
-# Install dependencies (uses pnpm workspaces)
+# Install dependencies
 pnpm install
 
 # Run tests
 pnpm test
 
-# Start development
-pnpm dev
-
-# Build all packages
+# Build packages
 pnpm build
+
+# Run examples
+pnpm --filter blaizejs dev
 ```
 
-### 🏗️ Monorepo Structure
+### Package Structure
 
 ```
-blaize/
-├── packages/
-│   ├── blaizejs/           # Core framework (this package)
-│   ├── client/             # Type-safe client generator
-│   ├── types/              # Shared TypeScript types
-│   ├── testing-utils/      # Testing utilities
-│   └── configs/            # Shared configurations
-├── plugins/                # Official plugins
-├── apps/                   # Example applications
-└── docs/                   # Documentation
+packages/
+├── blaize-core/          # Main framework (this package)
+│   ├── src/
+│   │   ├── server/       # Server implementation
+│   │   ├── router/       # Router (mostly internal)
+│   │   ├── middleware/   # Middleware system
+│   │   ├── plugins/      # Plugin system
+│   │   ├── context/      # Context (internal)
+│   │   ├── errors/       # Error classes
+│   │   └── index.ts      # Main exports
+│   └── package.json
+├── blaize-types/         # Shared TypeScript types
+├── blaize-client/        # Client SDK
+└── blaize-testing-utils/ # Testing utilities
 ```
 
-### 📝 Code Standards
+### Important Notes
 
-- ✅ **TypeScript**: Strict mode enabled for all packages
-- ✅ **Testing**: Comprehensive test coverage with Vitest
-- ✅ **Linting**: ESLint with consistent configuration
-- ✅ **Formatting**: Prettier for code formatting
-- ✅ **Commits**: Conventional commits for clear history
-- ✅ **Documentation**: JSDoc comments for public APIs
+When contributing to BlaizeJS Core:
 
-### 🔧 Available Scripts
-
-```bash
-pnpm build          # Build all packages
-pnpm dev            # Start development mode
-pnpm lint           # Run ESLint across packages
-pnpm format         # Format code with Prettier
-pnpm type-check     # Run TypeScript checks
-pnpm clean          # Clean all build artifacts
-pnpm changeset      # Create changeset for versioning
-```
-
-### 🧪 Testing Guidelines
-
-When contributing to the core framework:
-
-- ✅ Test all HTTP/2 and HTTP/1.1 compatibility
-- ✅ Test ESM module resolution and path handling
-- ✅ Test AsyncLocalStorage context propagation
-- ✅ Test middleware composition and error handling
-- ✅ Test plugin lifecycle management
-- ✅ Include integration tests with real HTTP requests
-- ✅ Test production deployment scenarios
-- ✅ Test type safety and schema validation
-
-### 🎯 Architecture Guidelines
-
-Key principles for core framework development:
-
-- 🔒 **Type Safety First** - Everything should be typed and validated
-- ⚡ **Performance** - Minimal overhead and optimal execution
-- 🧩 **Modularity** - Clean separation between modules
-- 🔄 **Async/Await** - Modern async patterns throughout
-- 🛡️ **Error Handling** - Comprehensive error management
-- 📖 **Documentation** - Clear examples and API docs
-
-## 🗺️ Roadmap
-
-### 🚀 Current (v0.1.x)
-
-- ✅ **HTTP/2 Server** with HTTP/1.1 fallback and SSL support
-- ✅ **File-Based Routing** with automatic path generation and hot reloading
-- ✅ **Type-Safe Routes** with Zod schema validation and route creators
-- ✅ **Composable Middleware** with onion execution and error handling
-- ✅ **Plugin System** with lifecycle management and validation
-- ✅ **Context Management** with AsyncLocalStorage and state isolation
-- ✅ **Testing Utilities** with comprehensive test helpers
-- ✅ **ESM Support** with proper module resolution
-- ✅ **Client Generation** with full type safety (separate package)
-
-### 🎯 Next Release (v0.2.x)
-
-- 🔄 **HTTP/2 Hosting Solutions** - Workarounds for hosting provider limitations
-- 🔄 **Performance Optimizations** - Radix tree improvements and caching
-- 🔄 **Advanced Schema Validation** - Enhanced Zod integration and custom validators
-- 🔄 **Built-in Monitoring** - Performance metrics and health checks
-- 🔄 **Route Groups** - Organized routing with shared middleware
-- 🔄 **Plugin Registry** - Centralized plugin discovery and management
-
-### 🔮 Future (v0.3.x+)
-
-- 🔄 **GraphQL Integration** - File-based GraphQL resolvers
-- 🔄 **WebSocket Support** - Real-time endpoints with type safety
-- 🔄 **Server-Side Streaming** - Streaming responses and SSE
-- 🔄 **Edge Runtime** - Deployment to edge computing platforms
-- 🔄 **Zero-Config Deployment** - One-command deployment to various platforms
-- 🔄 **Advanced Caching** - Multi-layer caching strategies
-
-### 🌟 Long-term Vision
-
-- 🔄 **Visual Development** - GUI tools for route and middleware management
-- 🔄 **AI-Powered Optimization** - Automatic performance tuning and suggestions
-- 🔄 **Multi-Protocol Support** - gRPC, WebSocket, and HTTP/3 in unified framework
-- 🔄 **Microservices Platform** - Service mesh integration and distributed systems
-- 🔄 **Enterprise Features** - Advanced security, compliance, and governance
-
----
-
-## 📚 Related Documentation
-
-- 🌐 [Server Module](./src/server/README.md) - HTTP server creation and lifecycle management
-- 🚀 [Router Module](./src/router/README.md) - File-based routing and type-safe handlers
-- 🔗 [Context Module](./src/context/README.md) - Request/response context and state management
-- 🔗 [Middleware Module](./src/middleware/README.md) - Composable middleware system
-- 🧩 [Plugins Module](./src/plugins/README.md) - Plugin architecture and lifecycle
-- 🔗 [Client Package](./src/client/README.md) - Type-safe API client generation
-- 🧪 [Testing Utils](./src/testing-utils/README.md) - Testing utilities and helpers
+1. **Check Exports**: Ensure new features are exported in `src/index.ts`
+2. **Update Types**: Add types to `@blaize-types` package
+3. **Document Internal APIs**: Mark internal-only features clearly
+4. **Add Tests**: Use `@blaizejs/testing-utils` for testing
+5. **Follow Patterns**: Match existing code style and patterns
 
 ---
 
 **Built with ❤️ by the BlaizeJS team**
 
-For questions, feature requests, or bug reports, please [open an issue](https://github.com/jleajones/blaize/issues) on GitHub.
+_For questions or issues, please [open an issue](https://github.com/jleajones/blaize/issues) on GitHub._
