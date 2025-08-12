@@ -1,6 +1,6 @@
-import type { RequestArgs } from '../../blaize-types/src/index';
+import type { InternalRequestArgs } from '../../blaize-types/src/index';
 
-export function buildUrl(baseUrl: string, path: string, args?: RequestArgs): string {
+export function buildUrl(baseUrl: string, path: string, args?: InternalRequestArgs): string {
   // Normalize URL construction to avoid double slashes
   const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
