@@ -256,191 +256,6 @@ export interface StandardErrorResponse {
   message: string;
 }
 
-/**
- * GET route creator - no body schema needed
- */
-export type CreateGetRoute = <
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
->(config: {
-  schema?: {
-    params?: P;
-    query?: Q;
-    response?: R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never,
-    R extends z.ZodType ? Infer<R> : void
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
-  GET: RouteMethodOptions<P, Q, never, R>;
-  path: string;
-}; // Return the specific typed object, not RouteDefinition
-
-/**
- * POST route creator - includes body schema
- */
-export type CreatePostRoute = <
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  B extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
->(config: {
-  schema?: {
-    params?: P;
-    query?: Q;
-    body?: B;
-    response?: R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    B extends z.ZodType ? Infer<B> : unknown,
-    R extends z.ZodType ? Infer<R> : unknown
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => { POST: RouteMethodOptions<P, Q, B, R>; path: string };
-
-/**
- * PUT route creator - includes body schema
- */
-export type CreatePutRoute = <
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  B extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
->(config: {
-  schema?: {
-    params?: P;
-    query?: Q;
-    body?: B;
-    response?: R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    B extends z.ZodType ? Infer<B> : unknown,
-    R extends z.ZodType ? Infer<R> : unknown
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
-  PUT: RouteMethodOptions<P, Q, B, R>;
-  path: string;
-};
-
-/**
- * DELETE route creator - typically no body
- */
-export type CreateDeleteRoute = <
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
->(config: {
-  schema?: {
-    params?: P;
-    query?: Q;
-    response?: R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never,
-    R extends z.ZodType ? Infer<R> : unknown
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
-  DELETE: RouteMethodOptions<P, Q, never, R>;
-  path: string;
-};
-
-/**
- * PATCH route creator - includes body schema
- */
-export type CreatePatchRoute = <
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  B extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
->(config: {
-  schema?: {
-    params?: P;
-    query?: Q;
-    body?: B;
-    response?: R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    B extends z.ZodType ? Infer<B> : unknown,
-    R extends z.ZodType ? Infer<R> : unknown
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
-  PATCH: RouteMethodOptions<P, Q, B, R>;
-  path: string;
-};
-
-/**
- * HEAD route creator - no body schema needed (same as GET)
- */
-export type CreateHeadRoute = <
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
->(config: {
-  schema?: {
-    params?: P;
-    query?: Q;
-    response?: R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never,
-    R extends z.ZodType ? Infer<R> : unknown
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
-  HEAD: RouteMethodOptions<P, Q, never, R>;
-  path: string;
-};
-
-/**
- * OPTIONS route creator - typically no body or response schema
- */
-export type CreateOptionsRoute = <
-  P extends z.ZodType = z.ZodType<any>,
-  Q extends z.ZodType = z.ZodType<any>,
-  R extends z.ZodType = z.ZodType<any>,
->(config: {
-  schema?: {
-    params?: P;
-    query?: Q;
-    response?: R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never,
-    R extends z.ZodType ? Infer<R> : unknown
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
-  OPTIONS: RouteMethodOptions<P, Q, never, R>;
-  path: string;
-};
-
 export interface FileCache {
   routes: Route[];
   timestamp: number;
@@ -478,3 +293,206 @@ export interface FindRouteFilesOptions {
   /** Directories to ignore */
   ignore?: string[] | undefined;
 }
+
+/**
+ * GET route creator - no body schema needed
+ * FIXED: Default type parameters to never instead of z.ZodType<any>
+ */
+export type CreateGetRoute = <
+  P = never, // Changed from z.ZodType<any>
+  Q = never, // Changed from z.ZodType<any>
+  R = never, // Changed from z.ZodType<any>
+>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    response?: R extends never ? never : R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  GET: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    never, // GET never has body
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
+
+/**
+ * POST route creator - includes body schema
+ * FIXED: Default type parameters to never
+ */
+export type CreatePostRoute = <P = never, Q = never, B = never, R = never>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    body?: B extends never ? never : B;
+    response?: R extends never ? never : R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    B extends z.ZodType ? Infer<B> : unknown,
+    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  POST: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    B extends never ? never : B extends z.ZodType ? B : never,
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
+
+/**
+ * PUT route creator - includes body schema
+ * FIXED: Default type parameters to never
+ */
+export type CreatePutRoute = <P = never, Q = never, B = never, R = never>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    body?: B extends never ? never : B;
+    response?: R extends never ? never : R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    B extends z.ZodType ? Infer<B> : unknown,
+    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  PUT: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    B extends never ? never : B extends z.ZodType ? B : never,
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
+
+/**
+ * DELETE route creator - typically no body
+ * FIXED: Default type parameters to never
+ */
+export type CreateDeleteRoute = <P = never, Q = never, R = never>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    response?: R extends never ? never : R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  DELETE: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    never, // DELETE never has body
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
+
+/**
+ * PATCH route creator - includes body schema
+ * FIXED: Default type parameters to never
+ */
+export type CreatePatchRoute = <P = never, Q = never, B = never, R = never>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    body?: B extends never ? never : B;
+    response?: R extends never ? never : R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    B extends z.ZodType ? Infer<B> : unknown,
+    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  PATCH: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    B extends never ? never : B extends z.ZodType ? B : never,
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
+
+/**
+ * HEAD route creator - no body schema needed (same as GET)
+ * FIXED: Default type parameters to never
+ */
+export type CreateHeadRoute = <P = never, Q = never, R = never>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    response?: R extends never ? never : R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  HEAD: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    never, // HEAD never has body
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
+
+/**
+ * OPTIONS route creator - typically no body or response schema
+ * FIXED: Default type parameters to never
+ */
+export type CreateOptionsRoute = <P = never, Q = never, R = never>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    response?: R extends never ? never : R;
+  };
+  handler: RouteHandler<
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    never,
+    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  OPTIONS: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    never, // OPTIONS never has body
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
