@@ -1,5 +1,12 @@
 # @blaizejs/testing-utils
 
+## 0.3.0
+
+### Minor Changes
+
+- 06432ac: 🔨 Fixed broken type defintions
+- 155d310: ✨ Fixed blaize client
+
 ## 0.2.0
 
 ### Minor Changes

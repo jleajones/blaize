@@ -1,5 +1,12 @@
 # blaizejs
 
+## 0.3.1
+
+### Patch Changes
+
+- 06432ac: 🔨 Fixed broken type defintions
+- 155d310: ✨ Fixed blaize client
+
 ## 0.3.0
 
 ### Minor Changes
