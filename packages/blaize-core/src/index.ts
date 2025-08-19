@@ -71,6 +71,10 @@ export { ForbiddenError } from './errors/forbidden-error';
 export { ConflictError } from './errors/conflict-error';
 export { RateLimitError } from './errors/rate-limit-error';
 export { InternalServerError } from './errors/internal-server-error';
+export { PayloadTooLargeError } from './errors/payload-too-large-error';
+export { RequestTimeoutError } from './errors/request-timeout-error';
+export { UnsupportedMediaTypeError } from './errors/unsupported-media-type-error';
+export { UnprocessableEntityError } from './errors/unprocessable-entity-error';
 
 // Default export
 const Blaize = {
