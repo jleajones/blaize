@@ -5,10 +5,10 @@ import fs from 'fs-extra';
 
 import {
   generateTsConfig,
-  generateVitestConfig,
   generateGitIgnore,
   generateReadme,
-} from '../templates/configs';
+  generatePackageJson,
+} from '../templates/generators';
 import { registerDirectoryCleanup } from '../utils/cleanup';
 import { type Result, ok } from '../utils/functional';
 
@@ -28,32 +28,6 @@ function processTemplate(content: string, variables: Record<string, string>): st
   return content.replace(/\{\{(\w+)\}\}/g, (match, key) => {
     return variables[key] || match;
   });
-}
-
-/**
- * Generate package.json content
- */
-async function generatePackageJson(
-  projectName: string,
-  template: ValidatedInputs['template'],
-  latest: boolean
-): Promise<Record<string, any>> {
-  const dependencies = await template.getDependencies({ latest });
-  const devDependencies = await template.getDevDependencies({ latest });
-
-  return {
-    name: projectName,
-    version: '0.1.0',
-    private: true,
-    type: 'module',
-    description: 'A BlaizeJS application',
-    scripts: template.scripts,
-    dependencies,
-    devDependencies,
-    engines: {
-      node: '>=23.0.0',
-    },
-  };
 }
 
 /**
@@ -128,7 +102,7 @@ export const scaffold = async (inputs: ValidatedInputs): Promise<Result<Scaffold
   // Generate configuration files
   const configs = [
     { path: 'tsconfig.json', content: generateTsConfig() },
-    { path: 'vitest.config.ts', content: generateVitestConfig() },
+    // { path: 'vitest.config.ts', content: generateVitestConfig() },
     { path: '.gitignore', content: generateGitIgnore() },
     { path: 'README.md', content: generateReadme(name, packageManager) },
   ];

@@ -100,100 +100,6 @@ export const GET = createGetRoute({
 });
 `,
     },
-    {
-      path: 'src/__tests__/routes/index.test.ts',
-      content: `import { describe, it, expect } from 'vitest';
-import { createTestClient } from '@blaizejs/testing-utils';
-import { GET } from '../../routes/index';
-
-describe('GET /', () => {
-  const client = createTestClient();
-  
-  it('should return welcome message', async () => {
-    const response = await client.testRoute(GET, {});
-    
-    expect(response).toHaveProperty('message');
-    expect(response.message).toBe('Welcome to BlaizeJS!');
-    expect(response).toHaveProperty('timestamp');
-    expect(response).toHaveProperty('version');
-  });
-  
-  it('should return valid timestamp', async () => {
-    const response = await client.testRoute(GET, {});
-    
-    const timestamp = new Date(response.timestamp);
-    expect(timestamp.getTime()).toBeLessThanOrEqual(Date.now());
-  });
-  
-  it('should return version string', async () => {
-    const response = await client.testRoute(GET, {});
-    
-    expect(response.version).toMatch(/^\\d+\\.\\d+\\.\\d+$/);
-  });
-});
-`,
-    },
-    {
-      path: 'src/__tests__/routes/health.test.ts',
-      content: `import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestClient } from '@blaizejs/testing-utils';
-import { GET } from '../../routes/health';
-
-describe('GET /health', () => {
-  const client = createTestClient();
-  const originalEnv = process.env.FORCE_UNHEALTHY;
-  
-  beforeEach(() => {
-    delete process.env.FORCE_UNHEALTHY;
-  });
-  
-  afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.FORCE_UNHEALTHY = originalEnv;
-    } else {
-      delete process.env.FORCE_UNHEALTHY;
-    }
-  });
-  
-  it('should return healthy status', async () => {
-    const response = await client.testRoute(GET, {});
-    
-    expect(response.status).toBe('healthy');
-    expect(response.uptime).toBeGreaterThan(0);
-    expect(response.checks).toEqual({
-      database: true,
-      redis: true
-    });
-  });
-  
-  it('should handle unhealthy state', async () => {
-    process.env.FORCE_UNHEALTHY = 'true';
-    
-    await expect(
-      client.testRoute(GET, {})
-    ).rejects.toThrow('Health check failed');
-  });
-  
-  it('should include valid timestamp', async () => {
-    const response = await client.testRoute(GET, {});
-    
-    const timestamp = new Date(response.timestamp);
-    expect(timestamp.getTime()).toBeLessThanOrEqual(Date.now());
-  });
-});
-`,
-    },
-    {
-      path: 'src/__tests__/setup.ts',
-      content: `/**
- * Test setup file
- * Add any global test configuration here
- */
-
-// Example: Mock environment variables
-process.env.NODE_ENV = 'test';
-`,
-    },
   ],
   getDependencies,
   getDevDependencies,
@@ -201,9 +107,6 @@ process.env.NODE_ENV = 'test';
     dev: 'tsx --watch src/app.ts',
     build: 'tsc',
     start: 'node dist/app.js',
-    test: 'vitest',
-    'test:watch': 'vitest --watch',
-    'test:coverage': 'vitest --coverage',
     'type-check': 'tsc --noEmit',
     clean: 'rimraf dist',
   },

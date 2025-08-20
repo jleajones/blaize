@@ -52,8 +52,6 @@ export const displaySuccess = (context: InstallResult): InstallResult => {
 
   steps.push(
     ['Start development server', getRunCommand(packageManager, 'dev')],
-    ['Run tests', getRunCommand(packageManager, 'test')],
-    ['Watch tests', getRunCommand(packageManager, 'test:watch')],
     ['Type check', getRunCommand(packageManager, 'type-check')],
     ['Build for production', getRunCommand(packageManager, 'build')]
   );
@@ -67,11 +65,9 @@ export const displaySuccess = (context: InstallResult): InstallResult => {
   console.log(chalk.bold('📂 Project structure:\n'));
   console.log(chalk.gray('  src/'));
   console.log(chalk.gray('  ├── app.ts           # Server setup'));
-  console.log(chalk.gray('  ├── routes/          # API routes'));
-  console.log(chalk.gray('  │   ├── index.ts     # Root endpoint'));
-  console.log(chalk.gray('  │   └── health.ts    # Health check'));
-  console.log(chalk.gray('  └── __tests__/       # Test files'));
-  console.log(chalk.gray('      └── routes/      # Route tests\n'));
+  console.log(chalk.gray('  └── routes/          # API routes'));
+  console.log(chalk.gray('      ├── index.ts     # Root endpoint'));
+  console.log(chalk.gray('      └── health.ts    # Health check\n'));
 
   // Available endpoints
   console.log(chalk.bold('🔗 Available endpoints:\n'));
