@@ -5,8 +5,13 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
+      "outputs": ["dist/**"],
       "inputs": ["src/**", "package.json", "tsconfig.json", "tsup.config.ts"]
+    },
+    "create-blaize-app#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "inputs": ["src/**", "templates/**", "package.json", "tsup.config.ts"]
     },
     "type-check": {
       "dependsOn": [],
@@ -48,6 +53,12 @@
       "outputs": [],
       "cache": false,
       "env": ["NODE_ENV"]
+    },
+    "create-blaize-app#test": {
+      "dependsOn": [],
+      "inputs": ["src/**/*.test.ts", "src/**/*.ts", "vitest.config.ts"],
+      "outputs": [],
+      "cache": false
     },
     "test:watch": {
       "dependsOn": ["@blaizejs/testing-utils#build"],

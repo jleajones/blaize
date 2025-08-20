@@ -90,14 +90,14 @@ export function createTsupConfig(options = {}) {
 
       // Then ensure banner is added
       esbuildOptions.banner = {
-        js: `/**
+        js: `${esbuildOptions.banner?.js || ''}\n/**
  * ${pkg.name} v${pkg.version}
  * ${pkg.description}
  * 
  * Copyright (c) ${new Date().getFullYear()} BlaizeJS Contributors
  * @license MIT
  */
-${esbuildOptions.banner?.js || ''}`,
+`,
       };
     },
   });
