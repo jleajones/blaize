@@ -6,7 +6,8 @@
     "noEmit": true,
     "moduleResolution": "bundler",
     "module": "ESNext",
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
   "exclude": ["**/*.test.ts", "**/*.spec.ts", "dist", "node_modules"]
