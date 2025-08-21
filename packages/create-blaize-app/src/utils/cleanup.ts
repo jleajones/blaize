@@ -58,6 +58,12 @@ export const cleanupManager = new CleanupManager();
 
 // Register signal handlers
 const setupSignalHandlers = () => {
+  // Skip signal handler registration in test environment
+  // This prevents tests from triggering process.exit() calls
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+    return;
+  }
+
   let signalHandled = false;
 
   const handleSignal = async (signal: string, exitCode: number) => {
@@ -77,7 +83,11 @@ const setupSignalHandlers = () => {
     signalHandled = true;
 
     console.error(chalk.red('\n\n❌ Uncaught exception:'), error);
-    await cleanupManager.cleanup();
+    try {
+      await cleanupManager.cleanup();
+    } catch (cleanupError) {
+      console.error(chalk.red('Cleanup error:'), cleanupError);
+    }
     process.exit(1);
   });
 
@@ -86,7 +96,11 @@ const setupSignalHandlers = () => {
     signalHandled = true;
 
     console.error(chalk.red('\n\n❌ Unhandled rejection:'), reason);
-    await cleanupManager.cleanup();
+    try {
+      await cleanupManager.cleanup();
+    } catch (cleanupError) {
+      console.error(chalk.red('Cleanup error:'), cleanupError);
+    }
     process.exit(1);
   });
 };

@@ -103,7 +103,7 @@ export const validateNodeVersion = (): void => {
   const nodeVersion = process.version;
   const majorVersion = parseInt(nodeVersion.split('.')[0]!.slice(1), 10);
 
-  if (majorVersion < 23) {
+  if (isNaN(majorVersion) || majorVersion < 23) {
     throw new CLIError(
       `Node.js 23 or higher is required (current: ${nodeVersion})`,
       'NODE_VERSION',
