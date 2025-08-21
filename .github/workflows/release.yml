@@ -13,6 +13,7 @@ on:
       - '!configs/**'
       - '!**/*.md'
       - '!.github/workflows/**'
+  workflow_dispatch:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
