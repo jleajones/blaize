@@ -1,5 +1,14 @@
 # @blaizejs/playground
 
+## 0.1.7
+
+### Patch Changes
+
+- Updated dependencies [b47ca23]
+- Updated dependencies [761e75a]
+  - blaizejs@0.3.2
+  - @blaizejs/client@0.3.2
+
 ## 0.1.6
 
 ### Patch Changes
