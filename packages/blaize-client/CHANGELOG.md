@@ -1,5 +1,11 @@
 # @blaizejs/client
 
+## 0.3.2
+
+### Patch Changes
+
+- 761e75a: 🚀 Launch create-blaize-app; improved blaize-client configs
+
 ## 0.3.1
 
 ### Patch Changes

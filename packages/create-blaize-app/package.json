@@ -1,6 +1,6 @@
 {
   "name": "create-blaize-app",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Create BlaizeJS applications with zero configuration in under 60 seconds",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
