@@ -11,6 +11,7 @@
     "noEmitOnError": true,
     "moduleResolution": "bundler",
     "module": "ESNext",
+    "types": ["vitest/globals", "node"],
     "verbatimModuleSyntax": false,
     "emitDeclarationOnly": true
   }
