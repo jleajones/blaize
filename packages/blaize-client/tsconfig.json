@@ -5,12 +5,8 @@
     "rootDir": "../../packages",
     "tsBuildInfoFile": "./.tsbuildinfo",
     "exactOptionalPropertyTypes": false,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "baseUrl": "."
   },
-  "references": [{ "path": "../blaize-types" }],
-  "include": ["src/**/*.ts", "../blaize-types/src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "dist/**/*", "../blaize-types/dist/**/*"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist/**/*"]
 }

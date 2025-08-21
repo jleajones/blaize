@@ -1,14 +1,15 @@
 {
-  "extends": "@blaizejs/tsconfig/node.json",
+  "extends": "@blaizejs/tsconfig/library.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
-    "noEmit": true,
-    "moduleResolution": "bundler",
-    "module": "ESNext",
-    "types": ["node", "vitest/globals"],
-    "resolveJsonModule": true
+    "rootDir": ".",
+    "tsBuildInfoFile": "./.tsbuildinfo",
+    "exactOptionalPropertyTypes": false,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src/**/*"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts", "dist", "node_modules"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist/**/*"]
 }
