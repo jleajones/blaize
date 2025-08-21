@@ -31,7 +31,20 @@ export default defineConfig({
     // Custom coverage thresholds
     coverage: {
       reportsDirectory: './coverage',
-      exclude: ['**/node_modules/**', '**/test/**', '**/*.d.ts', '**/*.config.*', '**/examples/**'],
+      exclude: [
+        '**/dist/**',
+        '**/node_modules/**',
+        '**/test/**',
+        '**/*.d.ts',
+        '**/*.config.*',
+        '**/examples/**',
+        '**/index.ts',
+        // Templates
+        '**/templates/generators/generate-git-ignore.ts',
+        '**/templates/generators/generate-readme.ts',
+        '**/templates/generators/generate-ts-config.ts',
+        '**/templates/generators/generate-vitest-config.ts',
+      ],
       // Use the thresholds property for coverage targets
       thresholds: {
         lines: 80,
