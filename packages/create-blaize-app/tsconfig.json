@@ -2,10 +2,13 @@
   "extends": "@blaizejs/tsconfig/library.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "../../packages",
+    "rootDir": ".",
     "tsBuildInfoFile": "./.tsbuildinfo",
     "exactOptionalPropertyTypes": false,
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist/**/*"]
