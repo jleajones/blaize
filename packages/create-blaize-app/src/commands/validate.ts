@@ -34,7 +34,7 @@ export interface ValidatedInputs {
 export const validateInputs = async (args: ParsedArgs): Promise<Result<ValidatedInputs, Error>> => {
   const projectPath = path.resolve(process.cwd(), args.name);
 
-  // Check if directory already exists (unless dry-run)
+  // Check if file or directory already exists (unless dry-run)
   if (!args.dryRun && (await fs.pathExists(projectPath))) {
     const stats = await fs.stat(projectPath);
     if (stats.isDirectory()) {
@@ -46,6 +46,13 @@ export const validateInputs = async (args: ParsedArgs): Promise<Result<Validated
           'Choose a different name or remove the existing directory'
         );
       }
+    } else {
+      // Handle the case where a file exists at the target path
+      throw new CLIError(
+        `A file already exists at ${args.name}`,
+        'EEXIST',
+        'Choose a different name or remove the existing file'
+      );
     }
   }
 

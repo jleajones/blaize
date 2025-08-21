@@ -65,38 +65,45 @@ Examples:
  * Parse command line arguments
  */
 export const parseArgs = (argv: string[]): Result<ParsedArgs, Error> => {
+  // Parse with minimist first (outside try-catch for help/version handling)
+  const parsed = minimist(argv.slice(2), {
+    string: ['template', 'pm'],
+    boolean: ['typescript', 'git', 'install', 'latest', 'dry-run', 'help', 'version'],
+    alias: {
+      h: 'help',
+      v: 'version',
+      pm: 'packageManager',
+    },
+    default: {
+      typescript: true,
+      git: true,
+      install: true,
+      latest: false,
+      'dry-run': false,
+      template: 'minimal',
+    },
+  });
+
+  // Handle help flag (let process.exit mock throw if in test)
+  if (parsed.help) {
+    console.log(HELP_TEXT);
+    process.exit(0);
+    // This line will never execute in production,
+    // but provides a fallback for type safety
+    return ok({} as ParsedArgs);
+  }
+
+  // Handle version flag (let process.exit mock throw if in test)
+  if (parsed.version) {
+    // TODO: Read from package.json
+    console.log('0.1.0');
+    process.exit(0);
+    // This line will never execute in production,
+    // but provides a fallback for type safety
+    return ok({} as ParsedArgs);
+  }
+
   try {
-    // Parse with minimist
-    const parsed = minimist(argv.slice(2), {
-      string: ['template', 'pm'],
-      boolean: ['typescript', 'git', 'install', 'latest', 'dry-run', 'help', 'version'],
-      alias: {
-        h: 'help',
-        v: 'version',
-        pm: 'packageManager',
-      },
-      default: {
-        typescript: true,
-        git: true,
-        install: true,
-        latest: false,
-        'dry-run': false,
-        template: 'minimal',
-      },
-    });
-
-    // Handle help flag
-    if (parsed.help) {
-      console.log(HELP_TEXT);
-      process.exit(0);
-    }
-
-    // Handle version flag
-    if (parsed.version) {
-      // TODO: Read from package.json
-      console.log('0.1.0');
-      process.exit(0);
-    }
 
     // Get project name from first positional argument
     const projectName = parsed._[0];
