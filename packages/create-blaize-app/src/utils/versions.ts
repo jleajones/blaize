@@ -28,6 +28,9 @@ export const getDependencies = async (): Promise<Record<string, string>> => {
 export const getDevDependencies = async (): Promise<Record<string, string>> => {
   return {
     '@types/node': '^22.0.0',
+    '@types/selfsigned': '^2.1.0',
+    chokidar: '^4.0.3',
+    selfsigned: '^2.4.1',
     typescript: '^5.0.0',
     tsx: '^4.0.0',
   };
