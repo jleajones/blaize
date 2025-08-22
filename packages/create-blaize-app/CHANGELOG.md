@@ -1,5 +1,11 @@
 # create-blaize-app
 
+## 0.1.2
+
+### Patch Changes
+
+- d9c9149: ✨ 🐛 Enhancements and bug fixes
+
 ## 0.1.1
 
 ### Patch Changes
