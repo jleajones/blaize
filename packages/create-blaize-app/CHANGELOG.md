@@ -1,5 +1,11 @@
 # create-blaize-app
 
+## 0.1.1
+
+### Patch Changes
+
+- 9fbb42a: 🔨 fix create-blaize-app output to work by default
+
 ## 0.1.0
 
 ### Minor Changes
