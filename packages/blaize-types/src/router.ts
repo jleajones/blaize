@@ -6,7 +6,7 @@ import type { Middleware } from './middleware';
 /**
  * Helper type to extract TypeScript type from Zod schema
  */
-export type Infer<T> = T extends z.ZodType<infer R> ? R : unknown;
+export type Infer<T> = T extends z.ZodType ? z.output<T> : unknown;
 
 /**
  * HTTP methods supported by the router
