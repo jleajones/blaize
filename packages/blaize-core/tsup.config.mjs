@@ -8,7 +8,7 @@ export default createTsupConfig({
   format: ['esm', 'cjs'],
 
   // External packages not to bundle
-  external: ['zod'],
+  external: ['zod', 'chokidar', 'selfsigned'],
 
   // Clean chunks naming
   outExtension({ format }) {
