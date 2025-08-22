@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import * as crypto from 'node:crypto';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -338,7 +338,7 @@ async function initializeFileProcessing(state: ParserState): Promise<ParserState
     }
 
     case 'temp': {
-      const tempPath = join(state.options.tempDir, `upload-${randomUUID()}`);
+      const tempPath = join(state.options.tempDir, `upload-${crypto.randomUUID()}`);
       const writeStream = createWriteStream(tempPath);
       const cleanupTask = async () => {
         try {
