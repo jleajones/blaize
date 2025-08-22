@@ -1,5 +1,12 @@
 # blaizejs
 
+## 0.3.3
+
+### Patch Changes
+
+- 64a475e: ✨ Enhanced zod schema validation and type inference; add support for transformation
+- d9c9149: ✨ 🐛 Enhancements and bug fixes
+
 ## 0.3.2
 
 ### Patch Changes
