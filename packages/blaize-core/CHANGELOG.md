@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.3.4
+
+### Patch Changes
+
+- 669096a: 🐛 build was broken
+
 ## 0.3.3
 
 ### Patch Changes
