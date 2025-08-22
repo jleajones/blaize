@@ -132,12 +132,15 @@ blaize/
 ```bash
 # Using pnpm (recommended)
 pnpm add blaizejs
+pnpm add -D chokidar selfsigned # Development dependencies
 
 # Using npm
 npm install blaizejs
+npm install -D chokidar selfsigned # Development dependencies
 
 # Using yarn
 yarn add blaizejs
+yarn add -D chokidar selfsigned # Development dependencies
 ```
 
 ### 🔨 Create Your First Server

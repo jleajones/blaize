@@ -93,5 +93,4 @@ const Blaize = {
   VERSION,
 };
 
-export default Blaize;
 export { Blaize };
