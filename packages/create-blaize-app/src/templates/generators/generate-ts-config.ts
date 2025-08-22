@@ -52,7 +52,10 @@ export const generateTsConfig = (): string => {
       },
 
       // Type roots
-      types: ['vitest/globals', 'node'],
+      types: [
+        // 'vitest/globals',
+        'node',
+      ],
     },
     include: ['src/**/*'],
     exclude: ['node_modules', 'dist', '**/*.test.ts', '**/*.spec.ts'],

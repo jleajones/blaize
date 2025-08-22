@@ -36,13 +36,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const server = createServer({
-  port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
-  host: 'localhost',
-  routesDir: path.resolve(__dirname, './routes')
+  port: process.env.PORT ? parseInt(process.env.PORT) : 7485,
+  routesDir: path.resolve(__dirname, './routes'),
+  http2: {
+    enabled: true
+  }
 });
 
 await server.listen();
-console.log('🔥 BlaizeJS running on http://localhost:3000');
 `,
     },
     {
@@ -51,11 +52,13 @@ console.log('🔥 BlaizeJS running on http://localhost:3000');
 import { z } from 'zod';
 
 export const GET = createGetRoute({
-  response: z.object({
-    message: z.string(),
-    timestamp: z.string(),
-    version: z.string()
-  }),
+  schema: {
+    response: z.object({
+      message: z.string(),
+      timestamp: z.string(),
+      version: z.string()
+    })
+  },
   handler: async () => ({
     message: 'Welcome to BlaizeJS!',
     timestamp: new Date().toISOString(),
@@ -72,15 +75,17 @@ import { z } from 'zod';
 const HealthStatus = z.enum(['healthy', 'degraded', 'unhealthy']);
 
 export const GET = createGetRoute({
-  response: z.object({
-    status: HealthStatus,
-    uptime: z.number(),
-    timestamp: z.string(),
-    checks: z.object({
-      database: z.boolean().optional(),
-      redis: z.boolean().optional()
-    }).optional()
-  }),
+  schema: {
+    response: z.object({
+      status: HealthStatus,
+      uptime: z.number(),
+      timestamp: z.string(),
+      checks: z.object({
+        database: z.boolean().optional(),
+        redis: z.boolean().optional()
+      }).optional()
+    }) 
+  },
   handler: async () => {
     // Example of error handling
     if (process.env.FORCE_UNHEALTHY) {
@@ -104,7 +109,7 @@ export const GET = createGetRoute({
   getDependencies,
   getDevDependencies,
   scripts: {
-    dev: 'tsx --watch src/app.ts',
+    dev: 'NODE_ENV=development tsx --watch src/app.ts',
     build: 'tsc',
     start: 'node dist/app.js',
     'type-check': 'tsc --noEmit',
