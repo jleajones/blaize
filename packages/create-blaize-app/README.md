@@ -24,7 +24,7 @@ cd my-app
 npm run dev
 ```
 
-Your BlaizeJS application is now running at [http://localhost:3000](http://localhost:3000)! 🎉
+Your BlaizeJS application is now running at [http://localhost:3000](http://localhost:7485)! 🎉
 
 ## 📦 Installation
 
