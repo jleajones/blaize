@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import Blaize from 'blaizejs';
+import { Blaize } from 'blaizejs';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
