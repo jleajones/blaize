@@ -1,273 +1,64 @@
 # 🔥 BlaizeJS
 
-> **Modern, type-safe Node.js framework** for building blazing-fast APIs with end-to-end type safety, HTTP/2 support, and zero-configuration development
+> **The TypeScript-first Node.js framework with native RPC support** - Build type-safe APIs with automatic client generation, file-based routing, and progressive middleware pipelines
 
 [![npm version](https://badge.fury.io/js/blaizejs.svg)](https://badge.fury.io/js/blaizejs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-23.0+-green.svg)](https://nodejs.org/)
-[![Build Status](https://github.com/jleajones/blaize/workflows/Test/badge.svg)](https://github.com/jleajones/blaize/actions)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-## 🌟 Why BlaizeJS?
+## 🚀 What Makes BlaizeJS Different?
 
-BlaizeJS is a next-generation Node.js framework that brings together the best of modern web development:
+**BlaizeJS brings true RPC (Remote Procedure Call) to Node.js** - call your server functions directly from the client with full end-to-end type safety, no code generation, and zero configuration.
 
-- **🚀 Blazing Performance** - HTTP/2 by default with automatic HTTPS in development
-- **🔒 End-to-End Type Safety** - Full TypeScript support from server to client with automatic type inference
-- **⚡ Zero Configuration** - Works out of the box with sensible defaults and auto-discovery
-- **🎯 Developer Experience** - Hot reloading, intelligent error messages, and powerful debugging
-- **🏗️ Production Ready** - Built-in error handling, validation, middleware, and plugin system
+```typescript
+// 🖥️ Server: Define your function
+export const getUser = createGetRoute({
+  schema: { params: z.object({ id: z.string() }) },
+  handler: async (ctx) => {
+    return await db.users.findById(ctx.params.id);
+  }
+});
 
-## 📋 Table of Contents
+// 🔌 Client: Call it like a local function!
+const user = await client.$get.getUser({ params: { id: '123' } });
+//                              ^^^^^^^ Full type safety & autocomplete!
 
-- [🚀 Quick Start](#-quick-start)
-- [⚙️ Core Technologies](#️-core-technologies)
-- [📦 Project Structure](#-project-structure)
-- [🎯 Getting Started](#-getting-started)
-- [🔗 Advanced Usage with Client](#-advanced-usage-with-client)
-- [🧪 Testing](#-testing)
-- [🤝 Contributing](#-contributing)
-- [📦 Release Management](#-release-management)
-- [📚 Documentation](#-documentation)
-- [📄 License](#-license)
+// 🎯 That's it! No REST endpoints to document, no Axios, no type definitions. Just functions.
+```
 
-## 🚀 Quick Start
+### ✨ Key Features
 
-Get up and running with BlaizeJS in under a minute:
+- 🔌 **RPC-First Development** - Call server functions from the client with automatic type inference
+- 📂 **File-Based Routing** - Routes are automatically discovered from your file structure
+- 🧩 **Progressive Middleware** - Type-safe middleware that progressively enhances context
+- ⚡ **HTTP/2 Support** - Native HTTP/2 with automatic HTTPS in development
+- 🛡️ **End-to-End Type Safety** - Types flow seamlessly from server to client
+- 🎯 **Zero Configuration** - Works out of the box with sensible defaults
+- 🔄 **Hot Module Replacement** - Fast development with instant feedback
+
+## 📦 Quick Start
+
+Get started in under 60 seconds:
 
 ```bash
-# Create a new project
-npx create-blaize-app my-api
-cd my-api
+# Create a new BlaizeJS app
+npx create-blaize-app my-app
+cd my-app
 
-# Install dependencies
-pnpm install
-
-# Start development server
-pnpm dev
-
-# Your API is now running at https://localhost:3000 🎉
+# Start developing
+npm run dev
 ```
 
-## ⚙️ Core Technologies
+Visit `http://localhost:3000` to see your app running!
 
-BlaizeJS leverages modern, battle-tested technologies:
+## 🎯 Core Concepts
 
-### 🏗️ Framework Foundation
-- **Node.js 23+** - Latest JavaScript runtime features
-- **TypeScript 5.3+** - Advanced type system with full inference
-- **HTTP/2** - Modern protocol with multiplexing and server push
-- **Zod** - Runtime type validation with TypeScript integration
+### 🔌 RPC-Style API Development
 
-### 🛠️ Development Tools
-- **pnpm** - Fast, disk space efficient package manager
-- **Turbo** - High-performance build system for monorepos
-- **Vitest** - Blazing fast unit testing framework
-- **ESLint & Prettier** - Code quality and formatting
-- **Changesets** - Automated versioning and changelogs
-
-### 🎨 Architecture Patterns
-- **File-based Routing** - Automatic route discovery from file structure
-- **Middleware Pipeline** - Composable request/response processing
-- **Plugin System** - Extend functionality with lifecycle hooks
-- **AsyncLocalStorage** - Isolated context management per request
-
-## 📦 Project Structure
-
-BlaizeJS is organized as a monorepo with clear separation of concerns:
-
-```
-blaize/
-├── 📦 packages/                    # Core framework packages
-│   ├── blaize-core/               # Main framework (published as 'blaizejs')
-│   │   ├── src/
-│   │   │   ├── server/           # HTTP/2 server implementation
-│   │   │   ├── router/           # File-based routing engine
-│   │   │   ├── middleware/       # Middleware system
-│   │   │   ├── plugins/          # Plugin architecture
-│   │   │   ├── context/          # Request context management
-│   │   │   └── errors/           # Semantic error classes
-│   │   └── package.json
-│   │
-│   ├── blaize-client/             # Type-safe API client
-│   │   ├── src/
-│   │   │   ├── client.ts         # Proxy-based client creation
-│   │   │   ├── request.ts        # HTTP request handling
-│   │   │   └── errors/           # Client-side error handling
-│   │   └── package.json
-│   │
-│   ├── blaize-types/              # Shared TypeScript definitions
-│   └── blaize-testing-utils/      # Testing utilities
-│
-├── 🧩 plugins/                    # Official plugins (coming soon)
-│   ├── blaize-auth-plugin/        # Authentication & authorization
-│   └── blaize-database-plugin/    # Database integrations
-│
-├── 🎯 apps/                       # Applications & examples
-│   ├── docs/                      # Documentation website
-│   ├── examples/                  # Example applications
-│   └── playground/                # Development playground
-│
-├── ⚙️ configs/                    # Shared configurations
-│   ├── eslint-config/             # ESLint presets
-│   ├── typescript-config/         # TypeScript configs
-│   └── vitest-config/             # Test configuration
-│
-└── 📄 Root files
-    ├── package.json               # Workspace configuration
-    ├── pnpm-workspace.yaml       # pnpm workspace settings
-    ├── turbo.json                # Turbo build configuration
-    └── .changeset/               # Version management
-```
-
-## 🎯 Getting Started
-
-### 📋 Prerequisites
-
-- **Node.js**: >= 23.0.0
-- **pnpm**: >= 9.7.0
-
-### 🏁 Installation
-
-```bash
-# Using pnpm (recommended)
-pnpm add blaizejs
-pnpm add -D chokidar selfsigned # Development dependencies
-
-# Using npm
-npm install blaizejs
-npm install -D chokidar selfsigned # Development dependencies
-
-# Using yarn
-yarn add blaizejs
-yarn add -D chokidar selfsigned # Development dependencies
-```
-
-### 🔨 Create Your First Server
+BlaizeJS provides true RPC functionality similar to tRPC, but with cleaner HTTP semantics:
 
 ```typescript
-// server.ts
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-// ESM path resolution
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Create server with file-based routing
-const server = createServer({
-  port: 3000,
-  routesDir: path.resolve(__dirname, './routes'),
-  http2: { enabled: true }  // Auto-generates dev certificates
-});
-
-await server.listen();
-console.log('🚀 Server running at https://localhost:3000');
-```
-
-### 📁 Define Routes
-
-Create route files in your `routes` directory:
-
-```typescript
-// routes/users/[userId].ts
-import { createGetRoute, createPutRoute, NotFoundError } from 'blaizejs';
-import { z } from 'zod';
-
-// GET /users/:userId
-export const GET = createGetRoute({
-  schema: {
-    params: z.object({
-      userId: z.string().uuid()
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string(),
-      createdAt: z.string()
-    })
-  },
-  handler: async (ctx, params) => {
-    const user = await db.users.findById(params.userId);
-    
-    if (!user) {
-      throw new NotFoundError('User not found', {
-        resourceType: 'user',
-        resourceId: params.userId
-      });
-    }
-    
-    return user;
-  }
-});
-
-// PUT /users/:userId
-export const PUT = createPutRoute({
-  schema: {
-    params: z.object({
-      userId: z.string().uuid()
-    }),
-    body: z.object({
-      name: z.string().min(1).optional(),
-      email: z.string().email().optional()
-    })
-  },
-  handler: async (ctx, params) => {
-    const updatedUser = await db.users.update(params.userId, ctx.body);
-    return updatedUser;
-  }
-});
-```
-
-### 🔧 Add Middleware
-
-```typescript
-import { createMiddleware, compose } from 'blaizejs';
-
-// Logging middleware
-const logger = createMiddleware(async (ctx, next) => {
-  const start = Date.now();
-  console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
-  
-  await next();
-  
-  const duration = Date.now() - start;
-  console.log(`← ${ctx.response.statusCode} (${duration}ms)`);
-});
-
-// Authentication middleware
-const auth = createMiddleware({
-  name: 'auth',
-  handler: async (ctx, next) => {
-    const token = ctx.request.header('authorization');
-    
-    if (!token) {
-      throw new UnauthorizedError('No token provided');
-    }
-    
-    ctx.state.user = await verifyToken(token);
-    await next();
-  }
-});
-
-// Apply to server
-const server = createServer({
-  middleware: [logger, auth],
-  routesDir: './routes'
-});
-```
-
-## 🔗 Advanced Usage with Client
-
-BlaizeJS provides automatic client generation with full type safety:
-
-### 🎯 Server Setup
-
-First, export your route registry from the server:
-
-```typescript
-// server/routes/index.ts
+// server/routes/users.ts
 import { createGetRoute, createPostRoute } from 'blaizejs';
 import { z } from 'zod';
 
@@ -275,20 +66,12 @@ export const getUsers = createGetRoute({
   schema: {
     query: z.object({
       page: z.number().default(1),
-      limit: z.number().default(10)
-    }),
-    response: z.object({
-      users: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        email: z.string()
-      })),
-      total: z.number()
+      limit: z.number().max(100).default(10)
     })
   },
   handler: async (ctx) => {
-    const { page, limit } = ctx.request.query;
-    return await db.users.paginate(page, limit);
+    const { page, limit } = ctx.query;
+    return await db.users.paginate({ page, limit });
   }
 });
 
@@ -296,247 +79,239 @@ export const createUser = createPostRoute({
   schema: {
     body: z.object({
       name: z.string().min(1),
-      email: z.string().email(),
-      password: z.string().min(8)
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string()
+      email: z.string().email()
     })
   },
   handler: async (ctx) => {
-    return await db.users.create(ctx.body);
+    const user = await db.users.create(ctx.body);
+    return { id: user.id, name: user.name, email: user.email };
   }
 });
-
-// Export route registry for client
-export const routes = {
-  getUsers,
-  createUser
-} as const;
 ```
 
-### 🔌 Client Usage
+### 🔗 Type-Safe Client
 
-Install the client package:
-
-```bash
-pnpm add @blaizejs/client
-```
-
-Create a type-safe client:
+Install the client package and get automatic type inference:
 
 ```typescript
 // client/api.ts
 import bc from '@blaizejs/client';
-import { routes } from '../server/routes';
+import type { routes } from '../server/routes';
 
-// Create client with automatic type inference
-const api = bc.create('https://api.example.com', routes);
+const client = bc.create('https://api.example.com', routes);
 
-// Use with full type safety and autocompletion
-async function example() {
-  // GET request with query parameters
-  const { users, total } = await api.$get.getUsers({
-    query: { 
-      page: 2,      // ✅ Typed as number
-      limit: 20     // ✅ Typed as number
-    }
-  });
-  
-  console.log(users[0].name);  // ✅ Fully typed
-  console.log(users[0].age);   // ❌ TypeScript error - property doesn't exist
-  
-  // POST request with body
-  const newUser = await api.$post.createUser({
-    body: {
-      name: 'Jane Doe',         // ✅ Required string
-      email: 'jane@example.com', // ✅ Valid email required
-      password: 'secure123'      // ✅ Min 8 characters
-    }
-  });
-  
-  return newUser; // ✅ Return type is inferred
-}
-```
+// Full type safety and autocomplete!
+const users = await client.$get.getUsers({ 
+  query: { page: 2, limit: 20 } 
+});
 
-### 🛡️ Error Handling
-
-```typescript
-import { BlaizeError } from 'blaizejs';
-
-try {
-  const user = await api.$get.getUser({ 
-    params: { userId: '123' } 
-  });
-} catch (error) {
-  if (error instanceof BlaizeError) {
-    switch (error.status) {
-      case 404:
-        console.log('User not found');
-        break;
-      case 401:
-        console.log('Authentication required');
-        break;
-      case 500:
-        console.log('Server error:', error.correlationId);
-        break;
-    }
+const newUser = await client.$post.createUser({
+  body: { 
+    name: 'Jane Doe',
+    email: 'jane@example.com'
   }
-}
-```
-
-## 🧪 Testing
-
-BlaizeJS provides comprehensive testing utilities:
-
-```typescript
-import { describe, test, expect } from 'vitest';
-import { createTestContext } from '@blaizejs/testing-utils';
-import { GET } from './routes/users/[userId]';
-
-describe('User Routes', () => {
-  test('should return user by ID', async () => {
-    const ctx = createTestContext({
-      method: 'GET',
-      path: '/users/123',
-      params: { userId: '123' }
-    });
-    
-    const result = await GET.handler(ctx, { userId: '123' });
-    
-    expect(result).toEqual({
-      id: '123',
-      name: 'Test User',
-      email: 'test@example.com'
-    });
-  });
-  
-  test('should handle not found', async () => {
-    const ctx = createTestContext({
-      method: 'GET',
-      path: '/users/999'
-    });
-    
-    await expect(
-      GET.handler(ctx, { userId: '999' })
-    ).rejects.toThrow(NotFoundError);
-  });
 });
 ```
 
-### 🔧 Running Tests
+### 🧩 Progressive Middleware System
 
-```bash
-# Run all tests
-pnpm test
+Build composable, type-safe middleware pipelines where context enhancements are tracked:
 
-# Run tests in watch mode
-pnpm test:watch
+```typescript
+import { createMiddleware, compose } from 'blaizejs';
 
-# Generate coverage report
-pnpm test:coverage
+// Logger middleware
+const logger = createMiddleware({
+  name: 'logger',
+  handler: async (ctx, next) => {
+    const start = Date.now();
+    console.log(`→ ${ctx.request.method} ${ctx.request.url}`);
+    await next();
+    console.log(`← ${ctx.response.statusCode} (${Date.now() - start}ms)`);
+  }
+});
 
-# Test specific package
-pnpm --filter blaizejs test
+// Auth middleware that enhances context
+const auth = createMiddleware({
+  name: 'auth',
+  handler: async (ctx, next) => {
+    const token = ctx.request.header('authorization');
+    if (!token) throw new UnauthorizedError('No token');
+    
+    ctx.state.user = await verifyToken(token);
+    await next();
+  }
+});
+
+// Routes automatically know about middleware context!
+export const getProfile = createGetRoute({
+  middleware: [auth],
+  handler: async (ctx) => {
+    // TypeScript knows ctx.state.user exists here!
+    return { profile: ctx.state.user };
+  }
+});
 ```
 
-## 🤝 Contributing
+## 🌐 Building Public APIs
 
-We welcome contributions! BlaizeJS is built by the community, for the community.
+BlaizeJS excels at public APIs with automatic SDK generation:
 
-### 🚀 Quick Contribution Guide
+```typescript
+// server/api/v1/products.ts
+export const listProducts = createGetRoute({
+  schema: {
+    query: z.object({
+      category: z.string().optional(),
+      minPrice: z.number().optional(),
+      maxPrice: z.number().optional(),
+    }),
+    response: z.array(ProductSchema)
+  },
+  handler: async (ctx) => {
+    return await db.products.find(ctx.query);
+  }
+});
 
-1. **Fork & Clone**
-   ```bash
-   git clone https://github.com/[your-username]/blaize.git
-   cd blaize
-   pnpm install
-   ```
+// Your API consumers get:
+// 1. ✅ Type-safe JavaScript/TypeScript SDK
+// 2. ✅ Auto-generated API documentation  
+// 3. ✅ Validation error messages
+// 4. ✅ Versioning support via routes/v1, routes/v2
+// 5. ✅ Standard REST semantics (works with any HTTP client)
+```
 
-2. **Create Feature Branch**
-   ```bash
-   git checkout -b feature/amazing-feature
-   ```
+Unlike GraphQL or tRPC, BlaizeJS APIs are just REST:
+- Works with `curl`, Postman, or any HTTP client
+- Standard HTTP caching  
+- CDN friendly
+- No special client required (but you get a typed one free!)
 
-3. **Make Changes**
-   - Write code with tests
-   - Update documentation
-   - Follow TypeScript strict mode
+## 💡 Why Teams Choose BlaizeJS
 
-4. **Run Quality Checks**
-   ```bash
-   pnpm test
-   pnpm lint
-   pnpm type-check
-   ```
+**10x less code than Express:**
+```typescript
+// Express: 50+ lines with types, validation, error handling, documentation
+// BlaizeJS: 10 lines with everything built-in
 
-5. **Create Changeset**
-   ```bash
-   pnpm changeset
-   ```
+export const createUser = createPostRoute({
+  schema: {
+    body: z.object({
+      name: z.string(),
+      email: z.string().email()
+    })
+  },
+  handler: async (ctx) => db.users.create(ctx.body)
+});
+// ✅ Validated ✅ Typed ✅ Client SDK ready ✅ Error handled
+```
 
-6. **Submit Pull Request**
+**No more API maintenance overhead:**
+- ❌ No OpenAPI/Swagger schemas to maintain
+- ❌ No Postman collections to update  
+- ❌ No client SDKs to generate and publish
+- ❌ No API versioning headaches
+- ✅ Just write functions, get everything automatically
 
-### 📚 Full Guidelines
+## 📚 Ecosystem
 
-For detailed contribution guidelines, code standards, and development workflow:
+| Package | Version | Description |
+|---------|---------|-------------|
+| **[blaizejs](./packages/blaize-core)** | ![npm](https://img.shields.io/npm/v/blaizejs.svg) | Core framework with server, routing, and middleware |
+| **[@blaizejs/client](./packages/blaize-client)** | ![npm](https://img.shields.io/npm/v/@blaizejs/client.svg) | Type-safe RPC client for BlaizeJS APIs |
+| **[@blaizejs/testing-utils](./packages/blaize-testing-utils)** | ![npm](https://img.shields.io/npm/v/@blaizejs/testing-utils.svg) | Testing utilities for BlaizeJS applications |
+| **[create-blaize-app](./packages/create-blaize-app)** | ![npm](https://img.shields.io/npm/v/create-blaize-app.svg) | CLI for scaffolding BlaizeJS projects |
 
-**→ [CONTRIBUTING.md](CONTRIBUTING.md)**
+## 🎯 When to Use BlaizeJS
 
-## 📦 Release Management
+**BlaizeJS is perfect for:**
+- ✅ Full-stack TypeScript applications with type-safe client-server communication
+- ✅ Public REST APIs that need automatic client SDKs
+- ✅ Teams who want tRPC-style DX with REST semantics
+- ✅ Projects requiring real-time features (SSE, WebSockets)
+- ✅ Applications needing background job processing
+- ✅ Developers tired of maintaining API contracts manually
 
-BlaizeJS uses an automated release workflow with Changesets and GitHub Actions.
+**Consider alternatives if:**
+- ❌ You need multi-runtime support today (Cloudflare Workers, Bun, Deno) → use Hono
+- ❌ You require GraphQL as your primary API → use Apollo Server
+- ❌ You're not using TypeScript → use Express or Fastify
 
-### 🔄 Release Process
+## ⚡ Performance
 
-1. Merge PRs with changesets to `main`
-2. Bot creates/updates "Version Packages" PR
-3. Review and merge when ready to release
-4. Packages automatically published to npm
+BlaizeJS prioritizes **developer velocity** over micro-optimizations:
 
-### 📖 Detailed Documentation
+- **Fast enough** for 99% of production applications
+- **HTTP/2 native** with multiplexing and server push ready
+- **Optimized** for developer productivity and type safety
+- **Scalable** with standard Node.js deployment practices
 
-For complete release workflow, versioning strategy, and troubleshooting:
-
-**→ [RELEASE-MANAGEMENT.md](RELEASE-MANAGEMENT.md)**
-
-## 📚 Documentation
-
-- 📖 **[API Reference](packages/blaize-core/README.md)** - Complete framework API
-- 🔗 **[Client Documentation](packages/blaize-client/README.md)** - Type-safe client usage
-- 🧪 **[Testing Guide](packages/blaize-testing-utils/README.md)** - Testing utilities
-- 💡 **[Examples](apps/examples)** - Sample applications
-- 🎓 **[Tutorials](docs/tutorials)** - Step-by-step guides
+We focus on features that save you hours of development time. Benchmarks coming in v1.0.
 
 ## 🗺️ Roadmap
 
 ### ✅ Current (v0.3.x)
-- Core framework with HTTP/2
-- Type-safe client generation
-- Testing utilities
-- Error handling system
-- Middleware & plugins
+- ✅ Core server with HTTP/2 support
+- ✅ File-based routing with auto-discovery
+- ✅ RPC-style route creation
+- ✅ Type-safe client with automatic inference
+- ✅ Middleware system with composition
+- ✅ Plugin architecture
+- ✅ Comprehensive error handling
+- ✅ Schema validation with Zod
+- ✅ Testing utilities
+- ✅ Project scaffolding CLI
 
-### 🎯 MVP/1.0 Release
-- WebSocket support
-- Built-in auth plugin
-- Database integrations
-- CLI scaffolding tool
-- Performance monitoring
+### 🎯 Coming Soon (v1.0)
+- 🔄 **Streaming RPC** - Server-sent events with type-safe subscriptions
+- 🔄 **WebSocket RPC** - Bidirectional real-time function calls
+- 🔄 **Background Jobs** - Type-safe async job processing
+- 🔄 **Built-in Middleware** - Auth, CORS, rate limiting, compression
 
-### 🔮 Future (v1.1+)
-- GraphQL integration
-- gRPC support
-- Edge runtime compatibility
-- OpenAPI generation
-- Distributed tracing
+### 🔮 Future Vision
+- 📊 **BlaizeKV** - Managed cache/queue/pubsub service
+- 🎨 **DevTools** - Browser extension for debugging RPC calls
+- 📝 **OpenAPI Export** - Generate OpenAPI from your typed routes
+- 🌐 **Edge Runtime** - Deploy to Cloudflare Workers/Vercel Edge
 
-## 📞 Support
+## 🌟 Why BlaizeJS?
 
-- 🐛 **[Issues](https://github.com/jleajones/blaize/issues)** - Bug reports and feature requests
-- 💬 **[Discussions](https://github.com/jleajones/blaize/discussions)** - Questions and ideas
+| Feature | BlaizeJS | Express | Fastify | Hono |
+|---------|----------|---------|---------|------|
+| **RPC Support** | ✅ Native | ❌ No | ❌ No | ✅ Via RPC |
+| **Type Safety** | ✅ End-to-end | ⚠️ Partial | ⚠️ Partial | ✅ Yes |
+| **File Routing** | ✅ Built-in | ❌ No | ❌ No | ✅ Yes |
+| **HTTP/2** | ✅ Native | ⚠️ Manual | ✅ Yes | ✅ Yes |
+| **Auto Client** | ✅ Yes | ❌ No | ❌ No | ✅ Via RPC |
+| **Zero Config** | ✅ Yes | ❌ No | ⚠️ Partial | ✅ Yes |
+
+## 🤝 Contributing
+
+We welcome contributions! See our [Contributing Guide](./CONTRIBUTING.md) for details.
+
+```bash
+# Clone the repository
+git clone https://github.com/jleajones/blaize.git
+cd blaize
+
+# Install dependencies (we use pnpm)
+pnpm install
+
+# Run tests
+pnpm test
+
+# Start playground
+pnpm dev
+```
+
+## 📖 Documentation
+
+- [Getting Started Guide](./docs/guides/getting-started.md)
+- [RPC & Client Guide](./docs/guides/rpc-client.md)  
+- [Middleware Guide](./docs/guides/middleware.md)
+- [Testing Guide](./docs/guides/testing.md)
+- [API Reference](./docs/reference/api.md)
+- [Examples](./examples)
 
 ## 📄 License
 
@@ -545,7 +320,9 @@ MIT © [BlaizeJS Team](https://github.com/jleajones)
 ---
 
 <div align="center">
-  <strong>Built with ❤️ by the BlaizeJS team</strong>
+  <strong>Built with ❤️ by developers, for developers</strong>
   <br />
-  <sub>Fast, safe, and delightful API development for the modern web</sub>
+  <a href="https://github.com/jleajones/blaize">GitHub</a> •
+  <a href="https://discord.gg/blaizejs">Discord</a> •
+  <a href="https://twitter.com/blaizejs">Twitter</a>
 </div>
