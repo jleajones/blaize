@@ -3,6 +3,11 @@
   "globalDependencies": ["**/.env.*local", "tsconfig.json", "packages/blaize-types/src/**"],
   "ui": "tui",
   "tasks": {
+    "bench": {
+      "dependsOn": ["^build"],
+      "inputs": ["packages/blaize-types/src/**/*.bench.ts"],
+      "cache": false
+    },
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],

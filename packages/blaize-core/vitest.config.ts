@@ -48,5 +48,8 @@ export default defineConfig({
         statements: 80,
       },
     },
+    benchmark: {
+      // TODO look into these options
+    },
   },
 });

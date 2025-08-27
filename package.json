@@ -3,19 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "bench": "turbo run bench",
     "build": "turbo run build",
+    "changeset": "changeset",
+    "clean": "turbo run clean",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
-    "clean": "turbo run clean",
-    "type-check": "turbo run type-check",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
+    "release": "changeset publish",
     "test:coverage": "turbo run test:coverage --filter=blaizejs",
-    "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "changeset publish"
+    "type-check": "turbo run type-check",
+    "version-packages": "changeset version"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.4",

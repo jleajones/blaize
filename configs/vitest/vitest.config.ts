@@ -5,7 +5,6 @@ export default defineConfig({
   test: {
     // Use global test APIs without imports (describe, it, expect)
     globals: true,
-
     // Use jsdom for DOM APIs if needed
     environment: 'node',
 

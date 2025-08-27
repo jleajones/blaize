@@ -28,6 +28,7 @@
     "dist"
   ],
   "scripts": {
+    "bench": "vitest bench",
     "dev": "NODE_ENV=development tsx --watch src/examples/basic.ts",
     "build": "NODE_ENV=production tsup --minify",
     "build:watch": "NODE_ENV=production tsup --watch",

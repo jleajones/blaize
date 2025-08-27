@@ -29,7 +29,6 @@ export function createTsupConfig(options = {}) {
     format: ['esm'],
 
     // Generate .d.ts files
-
     dts: {
       compilerOptions: {
         composite: false,
