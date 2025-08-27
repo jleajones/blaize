@@ -1,41 +1,20 @@
-import { Context, QueryParams, State } from '../../../blaize-types/src';
+import type { Context, State, QueryParams } from '../../../blaize-types/src';
 
-/**
- * Configuration options for creating test contexts
- */
-export interface TestContextConfig {
+export interface TestContextConfig<TState extends State = State, TRequest = unknown> {
   method?: string;
   path?: string;
   query?: Record<string, string | string[]>;
   params?: Record<string, string>;
   headers?: Record<string, string>;
-  body?: unknown;
-  initialState?: Record<string, unknown>;
+  body?: TRequest;
+  initialState?: Partial<TState>;
 }
 
-/**
- * Create a test context for BlaizeJS testing
- *
- * Creates a complete Context object suitable for testing route handlers and middleware.
- *
- * @param config Configuration options for the context
- * @returns Complete BlaizeJS Context object
- *
- * @example
- * ```typescript
- * // Basic usage
- * const ctx = createTestContext();
- *
- * // With configuration
- * const ctx = createTestContext({
- *   method: 'POST',
- *   path: '/api/users',
- *   body: { name: 'John Doe' },
- *   headers: { authorization: 'Bearer token' }
- * });
- * ```
- */
-export function createMockContext(config: TestContextConfig = {}): Context {
+export function createMockContext<
+  TState extends State = State,
+  TRequest = unknown,
+  TQuery extends QueryParams = QueryParams,
+>(config: TestContextConfig<TState, TRequest> = {}): Context<TState, TRequest, TQuery> {
   const {
     method = 'GET',
     path = '/test',
@@ -47,7 +26,7 @@ export function createMockContext(config: TestContextConfig = {}): Context {
   } = config;
 
   // Create response object that properly chains
-  const responseObj: Context['response'] = {
+  const responseObj: Context<TState, TRequest, TQuery>['response'] = {
     raw: null as any, // Mock response object
     sent: false,
 
@@ -78,12 +57,12 @@ export function createMockContext(config: TestContextConfig = {}): Context {
       raw: null as any, // Mock request object
       method,
       path,
-      url: null, // URL object would be parsed in real implementation
-      query: query as QueryParams,
+      url: null as any, // URL object would be parsed in real implementation
+      query: query as TQuery,
       params,
       protocol: 'http',
       isHttp2: false,
-      body,
+      body: body as TRequest,
 
       // Required header function
       header: vi.fn().mockImplementation((name: string): string | undefined => {
@@ -104,6 +83,6 @@ export function createMockContext(config: TestContextConfig = {}): Context {
         }),
     },
     response: responseObj,
-    state: { ...initialState } as State,
+    state: { ...initialState } as TState,
   };
 }

@@ -11,6 +11,7 @@ import {
   createMockHttpServer,
   resetServerMocks,
   createMockRoutesSet,
+  createMockContext,
   mockGetRoute,
   mockDeleteRoute,
   mockPatchRoute,
@@ -19,6 +20,7 @@ import {
 } from './mocks';
 
 export {
+  createMockContext,
   createMockHttp1Request,
   createMockHttp2Request,
   createMockResponse,
