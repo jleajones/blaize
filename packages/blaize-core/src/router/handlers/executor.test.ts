@@ -12,8 +12,12 @@ import type { RouteMethodOptions } from '@blaize-types/router';
 // Mock the dependencies
 vi.mock('../../middleware/compose', () => ({
   compose: vi.fn(_middleware => {
-    return async (ctx: any, next: any) => {
-      await next();
+    return {
+      name: 'mock-composed-middleware',
+      execute: async (ctx: any, next: any) => {
+        await next();
+      },
+      _types: {},
     };
   }),
 }));
@@ -156,8 +160,12 @@ describe('executeHandler', () => {
 
     // Mock compose to throw an error
     (compose as any).mockImplementationOnce(() => {
-      return async () => {
-        throw error;
+      return {
+        name: 'mock-error-throwing-middleware',
+        execute: async () => {
+          throw error;
+        },
+        _types: {},
       };
     });
 

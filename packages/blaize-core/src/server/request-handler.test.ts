@@ -67,7 +67,11 @@ describe('createRequestHandler - Complete Test Suite', () => {
       },
     };
 
-    mockHandler = vi.fn();
+    mockHandler = {
+      name: 'composed-mock-handler',
+      execute: vi.fn(),
+      _types: {},
+    };
     mockErrorBoundary = { name: 'error-boundary', execute: vi.fn() };
 
     // Configure mocks with vi.mocked() for type safety
@@ -143,14 +147,14 @@ describe('createRequestHandler - Complete Test Suite', () => {
         await next();
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, next);
       });
 
       const handler = createRequestHandler(mockServer);
       await handler(mockReq, mockRes);
 
-      expect(mockHandler).toHaveBeenCalledWith(mockContext, expect.any(Function));
+      expect(mockHandler.execute).toHaveBeenCalledWith(mockContext, expect.any(Function));
     });
   });
 
@@ -194,7 +198,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
       });
 
       // Configure handler to execute final route logic (which throws NotFoundError)
-      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, next);
       });
 
@@ -226,7 +230,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         await next();
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, next);
       });
 
@@ -248,7 +252,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         await next();
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, next);
       });
 
@@ -280,7 +284,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
       });
 
       // Configure middleware to throw the error
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, async () => {
           throw testError; // Actually throw the error
         });
@@ -330,7 +334,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         }
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, async () => {
           throw testError; // Actually throw the error
         });
@@ -379,7 +383,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         }
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, async () => {
           throw unexpectedError; // Actually throw the error
         });
@@ -421,7 +425,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         }
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, next);
       });
 
@@ -457,7 +461,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         }
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, async () => {
           throw testError;
         });
@@ -509,7 +513,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         await next(); // No errors thrown
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, next);
       });
 
@@ -532,7 +536,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         await next();
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, next);
       });
 
@@ -557,7 +561,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         }
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, async () => {
           throw stringError; // Actually throw string error
         });
@@ -591,7 +595,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         }
       });
 
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, async () => {
           throw null; // Actually throw null
         });
@@ -639,7 +643,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         });
 
       // Mock the composed handler to execute middleware in order
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+      mockHandler.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
         await mockErrorBoundary.execute(ctx, async () => {
           await mockServer.middleware[0]!.execute(ctx, async () => {
             await mockServer.middleware[1]!.execute(ctx, _next);

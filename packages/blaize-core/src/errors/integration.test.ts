@@ -64,7 +64,7 @@ describe('Error Boundary Integration Tests', () => {
       });
 
       const middlewareChain = compose([errorBoundary, routeHandler]);
-      await middlewareChain(mockContext, async () => {});
+      await middlewareChain.execute(mockContext, async () => {});
 
       expect(mockContext.response.status).toHaveBeenCalledWith(400);
       expect(mockContext.response.json).toHaveBeenCalledWith({
@@ -113,7 +113,7 @@ describe('Error Boundary Integration Tests', () => {
       });
 
       const middlewareChain = compose([errorBoundary, authMiddleware, routeHandler]);
-      await middlewareChain(mockContext, async () => {});
+      await middlewareChain.execute(mockContext, async () => {});
 
       expect(mockContext.response.header).toHaveBeenCalledWith('x-correlation-id', correlationId);
       expect(mockContext.response.json).toHaveBeenCalledWith({
@@ -140,7 +140,7 @@ describe('Error Boundary Integration Tests', () => {
       });
 
       const middlewareChain = compose([errorBoundary, faultyMiddleware]);
-      await middlewareChain(mockContext, async () => {});
+      await middlewareChain.execute(mockContext, async () => {});
 
       expect(mockContext.response.status).toHaveBeenCalledWith(500);
       expect(mockContext.response.json).toHaveBeenCalledWith({
@@ -175,7 +175,7 @@ describe('Error Boundary Integration Tests', () => {
       });
 
       const middlewareChain = compose([errorBoundary, firstMiddleware, secondMiddleware]);
-      await middlewareChain(mockContext, async () => {});
+      await middlewareChain.execute(mockContext, async () => {});
 
       // Should only see the first error that occurred
       expect(mockContext.response.status).toHaveBeenCalledWith(401);
@@ -209,7 +209,7 @@ describe('Error Boundary Integration Tests', () => {
       });
 
       const middlewareChain = compose([errorBoundary, responseMiddleware, errorMiddleware]);
-      await middlewareChain(mockContext, async () => {});
+      await middlewareChain.execute(mockContext, async () => {});
 
       // Should only have been called once by responseMiddleware
       expect(mockContext.response.json).toHaveBeenCalledTimes(1);
@@ -253,7 +253,7 @@ describe('Error Boundary Integration Tests', () => {
       });
 
       const middlewareChain = compose([errorBoundary, validationMiddleware, routeHandler]);
-      await middlewareChain(mockContext, async () => {});
+      await middlewareChain.execute(mockContext, async () => {});
 
       expect(mockContext.response.status).toHaveBeenCalledWith(400);
       expect(mockContext.response.json).toHaveBeenCalledWith({
@@ -308,7 +308,7 @@ describe('Error Boundary Integration Tests', () => {
       // Error boundary first in chain
       const middlewareChain = compose([errorBoundary, middleware1, middleware2, errorMiddleware]);
 
-      await middlewareChain(mockContext, async () => {});
+      await middlewareChain.execute(mockContext, async () => {});
 
       expect(mockContext.response.status).toHaveBeenCalledWith(404);
       expect(mockContext.response.json).toHaveBeenCalledWith(

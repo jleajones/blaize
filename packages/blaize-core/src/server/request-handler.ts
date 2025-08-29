@@ -25,7 +25,7 @@ export function createRequestHandler(serverInstance: Server): RequestHandler {
 
       // Run the request with context in AsyncLocalStorage
       await runWithContext(context, async () => {
-        await handler(context, async () => {
+        await handler.execute(context, async () => {
           if (!context.response.sent) {
             // Let the router handle the request
             await serverInstance.router.handleRequest(context);

@@ -30,7 +30,7 @@ export async function executeHandler(
   const handler = compose([...middleware]);
 
   // Execute the middleware chain
-  await handler(ctx, async () => {
+  await handler.execute(ctx, async () => {
     // Execute the handler with the new argument style
     const result = await routeOptions.handler(ctx, params);
 
