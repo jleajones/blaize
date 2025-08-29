@@ -1,18 +1,17 @@
-import type { Plugin, PluginFactory, PluginHooks } from '@blaize-types/plugins';
-import type { Server } from '@blaize-types/server';
+import type { Plugin, PluginFactory, PluginSetup } from '@blaize-types/plugins';
 
 /**
- * Create a plugin with the given name, version, and setup function
+ * Create a typed plugin with server and context type tracking
+ * @template T - Options type
+ * @template TServerMods - Server modifications this plugin makes
+ * @template TContextMods - Context modifications this plugin makes
  */
-export function create<T = any>(
+export function create<T = any, TServerMods = unknown, TContextMods = unknown>(
   name: string,
   version: string,
-  setup: (
-    app: Server,
-    options: T
-  ) => void | Partial<PluginHooks> | Promise<void> | Promise<Partial<PluginHooks>>,
+  setup: PluginSetup<T, TServerMods>,
   defaultOptions: Partial<T> = {}
-): PluginFactory<T> {
+): PluginFactory<T, TServerMods, TContextMods> {
   // Input validation
   if (!name || typeof name !== 'string') {
     throw new Error('Plugin name must be a non-empty string');
@@ -32,12 +31,18 @@ export function create<T = any>(
     const mergedOptions = { ...defaultOptions, ...userOptions } as T;
 
     // Create the base plugin object
-    const plugin: Plugin = {
+    const plugin: Plugin<TServerMods, TContextMods> = {
       name,
       version,
 
+      // Type manifest for compile-time tracking
+      _types: {
+        serverMods: undefined as unknown as TServerMods,
+        contextMods: undefined as unknown as TContextMods,
+      },
+
       // The register hook calls the user's setup function
-      register: async (app: Server) => {
+      register: async app => {
         const result = await setup(app, mergedOptions);
 
         // If setup returns hooks, merge them into this plugin

@@ -1,4 +1,4 @@
-# 🧩 BlaizeJS Plugins Module
+# 🧩 BlaizeJS Plugins
 
 > **Extensible plugin system** for adding functionality to your BlaizeJS applications with lifecycle hooks, middleware integration, and seamless server augmentation
 >
@@ -21,34 +21,28 @@
 - [🧪 Testing](#-testing)
 - [📚 Type Reference](#-type-reference)
 - [🗺️ Roadmap](#️-roadmap)
-- [🤝 Contributing](#-contributing)
 
 ## 🌟 Features
 
-- 🏗️ **Simple API** - Create plugins with factory functions and configuration
-- ♻️ **Lifecycle Hooks** - Initialize, start, stop, and terminate phases
-- 🔗 **Server Integration** - Seamlessly extend server functionality
-- 🎯 **Type-Safe Options** - Full TypeScript support with type inference
-- 🔄 **Async/Sync Support** - Handle both patterns in lifecycle hooks
-- 🧩 **Composable** - Plugins can work together and share state
-- 📊 **Ordered Execution** - Predictable initialization and termination order
-- 🛡️ **Error Resilience** - Configurable error handling strategies
-- 🧪 **Testing Utilities** - Comprehensive mocks and helpers
-- ⚙️ **Zero Configuration** - Works out of the box with sensible defaults
+🏗️ **Simple Factory API** - Create plugins with typed factory functions and configuration
+♻️ **Lifecycle Hooks** - Initialize, start, stop, and terminate phases with async support
+🔗 **Server Extension** - Add methods and properties directly to server instances
+🎯 **Context Modification** - Extend request context through middleware integration
+🔄 **Middleware Composition** - Use compose() for multi-middleware plugins
+🧩 **Type-Safe Integration** - Full TypeScript support with server and context type tracking
+📊 **Ordered Execution** - Predictable initialization and termination order
+🛡️ **Error Resilience** - Configurable error handling strategies
+🧪 **Testing Utilities** - Comprehensive mocks and helpers
+⚙️ **Zero Configuration** - Works out of the box with sensible defaults
 
 ## 📦 Installation
 
-Plugins are included with the main BlaizeJS package:
-
 ```bash
-# Using pnpm (recommended)
+# Plugins are included with the main BlaizeJS package
 pnpm add blaizejs
 
-# Using npm
-npm install blaizejs
-
-# Using yarn
-yarn add blaizejs
+# For testing plugins
+pnpm add -D @blaizejs/testing-utils
 ```
 
 ## 🚀 Quick Start
@@ -56,49 +50,71 @@ yarn add blaizejs
 ### Creating Your First Plugin
 
 ```typescript
-import { createPlugin } from 'blaizejs';
-import type { Server } from 'blaizejs';
+import { createPlugin, createMiddleware } from 'blaizejs';
 
-// Simple plugin without lifecycle hooks
+// Simple logging plugin that adds middleware
 const loggingPlugin = createPlugin(
   'logger',
   '1.0.0',
-  (server: Server, options) => {
-    console.log(`Logger initialized with level: ${options.level}`);
-    
-    // Add middleware to the server
-    server.use(createMiddleware({
+  (server, options) => {
+    // Add logging middleware to the server
+    const loggerMiddleware = createMiddleware({
       name: 'request-logger',
       handler: async (ctx, next) => {
         console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
+        const start = Date.now();
+        
         await next();
-        console.log(`← ${ctx.response.statusCode}`);
+        
+        const duration = Date.now() - start;
+        console.log(`← ${ctx.response.statusCode} (${duration}ms)`);
       }
-    }));
+    });
+    
+    server.use(loggerMiddleware);
+    console.log(`Logger initialized with level: ${options.level}`);
   },
   { level: 'info' } // Default options
 );
 
-// Plugin with lifecycle hooks
+// Database plugin with lifecycle hooks
 const databasePlugin = createPlugin(
   'database',
   '2.0.0',
-  async (server, options) => {
-    let connection: DatabaseConnection;
+  (server, options) => {
+    let pool: DatabasePool;
+    
+    // Add database methods to server instance
+    server.queryRaw = (sql: string) => pool.query(sql);
+    server.closeConnections = () => pool.close();
+    
+    // Add database context via middleware
+    const dbMiddleware = createMiddleware({
+      name: 'database-context',
+      handler: async (ctx, next) => {
+        ctx.db = {
+          query: (sql) => pool.query(sql),
+          transaction: (fn) => pool.transaction(fn)
+        };
+        await next();
+      }
+    });
+    
+    server.use(dbMiddleware);
     
     return {
       initialize: async () => {
         console.log('Connecting to database...');
-        connection = await connectToDatabase(options.url);
+        pool = await createPool(options.connectionString);
       },
       
       terminate: async () => {
-        console.log('Closing database connection...');
-        await connection.close();
+        console.log('Closing database connections...');
+        await pool.close();
       }
     };
   },
-  { url: 'postgresql://localhost:5432/myapp' }
+  { connectionString: 'postgresql://localhost:5432/myapp' }
 );
 ```
 
@@ -111,24 +127,28 @@ const server = createServer({
   port: 3000,
   plugins: [
     loggingPlugin(),                    // Use default options
-    databasePlugin({ url: process.env.DATABASE_URL }), // Override options
+    databasePlugin({ 
+      connectionString: process.env.DATABASE_URL 
+    }), // Override options
   ]
 });
+
+// TypeScript knows about plugin modifications
+await server.queryRaw('SELECT * FROM users');  // From database plugin
+await server.closeConnections();               // From database plugin
 
 await server.listen();
 ```
 
-### Adding Plugins at Runtime
+### Context Modifications in Routes
 
 ```typescript
-// Plugins can also be registered after server creation
-const server = createServer({ port: 3000 });
-
-// Register plugins dynamically
-await server.register(authPlugin());
-await server.register(cachePlugin({ ttl: 3600 }));
-
-await server.listen();
+// Context modifications are available in route handlers
+server.get('/api/users', async (ctx) => {
+  // ctx.db available from database plugin middleware
+  const users = await ctx.db.query('SELECT * FROM users');
+  return { users };
+});
 ```
 
 ## 📖 Core Concepts
@@ -137,19 +157,23 @@ await server.listen();
 
 Every plugin follows this lifecycle:
 
-1. **Registration** - Plugin is added to the server
-2. **Initialization** - Setup resources and connections
-3. **Server Start** - Server begins accepting requests
-4. **Server Stop** - Server stops accepting new requests
-5. **Termination** - Cleanup and resource disposal
+1. **Registration** - Plugin factory creates instance with options
+2. **Server Setup** - Plugin setup function runs, modifies server
+3. **Initialization** - Optional initialize() hook runs
+4. **Server Start** - Optional onServerStart() hook runs
+5. **Server Stop** - Optional onServerStop() hook runs
+6. **Termination** - Optional terminate() hook runs for cleanup
 
 ```typescript
 const plugin = createPlugin(
   'lifecycle-example',
   '1.0.0',
-  async (server, options) => {
-    // Registration phase - runs immediately
-    console.log('Plugin registered');
+  (server, options) => {
+    // Registration phase - setup function runs immediately
+    console.log('Plugin registered and setting up...');
+    
+    // Modify server or add middleware here
+    server.customMethod = () => 'Hello from plugin!';
     
     return {
       // Optional lifecycle hooks
@@ -173,40 +197,50 @@ const plugin = createPlugin(
 );
 ```
 
-### 🔗 Plugin Composition
+### 🔗 Plugin Composition with Middleware
 
-Plugins can work together and share functionality:
+Plugins integrate with BlaizeJS middleware system for context modifications:
 
 ```typescript
-// Database plugin provides connection
-const databasePlugin = createPlugin(
-  'database',
+const authPlugin = createPlugin(
+  'auth',
   '1.0.0',
   (server, options) => {
-    const db = new Database(options);
+    const authService = new AuthService(options.secret);
     
-    // Make database available to other plugins
-    server.context.setGlobal('db', db);
+    // Add server methods
+    server.verifyToken = (token) => authService.verify(token);
     
-    return {
-      initialize: async () => await db.connect(),
-      terminate: async () => await db.close()
-    };
-  }
-);
-
-// Cache plugin uses database
-const cachePlugin = createPlugin(
-  'cache',
-  '1.0.0',
-  (server, options) => {
+    // Add context modifications via middleware
+    const authMiddleware = createMiddleware({
+      name: 'auth-context',
+      handler: async (ctx, next) => {
+        const token = ctx.request.header('authorization');
+        
+        if (token) {
+          try {
+            ctx.user = await authService.verify(token);
+            ctx.authenticated = true;
+          } catch (error) {
+            ctx.authenticated = false;
+          }
+        } else {
+          ctx.authenticated = false;
+        }
+        
+        await next();
+      }
+    });
+    
+    server.use(authMiddleware);
+    
     return {
       initialize: async () => {
-        const db = server.context.getGlobal('db');
-        // Use database connection for cache
+        await authService.initialize();
       }
     };
-  }
+  },
+  { secret: process.env.JWT_SECRET }
 );
 ```
 
@@ -214,17 +248,17 @@ const cachePlugin = createPlugin(
 
 ### `createPlugin`
 
-Creates a plugin factory function that can be instantiated with options.
+Creates a plugin factory function with full type safety for server and context modifications.
 
 #### Signature
 
 ```typescript
-function createPlugin<T = any>(
+function createPlugin<T = any, TServerMods = unknown, TContextMods = unknown>(
   name: string,
   version: string,
   setup: (server: Server, options: T) => void | Partial<PluginHooks> | Promise<void> | Promise<Partial<PluginHooks>>,
   defaultOptions?: Partial<T>
-): PluginFactory<T>
+): PluginFactory<T, TServerMods, TContextMods>
 ```
 
 #### Parameters
@@ -242,7 +276,7 @@ Returns a `PluginFactory` function that creates plugin instances.
 
 ### Plugin Lifecycle Hooks
 
-All lifecycle hooks are optional:
+All lifecycle hooks are optional and returned from the setup function:
 
 ```typescript
 interface PluginHooks {
@@ -265,54 +299,73 @@ interface PluginHooks {
 ### 🔐 Authentication Plugin
 
 ```typescript
-const authPlugin = createPlugin(
+import { createPlugin, createMiddleware } from 'blaizejs';
+
+interface AuthConfig {
+  secret: string;
+  publicPaths: string[];
+}
+
+interface AuthServerMods {
+  verifyToken: (token: string) => Promise<User>;
+  generateToken: (user: User) => Promise<string>;
+}
+
+interface AuthContextMods {
+  user?: User;
+  authenticated: boolean;
+}
+
+const authPlugin = createPlugin<AuthConfig, AuthServerMods, AuthContextMods>(
   'auth',
   '1.0.0',
   (server, options) => {
-    const authService = new AuthService(options);
+    const authService = new AuthService(options.secret);
     
-    // Add auth middleware globally
-    server.use(createMiddleware({
-      name: 'auth',
+    // Server modifications - TypeScript knows server is Server & AuthServerMods
+    server.verifyToken = (token) => authService.verify(token);
+    server.generateToken = (user) => authService.generate(user);
+    
+    // Context modifications via middleware
+    const authMiddleware = createMiddleware({
+      name: 'auth-context',
       handler: async (ctx, next) => {
         const token = ctx.request.header('authorization');
         
-        if (!token && !options.allowAnonymous) {
-          throw new UnauthorizedError('Authentication required');
-        }
-        
         if (token) {
-          ctx.state.user = await authService.verifyToken(token);
+          try {
+            // Direct context modification (not ctx.state)
+            ctx.user = await authService.verify(token);
+            ctx.authenticated = true;
+          } catch (error) {
+            ctx.authenticated = false;
+            if (!options.publicPaths.includes(ctx.request.path)) {
+              throw new UnauthorizedError('Invalid token');
+            }
+          }
+        } else {
+          ctx.authenticated = false;
+          if (!options.publicPaths.includes(ctx.request.path)) {
+            throw new UnauthorizedError('Authentication required');
+          }
         }
         
         await next();
-      },
-      skip: ctx => {
-        // Skip auth for public routes
-        return options.publicPaths.some(path => 
-          ctx.request.path.startsWith(path)
-        );
       }
-    }));
+    });
     
-    // Make auth service available
-    server.context.setGlobal('auth', authService);
+    server.use(authMiddleware);
     
     return {
       initialize: async () => {
         await authService.initialize();
         console.log('Auth plugin initialized');
-      },
-      
-      terminate: async () => {
-        await authService.cleanup();
       }
     };
   },
   {
-    allowAnonymous: false,
-    publicPaths: ['/health', '/public'],
-    tokenSecret: process.env.JWT_SECRET
+    secret: process.env.JWT_SECRET || 'default-secret',
+    publicPaths: ['/health', '/public', '/login']
   }
 );
 ```
@@ -320,173 +373,197 @@ const authPlugin = createPlugin(
 ### 📊 Database Plugin
 
 ```typescript
-const databasePlugin = createPlugin(
+import { createPlugin, createMiddleware } from 'blaizejs';
+
+interface DatabaseConfig {
+  connectionString: string;
+  poolSize?: number;
+}
+
+interface DatabaseServerMods {
+  queryRaw: (sql: string) => Promise<any[]>;
+  closeConnections: () => Promise<void>;
+}
+
+interface DatabaseContextMods {
+  db: {
+    query: (sql: string) => Promise<any[]>;
+    transaction: <T>(fn: (tx: any) => Promise<T>) => Promise<T>;
+  };
+}
+
+const databasePlugin = createPlugin<DatabaseConfig, DatabaseServerMods, DatabaseContextMods>(
   'database',
-  '2.0.0',
+  '1.0.0',
   (server, options) => {
     let pool: DatabasePool;
+    
+    // Server modifications - server becomes Server & DatabaseServerMods
+    server.queryRaw = (sql: string) => pool.query(sql);
+    server.closeConnections = () => pool.close();
+    
+    // Context modifications via middleware
+    const dbMiddleware = createMiddleware({
+      name: 'database-context',
+      handler: async (ctx, next) => {
+        // Direct context property (not ctx.state)
+        ctx.db = {
+          query: (sql) => pool.query(sql),
+          transaction: (fn) => pool.transaction(fn)
+        };
+        await next();
+      }
+    });
+    
+    server.use(dbMiddleware);
     
     return {
       initialize: async () => {
         console.log('Connecting to database...');
-        pool = await createPool(options);
-        
-        // Make database available in context
-        server.context.setGlobal('db', {
-          query: pool.query.bind(pool),
-          transaction: pool.transaction.bind(pool)
-        });
+        pool = await createPool(options.connectionString);
       },
-      
-      onServerStart: async () => {
-        // Verify connection on startup
-        await pool.query('SELECT 1');
-        console.log('Database connection verified');
-      },
-      
-      onServerStop: async () => {
-        // Stop accepting new queries
-        console.log('Draining database connections...');
-        await pool.drain();
-      },
-      
       terminate: async () => {
-        // Close all connections
+        console.log('Closing database connections...');
         await pool.close();
-        console.log('Database connections closed');
       }
     };
   },
-  {
-    host: 'localhost',
-    port: 5432,
-    database: 'myapp',
-    max: 20,
-    idleTimeoutMillis: 30000
+  { 
+    connectionString: 'postgresql://localhost:5432/myapp',
+    poolSize: 10 
   }
 );
 ```
 
-### ⚡ Caching Plugin
+### 📈 Multi-Middleware Monitoring Plugin
 
 ```typescript
-const cachePlugin = createPlugin(
-  'cache',
-  '1.0.0',
-  (server, options) => {
-    const cache = new CacheStore(options);
-    
-    // Add caching middleware
-    server.use(createMiddleware({
-      name: 'cache',
-      handler: async (ctx, next) => {
-        if (ctx.request.method !== 'GET') {
-          return next();
-        }
-        
-        const key = `${ctx.request.path}:${ctx.request.query}`;
-        const cached = await cache.get(key);
-        
-        if (cached) {
-          ctx.response.header('X-Cache', 'HIT');
-          return ctx.response.json(cached);
-        }
-        
-        // Intercept response to cache it
-        const originalJson = ctx.response.json.bind(ctx.response);
-        ctx.response.json = (data: any) => {
-          cache.set(key, data, options.ttl);
-          ctx.response.header('X-Cache', 'MISS');
-          return originalJson(data);
-        };
-        
-        await next();
-      }
-    }));
-    
-    // Make cache available
-    server.context.setGlobal('cache', cache);
-    
-    return {
-      initialize: async () => {
-        await cache.connect();
-        console.log('Cache store connected');
-      },
-      
-      terminate: async () => {
-        await cache.disconnect();
-      }
-    };
-  },
-  {
-    ttl: 300,
-    maxSize: 1000,
-    strategy: 'lru'
-  }
-);
-```
+import { compose, createPlugin, createMiddleware } from 'blaizejs';
 
-### 📈 Monitoring Plugin
+interface MonitoringConfig {
+  metricsEnabled: boolean;
+  tracingEnabled: boolean;
+}
 
-```typescript
-const monitoringPlugin = createPlugin(
+interface MonitoringContextMods {
+  metrics: {
+    record: (event: string, value: number) => void;
+  };
+  trace: {
+    span: (name: string) => { end: () => void };
+  };
+}
+
+const monitoringPlugin = createPlugin<MonitoringConfig, {}, MonitoringContextMods>(
   'monitoring',
   '1.0.0',
   (server, options) => {
-    const metrics = new MetricsCollector(options);
+    const metricsService = new MetricsService();
+    const tracingService = new TracingService();
     
-    // Track request metrics
-    server.use(createMiddleware({
+    // Create multiple middleware and compose them
+    const metricsMiddleware = createMiddleware({
       name: 'metrics',
       handler: async (ctx, next) => {
         const start = Date.now();
-        
+        await next();
+        if (options.metricsEnabled) {
+          metricsService.record('request_duration', Date.now() - start);
+        }
+      }
+    });
+    
+    const tracingMiddleware = createMiddleware({
+      name: 'tracing', 
+      handler: async (ctx, next) => {
+        let span;
+        if (options.tracingEnabled) {
+          span = tracingService.startSpan(ctx.request.path);
+        }
         try {
           await next();
         } finally {
-          const duration = Date.now() - start;
-          
-          metrics.record({
-            method: ctx.request.method,
-            path: ctx.request.path,
-            status: ctx.response.statusCode,
-            duration
-          });
+          span?.end();
         }
       }
-    }));
-    
-    // Add metrics endpoint
-    server.get('/metrics', async (ctx) => {
-      return ctx.response.text(await metrics.export());
     });
+    
+    const contextMiddleware = createMiddleware({
+      name: 'monitoring-context',
+      handler: async (ctx, next) => {
+        // Direct context modifications
+        ctx.metrics = {
+          record: (event, value) => metricsService.record(event, value)
+        };
+        ctx.trace = {
+          span: (name) => tracingService.startSpan(name)
+        };
+        await next();
+      }
+    });
+    
+    // Compose all monitoring middleware into one unit
+    // This counts as 1 middleware instead of 3 for type tracking
+    const monitoringGroup = compose([
+      metricsMiddleware,
+      tracingMiddleware,
+      contextMiddleware
+    ]);
+    
+    server.use(monitoringGroup);
     
     return {
       initialize: async () => {
-        await metrics.start();
-        console.log('Monitoring initialized');
+        if (options.metricsEnabled) {
+          await metricsService.start();
+        }
+        if (options.tracingEnabled) {
+          await tracingService.start();
+        }
+        console.log('Monitoring plugin initialized');
       },
-      
-      onServerStart: async () => {
-        metrics.recordEvent('server_started');
-      },
-      
-      onServerStop: async () => {
-        metrics.recordEvent('server_stopped');
-        await metrics.flush();
-      },
-      
       terminate: async () => {
-        await metrics.stop();
+        await metricsService.stop();
+        await tracingService.stop();
       }
     };
   },
-  {
-    interval: 60000,
-    endpoint: '/metrics',
-    format: 'prometheus'
+  { 
+    metricsEnabled: true, 
+    tracingEnabled: false 
   }
 );
+```
+
+### Using Multi-Plugin Server
+
+```typescript
+const server = createServer({
+  port: 3000,
+  plugins: [
+    databasePlugin(),
+    authPlugin({ secret: process.env.JWT_SECRET }),
+    monitoringPlugin({ tracingEnabled: true })
+  ]
+});
+
+// TypeScript knows about server modifications (Server & DatabaseServerMods & AuthServerMods)
+await server.queryRaw('SELECT * FROM users');     // From database plugin
+const token = await server.generateToken(user);   // From auth plugin  
+await server.closeConnections();                  // From database plugin
+
+// Context modifications available in route handlers
+server.get('/api/users', async (ctx) => {
+  // Direct context properties (not ctx.state)
+  // ctx.db available from database plugin
+  // ctx.user, ctx.authenticated available from auth plugin  
+  // ctx.metrics, ctx.trace available from monitoring plugin
+  
+  const users = await ctx.db.query('SELECT * FROM users');
+  ctx.metrics.record('users_fetched', users.length);
+  
+  return { users, authenticated: ctx.authenticated };
+});
 ```
 
 ## ♻️ Lifecycle Management
@@ -511,15 +588,15 @@ plugin3.terminate() → plugin2.terminate() → plugin1.terminate()
 ```
 Server Creation
       ↓
-[Plugin Registration] - Setup functions run
+[Plugin Registration] - Setup functions run, server modified
       ↓
-[Plugin Initialization] - initialize() hooks
+[Plugin Initialization] - initialize() hooks (forward order)
       ↓
-[Server Start] - onServerStart() hooks
+[Server Start] - onServerStart() hooks (forward order)
       ↓
     Running
       ↓
-[Server Stop] - onServerStop() hooks
+[Server Stop] - onServerStop() hooks (forward order)
       ↓
 [Plugin Termination] - terminate() hooks (reverse order)
       ↓
@@ -546,10 +623,10 @@ const resourcePlugin = createPlugin(
       onServerStop: async () => {
         // Stop accepting new work
         const queue = resources.get('queue');
-        await queue.pause();
+        await queue?.pause();
         
         // Wait for in-flight operations
-        await queue.waitForEmpty();
+        await queue?.waitForEmpty();
         console.log('Queue drained');
       },
       
@@ -569,23 +646,9 @@ const resourcePlugin = createPlugin(
 
 ## 🛡️ Error Handling
 
-### Lifecycle Error Management
+### Plugin Error Management
 
 The plugin system handles errors gracefully during lifecycle phases:
-
-```typescript
-// Internal lifecycle manager behavior (automatic)
-// Errors are logged but don't crash the server by default
-const lifecycleOptions = {
-  continueOnError: true,  // Continue if a plugin fails
-  debug: true,            // Log lifecycle events
-  onError: (plugin, phase, error) => {
-    console.error(`Plugin ${plugin.name} failed in ${phase}:`, error);
-  }
-};
-```
-
-### Plugin Error Handling
 
 ```typescript
 const robustPlugin = createPlugin(
@@ -629,7 +692,7 @@ const validatedPlugin = createPlugin(
   'validated',
   '1.0.0',
   (server, options) => {
-    // Validate options during registration
+    // Validate options during setup
     if (!options.apiKey) {
       throw new ValidationError('API key is required');
     }
@@ -701,8 +764,6 @@ describe('Plugin Creation', () => {
 ### Testing Plugin Lifecycle
 
 ```typescript
-import { createMockPlugin, createMockServerWithPlugins } from '@blaizejs/testing-utils';
-
 describe('Plugin Lifecycle', () => {
   test('should execute lifecycle hooks in order', async () => {
     const executionOrder: string[] = [];
@@ -751,41 +812,6 @@ describe('Plugin Lifecycle', () => {
 });
 ```
 
-### Mock Plugin Helpers
-
-```typescript
-import { createMockPlugin } from '@blaizejs/testing-utils';
-
-describe('Server with Plugins', () => {
-  test('should register mock plugins', async () => {
-    const mockPlugin = createMockPlugin({
-      name: 'mock-database',
-      version: '1.0.0',
-      // All lifecycle methods are automatically mocked
-    });
-    
-    const { server } = createMockServerWithPlugins(1);
-    server.plugins[0] = mockPlugin;
-    
-    // Test lifecycle execution
-    await mockPlugin.initialize?.(server);
-    
-    expect(mockPlugin.initialize).toHaveBeenCalledWith(server);
-  });
-  
-  test('should handle plugin errors', async () => {
-    const errorPlugin = createMockPlugin({
-      name: 'error-plugin',
-      initialize: vi.fn().mockRejectedValue(new Error('Init failed'))
-    });
-    
-    const server = createMockServer();
-    
-    await expect(errorPlugin.initialize?.(server)).rejects.toThrow('Init failed');
-  });
-});
-```
-
 ### Testing Plugin Integration
 
 ```typescript
@@ -795,9 +821,18 @@ describe('Plugin Integration', () => {
       'service',
       '1.0.0',
       (server, options) => {
-        server.context.setGlobal('testService', {
-          getValue: () => options.value
+        // Add middleware that provides service in context
+        const serviceMiddleware = createMiddleware({
+          name: 'service-context',
+          handler: async (ctx, next) => {
+            ctx.testService = {
+              getValue: () => options.value
+            };
+            await next();
+          }
         });
+        
+        server.use(serviceMiddleware);
       },
       { value: 'test-value' }
     );
@@ -808,15 +843,11 @@ describe('Plugin Integration', () => {
     });
     
     server.get('/test', async (ctx) => {
-      const service = ctx.state.testService;
-      return { value: service.getValue() };
+      return { value: ctx.testService.getValue() };
     });
     
-    // Test the endpoint
-    const response = await fetch('/test');
-    const data = await response.json();
-    
-    expect(data.value).toBe('test-value');
+    // Test the endpoint would work (in actual test, use server testing utils)
+    // expect response to contain { value: 'test-value' }
   });
 });
 ```
@@ -829,147 +860,296 @@ describe('Plugin Integration', () => {
 // From blaizejs (re-exported from @blaizejs/types)
 
 /**
- * Plugin interface
+ * Plugin interface with type parameters for enhanced type safety
  */
-export interface Plugin extends PluginHooks {
+export interface Plugin<TServerMods = unknown, TContextMods = unknown> extends PluginHooks {
   name: string;
   version: string;
+  _types?: PluginTypeManifest<TServerMods, TContextMods>;
 }
 
 /**
  * Plugin lifecycle hooks
  */
 export interface PluginHooks {
-  // Called when plugin is registered
-  register: (app: Server) => void | Promise<void>;
-  
-  // Called during server initialization
-  initialize?: (app?: Server) => void | Promise<void>;
-  
-  // Called when server starts
-  onServerStart?: (server: any) => void | Promise<void>;
-  
-  // Called when server stops
-  onServerStop?: (server: any) => void | Promise<void>;
-  
-  // Called during server termination
-  terminate?: (app?: Server) => void | Promise<void>;
+  register: (server: Server) => void | Promise<void>;
+  initialize?: (server?: Server) => void | Promise<void>;
+  onServerStart?: (server: Server) => void | Promise<void>;
+  onServerStop?: (server: Server) => void | Promise<void>;
+  terminate?: (server?: Server) => void | Promise<void>;
 }
 
 /**
- * Plugin factory function
+ * Plugin factory function with type parameters
  */
-export type PluginFactory<T = any> = (options?: T) => Plugin;
+export type PluginFactory<T = any, TServerMods = unknown, TContextMods = unknown> = (
+  options?: T
+) => Plugin<TServerMods, TContextMods>;
 
 /**
- * Plugin lifecycle manager (internal)
+ * Plugin setup function signature
  */
-export interface PluginLifecycleManager {
-  initializePlugins(server: Server): Promise<void>;
-  terminatePlugins(server: Server): Promise<void>;
-  onServerStart(server: Server, httpServer: any): Promise<void>;
-  onServerStop(server: Server, httpServer: any): Promise<void>;
-}
+export type PluginSetup<T = any, TServerMods = unknown> = (
+  app: Server & TServerMods, // Server is extended with plugin modifications
+  options: T
+) => void | Partial<PluginHooks> | Promise<void> | Promise<Partial<PluginHooks>>;
 ```
+
+### Server Type Extension
+
+When plugins are registered, the server becomes typed with all plugin modifications:
+
+```typescript
+// Before plugin registration
+const server: Server = createServer({ port: 3000 });
+
+// After plugin registration
+const server: Server & DatabaseServerMods & AuthServerMods = createServer({
+  port: 3000,
+  plugins: [
+    databasePlugin(),  // Adds DatabaseServerMods
+    authPlugin()       // Adds AuthServerMods
+  ]
+});
+
+// TypeScript now knows about plugin methods
+await server.queryRaw('SELECT * FROM users');  // From DatabaseServerMods
+const token = server.generateToken(user);       // From AuthServerMods
+```
+
+## 📊 Performance & Type Tracking Limits
+
+### 🚨 Plugin Middleware Registration Limits
+
+BlaizeJS tracks middleware registration per plugin and warns about performance impacts:
+
+```typescript
+// ❌ AVOID - Too many individual middleware registrations
+const heavyPlugin = createPlugin(
+  'heavy-plugin',
+  '1.0.0',
+  (server, options) => {
+    server.use(middleware1);
+    server.use(middleware2);
+    server.use(middleware3);
+    // ... 12 individual middleware
+    // Development warning: "Plugin 'heavy-plugin' has registered 12 middleware. Consider using compose()..."
+  }
+);
+
+// ✅ GOOD - Use compose for multiple middleware
+const optimizedPlugin = createPlugin(
+  'optimized-plugin', 
+  '1.0.0',
+  (server, options) => {
+    const middlewareGroup = compose([
+      middleware1,
+      middleware2,
+      middleware3,
+      // ... up to 10 middleware with full type tracking
+    ]);
+    
+    server.use(middlewareGroup); // Counts as 1 middleware registration
+  }
+);
+
+// ✅ PERFECT - Hierarchical composition for 10+ middleware
+const complexPlugin = createPlugin(
+  'complex-plugin',
+  '1.0.0', 
+  (server, options) => {
+    const authGroup = compose([auth1, auth2, auth3]);        // 3 middleware
+    const dataGroup = compose([data1, data2, data3, data4]); // 4 middleware  
+    const logGroup = compose([log1, log2, log3]);            // 3 middleware
+    
+    const allMiddleware = compose([authGroup, dataGroup, logGroup]); // 3 groups
+    server.use(allMiddleware); // Perfect type safety for all 10 middleware
+  }
+);
+```
+
+### ⚠️ 10-Plugin Type Tracking Limit
+
+TypeScript type composition degrades after 10 plugins per server:
+
+```typescript
+// ✅ GOOD - Full type tracking (under 10 plugins)
+const server = createServer({
+  plugins: [
+    plugin1(), plugin2(), plugin3(), plugin4(), plugin5(),
+    plugin6(), plugin7(), plugin8(), plugin9()
+  ] // All 9 plugin types tracked
+});
+
+// ⚠️ CAUTION - Type tracking degrades after 10
+const overloadedServer = createServer({
+  plugins: [
+    plugin1(), plugin2(), plugin3(), plugin4(), plugin5(),
+    plugin6(), plugin7(), plugin8(), plugin9(), plugin10(),
+    plugin11(), plugin12() // Types fall back to base after 10th plugin
+  ]
+});
+// Development warning: "12 plugins registered. Type tracking degrades after 10."
+```
+
+### 🎯 Best Practices for Large Applications
+
+```typescript
+// ✅ RECOMMENDED - Plugin composition for large apps
+const corePlugins = [
+  databasePlugin(),
+  authPlugin(), 
+  loggingPlugin()
+];
+
+const featurePlugins = [
+  cachePlugin(),
+  metricsPlugin(),
+  searchPlugin()
+];
+
+const server = createServer({
+  plugins: [
+    ...corePlugins,    // 3 plugins
+    ...featurePlugins  // 3 plugins = 6 total
+  ] // Full type safety maintained
+});
+
+// Alternative: Plugin groups (future feature)
+const pluginGroup = createPluginGroup([
+  plugin1, plugin2, plugin3, plugin4, plugin5
+]); // Counts as 1 plugin for type tracking
+```
+
+## 🎯 Best Practices
+
+### 📏 When to Use Compose vs Individual Registration
+
+```typescript
+// ✅ Individual registration - Simple plugins with 1-2 middleware
+const simplePlugin = createPlugin('simple', '1.0.0', (server, options) => {
+  server.use(loggingMiddleware);
+  server.use(corsMiddleware);
+}); 
+
+// ✅ Compose - Plugins with 3+ related middleware  
+const complexPlugin = createPlugin('complex', '1.0.0', (server, options) => {
+  const middlewareStack = compose([
+    authMiddleware,
+    validationMiddleware, 
+    auditMiddleware,
+    cacheMiddleware
+  ]);
+  
+  server.use(middlewareStack); // Better performance and type tracking
+});
+
+// ✅ Hierarchical compose - Plugins with 10+ middleware
+const enterprisePlugin = createPlugin('enterprise', '1.0.0', (server, options) => {
+  const securityGroup = compose([auth, session, csrf, rate]);
+  const dataGroup = compose([db, cache, validation, transform]);
+  const observabilityGroup = compose([logs, metrics, trace]);
+  
+  const allMiddleware = compose([securityGroup, dataGroup, observabilityGroup]);
+  server.use(allMiddleware); // Perfect type safety for 12 middleware
+});
+```
+
+### 🔀 Context vs State Modifications
+
+**Context modifications** add properties directly to the context object, while **state modifications** use the middleware state system. Choose based on your use case:
+
+```typescript
+// ✅ Context modifications - Direct properties for services/utilities
+interface DatabaseContextMods {
+  db: Database;
+  logger: Logger;
+}
+
+const contextPlugin = createPlugin<Config, {}, DatabaseContextMods>('context', '1.0.0', (server) => {
+  server.use(createMiddleware({
+    handler: async (ctx, next) => {
+      ctx.db = database;      // ✅ Direct context property - available as ctx.db
+      ctx.logger = logger;    // ✅ Direct context property - available as ctx.logger
+      await next();
+    }
+  }));
+});
+
+// Route usage:
+server.get('/api/users', async (ctx) => {
+  const users = await ctx.db.query('SELECT * FROM users'); // Direct access
+  ctx.logger.info('Users fetched');
+  return users;
+});
+```
+
+```typescript
+// ✅ State modifications - Use middleware state system for request-scoped data
+interface RequestState extends State {
+  requestId: string;
+  startTime: number;
+  metadata: Record<string, any>;
+}
+
+const statePlugin = createPlugin('state', '1.0.0', (server) => {
+  server.use(createMiddleware<RequestState>({
+    handler: async (ctx, next) => {
+      ctx.state.requestId = generateId();     // ✅ State property - available as ctx.state.requestId
+      ctx.state.startTime = Date.now();       // ✅ State property - available as ctx.state.startTime
+      ctx.state.metadata = {};                // ✅ State property - available as ctx.state.metadata
+      await next();
+    }
+  }));
+});
+
+// Route usage:
+server.get('/api/data', async (ctx) => {
+  const requestId = ctx.state.requestId;  // Access through ctx.state
+  const duration = Date.now() - ctx.state.startTime;
+  
+  ctx.state.metadata.responseTime = duration;
+  return { requestId, duration };
+});
+```
+
+**When to use each:**
+- **Context modifications** (`ctx.property`): Services, utilities, database connections, loggers
+- **State modifications** (`ctx.state.property`): Request-scoped data, user info, temporary values
 
 ## 🗺️ Roadmap
 
-### 🚀 Current (v0.3.1) - Beta
+### ✅ Current (v0.3.1) - Beta
 
-- ✅ **Factory Function** - Simple createPlugin API
-- ✅ **Lifecycle Hooks** - Full lifecycle management
-- ✅ **Server Integration** - Seamless server augmentation
-- ✅ **Type Safety** - Full TypeScript support
+- ✅ **Factory Function API** - Simple createPlugin with type safety
+- ✅ **Lifecycle Hooks** - Full lifecycle management with async support
+- ✅ **Server Integration** - Direct server modification capabilities
+- ✅ **Middleware Integration** - Context modifications through middleware
+- ✅ **Type Safety** - Full TypeScript support with server/context type tracking
 - ✅ **Testing Utilities** - Mock helpers via @blaizejs/testing-utils
-- ✅ **Error Resilience** - Graceful error handling
 
 ### 🎯 MVP/1.0 Release
 
-- 🔄 **Plugin Validation** - Export validation utilities
 - 🔄 **Enhanced Testing Utilities** - Comprehensive plugin testing helpers
-  - Plugin lifecycle simulation and assertions
-  - State tracking between lifecycle phases
-  - Plugin interaction testing
-  - Performance benchmarking for plugins
-  - Mock plugin factories with preset behaviors
+- 🔄 **Plugin Validation** - Validate plugin configurations and dependencies
 - 🔄 **Dependency Management** - Plugin dependencies and ordering
-- 🔄 **Conflict Detection** - Detect conflicting plugins
-- 🔄 **Plugin Metadata** - Enhanced plugin information
+- 🔄 **Conflict Detection** - Detect conflicting plugins automatically
+- 🔄 **Plugin Metadata** - Enhanced plugin information and discovery
 
 ### 🔮 Post-MVP (v1.1+)
 
-- 🔄 **Plugin Error Classes** - Export specialized error types
-  - `PluginValidationError` for validation failures
-  - `PluginLifecycleError` for lifecycle issues
-  - `PluginDependencyError` for missing dependencies
+- 🔄 **Plugin Error Classes** - Specialized error types for plugins
 - 🔄 **Hot Reload** - Development mode plugin reloading
-- 🔄 **Plugin Marketplace** - Community plugin registry
+- 🔄 **Plugin Registry** - Community plugin discovery and management
 - 🔄 **Plugin CLI** - Scaffolding and management tools
-- 🔄 **Plugin Composition** - Advanced composition patterns
-- 🔄 **Performance Monitoring** - Plugin performance metrics
-- 🔄 **Version Compatibility** - Automatic compatibility checking
+- 🔄 **Performance Monitoring** - Plugin performance metrics and optimization
 
 ### 🌟 Future Considerations
 
-- 🔄 **Visual Plugin Manager** - Browser-based plugin management
+- 🔄 **Visual Plugin Manager** - Browser-based plugin management interface
 - 🔄 **Plugin Analytics** - Usage and performance insights
 - 🔄 **AI-Assisted Creation** - Generate plugins from descriptions
 - 🔄 **Cross-Platform Support** - Deno and Bun compatibility
-- 🔄 **Plugin Bundling** - Optimized plugin distribution
-- 🔄 **Remote Plugins** - Load plugins from external sources
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/jleajones/blaize.git
-cd blaize
-
-# Install dependencies (using pnpm)
-pnpm install
-
-# Run tests for plugins
-pnpm test plugins
-
-# Run tests in watch mode
-pnpm test:watch plugins
-
-# Build the package
-pnpm build
-
-# Run linting
-pnpm lint
-```
-
-### Testing Your Changes
-
-1. Write tests for new features
-2. Ensure all tests pass: `pnpm test`
-3. Check type safety: `pnpm type-check`
-4. Verify linting: `pnpm lint`
-
-### Important Notes for Contributors
-
-When adding new plugin features:
-
-1. **Check exports**: Ensure features are exported in `/packages/blaize-core/src/index.ts`
-2. **Update types**: Add types to `@blaize-types/plugins`
-3. **Add tests**: Use `@blaizejs/testing-utils` for testing
-4. **Document limitations**: Note any internal-only features
-5. **Follow patterns**: Match existing plugin patterns
-
-## 📚 Related Documentation
-
-- 🏠 [BlaizeJS Main Documentation](../../README.md)
-- 🔧 [Middleware Module](../middleware/README.md) - Plugin middleware integration
-- 🔗 [Context Module](../context/README.md) - Plugin state management
-- 🌐 [Server Module](../server/README.md) - Server plugin registration
-- 🚀 [Router Module](../router/README.md) - Plugin route management
-- 🧪 [Testing Utils](../../../blaize-testing-utils/README.md) - Testing utilities
 
 ---
 
