@@ -127,3 +127,19 @@ export type ComposeContexts<
       ? C1 & ComposeContexts<Rest, [...Depth, unknown]>
       : C1
     : unknown;
+
+/**
+ * Compose multiple middleware request types with depth limiting
+ * @template T - Array of middleware to compose
+ * @template Depth - Internal depth tracking (max 10 levels)
+ */
+export type ComposeRequests<
+  T extends readonly Middleware<any, any, any>[],
+  Depth extends readonly unknown[] = [],
+> = Depth['length'] extends 10
+  ? Request // Fallback to base Request after 10 levels
+  : T extends readonly [Middleware<any, any, infer R1>, ...infer Rest]
+    ? Rest extends readonly Middleware<any, any, any>[]
+      ? R1 & ComposeRequests<Rest, [...Depth, unknown]>
+      : R1
+    : unknown;
