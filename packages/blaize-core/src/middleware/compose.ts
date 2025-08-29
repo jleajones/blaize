@@ -1,21 +1,51 @@
 import { execute } from './execute';
 
 import type { Context } from '@blaize-types/context';
-import type { Middleware, NextFunction, MiddlewareFunction } from '@blaize-types/middleware';
+import type {
+  Middleware,
+  NextFunction,
+  MiddlewareFunction,
+  ComposeStates,
+  ComposeContexts,
+  ComposeRequests,
+} from '@blaize-types/middleware';
 
 /**
- * Compose multiple middleware functions into a single middleware function
+ * Compose multiple middleware into a single middleware
+ * @param middlewareStack Array of middleware to compose
+ * @returns A Middleware object with composed types
  */
-export function compose(middlewareStack: Middleware[]): MiddlewareFunction {
-  // No middleware? Return a pass-through function
+export function compose<TMiddlewares extends readonly Middleware[]>(
+  middlewareStack: TMiddlewares
+): Middleware<
+  ComposeStates<TMiddlewares>,
+  ComposeContexts<TMiddlewares>,
+  ComposeRequests<TMiddlewares>
+> {
+  // Runtime validation for development mode
+  if (process.env.NODE_ENV === 'development' && middlewareStack.length > 10) {
+    console.warn(
+      `[BlaizeJS] Composing ${middlewareStack.length} middleware. ` +
+        `Type tracking degrades after 10. Consider nested composition for better type safety.`
+    );
+  }
+
+  // No middleware? Return a pass-through middleware
   if (middlewareStack.length === 0) {
-    return async (_, next) => {
-      await Promise.resolve(next());
+    return {
+      name: 'empty-compose',
+      execute: async (_, next) => {
+        await Promise.resolve(next());
+      },
+      _types: {} as any,
     };
   }
 
-  // Return a function that executes the middleware stack
-  return async function (ctx: Context, finalHandler: NextFunction): Promise<void> {
+  // Create the composed execution function
+  const composedExecute: MiddlewareFunction = async function (
+    ctx: Context,
+    finalHandler: NextFunction
+  ): Promise<void> {
     // Keep track of which "next" functions have been called
     const called = new Set<number>();
 
@@ -49,5 +79,12 @@ export function compose(middlewareStack: Middleware[]): MiddlewareFunction {
 
     // Start middleware chain execution
     return dispatch(0);
+  };
+
+  // Return a full Middleware object
+  return {
+    name: `composed(${middlewareStack.map(m => m.name || 'unnamed').join(',')})`,
+    execute: composedExecute,
+    _types: {} as any, // Type carrier to preserve composition types
   };
 }
