@@ -8,7 +8,7 @@ import { UnauthorizedError } from './unauthorized-error';
 
 // Mock the correlation system
 vi.mock('../tracing/correlation', () => ({
-  getCurrentCorrelationId: vi.fn().mockReturnValue('test-correlation-common'),
+  getCorrelationId: vi.fn().mockReturnValue('test-correlation-common'),
 }));
 
 describe('UnauthorizedError', () => {

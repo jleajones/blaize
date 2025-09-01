@@ -8,14 +8,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-/**
- * Configuration for the correlation ID system
- * @internal
- */
-interface CorrelationConfig {
-  headerName: string;
-  generator: () => string;
-}
+import type { CorrelationConfig } from '@blaize-types/tracing';
 
 /**
  * Default configuration values
@@ -108,7 +101,7 @@ export function generateCorrelationId(): string {
  *
  * @returns The current correlation ID, or 'unknown' if none is set
  */
-export function getCurrentCorrelationId(): string {
+export function getCorrelationId(): string {
   const stored = correlationStorage.getStore();
   return stored && stored.trim() ? stored : 'unknown';
 }
@@ -172,7 +165,7 @@ export function withCorrelationId<T>(
  * });
  * ```
  */
-export function getOrGenerateCorrelationId(
+export function createCorrelationIdFromHeaders(
   headers: Record<string, string | string[] | undefined>
 ): string {
   const headerName = currentConfig.headerName;
@@ -215,7 +208,7 @@ export function withEnsuredCorrelation<T extends any[], R>(
   fn: (...args: T) => R | Promise<R>
 ): (...args: T) => R | Promise<R> {
   return (...args: T): R | Promise<R> => {
-    const currentCorrelationId = getCurrentCorrelationId();
+    const currentCorrelationId = getCorrelationId();
 
     // If we already have a correlation ID, just run the function
     if (currentCorrelationId !== 'unknown') {

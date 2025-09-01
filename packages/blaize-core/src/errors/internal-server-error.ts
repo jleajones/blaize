@@ -8,7 +8,7 @@
 
 import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from '../tracing/correlation';
+import { getCorrelationId } from '../tracing/correlation';
 
 import type { InternalServerErrorDetails } from '@blaize-types/errors';
 /**
@@ -63,7 +63,7 @@ export class InternalServerError extends BlaizeError<InternalServerErrorDetails>
       ErrorType.INTERNAL_SERVER_ERROR,
       title,
       500, // HTTP 500 Internal Server Error
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }

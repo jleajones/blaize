@@ -7,7 +7,7 @@
 
 import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from '../tracing/correlation';
+import { getCorrelationId } from '../tracing/correlation';
 
 import type { RateLimitErrorDetails } from '@blaize-types/errors';
 
@@ -49,7 +49,7 @@ export class RateLimitError extends BlaizeError<RateLimitErrorDetails> {
       ErrorType.RATE_LIMITED,
       title,
       429, // HTTP 429 Too Many Requests
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }

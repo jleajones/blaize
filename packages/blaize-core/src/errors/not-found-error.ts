@@ -7,7 +7,7 @@
 
 import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from '../tracing/correlation';
+import { getCorrelationId } from '../tracing/correlation';
 
 import type { NotFoundErrorDetails } from '@blaize-types/errors';
 /**
@@ -56,7 +56,7 @@ export class NotFoundError extends BlaizeError<NotFoundErrorDetails> {
       ErrorType.NOT_FOUND,
       title,
       404, // HTTP 404 Not Found
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }

@@ -4,7 +4,7 @@ import { NotFoundError } from './not-found-error';
 
 // Mock the correlation system
 vi.mock('../tracing/correlation', () => ({
-  getCurrentCorrelationId: vi.fn().mockReturnValue('test-correlation-404'),
+  getCorrelationId: vi.fn().mockReturnValue('test-correlation-404'),
 }));
 
 describe('NotFoundError', () => {

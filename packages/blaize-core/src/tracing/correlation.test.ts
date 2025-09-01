@@ -1,9 +1,9 @@
 import {
   generateCorrelationId,
-  getCurrentCorrelationId,
+  getCorrelationId,
   setCorrelationId,
   withCorrelationId,
-  getOrGenerateCorrelationId,
+  createCorrelationIdFromHeaders,
   _setCorrelationConfig,
   getCorrelationHeaderName,
   _resetCorrelationConfig,
@@ -35,7 +35,7 @@ describe('Correlation ID System', () => {
     test('allows custom generator function', () => {
       const customGenerator = () => 'custom-id-123';
       _setCorrelationConfig(undefined, customGenerator);
-      
+
       const correlationId = generateCorrelationId();
       expect(correlationId).toBe('custom-id-123');
     });
@@ -43,7 +43,7 @@ describe('Correlation ID System', () => {
     test('allows both header name and generator configuration', () => {
       const customGenerator = () => 'custom-generated-456';
       _setCorrelationConfig('x-trace-id', customGenerator);
-      
+
       expect(getCorrelationHeaderName()).toBe('x-trace-id');
       expect(generateCorrelationId()).toBe('custom-generated-456');
     });
@@ -51,7 +51,7 @@ describe('Correlation ID System', () => {
     test('resets configuration to defaults', () => {
       _setCorrelationConfig('custom-header', () => 'custom-id');
       expect(getCorrelationHeaderName()).toBe('custom-header');
-      
+
       _resetCorrelationConfig();
       expect(getCorrelationHeaderName()).toBe('x-correlation-id');
       expect(generateCorrelationId()).toMatch(/^req_[a-z0-9_]+$/);
@@ -110,14 +110,14 @@ describe('Correlation ID System', () => {
       const testId = 'test-correlation-123';
       setCorrelationId(testId);
 
-      expect(getCurrentCorrelationId()).toBe(testId);
+      expect(getCorrelationId()).toBe(testId);
     });
 
     test('returns "unknown" when no correlation ID is set', () => {
       // Clear any existing context
       setCorrelationId('');
 
-      const result = getCurrentCorrelationId();
+      const result = getCorrelationId();
       expect(result).toBe('unknown');
     });
   });
@@ -127,15 +127,15 @@ describe('Correlation ID System', () => {
       const testId = 'test-set-correlation';
       setCorrelationId(testId);
 
-      expect(getCurrentCorrelationId()).toBe(testId);
+      expect(getCorrelationId()).toBe(testId);
     });
 
     test('overwrites existing correlation ID', () => {
       setCorrelationId('first-id');
-      expect(getCurrentCorrelationId()).toBe('first-id');
+      expect(getCorrelationId()).toBe('first-id');
 
       setCorrelationId('second-id');
-      expect(getCurrentCorrelationId()).toBe('second-id');
+      expect(getCorrelationId()).toBe('second-id');
     });
   });
 
@@ -145,23 +145,23 @@ describe('Correlation ID System', () => {
 
       // Start with different correlation ID
       setCorrelationId('original-id');
-      expect(getCurrentCorrelationId()).toBe('original-id');
+      expect(getCorrelationId()).toBe('original-id');
 
       const result = await withCorrelationId(testId, async () => {
         // Inside the async context, should have the new ID
-        expect(getCurrentCorrelationId()).toBe(testId);
+        expect(getCorrelationId()).toBe(testId);
 
         // Simulate async operation
         await new Promise(resolve => setTimeout(resolve, 10));
 
         // Should still have the correct ID after async operation
-        expect(getCurrentCorrelationId()).toBe(testId);
+        expect(getCorrelationId()).toBe(testId);
 
         return 'async-result';
       });
 
       // After the context, should return to original ID
-      expect(getCurrentCorrelationId()).toBe('original-id');
+      expect(getCorrelationId()).toBe('original-id');
       expect(result).toBe('async-result');
     });
 
@@ -170,19 +170,19 @@ describe('Correlation ID System', () => {
       const innerCorrelationId = 'inner-correlation';
 
       await withCorrelationId(outerCorrelationId, async () => {
-        expect(getCurrentCorrelationId()).toBe(outerCorrelationId);
+        expect(getCorrelationId()).toBe(outerCorrelationId);
 
         await withCorrelationId(innerCorrelationId, async () => {
-          expect(getCurrentCorrelationId()).toBe(innerCorrelationId);
+          expect(getCorrelationId()).toBe(innerCorrelationId);
 
           // Call another async function
           await simulateAsyncWork();
 
-          expect(getCurrentCorrelationId()).toBe(innerCorrelationId);
+          expect(getCorrelationId()).toBe(innerCorrelationId);
         });
 
         // Back to outer context
-        expect(getCurrentCorrelationId()).toBe(outerCorrelationId);
+        expect(getCorrelationId()).toBe(outerCorrelationId);
       });
     });
 
@@ -192,13 +192,13 @@ describe('Correlation ID System', () => {
 
       await expect(
         withCorrelationId(testId, async () => {
-          expect(getCurrentCorrelationId()).toBe(testId);
+          expect(getCorrelationId()).toBe(testId);
           throw new Error('Test error');
         })
       ).rejects.toThrow('Test error');
 
       // Should restore original context even after error
-      expect(getCurrentCorrelationId()).toBe('original-id');
+      expect(getCorrelationId()).toBe('original-id');
     });
   });
 
@@ -211,7 +211,7 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toBe(headerCorrelationId);
       });
 
@@ -220,7 +220,7 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toMatch(/^req_[a-z0-9_]+$/);
       });
 
@@ -230,7 +230,7 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toMatch(/^req_[a-z0-9_]+$/);
       });
 
@@ -240,7 +240,7 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toMatch(/^req_[a-z0-9_]+$/);
       });
 
@@ -250,7 +250,7 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toBe('first-id');
       });
 
@@ -260,7 +260,7 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toMatch(/^req_[a-z0-9_]+$/);
       });
     });
@@ -278,7 +278,7 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toBe(requestId);
       });
 
@@ -288,18 +288,18 @@ describe('Correlation ID System', () => {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toMatch(/^req_[a-z0-9_]+$/); // Should generate new
       });
 
       test('uses custom generator when header missing', () => {
         _setCorrelationConfig('x-trace-id', () => 'custom-trace-789');
-        
+
         const headers = {
           'content-type': 'application/json',
         };
 
-        const result = getOrGenerateCorrelationId(headers);
+        const result = createCorrelationIdFromHeaders(headers);
         expect(result).toBe('custom-trace-789');
       });
     });
@@ -336,10 +336,10 @@ describe('Correlation ID System', () => {
             await new Promise(resolve => setTimeout(resolve, Math.random() * 50));
 
             // Verify we still have the right correlation ID
-            expect(getCurrentCorrelationId()).toBe(req.id);
+            expect(getCorrelationId()).toBe(req.id);
 
             return {
-              correlationId: getCurrentCorrelationId(),
+              correlationId: getCorrelationId(),
               value: req.value,
             };
           });
@@ -362,7 +362,7 @@ describe('Correlation ID System', () => {
         'x-correlation-id': 'legacy-id-123',
       };
 
-      const correlationId = getOrGenerateCorrelationId(headers);
+      const correlationId = createCorrelationIdFromHeaders(headers);
       expect(correlationId).toBe('legacy-id-123');
 
       // Generated IDs should still follow the default format
@@ -373,13 +373,13 @@ describe('Correlation ID System', () => {
     test('existing error handling code continues to work', async () => {
       // Simulate how errors currently use correlation
       const errorCorrelationId = 'error-correlation-456';
-      
+
       await withCorrelationId(errorCorrelationId, async () => {
-        const currentId = getCurrentCorrelationId();
+        const currentId = getCorrelationId();
         expect(currentId).toBe(errorCorrelationId);
-        
+
         // This is how error classes use it
-        const errorId = getCurrentCorrelationId();
+        const errorId = getCorrelationId();
         expect(errorId).toBe(errorCorrelationId);
       });
     });
@@ -394,19 +394,19 @@ async function simulateAsyncWork(): Promise<void> {
 
 async function simulateMiddleware1(): Promise<void> {
   // Middleware would typically have access to the correlation ID
-  const correlationId = getCurrentCorrelationId();
+  const correlationId = getCorrelationId();
   expect(correlationId).toBeTruthy();
   await simulateAsyncWork();
 }
 
 async function simulateMiddleware2(): Promise<void> {
-  const correlationId = getCurrentCorrelationId();
+  const correlationId = getCorrelationId();
   expect(correlationId).toBeTruthy();
   await simulateAsyncWork();
 }
 
 async function simulateRouteHandler(): Promise<void> {
-  const correlationId = getCurrentCorrelationId();
+  const correlationId = getCorrelationId();
   expect(correlationId).toBeTruthy();
   await simulateAsyncWork();
 }

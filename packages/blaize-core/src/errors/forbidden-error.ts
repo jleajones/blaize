@@ -7,7 +7,7 @@
 
 import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from '../tracing/correlation';
+import { getCorrelationId } from '../tracing/correlation';
 
 import type { ForbiddenErrorDetails } from '@blaize-types/errors';
 
@@ -48,7 +48,7 @@ export class ForbiddenError extends BlaizeError<ForbiddenErrorDetails> {
       ErrorType.FORBIDDEN,
       title,
       403, // HTTP 403 Forbidden
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }
