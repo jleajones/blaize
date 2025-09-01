@@ -1,5 +1,5 @@
-import { getCurrentCorrelationId } from './correlation';
 import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { getCurrentCorrelationId } from '../tracing/correlation';
 
 import type { PayloadTooLargeErrorDetails } from '@blaize-types/errors';
 

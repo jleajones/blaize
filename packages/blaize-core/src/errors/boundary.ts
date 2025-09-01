@@ -1,7 +1,7 @@
 import { BlaizeError } from '@blaize-types/errors';
 
-import { generateCorrelationId } from './correlation';
 import { InternalServerError } from './internal-server-error';
+import { generateCorrelationId } from '../tracing/correlation';
 
 import type { BlaizeErrorResponse } from '@blaize-types/errors';
 

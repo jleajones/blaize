@@ -7,7 +7,7 @@
 
 import { ErrorType, BlaizeError } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from './correlation';
+import { getCurrentCorrelationId } from '../tracing/correlation';
 
 import type { UnauthorizedErrorDetails } from '@blaize-types/errors';
 

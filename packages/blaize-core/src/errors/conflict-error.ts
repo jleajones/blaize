@@ -7,7 +7,7 @@
 
 import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from './correlation';
+import { getCurrentCorrelationId } from '../tracing/correlation';
 
 import type { ConflictErrorDetails } from '@blaize-types/errors';
 

@@ -5,7 +5,7 @@ import { ValidationError } from './validation-error';
 import type { ValidationErrorDetails } from '@blaize-types/errors';
 
 // Mock the correlation system
-vi.mock('./correlation', () => ({
+vi.mock('../tracing/correlation', () => ({
   getCurrentCorrelationId: vi.fn().mockReturnValue('test-correlation-123'),
 }));
 

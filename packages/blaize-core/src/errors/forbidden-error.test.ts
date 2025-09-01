@@ -7,7 +7,7 @@ import { ErrorType } from '@blaize-types/errors';
 import { ForbiddenError } from './forbidden-error';
 
 // Mock the correlation system
-vi.mock('./correlation', () => ({
+vi.mock('../tracing/correlation', () => ({
   getCurrentCorrelationId: vi.fn().mockReturnValue('test-correlation-common'),
 }));
 

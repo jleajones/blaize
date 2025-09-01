@@ -1,5 +1,5 @@
-import { getCurrentCorrelationId } from './correlation';
 import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { getCurrentCorrelationId } from '../tracing/correlation';
 
 export class UnprocessableEntityError extends BlaizeError {
   constructor(title: string, details?: unknown, correlationId?: string) {
