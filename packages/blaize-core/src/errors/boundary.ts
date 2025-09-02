@@ -2,7 +2,7 @@ import { BlaizeError } from '@blaize-types/errors';
 
 import { InternalServerError } from './internal-server-error';
 import {
-  generateCorrelationId,
+  getCorrelationId,
   createCorrelationIdFromHeaders,
   getCorrelationHeaderName,
 } from '../tracing/correlation';
@@ -33,7 +33,7 @@ export function formatErrorResponse(error: unknown): BlaizeErrorResponse {
   }
 
   // Handle unexpected errors by wrapping them in InternalServerError
-  const correlationId = generateCorrelationId();
+  const correlationId = getCorrelationId();
   let originalMessage: string;
 
   if (error instanceof Error) {

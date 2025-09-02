@@ -16,14 +16,13 @@ const DEFAULT_CURRENT_CORRELATION_ID = 'current-correlation-id';
 
 // Mock the correlation module
 vi.mock('../tracing/correlation', () => ({
-  generateCorrelationId: vi.fn(() => DEFAULT_CORRELATION_ID),
   createCorrelationIdFromHeaders: vi.fn((headers: Record<string, string | undefined>) => {
     // Check for the header based on what's passed in
     const headerNames = Object.keys(headers);
     const headerName = headerNames[0];
     if (headerName) {
       const value = headers[headerName];
-      return value || DEFAULT_CORRELATION_ID;
+      return value || DEFAULT_CURRENT_CORRELATION_ID;
     }
     return DEFAULT_CORRELATION_ID;
   }),
@@ -32,7 +31,7 @@ vi.mock('../tracing/correlation', () => ({
 }));
 
 // Import after mocking to get mocked versions
-import { generateCorrelationId, getCorrelationHeaderName } from '../tracing/correlation';
+import { getCorrelationId, getCorrelationHeaderName } from '../tracing/correlation';
 
 describe('Error Boundary Functions', () => {
   beforeEach(() => {
@@ -106,14 +105,14 @@ describe('Error Boundary Functions', () => {
         type: ErrorType.INTERNAL_SERVER_ERROR,
         title: 'Internal Server Error',
         status: 500,
-        correlationId: DEFAULT_CORRELATION_ID,
+        correlationId: DEFAULT_CURRENT_CORRELATION_ID,
         timestamp: expect.any(String),
         details: {
           originalMessage: 'Database connection failed',
         },
       });
 
-      expect(generateCorrelationId).toHaveBeenCalled();
+      expect(getCorrelationId).toHaveBeenCalled();
     });
 
     it('should handle non-error objects gracefully', () => {
@@ -123,7 +122,7 @@ describe('Error Boundary Functions', () => {
         type: ErrorType.INTERNAL_SERVER_ERROR,
         title: 'Internal Server Error',
         status: 500,
-        correlationId: DEFAULT_CORRELATION_ID,
+        correlationId: DEFAULT_CURRENT_CORRELATION_ID,
         timestamp: expect.any(String),
         details: {
           originalMessage: 'string error',
@@ -138,7 +137,7 @@ describe('Error Boundary Functions', () => {
         type: ErrorType.INTERNAL_SERVER_ERROR,
         title: 'Internal Server Error',
         status: 500,
-        correlationId: DEFAULT_CORRELATION_ID,
+        correlationId: DEFAULT_CURRENT_CORRELATION_ID,
         timestamp: expect.any(String),
         details: {
           originalMessage: 'Unknown error occurred',
@@ -167,7 +166,7 @@ describe('Error Boundary Functions', () => {
       const correlationId = extractOrGenerateCorrelationId(headerGetter);
 
       expect(headerGetter).toHaveBeenCalledWith(DEFAULT_CORRELATION_HEADER);
-      expect(correlationId).toBe(DEFAULT_CORRELATION_ID);
+      expect(correlationId).toBe(DEFAULT_CURRENT_CORRELATION_ID);
     });
 
     it('should use custom header name when configured', () => {
@@ -190,7 +189,7 @@ describe('Error Boundary Functions', () => {
 
       const correlationId = extractOrGenerateCorrelationId(headerGetter);
 
-      expect(correlationId).toBe(DEFAULT_CORRELATION_ID);
+      expect(correlationId).toBe(DEFAULT_CURRENT_CORRELATION_ID);
     });
   });
 
