@@ -1,7 +1,11 @@
 import { BlaizeError } from '@blaize-types/errors';
 
-import { generateCorrelationId } from './correlation';
 import { InternalServerError } from './internal-server-error';
+import {
+  getCorrelationId,
+  createCorrelationIdFromHeaders,
+  getCorrelationHeaderName,
+} from '../tracing/correlation';
 
 import type { BlaizeErrorResponse } from '@blaize-types/errors';
 
@@ -29,7 +33,7 @@ export function formatErrorResponse(error: unknown): BlaizeErrorResponse {
   }
 
   // Handle unexpected errors by wrapping them in InternalServerError
-  const correlationId = generateCorrelationId();
+  const correlationId = getCorrelationId();
   let originalMessage: string;
 
   if (error instanceof Error) {
@@ -59,20 +63,48 @@ export function formatErrorResponse(error: unknown): BlaizeErrorResponse {
 
 /**
  * Extracts correlation ID from request headers or generates a new one
+ *
+ * Uses the configured header name (default: 'x-correlation-id') to extract
+ * the correlation ID from request headers. If not found, generates a new one.
+ *
+ * @param headerGetter - Function to retrieve header values by name
+ * @returns Correlation ID (extracted or generated)
  */
 export function extractOrGenerateCorrelationId(
   headerGetter: (name: string) => string | undefined
 ): string {
-  return headerGetter('x-correlation-id') ?? generateCorrelationId();
+  // Get the configured header name
+  const headerName = getCorrelationHeaderName();
+
+  // Build a headers object that the correlation module expects
+  const headers: Record<string, string | undefined> = {
+    [headerName]: headerGetter(headerName),
+  };
+
+  // Use the correlation module's function which handles the configured header
+  return createCorrelationIdFromHeaders(headers);
 }
 
 /**
  * Sets response headers for error responses
+ *
+ * Sets the correlation ID header using the configured header name
+ * (default: 'x-correlation-id'). This ensures error responses always
+ * include the correlation ID for tracing.
+ *
+ * @param headerSetter - Function to set response headers
+ * @param correlationId - The correlation ID to include in the response
  */
 export function setErrorResponseHeaders(
   headerSetter: (name: string, value: string) => void,
   correlationId: string
 ): void {
-  headerSetter('x-correlation-id', correlationId);
+  // Get the configured header name
+  const headerName = getCorrelationHeaderName();
+
+  // Set the correlation header with the configured name
+  headerSetter(headerName, correlationId);
+
   // Add any other standard error headers here if needed
+  // For example: headerSetter('content-type', 'application/json');
 }

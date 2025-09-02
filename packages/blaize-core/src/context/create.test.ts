@@ -7,7 +7,9 @@ import {
 } from '@blaizejs/testing-utils';
 
 import { createContext, getCurrentContext, isInRequestContext } from './create';
+import { ResponseSentError } from './errors';
 import * as storeModule from './store';
+import { _setCorrelationConfig } from '../tracing/correlation';
 
 // Mock the store module
 vi.mock('./store', () => ({
@@ -19,6 +21,8 @@ vi.mock('./store', () => ({
 describe('Context Module', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    _setCorrelationConfig('x-correlation-id');
   });
 
   describe('createContext', () => {
@@ -570,7 +574,7 @@ describe('Context Module', () => {
 
     test('should respect file size limits during parsing', async () => {
       const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
-      const largeContent = 'x'.repeat(100* 1024 * 1024); // 100MB - larger than default 50MB limit
+      const largeContent = 'x'.repeat(100 * 1024 * 1024); // 100MB - larger than default 50MB limit
       const body = createMultipartBody(boundary, [
         {
           name: 'largefile',
@@ -614,6 +618,295 @@ describe('Context Module', () => {
       expect(typeof files).toBe('object');
       expect(typeof fields).toBe('object');
       expect(typeof fileList).toBe('object');
+    });
+  });
+
+  describe('Context Correlation Header Support', () => {
+    let mockReq: any;
+    let mockRes: any;
+
+    describe('JSON Response', () => {
+      test('should include correlation header when sending JSON response', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        // Set correlation ID in state
+        context.state.correlationId = 'test-json-123';
+
+        // Send JSON response
+        context.response.json({ success: true });
+
+        // Verify correlation header was set
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-json-123');
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json');
+        expect(mockRes.end).toHaveBeenCalledWith(JSON.stringify({ success: true }));
+      });
+
+      test('should not add correlation header if correlationId not in state', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        // No correlation ID in state
+        context.response.json({ success: true });
+
+        // Verify correlation header was NOT set
+        expect(mockRes.setHeader).not.toHaveBeenCalledWith('x-correlation-id', expect.anything());
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json');
+      });
+
+      test('should use custom header name when configured', async () => {
+        // Configure custom header name
+        _setCorrelationConfig('x-request-id');
+
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'custom-header-456';
+        context.response.json({ data: 'test' });
+
+        // Verify custom header name was used
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-request-id', 'custom-header-456');
+      });
+    });
+
+    describe('Text Response', () => {
+      test('should include correlation header when sending text response', async () => {
+        mockReq = createMockHttp2Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-text-789';
+        context.response.text('Hello World');
+
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-text-789');
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/plain');
+        expect(mockRes.end).toHaveBeenCalledWith('Hello World');
+      });
+    });
+
+    describe('HTML Response', () => {
+      test('should include correlation header when sending HTML response', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-html-abc';
+        const html = '<h1>Hello</h1>';
+        context.response.html(html);
+
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-html-abc');
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html');
+        expect(mockRes.end).toHaveBeenCalledWith(html);
+      });
+    });
+
+    describe('Redirect Response', () => {
+      test('should include correlation header when sending redirect', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-redirect-xyz';
+        context.response.redirect('/new-location', 301);
+
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-redirect-xyz');
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Location', '/new-location');
+        expect(mockRes.statusCode).toBe(301);
+        expect(mockRes.end).toHaveBeenCalled();
+      });
+
+      test('should use default 302 status for redirect', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-redirect-default';
+        context.response.redirect('/another-location');
+
+        expect(mockRes.statusCode).toBe(302);
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-redirect-default');
+      });
+    });
+
+    describe('Stream Response', () => {
+      test('should include correlation header when streaming', async () => {
+        mockReq = createMockHttp2Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        // Create a mock readable stream
+        const mockStream = {
+          on: vi.fn((event, callback) => {
+            if (event === 'end') {
+              // Simulate stream end
+              setTimeout(callback, 0);
+            }
+            return mockStream;
+          }),
+          pipe: vi.fn(() => mockStream),
+        };
+
+        context.state.correlationId = 'test-stream-999';
+        context.response.stream(mockStream as any, {
+          contentType: 'application/octet-stream',
+        });
+
+        // Verify correlation header was set before streaming
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-stream-999');
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'application/octet-stream');
+        expect(mockStream.pipe).toHaveBeenCalledWith(mockRes);
+      });
+
+      test('should handle stream errors with correlation', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        let errorCallback: any;
+        const mockStream = {
+          on: vi.fn((event, callback) => {
+            if (event === 'error') {
+              errorCallback = callback;
+            }
+            return mockStream;
+          }),
+          pipe: vi.fn(() => mockStream),
+        };
+
+        context.state.correlationId = 'test-stream-error';
+        context.response.stream(mockStream as any);
+
+        // Simulate stream error
+        errorCallback(new Error('Stream failed'));
+
+        expect(mockRes.statusCode).toBe(500);
+        expect(mockRes.end).toHaveBeenCalledWith('Stream error');
+      });
+    });
+
+    describe('HTTP/2 Support', () => {
+      test('should work with HTTP/2 requests', async () => {
+        mockReq = createMockHttp2Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-http2-correlation';
+        context.response.json({ http2: true });
+
+        // The context abstraction handles HTTP/2 vs HTTP/1.1 differences
+        // We just verify the header is set correctly
+        expect(mockRes.setHeader).toHaveBeenCalledWith(
+          'x-correlation-id',
+          'test-http2-correlation'
+        );
+      });
+    });
+
+    describe('Response Status with Correlation', () => {
+      test('should include correlation header with custom status', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-status-201';
+        context.response.json({ created: true }, 201);
+
+        expect(mockRes.statusCode).toBe(201);
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-status-201');
+      });
+    });
+
+    describe('Edge Cases', () => {
+      test('should handle non-string correlation ID gracefully', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        // Set a non-string value (shouldn't happen in practice)
+        context.state.correlationId = 12345 as any;
+        context.response.json({ test: true });
+
+        // Should convert to string
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', '12345');
+      });
+
+      test('should not interfere with other state properties', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-other-state';
+        context.state.user = { id: 1, name: 'Test User' };
+        context.state.customProp = 'custom value';
+
+        context.response.json({ data: 'test' });
+
+        // Verify only correlation header is added, not other state
+        expect(mockRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'test-other-state');
+        expect(mockRes.setHeader).not.toHaveBeenCalledWith('user', expect.anything());
+        expect(mockRes.setHeader).not.toHaveBeenCalledWith('customProp', expect.anything());
+      });
+
+      test('should throw ResponseSentError if response already sent', async () => {
+        mockReq = createMockHttp1Request();
+        mockRes = createMockResponse();
+
+        const context = await createContext(mockReq, mockRes, {
+          parseBody: false,
+        });
+
+        context.state.correlationId = 'test-already-sent';
+
+        // Send first response
+        context.response.json({ first: true });
+
+        // Try to send second response
+        expect(() => {
+          context.response.json({ second: true });
+        }).toThrow(ResponseSentError);
+      });
     });
   });
 });

@@ -1,5 +1,5 @@
-import { getCurrentCorrelationId } from './correlation';
 import { BlaizeError, ErrorType } from '../../../blaize-types/src/errors';
+import { getCorrelationId } from '../tracing/correlation';
 
 export class RequestTimeoutError extends BlaizeError {
   constructor(title: string, details?: unknown, correlationId?: string) {
@@ -7,7 +7,7 @@ export class RequestTimeoutError extends BlaizeError {
       ErrorType.UPLOAD_TIMEOUT,
       title,
       408,
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }

@@ -13,12 +13,22 @@ import type { Context } from '@blaize-types/context';
 import type { NextFunction } from '@blaize-types/middleware';
 import type { Server } from '@blaize-types/server';
 
+const DEFAULT_CORRELATION_ID = 'generated-correlation-id';
+const DEFAULT_CORRELATION_HEADER_NAME = 'x-correlation-id';
+
 // Mock the dependencies
 vi.mock('../context/create');
 vi.mock('../context/store');
 vi.mock('../middleware/compose');
 vi.mock('../middleware/error-boundary');
 vi.mock('../errors/boundary');
+vi.mock('../tracing/correlation', () => ({
+  createCorrelationIdFromHeaders: vi.fn(() => DEFAULT_CORRELATION_ID),
+  getCorrelationId: vi.fn(() => DEFAULT_CORRELATION_ID),
+  getCorrelationHeaderName: vi.fn(() => DEFAULT_CORRELATION_HEADER_NAME),
+  withCorrelationId: vi.fn((_id, fn) => fn()), // Just execute the function
+  _setCorrelationConfig: vi.fn(),
+}));
 
 describe('createRequestHandler - Complete Test Suite', () => {
   // Test setup variables
@@ -53,8 +63,15 @@ describe('createRequestHandler - Complete Test Suite', () => {
     };
 
     mockRes = {
+      // minimal Node-like surface
+      setHeader: vi.fn(),
+      getHeader: vi.fn().mockReturnValue(undefined),
+      removeHeader: vi.fn(),
       writeHead: vi.fn(),
       end: vi.fn(),
+      // sometimes checked by frameworks
+      statusCode: 200,
+      headersSent: false,
     };
 
     mockContext = {
@@ -127,6 +144,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
 
       expect(createContext).toHaveBeenCalledWith(mockReq, mockRes, {
         parseBody: true,
+        initialState: { correlationId: DEFAULT_CORRELATION_ID },
       });
     });
 
@@ -470,6 +488,37 @@ describe('createRequestHandler - Complete Test Suite', () => {
       expect(formatErrorResponse).not.toHaveBeenCalled();
       expect(mockContext.response.json).not.toHaveBeenCalled();
     });
+
+    it('should handle errors in context creation for HTTP/2', async () => {
+      const testError = new Error('Context creation error');
+      vi.mocked(createContext).mockRejectedValue(testError);
+
+      // Mock HTTP/2 response
+      const mockHttp2Res = {
+        stream: {
+          respond: vi.fn(),
+          end: vi.fn(),
+        },
+        headersSent: false,
+      } as any;
+
+      const handler = createRequestHandler(mockServer);
+      await handler(mockReq, mockHttp2Res);
+
+      // Verify HTTP/2 response
+      expect(mockHttp2Res.stream.respond).toHaveBeenCalledWith({
+        ':status': 500,
+        'content-type': 'application/json',
+        'x-correlation-id': DEFAULT_CORRELATION_ID, // Header included
+      });
+      expect(mockHttp2Res.stream.end).toHaveBeenCalledWith(
+        JSON.stringify({
+          error: 'Internal Server Error',
+          message: 'Failed to process request',
+          correlationId: DEFAULT_CORRELATION_ID, // Body includes ID
+        })
+      );
+    });
   });
 
   describe('Context Creation Error Handling', () => {
@@ -485,6 +534,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         JSON.stringify({
           error: 'Internal Server Error',
           message: 'Failed to process request',
+          correlationId: DEFAULT_CORRELATION_ID,
         })
       );
     });

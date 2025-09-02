@@ -8,6 +8,7 @@ import { validateServerOptions } from './validation';
 import { createPluginLifecycleManager } from '../plugins/lifecycle';
 import { validatePlugin } from '../plugins/validation';
 import { createRouter } from '../router/router';
+import { _setCorrelationConfig } from '../tracing/correlation';
 
 import type { Context } from '@blaize-types/context';
 import type { Middleware } from '@blaize-types/middleware';
@@ -43,7 +44,21 @@ function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
     },
     middleware: [...(baseOptions.middleware || []), ...(options.middleware || [])],
     plugins: [...(baseOptions.plugins || []), ...(options.plugins || [])],
+    correlation: options.correlation,
   };
+}
+
+/**
+ * Configures the correlation ID system based on server options
+ *
+ * @param options - The validated server options
+ */
+function configureCorrelation(options: ServerOptions): void {
+  if (options.correlation) {
+    // Apply correlation configuration if provided
+    _setCorrelationConfig(options.correlation.headerName, options.correlation.generator);
+  }
+  // If no correlation options provided, the system uses defaults
 }
 
 /**
@@ -56,6 +71,8 @@ function createListenMethod(
   initialPlugins: Plugin[]
 ): Server['listen'] {
   return async () => {
+    // Configure correlation before starting the server
+    configureCorrelation(validatedOptions);
     // Initialize middleware and plugins
     await initializeComponents(serverInstance, initialMiddleware, initialPlugins);
 

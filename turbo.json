@@ -69,7 +69,7 @@
     "test:coverage": {
       "dependsOn": ["@blaizejs/testing-utils#build"],
       "outputs": ["coverage/**"],
-      "inputs": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.test.ts", "src/**/*.test.tsx"],
+      "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx", "vitest.config.ts"],
       "cache": true
     }
   }

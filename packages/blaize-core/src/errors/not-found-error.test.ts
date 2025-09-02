@@ -3,8 +3,8 @@ import { ErrorType } from '@blaize-types/errors';
 import { NotFoundError } from './not-found-error';
 
 // Mock the correlation system
-vi.mock('./correlation', () => ({
-  getCurrentCorrelationId: vi.fn().mockReturnValue('test-correlation-404'),
+vi.mock('../tracing/correlation', () => ({
+  getCorrelationId: vi.fn().mockReturnValue('test-correlation-404'),
 }));
 
 describe('NotFoundError', () => {

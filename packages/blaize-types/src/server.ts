@@ -1,7 +1,8 @@
 /**
- * BlaizeJS Server Module
+ * BlaizeJS Server Module - Enhanced with Correlation Configuration
  *
- * Provides the core HTTP/2 server implementation with HTTP/1.1 fallback.
+ * Provides the core HTTP/2 server implementation with HTTP/1.1 fallback
+ * and correlation ID tracking configuration.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import http from 'node:http';
@@ -29,6 +30,23 @@ export interface StopOptions {
   plugins?: Plugin[];
   onStopping?: () => Promise<void> | void;
   onStopped?: () => Promise<void> | void;
+}
+
+/**
+ * Correlation ID configuration options
+ */
+export interface CorrelationOptions {
+  /**
+   * The HTTP header name to use for correlation IDs
+   * @default 'x-correlation-id'
+   */
+  headerName?: string;
+
+  /**
+   * Custom correlation ID generator function
+   * @default () => `req_${timestamp}_${random}`
+   */
+  generator?: () => string;
 }
 
 /**
@@ -61,6 +79,12 @@ export interface ServerOptionsInput {
 
   /** Plugins to register */
   plugins?: Plugin[];
+
+  /**
+   * Correlation ID configuration
+   * @since 0.4.0
+   */
+  correlation?: CorrelationOptions;
 }
 
 /**
@@ -93,6 +117,12 @@ export interface ServerOptions {
 
   /** Plugins to register */
   plugins?: Plugin[];
+
+  /**
+   * Correlation ID configuration
+   * @since 0.4.0
+   */
+  correlation?: CorrelationOptions;
 }
 
 /**

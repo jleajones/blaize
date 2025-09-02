@@ -7,7 +7,7 @@
 
 import { ErrorType, BlaizeError } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from './correlation';
+import { getCorrelationId } from '../tracing/correlation';
 
 import type { UnauthorizedErrorDetails } from '@blaize-types/errors';
 
@@ -47,7 +47,7 @@ export class UnauthorizedError extends BlaizeError<UnauthorizedErrorDetails> {
       ErrorType.UNAUTHORIZED,
       title,
       401, // HTTP 401 Unauthorized
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }

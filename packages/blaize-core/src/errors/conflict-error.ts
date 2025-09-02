@@ -7,7 +7,7 @@
 
 import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from './correlation';
+import { getCorrelationId } from '../tracing/correlation';
 
 import type { ConflictErrorDetails } from '@blaize-types/errors';
 
@@ -48,7 +48,7 @@ export class ConflictError extends BlaizeError<ConflictErrorDetails> {
       ErrorType.CONFLICT,
       title,
       409, // HTTP 409 Conflict
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }
