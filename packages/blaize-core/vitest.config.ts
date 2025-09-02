@@ -39,6 +39,7 @@ export default defineConfig({
         '/**/*/index.ts',
         '**/*.config.*',
         '**/examples/**',
+        '**/dist/**',
       ],
       // Use the thresholds property for coverage targets
       thresholds: {
