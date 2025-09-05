@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 import type { Context } from './context';
 
 /**
@@ -28,11 +29,24 @@ export interface MiddlewareOptions {
 }
 
 /**
- * Middleware type
+ * Middleware type with generic parameters for type-safe state and service contributions
+ * @template TState - Type of state this middleware contributes to the context
+ * @template TServices - Type of services this middleware contributes to the context
  */
-export interface Middleware {
+export interface Middleware<
+  TState extends Record<string, unknown> = {},
+  TServices extends Record<string, unknown> = {},
+> {
   name: string;
   execute: MiddlewareFunction;
   skip?: ((ctx: Context) => boolean) | undefined;
   debug?: boolean | undefined;
+
+  /**
+   * Type carriers for compile-time type information
+   * These properties are never used at runtime and exist only for TypeScript's type system
+   * @internal
+   */
+  _state?: TState;
+  _services?: TServices;
 }
