@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Context, QueryParams, State } from './context';
+import type { Context, QueryParams, State, Services } from './context';
 import type { Middleware } from './middleware';
 
 /**
@@ -47,7 +47,12 @@ export type RouteHandler<
   TQuery = Record<string, string | string[] | undefined>,
   TBody = unknown,
   TResponse = unknown,
-> = (ctx: Context<State, TBody, TQuery>, params: TParams) => Promise<TResponse> | TResponse;
+  TState extends State = State, // NEW in v0.4.0
+  TServices extends Services = Services,
+> = (
+  ctx: Context<TState, TServices, TBody, TQuery>,
+  params: TParams
+) => Promise<TResponse> | TResponse;
 
 /**
  * Options for a route method with schema-based type inference
