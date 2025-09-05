@@ -22,7 +22,7 @@ export interface MiddlewareOptions {
   handler: MiddlewareFunction;
 
   /** Skip function to conditionally bypass middleware */
-  skip?: ((ctx: Context) => boolean) | undefined;
+  skip?: ((ctx: Context<any, any>) => boolean) | undefined;
 
   /** Enable debugging for this middleware */
   debug?: boolean;

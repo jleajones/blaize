@@ -50,6 +50,14 @@ export interface State {
   _bodyError?: BodyParseError;
 }
 
+/**
+ * Services container for storing injectable services/dependencies
+ * Allows middleware to contribute services that are accessible throughout the request lifecycle
+ */
+export interface Services {
+  [key: string]: unknown;
+}
+
 export interface ContextResponse<S extends State = State> {
   raw: UnifiedResponse;
 
@@ -103,8 +111,17 @@ export interface ContextRequest<TBody = unknown> {
 
 /**
  * Context object representing a request/response cycle
+ * @template S - Type of the state object
+ * @template Svc - Type of the services object
+ * @template TBody - Type of the request body
+ * @template TQuery - Type of the query parameters
  */
-export interface Context<S extends State = State, TBody = unknown, TQuery = QueryParams> {
+export interface Context<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+> {
   /**
    * Request information
    */
@@ -122,6 +139,12 @@ export interface Context<S extends State = State, TBody = unknown, TQuery = Quer
    * Request-scoped state for storing data during the request lifecycle
    */
   state: S;
+
+  /**
+   * Services container for accessing injected services/dependencies
+   * Populated by middleware that contribute services
+   */
+  services: Svc;
 }
 
 // Define the multipart limits type properly
@@ -142,9 +165,17 @@ export interface ContextOptions {
   parseBody?: boolean;
 
   /**
-   * Additional state to merge into the context
+   * Initial state to include in the context
+   *
    */
   initialState?: State;
+
+  /**
+   * Initial services to include in the context
+   *
+   */
+  initialServices?: Services;
+
   /**
    * Limits for various body types to prevent abuse
    */
@@ -160,7 +191,9 @@ export interface ContextOptions {
 /**
  * Function to get the current context from AsyncLocalStorage
  */
-export type GetContextFn = <S extends State = State>() => Context<S> | undefined;
+export type GetContextFn = <S extends State = State, Svc extends Services = Services>() =>
+  | Context<S, Svc>
+  | undefined;
 
 /**
  * Factory function for creating a new context
