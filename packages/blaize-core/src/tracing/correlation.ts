@@ -157,7 +157,7 @@ export function withCorrelationId<T>(
  * @example
  * ```typescript
  * // From incoming request headers
- * const correlationId = getOrGenerateCorrelationId(request.headers);
+ * const correlationId = createCorrelationIdFromHeaders(request.headers);
  *
  * // Use in request processing
  * await withCorrelationId(correlationId, async () => {
@@ -192,7 +192,7 @@ export function createCorrelationIdFromHeaders(
 
 // Note: Correlation middleware is not needed since we're integrating
 // at the request handler level (see Task T6). The request handler
-// will directly use getOrGenerateCorrelationId() and withCorrelationId()
+// will directly use createCorrelationIdFromHeaders() and withCorrelationId()
 // to establish correlation context for the entire request lifecycle.
 
 /**

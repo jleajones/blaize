@@ -202,7 +202,7 @@ describe('Correlation ID System', () => {
     });
   });
 
-  describe('getOrGenerateCorrelationId', () => {
+  describe('createCorrelationIdFromHeaders', () => {
     describe('with default header configuration', () => {
       test('extracts correlation ID from x-correlation-id header', () => {
         const headerCorrelationId = 'header-correlation-123';
