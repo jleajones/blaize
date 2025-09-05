@@ -7,7 +7,7 @@
 
 import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
-import { getCurrentCorrelationId } from './correlation';
+import { getCorrelationId } from '../tracing/correlation';
 
 import type { ValidationErrorDetails } from '@blaize-types/errors';
 
@@ -55,7 +55,7 @@ export class ValidationError extends BlaizeError<ValidationErrorDetails> {
       ErrorType.VALIDATION_ERROR,
       title,
       400, // HTTP 400 Bad Request
-      correlationId ?? getCurrentCorrelationId(),
+      correlationId ?? getCorrelationId(),
       details
     );
   }

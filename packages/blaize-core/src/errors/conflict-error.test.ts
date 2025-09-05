@@ -7,8 +7,8 @@ import { ErrorType } from '@blaize-types/errors';
 import { ConflictError } from './conflict-error';
 
 // Mock the correlation system
-vi.mock('./correlation', () => ({
-  getCurrentCorrelationId: vi.fn().mockReturnValue('test-correlation-common'),
+vi.mock('../tracing/correlation', () => ({
+  getCorrelationId: vi.fn().mockReturnValue('test-correlation-common'),
 }));
 
 describe('ConflictError', () => {

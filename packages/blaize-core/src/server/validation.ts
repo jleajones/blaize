@@ -50,6 +50,29 @@ const http2Schema = z
     }
   );
 
+// Create a schema for correlation options
+const correlationSchema = z
+  .object({
+    /**
+     * HTTP header name for correlation IDs
+     * Must be a valid HTTP header name (lowercase, alphanumeric with hyphens)
+     */
+    headerName: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]*$/, {
+        message:
+          'Header name must start with a letter and contain only lowercase letters, numbers, and hyphens',
+      })
+      .optional(),
+
+    /**
+     * Custom generator function for correlation IDs
+     * Must be a function that returns a string
+     */
+    generator: z.function().args().returns(z.string()).optional(),
+  })
+  .optional();
+
 // Validation schema for server options
 export const serverOptionsSchema = z.object({
   port: z.number().int().positive().optional().default(3000),
@@ -60,6 +83,7 @@ export const serverOptionsSchema = z.object({
   }),
   middleware: z.array(middlewareSchema).optional().default([]),
   plugins: z.array(pluginSchema).optional().default([]),
+  correlation: correlationSchema,
 });
 
 export function validateServerOptions(options: ServerOptionsInput): ServerOptions {

@@ -5,6 +5,7 @@ import {
   ResponseSentHeaderError,
 } from './errors';
 import { hasContext, getContext } from './store';
+import { getCorrelationHeaderName } from '../tracing/correlation';
 import { parseMultipartRequest } from '../upload/multipart-parser';
 import { isMultipartContent } from '../upload/utils';
 
@@ -218,6 +219,19 @@ function createRequestHeadersGetter(req: UnifiedRequest) {
 }
 
 /**
+ * Helper to add correlation header if available in state
+ * Works for both HTTP/1.1 and HTTP/2 by using the context's setHeader abstraction
+ */
+function addCorrelationHeader(res: UnifiedResponse, state: State): void {
+  // Only add if correlation ID exists in state
+  if (state.correlationId) {
+    const headerName = getCorrelationHeaderName();
+    const correlationValue = String(state.correlationId);
+    res.setHeader(headerName, correlationValue);
+  }
+}
+
+/**
  * Create the response object portion of the context
  */
 function createResponseObject<S extends State = State, TBody = unknown, TQuery = QueryParams>(
@@ -237,11 +251,11 @@ function createResponseObject<S extends State = State, TBody = unknown, TQuery =
     headers: createHeadersSetter(res, responseState, ctx),
     type: createContentTypeSetter(res, responseState, ctx),
 
-    json: createJsonResponder(res, responseState),
-    text: createTextResponder(res, responseState),
-    html: createHtmlResponder(res, responseState),
-    redirect: createRedirectResponder(res, responseState),
-    stream: createStreamResponder(res, responseState),
+    json: createJsonResponder(res, responseState, ctx.state),
+    text: createTextResponder(res, responseState, ctx.state),
+    html: createHtmlResponder(res, responseState, ctx.state),
+    redirect: createRedirectResponder(res, responseState, ctx.state),
+    stream: createStreamResponder(res, responseState, ctx.state),
   };
 }
 
@@ -318,7 +332,7 @@ function createContentTypeSetter<S extends State = State, TBody = unknown, TQuer
 /**
  * Create a function to send JSON response
  */
-function createJsonResponder(res: UnifiedResponse, responseState: { sent: boolean }) {
+function createJsonResponder(res: UnifiedResponse, responseState: { sent: boolean }, state: State) {
   return function jsonResponder(body: unknown, status?: number) {
     if (responseState.sent) {
       throw new ResponseSentError();
@@ -328,6 +342,7 @@ function createJsonResponder(res: UnifiedResponse, responseState: { sent: boolea
       res.statusCode = status;
     }
 
+    addCorrelationHeader(res, state);
     res.setHeader(CONTENT_TYPE_HEADER, 'application/json');
     res.end(JSON.stringify(body));
     responseState.sent = true;
@@ -337,7 +352,7 @@ function createJsonResponder(res: UnifiedResponse, responseState: { sent: boolea
 /**
  * Create a function to send text response
  */
-function createTextResponder(res: UnifiedResponse, responseState: { sent: boolean }) {
+function createTextResponder(res: UnifiedResponse, responseState: { sent: boolean }, state: State) {
   return function textResponder(body: string, status?: number) {
     if (responseState.sent) {
       throw new ResponseSentError();
@@ -347,6 +362,7 @@ function createTextResponder(res: UnifiedResponse, responseState: { sent: boolea
       res.statusCode = status;
     }
 
+    addCorrelationHeader(res, state);
     res.setHeader(CONTENT_TYPE_HEADER, 'text/plain');
     res.end(body);
     responseState.sent = true;
@@ -356,7 +372,7 @@ function createTextResponder(res: UnifiedResponse, responseState: { sent: boolea
 /**
  * Create a function to send HTML response
  */
-function createHtmlResponder(res: UnifiedResponse, responseState: { sent: boolean }) {
+function createHtmlResponder(res: UnifiedResponse, responseState: { sent: boolean }, state: State) {
   return function htmlResponder(body: string, status?: number) {
     if (responseState.sent) {
       throw new ResponseSentError();
@@ -366,6 +382,7 @@ function createHtmlResponder(res: UnifiedResponse, responseState: { sent: boolea
       res.statusCode = status;
     }
 
+    addCorrelationHeader(res, state);
     res.setHeader(CONTENT_TYPE_HEADER, 'text/html');
     res.end(body);
     responseState.sent = true;
@@ -375,12 +392,17 @@ function createHtmlResponder(res: UnifiedResponse, responseState: { sent: boolea
 /**
  * Create a function to send redirect response
  */
-function createRedirectResponder(res: UnifiedResponse, responseState: { sent: boolean }) {
+function createRedirectResponder(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  state: State
+) {
   return function redirectResponder(url: string, status = 302) {
     if (responseState.sent) {
       throw new ResponseSentError();
     }
 
+    addCorrelationHeader(res, state);
     res.statusCode = status;
     res.setHeader('Location', url);
     res.end();
@@ -391,7 +413,11 @@ function createRedirectResponder(res: UnifiedResponse, responseState: { sent: bo
 /**
  * Create a function to stream response
  */
-function createStreamResponder(res: UnifiedResponse, responseState: { sent: boolean }) {
+function createStreamResponder(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  state: State
+) {
   return function streamResponder(readable: NodeJS.ReadableStream, options: StreamOptions = {}) {
     if (responseState.sent) {
       throw new ResponseSentError();
@@ -401,6 +427,7 @@ function createStreamResponder(res: UnifiedResponse, responseState: { sent: bool
       res.statusCode = options.status;
     }
 
+    addCorrelationHeader(res, state);
     if (options.contentType) {
       res.setHeader(CONTENT_TYPE_HEADER, options.contentType);
     }

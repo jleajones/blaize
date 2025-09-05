@@ -6,10 +6,12 @@
  *
  * @package blaizejs
  */
-
+// Middleware System
 import { compose } from './middleware/compose';
 import { create as createMiddleware } from './middleware/create';
+// Plugin System
 import { create as createPlugin } from './plugins/create';
+// Router System
 import {
   createDeleteRoute,
   createGetRoute,
@@ -19,18 +21,22 @@ import {
   createPostRoute,
   createPutRoute,
 } from './router/create';
+// Server
 import { create as createServer } from './server/create';
+// Tracing
+import { getCorrelationId } from './tracing/correlation';
 
 // TODO: ideally this could be import as an npm package, but for now we use a relative path
 // Explicit imports to avoid using values without importing
 export * from '../../blaize-types/src/index';
 
 // Re-export everything
-// Server module exports
-export { createServer };
 
-// Router module exports
 export {
+  // Server module exports
+  createServer,
+
+  // Router module exports
   createDeleteRoute,
   createGetRoute,
   createHeadRoute,
@@ -38,13 +44,17 @@ export {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
+
+  // Middleware module exports
+  createMiddleware,
+  compose,
+
+  // Plugins module exports
+  createPlugin,
+
+  // Tracing module exports
+  getCorrelationId,
 };
-
-// Middleware module exports
-export { createMiddleware, compose };
-
-// Plugins module exports
-export { createPlugin };
 
 // Version information
 export const VERSION = '0.1.0';
@@ -82,6 +92,7 @@ const Blaize = {
   createServer,
   createMiddleware,
   createPlugin,
+  getCorrelationId,
 
   // Namespaces (using the non-conflicting names)
   Server: ServerAPI,

@@ -1,4 +1,5 @@
 /// <reference types="vitest" />
+import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
 
 import sharedConfig from '@blaizejs/vitest-config';
@@ -7,7 +8,7 @@ import sharedConfig from '@blaizejs/vitest-config';
 export default defineConfig({
   // Inherit all settings from shared config
   ...sharedConfig,
-
+  plugins: [tsconfigPaths()],
   // Override or add additional settings
   test: {
     typecheck: {
@@ -38,6 +39,7 @@ export default defineConfig({
         '/**/*/index.ts',
         '**/*.config.*',
         '**/examples/**',
+        '**/dist/**',
       ],
       // Use the thresholds property for coverage targets
       thresholds: {
