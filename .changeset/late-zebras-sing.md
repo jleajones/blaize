@@ -1,0 +1,5 @@
+---
+'blaizejs': patch
+---
+
+📚 update documentation
