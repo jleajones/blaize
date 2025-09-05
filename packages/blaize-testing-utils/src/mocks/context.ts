@@ -1,4 +1,4 @@
-import { Context, QueryParams, State } from '../../../blaize-types/src';
+import { Context, QueryParams, Services, State } from '../../../blaize-types/src';
 
 /**
  * Configuration options for creating test contexts
@@ -11,6 +11,7 @@ export interface TestContextConfig {
   headers?: Record<string, string>;
   body?: unknown;
   initialState?: Record<string, unknown>;
+  initialServices?: Record<string, unknown>;
 }
 
 /**
@@ -35,7 +36,12 @@ export interface TestContextConfig {
  * });
  * ```
  */
-export function createMockContext(config: TestContextConfig = {}): Context {
+export function createMockContext<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(config: TestContextConfig = {}): Context<S, Svc, TBody, TQuery> {
   const {
     method = 'GET',
     path = '/test',
@@ -44,6 +50,7 @@ export function createMockContext(config: TestContextConfig = {}): Context {
     headers = {},
     body,
     initialState = {},
+    initialServices = {},
   } = config;
 
   // Create response object that properly chains
@@ -79,11 +86,11 @@ export function createMockContext(config: TestContextConfig = {}): Context {
       method,
       path,
       url: null, // URL object would be parsed in real implementation
-      query: query as QueryParams,
+      query: query as TQuery,
       params,
       protocol: 'http',
       isHttp2: false,
-      body,
+      body: body as TBody,
 
       // Required header function
       header: vi.fn().mockImplementation((name: string): string | undefined => {
@@ -104,6 +111,7 @@ export function createMockContext(config: TestContextConfig = {}): Context {
         }),
     },
     response: responseObj,
-    state: { ...initialState } as State,
+    state: { ...initialState } as S,
+    services: { ...initialServices } as Svc,
   };
 }
