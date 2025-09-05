@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import type { Context, QueryParams, State, UnknownFunction } from '@blaize-types/context';
+import type { Context, QueryParams, Services, State, UnknownFunction } from '@blaize-types/context';
 
 /**
  * AsyncLocalStorage instance for storing request context
@@ -10,10 +10,13 @@ export const contextStorage = new AsyncLocalStorage<Context>();
 /**
  * Returns the current context from AsyncLocalStorage
  */
-export function getContext<S extends State = State, TBody = unknown, TQuery = QueryParams>():
-  | Context<S, TBody, TQuery>
-  | undefined {
-  return contextStorage.getStore() as Context<S, TBody, TQuery> | undefined;
+export function getContext<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(): Context<S, Svc, TBody, TQuery> | undefined {
+  return contextStorage.getStore() as Context<S, Svc, TBody, TQuery> | undefined;
 }
 
 /**

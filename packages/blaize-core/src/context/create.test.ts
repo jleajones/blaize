@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 
 import {
+  createMockContext,
   createMockHttp1Request,
   createMockHttp2Request,
   createMockResponse,
@@ -9,7 +10,10 @@ import {
 import { createContext, getCurrentContext, isInRequestContext } from './create';
 import { ResponseSentError } from './errors';
 import * as storeModule from './store';
+import { runWithContext } from './store';
 import { _setCorrelationConfig } from '../tracing/correlation';
+
+import type { ContextOptions, Services, State } from '@blaize-types/context';
 
 // Mock the store module
 vi.mock('./store', () => ({
@@ -338,11 +342,7 @@ describe('Context Module', () => {
 
   describe('getCurrentContext', () => {
     test('should return context if it exists', () => {
-      const mockContext = {
-        request: {} as any,
-        response: {} as any,
-        state: {},
-      };
+      const mockContext = createMockContext();
 
       vi.mocked(storeModule.getContext).mockReturnValue(mockContext);
 
@@ -906,6 +906,249 @@ describe('Context Module', () => {
         expect(() => {
           context.response.json({ second: true });
         }).toThrow(ResponseSentError);
+      });
+    });
+  });
+
+  describe('Context Services Initialization', () => {
+    let req: any;
+    let res: any;
+
+    beforeEach(() => {
+      req = createMockHttp1Request();
+      res = createMockResponse();
+    });
+
+    test('should initialize context with empty services by default', async () => {
+      const ctx = await createContext(req, res);
+
+      expect(ctx.services).toBeDefined();
+      expect(ctx.services).toEqual({});
+      expect(typeof ctx.services).toBe('object');
+    });
+
+    test('should initialize context with provided services', async () => {
+      const initialServices = {
+        db: { connected: true },
+        cache: new Map(),
+        logger: console.log,
+      };
+
+      const options: ContextOptions = {
+        initialServices,
+      };
+
+      const ctx = await createContext(req, res, options);
+
+      expect(ctx.services).toBeDefined();
+      expect(ctx.services).toEqual(initialServices);
+      expect(ctx.services.db).toEqual({ connected: true });
+      expect(ctx.services.cache).toBeInstanceOf(Map);
+      expect(ctx.services.logger).toBe(console.log);
+    });
+
+    test('services should be mutable', async () => {
+      const ctx = await createContext(req, res);
+
+      // Add new service - need to type assert or use proper typing
+      ctx.services.newService = { test: 'value' };
+      expect(ctx.services.newService).toEqual({ test: 'value' });
+
+      // Modify existing service - need to handle the unknown type
+      const service = ctx.services.newService as { test: string };
+      service.test = 'updated';
+      expect(service.test).toBe('updated');
+
+      // Delete service
+      delete ctx.services.newService;
+      expect(ctx.services.newService).toBeUndefined();
+    });
+
+    // Alternative approach - more type-safe version:
+    test('services should be mutable (type-safe version)', async () => {
+      // Define the service type
+      interface TestService {
+        test: string;
+      }
+
+      const ctx = await createContext(req, res);
+
+      // Add new service with type assertion
+      ctx.services.newService = { test: 'value' } as TestService;
+
+      // Now TypeScript knows the type
+      const service = ctx.services.newService as TestService;
+      expect(service).toEqual({ test: 'value' });
+
+      // Modify existing service
+      service.test = 'updated';
+      expect(service.test).toBe('updated');
+
+      // Delete service
+      delete ctx.services.newService;
+      expect(ctx.services.newService).toBeUndefined();
+    });
+
+    test('should work with typed services', async () => {
+      interface AppServices extends Services {
+        database: {
+          query: (sql: string) => Promise<any[]>;
+          execute: (sql: string) => Promise<void>;
+        };
+        cache: {
+          get: (key: string) => any;
+          set: (key: string, value: any) => void;
+        };
+      }
+
+      const services: AppServices = {
+        database: {
+          query: async _sql => [],
+          execute: async _sql => {},
+        },
+        cache: {
+          get: _key => null,
+          set: (_key, _value) => {},
+        },
+      };
+
+      const ctx = await createContext<State, AppServices>(req, res, {
+        initialServices: services,
+      });
+
+      // TypeScript should know the exact types
+      const _result = await ctx.services.database.query('SELECT * FROM users');
+      ctx.services.cache.set('key', 'value');
+
+      expect(ctx.services.database).toBeDefined();
+      expect(ctx.services.cache).toBeDefined();
+    });
+
+    test('should maintain services through context retrieval', async () => {
+      interface TestServices extends Services {
+        testService: { value: number };
+      }
+      const services = {
+        testService: { value: 42 },
+      };
+
+      const ctx = await createContext(req, res, { initialServices: services });
+
+      await runWithContext(ctx, async () => {
+        const retrievedCtx = getCurrentContext<State, TestServices>();
+        expect(retrievedCtx.services).toEqual(services);
+        expect(retrievedCtx.services.testService.value).toBe(42);
+      });
+    });
+
+    test('should allow middleware to add services', async () => {
+      interface DbService {
+        query: (sql: string) => Promise<string[]>;
+      }
+
+      interface AppServices extends Services {
+        db: DbService;
+      }
+
+      const ctx = await createContext<State, AppServices>(req, res);
+
+      // Simulate middleware adding a service
+      const addDatabaseMiddleware = async () => {
+        ctx.services.db = {
+          query: async (sql: string) => [`Result for: ${sql}`],
+        };
+      };
+
+      await addDatabaseMiddleware();
+      expect(ctx.services.db).toBeDefined();
+
+      const result = await ctx.services.db.query('SELECT 1');
+      expect(result).toEqual(['Result for: SELECT 1']);
+    });
+
+    test('should handle both state and services initialization', async () => {
+      // Define the types
+      interface AppState extends State {
+        requestId: string;
+        user: { id: string; name: string };
+      }
+
+      interface AppServices extends Services {
+        logger: { log: (msg: string) => void };
+        config: { apiUrl: string };
+      }
+
+      const options: ContextOptions = {
+        initialState: {
+          requestId: 'req-123',
+          user: { id: '1', name: 'Test' },
+        },
+        initialServices: {
+          logger: { log: (msg: string) => console.log(msg) },
+          config: { apiUrl: 'https://api.example.com' },
+        },
+      };
+
+      const ctx = await createContext<AppState, AppServices>(req, res, options);
+
+      // Check state
+      expect(ctx.state.requestId).toBe('req-123');
+      expect(ctx.state.user).toEqual({ id: '1', name: 'Test' });
+
+      // Check services
+      expect(ctx.services.logger).toBeDefined();
+      expect(ctx.services.config.apiUrl).toBe('https://api.example.com');
+    });
+
+    test('should not interfere with existing functionality', async () => {
+      const ctx = await createContext(req, res, {
+        parseBody: false,
+        initialState: { test: 'value' },
+      });
+
+      // Existing properties should work as before
+      expect(ctx.request).toBeDefined();
+      expect(ctx.response).toBeDefined();
+      expect(ctx.state).toBeDefined();
+      expect(ctx.state.test).toBe('value');
+
+      // Services should be added without breaking anything
+      expect(ctx.services).toBeDefined();
+      expect(ctx.services).toEqual({});
+    });
+
+    test('getCurrentContext should return context with services', async () => {
+      interface TestServices extends Services {
+        test: { value: number };
+      }
+
+      const ctx = await createContext<State, TestServices>(req, res, {
+        initialServices: { test: { value: 100 } },
+      });
+
+      await runWithContext(ctx, () => {
+        const current = getCurrentContext<State, TestServices>();
+        expect(current.services.test.value).toBe(100);
+      });
+    });
+
+    test('services should be separate per request context', async () => {
+      const ctx1 = await createContext(req, res, {
+        initialServices: { id: 'context-1' },
+      });
+
+      const ctx2 = await createContext(req, res, {
+        initialServices: { id: 'context-2' },
+      });
+
+      await runWithContext(ctx1, () => {
+        const current = getCurrentContext();
+        expect(current.services.id).toBe('context-1');
+      });
+
+      await runWithContext(ctx2, () => {
+        const current = getCurrentContext();
+        expect(current.services.id).toBe('context-2');
       });
     });
   });

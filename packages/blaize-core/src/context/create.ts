@@ -19,6 +19,7 @@ import type {
   StreamOptions,
   UnifiedRequest,
   UnifiedResponse,
+  Services,
 } from '@blaize-types/context';
 import type { BodyParseError } from '@blaize-types/errors';
 
@@ -114,11 +115,16 @@ function getProtocol(req: UnifiedRequest): string {
 /**
  * Create a new context object for a request/response cycle
  */
-export async function createContext<TBody = unknown, TQuery = QueryParams>(
+export async function createContext<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(
   req: UnifiedRequest,
   res: UnifiedResponse,
   options: ContextOptions = {}
-): Promise<Context<State, TBody, TQuery>> {
+): Promise<Context<S, Svc, TBody, TQuery>> {
   // Extract basic request information
   const { path, url, query } = parseRequestUrl(req);
   const method = req.method || 'GET';
@@ -127,13 +133,14 @@ export async function createContext<TBody = unknown, TQuery = QueryParams>(
 
   // Initialize state
   const params: RequestParams = {};
-  const state = { ...(options.initialState || {}) };
+  const state = { ...(options.initialState || {}) } as S;
+  const services = { ...(options.initialServices || {}) } as Svc;
 
   // Track response status
   const responseState = { sent: false };
 
   // Create the context object with its components
-  const ctx: Context<State, TBody, TQuery> = {
+  const ctx: Context<S, Svc, TBody, TQuery> = {
     request: createRequestObject<TBody, TQuery>(req, {
       path,
       url,
@@ -143,8 +150,9 @@ export async function createContext<TBody = unknown, TQuery = QueryParams>(
       isHttp2,
       protocol,
     }),
-    response: {} as Context<State, TBody, TQuery>['response'],
+    response: {} as Context<S, Svc, TBody, TQuery>['response'],
     state,
+    services,
   };
 
   ctx.response = createResponseObject(res, responseState, ctx);
@@ -171,7 +179,7 @@ function createRequestObject<TBody = unknown, TQuery = QueryParams>(
     isHttp2: boolean;
     protocol: string;
   }
-): Context<State, TBody, TQuery>['request'] {
+): Context<State, Services, TBody, TQuery>['request'] {
   return {
     raw: req,
     ...info,
@@ -234,11 +242,16 @@ function addCorrelationHeader(res: UnifiedResponse, state: State): void {
 /**
  * Create the response object portion of the context
  */
-function createResponseObject<S extends State = State, TBody = unknown, TQuery = QueryParams>(
+function createResponseObject<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(
   res: UnifiedResponse,
   responseState: { sent: boolean },
-  ctx: Context<S, TBody, TQuery>
-): Context<S, TBody, TQuery>['response'] {
+  ctx: Context<S, Svc, TBody, TQuery>
+): Context<S, Svc, TBody, TQuery>['response'] {
   return {
     raw: res,
 
@@ -262,11 +275,12 @@ function createResponseObject<S extends State = State, TBody = unknown, TQuery =
 /**
  * Create a function to set response status
  */
-function createStatusSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
-  res: UnifiedResponse,
-  responseState: { sent: boolean },
-  ctx: Context<S, TBody, TQuery>
-) {
+function createStatusSetter<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
   return function statusSetter(code: number): Context['response'] {
     if (responseState.sent) {
       throw new ResponseSentError();
@@ -279,11 +293,12 @@ function createStatusSetter<S extends State = State, TBody = unknown, TQuery = Q
 /**
  * Create a function to set a response header
  */
-function createHeaderSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
-  res: UnifiedResponse,
-  responseState: { sent: boolean },
-  ctx: Context<S, TBody, TQuery>
-) {
+function createHeaderSetter<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
   return function headerSetter(name: string, value: string) {
     if (responseState.sent) {
       throw new ResponseSentHeaderError();
@@ -296,11 +311,12 @@ function createHeaderSetter<S extends State = State, TBody = unknown, TQuery = Q
 /**
  * Create a function to set multiple response headers
  */
-function createHeadersSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
-  res: UnifiedResponse,
-  responseState: { sent: boolean },
-  ctx: Context<S, TBody, TQuery>
-) {
+function createHeadersSetter<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
   return function headersSetter(headers: Record<string, string>) {
     if (responseState.sent) {
       throw new ResponseSentHeaderError();
@@ -315,11 +331,12 @@ function createHeadersSetter<S extends State = State, TBody = unknown, TQuery = 
 /**
  * Create a function to set content type header
  */
-function createContentTypeSetter<S extends State = State, TBody = unknown, TQuery = QueryParams>(
-  res: UnifiedResponse,
-  responseState: { sent: boolean },
-  ctx: Context<S, TBody, TQuery>
-) {
+function createContentTypeSetter<
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+>(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
   return function typeSetter(type: string) {
     if (responseState.sent) {
       throw new ResponseSentContentError();
@@ -463,7 +480,7 @@ function createStreamResponder(
  */
 async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
-  ctx: Context<State, TBody, TQuery>,
+  ctx: Context<State, Services, TBody, TQuery>,
   options: ContextOptions = {}
 ): Promise<void> {
   // Skip parsing for methods that typically don't have bodies
@@ -544,7 +561,7 @@ function shouldSkipParsing(method?: string): boolean {
  */
 async function parseJsonBody<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
-  ctx: Context<State, TBody, TQuery>
+  ctx: Context<State, Services, TBody, TQuery>
 ): Promise<void> {
   const body = await readRequestBody(req);
 
@@ -574,7 +591,7 @@ async function parseJsonBody<TBody = unknown, TQuery = QueryParams>(
  */
 async function parseFormUrlEncodedBody<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
-  ctx: Context<State, TBody, TQuery>
+  ctx: Context<State, Services, TBody, TQuery>
 ): Promise<void> {
   const body = await readRequestBody(req);
   if (!body) return;
@@ -614,7 +631,7 @@ function parseUrlEncodedData(body: string): Record<string, string | string[]> {
  */
 async function parseTextBody<TBody = null, TQuery = QueryParams>(
   req: UnifiedRequest,
-  ctx: Context<State, TBody, TQuery>
+  ctx: Context<State, Services, TBody, TQuery>
 ): Promise<void> {
   const body = await readRequestBody(req);
   if (body) {
@@ -627,7 +644,7 @@ async function parseTextBody<TBody = null, TQuery = QueryParams>(
  */
 async function parseMultipartBody<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
-  ctx: Context<State, TBody, TQuery>,
+  ctx: Context<State, Services, TBody, TQuery>,
   multipartLimits: MultipartLimits
 ): Promise<void> {
   try {
@@ -656,7 +673,7 @@ async function parseMultipartBody<TBody = unknown, TQuery = QueryParams>(
  * Set body parsing error in context state with proper typing
  */
 function setBodyError<TBody = unknown, TQuery = QueryParams>(
-  ctx: Context<State, TBody, TQuery>,
+  ctx: Context<State, Services, TBody, TQuery>,
   type: BodyParseError['type'],
   message: string,
   error: unknown
@@ -691,10 +708,11 @@ async function readRequestBody(req: UnifiedRequest): Promise<string> {
  */
 export function getCurrentContext<
   S extends State = State,
+  Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(): Context<S, TBody, TQuery> {
-  const ctx = getContext<S, TBody, TQuery>();
+>(): Context<S, Svc, TBody, TQuery> {
+  const ctx = getContext<S, Svc, TBody, TQuery>();
   if (!ctx) {
     throw new Error(
       'No context found. Ensure this function is called within a request handler, ' +

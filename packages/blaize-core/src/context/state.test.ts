@@ -1,3 +1,5 @@
+import { createMockContext } from '@blaizejs/testing-utils';
+
 import {
   getState,
   setState,
@@ -9,7 +11,7 @@ import {
 } from './state';
 import { getContext } from './store';
 
-import type { Context, UnifiedRequest, UnifiedResponse } from '@blaize-types/context';
+import type { Context } from '@blaize-types/context';
 
 class MockContextError extends Error {
   constructor(message: string = 'Mock context is not defined') {
@@ -31,35 +33,7 @@ vi.mock('./store', () => {
 describe('State Management', () => {
   beforeEach(() => {
     // Create a fresh mock context for each test
-    mockContext = {
-      request: {
-        raw: {} as UnifiedRequest,
-        method: 'GET',
-        path: '/',
-        url: null,
-        query: {},
-        params: {},
-        protocol: 'http:',
-        body: {},
-        isHttp2: false,
-        header: vi.fn().mockReturnValue(undefined),
-        headers: vi.fn().mockReturnValue({}),
-      },
-      response: {
-        raw: {} as UnifiedResponse,
-        sent: false,
-        status: vi.fn().mockReturnThis(),
-        header: vi.fn().mockReturnThis(),
-        headers: vi.fn().mockReturnThis(),
-        type: vi.fn().mockReturnThis(),
-        json: vi.fn(),
-        text: vi.fn(),
-        html: vi.fn(),
-        redirect: vi.fn(),
-        stream: vi.fn(),
-      },
-      state: {},
-    };
+    mockContext = createMockContext();
 
     // Clear previous mocks
     vi.clearAllMocks();
