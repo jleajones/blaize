@@ -33,10 +33,7 @@ export interface MiddlewareOptions {
  * @template TState - Type of state this middleware contributes to the context
  * @template TServices - Type of services this middleware contributes to the context
  */
-export interface Middleware<
-  TState extends Record<string, unknown> = {},
-  TServices extends Record<string, unknown> = {},
-> {
+export interface Middleware<TState = {}, TServices = {}> {
   name: string;
   execute: MiddlewareFunction;
   skip?: ((ctx: Context) => boolean) | undefined;
