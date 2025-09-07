@@ -44,7 +44,6 @@ export type ExtractPluginServices<T> = T extends Plugin<any, infer S> ? S : {};
  * type U = { a: string } | { b: number }
  * type I = UnionToIntersection<U> // { a: string } & { b: number }
  *
- * @internal
  */
 export type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
   k: infer I
