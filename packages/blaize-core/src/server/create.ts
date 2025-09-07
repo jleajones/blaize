@@ -156,7 +156,7 @@ function createUseMethod<
     serverInstance.middleware.push(...middlewareArray);
     // Return the server instance with accumulated types
     // TypeScript will infer the correct return type based on the overload
-    return serverInstance as any;
+    return serverInstance;
   }) as Server<TState, TServices>['use'];
 }
 
@@ -183,7 +183,7 @@ function createRegisterMethod<
       await plugin.register(serverInstance);
     }
     // Return the server instance with accumulated types
-    return serverInstance as any;
+    return serverInstance;
   }) as Server<TState, TServices>['register'];
 }
 
