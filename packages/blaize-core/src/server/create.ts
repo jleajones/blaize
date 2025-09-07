@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
@@ -10,6 +11,12 @@ import { validatePlugin } from '../plugins/validation';
 import { createRouter } from '../router/router';
 import { _setCorrelationConfig } from '../tracing/correlation';
 
+import type {
+  ComposeMiddlewareStates,
+  ComposeMiddlewareServices,
+  ComposePluginStates,
+  ComposePluginServices,
+} from '@blaize-types/composition';
 import type { Context } from '@blaize-types/context';
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
@@ -66,15 +73,13 @@ function configureCorrelation(options: ServerOptions): void {
  */
 function createListenMethod(
   serverInstance: Server,
-  validatedOptions: ServerOptions,
-  initialMiddleware: Middleware[],
-  initialPlugins: Plugin[]
+  validatedOptions: ServerOptions
 ): Server['listen'] {
   return async () => {
     // Configure correlation before starting the server
     configureCorrelation(validatedOptions);
     // Initialize middleware and plugins
-    await initializeComponents(serverInstance, initialMiddleware, initialPlugins);
+    await initializePlugins(serverInstance);
 
     // Use the functional manager
     await serverInstance.pluginManager.initializePlugins(serverInstance);
@@ -92,21 +97,12 @@ function createListenMethod(
 }
 
 /**
- * Initializes middleware and plugins
+ * Initializes plugins
  */
-async function initializeComponents(
-  serverInstance: Server,
-  initialMiddleware: Middleware[],
-  initialPlugins: Plugin[]
-): Promise<void> {
-  // Initialize middleware from options
-  for (const mw of initialMiddleware) {
-    serverInstance.use(mw);
-  }
-
+async function initializePlugins(serverInstance: Server): Promise<void> {
   // Register plugins from options
-  for (const p of initialPlugins) {
-    await serverInstance.register(p);
+  for (const p of serverInstance.plugins) {
+    await p.register(serverInstance);
   }
 }
 
@@ -149,31 +145,63 @@ function createCloseMethod(serverInstance: Server): Server['close'] {
 
 /**
  * Creates the server use method for adding middleware
+ * This version properly handles type accumulation for both single and array middleware
  */
-function createUseMethod(serverInstance: Server): Server['use'] {
-  return middleware => {
+function createUseMethod<
+  TState extends Record<string, unknown> = {},
+  TServices extends Record<string, unknown> = {},
+>(serverInstance: Server<TState, TServices>): Server<TState, TServices>['use'] {
+  return ((middleware: Middleware | Middleware[]) => {
     const middlewareArray = Array.isArray(middleware) ? middleware : [middleware];
     serverInstance.middleware.push(...middlewareArray);
-    return serverInstance;
-  };
+    // Return the server instance with accumulated types
+    // TypeScript will infer the correct return type based on the overload
+    return serverInstance as any;
+  }) as Server<TState, TServices>['use'];
 }
 
 /**
  * Creates the server register method for plugins
+ * This version properly handles type accumulation for both single and array plugins
  */
-function createRegisterMethod(serverInstance: Server): Server['register'] {
-  return async plugin => {
-    validatePlugin(plugin);
-    serverInstance.plugins.push(plugin);
-    await plugin.register(serverInstance);
-    return serverInstance;
-  };
+function createRegisterMethod<
+  TState extends Record<string, unknown> = {},
+  TServices extends Record<string, unknown> = {},
+>(serverInstance: Server<TState, TServices>): Server<TState, TServices>['register'] {
+  return (async (plugin: Plugin | Plugin[]) => {
+    if (Array.isArray(plugin)) {
+      // Handle array of plugins
+      for (const p of plugin) {
+        validatePlugin(p);
+        serverInstance.plugins.push(p);
+        await p.register(serverInstance);
+      }
+    } else {
+      // Handle single plugin
+      validatePlugin(plugin);
+      serverInstance.plugins.push(plugin);
+      await plugin.register(serverInstance);
+    }
+    // Return the server instance with accumulated types
+    return serverInstance as any;
+  }) as Server<TState, TServices>['register'];
 }
 
 /**
  * Creates a BlaizeJS server instance
  */
-export function create(options: ServerOptionsInput = {}): Server {
+export function create<
+  const TMw extends readonly Middleware<any, any>[] = [],
+  const TP extends readonly Plugin<any, any>[] = [],
+>(
+  options: ServerOptionsInput & {
+    middleware?: TMw;
+    plugins?: TP;
+  } = {}
+): Server<
+  ComposeMiddlewareStates<TMw> & ComposePluginStates<TP>,
+  ComposeMiddlewareServices<TMw> & ComposePluginServices<TP>
+> {
   // Create and validate options
   const mergedOptions = createServerOptions(options);
 
@@ -206,15 +234,19 @@ export function create(options: ServerOptionsInput = {}): Server {
   });
   const events = new EventEmitter();
 
+  // Type alias for the accumulated types
+  type AccumulatedState = ComposeMiddlewareStates<TMw> & ComposePluginStates<TP>;
+  type AccumulatedServices = ComposeMiddlewareServices<TMw> & ComposePluginServices<TP>;
+
   // Create server instance with minimal properties
-  const serverInstance: Server = {
+  const serverInstance: Server<AccumulatedState, AccumulatedServices> = {
     server: null as any,
     port,
     host,
     context: contextStorage,
     events,
-    plugins: [],
-    middleware: [],
+    plugins: [...initialPlugins],
+    middleware: [...initialMiddleware],
     _signalHandlers: { unregister: () => {} },
     use: () => serverInstance,
     register: async () => serverInstance,
@@ -225,12 +257,7 @@ export function create(options: ServerOptionsInput = {}): Server {
   };
 
   // Add methods to the server instance
-  serverInstance.listen = createListenMethod(
-    serverInstance,
-    validatedOptions,
-    initialMiddleware,
-    initialPlugins
-  );
+  serverInstance.listen = createListenMethod(serverInstance, validatedOptions);
   serverInstance.close = createCloseMethod(serverInstance);
   serverInstance.use = createUseMethod(serverInstance);
   serverInstance.register = createRegisterMethod(serverInstance);
