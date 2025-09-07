@@ -8,7 +8,11 @@
  */
 // Middleware System
 import { compose } from './middleware/compose';
-import { create as createMiddleware } from './middleware/create';
+import {
+  create as createMiddleware,
+  serviceMiddleware as createServiceMiddleware,
+  stateMiddleware as createStateMiddleware,
+} from './middleware/create';
 // Plugin System
 import { create as createPlugin } from './plugins/create';
 // Router System
@@ -47,6 +51,8 @@ export {
 
   // Middleware module exports
   createMiddleware,
+  createServiceMiddleware,
+  createStateMiddleware,
   compose,
 
   // Plugins module exports
@@ -70,7 +76,12 @@ export const RouterAPI = {
   createPostRoute,
   createPutRoute,
 };
-export const MiddlewareAPI = { createMiddleware, compose };
+export const MiddlewareAPI = {
+  createMiddleware,
+  createServiceMiddleware,
+  createStateMiddleware,
+  compose,
+};
 export const PluginsAPI = { createPlugin };
 
 // Server-side error classes
@@ -91,6 +102,8 @@ const Blaize = {
   // Core functions
   createServer,
   createMiddleware,
+  createServiceMiddleware,
+  createStateMiddleware,
   createPlugin,
   getCorrelationId,
 
