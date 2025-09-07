@@ -6,20 +6,35 @@
  */
 
 import type { Middleware } from './middleware';
+import type { Plugin } from './plugins';
 
 /**
  * Extracts the State type contribution from a middleware
  * @template T - The middleware type to extract from
  * @returns The state type if present, empty object otherwise
  */
-export type ExtractState<T> = T extends Middleware<infer S, any> ? S : {};
+export type ExtractMiddlewareState<T> = T extends Middleware<infer S, any> ? S : {};
+
+/**
+ * Extracts the State type contribution from a plugin
+ * @template T - The plugin type to extract from
+ * @returns The state type if present, empty object otherwise
+ */
+export type ExtractPluginState<T> = T extends Plugin<infer S, any> ? S : {};
 
 /**
  * Extracts the Services type contribution from a middleware
  * @template T - The middleware type to extract from
  * @returns The services type if present, empty object otherwise
  */
-export type ExtractServices<T> = T extends Middleware<any, infer S> ? S : {};
+export type ExtractMiddlewareServices<T> = T extends Middleware<any, infer S> ? S : {};
+
+/**
+ * Extracts the Services type contribution from a plugin
+ * @template T - The plugin type to extract from
+ * @returns The services type if present, empty object otherwise
+ */
+export type ExtractPluginServices<T> = T extends Plugin<any, infer S> ? S : {};
 
 /**
  * Utility type to convert a union type to an intersection type
@@ -31,7 +46,9 @@ export type ExtractServices<T> = T extends Middleware<any, infer S> ? S : {};
  *
  * @internal
  */
-type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (k: infer I) => void
+export type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
+  k: infer I
+) => void
   ? I
   : never;
 
@@ -47,9 +64,25 @@ type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
  * type ComposedState = ComposeStates<typeof middlewares>;
  * // Result: { user: User } & { requestId: string }
  */
-export type ComposeStates<T extends ReadonlyArray<Middleware>> = T extends readonly []
+export type ComposeMiddlewareStates<T extends ReadonlyArray<Middleware>> = T extends readonly []
   ? {}
-  : UnionToIntersection<ExtractState<T[number]>>;
+  : UnionToIntersection<ExtractMiddlewareState<T[number]>>;
+
+/**
+ * Composes state contributions from an array of plugins
+ * Merges all state types into a single intersection type
+ *
+ * @template T - ReadonlyArray of Plugin
+ * @returns Intersection of all state contributions
+ *
+ * @example
+ * const plugins = [authPlugin, dbPlugin] as const;
+ * type ComposedState = ComposePluginStates<typeof plugins>;
+ * // Result: { config: AuthConfig } & { dbConnected: boolean }
+ */
+export type ComposePluginStates<T extends ReadonlyArray<Plugin<any, any>>> = T extends readonly []
+  ? {}
+  : UnionToIntersection<ExtractPluginState<T[number]>>;
 
 /**
  * Composes service contributions from an array of middleware
@@ -63,9 +96,25 @@ export type ComposeStates<T extends ReadonlyArray<Middleware>> = T extends reado
  * type ComposedServices = ComposeServices<typeof middlewares>;
  * // Result: { db: Database } & { cache: Cache }
  */
-export type ComposeServices<T extends ReadonlyArray<Middleware>> = T extends readonly []
+export type ComposeMiddlewareServices<T extends ReadonlyArray<Middleware>> = T extends readonly []
   ? {}
-  : UnionToIntersection<ExtractServices<T[number]>>;
+  : UnionToIntersection<ExtractMiddlewareServices<T[number]>>;
+
+/**
+ * Composes service contributions from an array of plugins
+ * Merges all service types into a single intersection type
+ *
+ * @template T - ReadonlyArray of Plugin
+ * @returns Intersection of all service contributions
+ *
+ * @example
+ * const plugins = [dbPlugin, cachePlugin] as const;
+ * type ComposedServices = ComposePluginServices<typeof plugins>;
+ * // Result: { db: Database } & { cache: Cache }
+ */
+export type ComposePluginServices<T extends ReadonlyArray<Plugin<any, any>>> = T extends readonly []
+  ? {}
+  : UnionToIntersection<ExtractPluginServices<T[number]>>;
 
 /**
  * Helper type to check if a type is never
@@ -84,7 +133,7 @@ type IsAny<T> = 0 extends 1 & T ? true : false;
  * @template T - The middleware type to extract from
  * @returns The state type, handling never/any/unknown gracefully
  */
-export type SafeExtractState<T> =
+export type SafeExtractMiddlewareState<T> =
   IsNever<T> extends true
     ? {}
     : IsAny<T> extends true
@@ -96,11 +145,27 @@ export type SafeExtractState<T> =
         : {};
 
 /**
+ * Safe version of ExtractPluginState that handles edge cases
+ * @template T - The plugin type to extract from
+ * @returns The state type, handling never/any/unknown gracefully
+ */
+export type SafeExtractPluginState<T> =
+  IsNever<T> extends true
+    ? {}
+    : IsAny<T> extends true
+      ? {}
+      : T extends Plugin<infer S, any>
+        ? unknown extends S
+          ? {}
+          : S
+        : {};
+
+/**
  * Safe version of ExtractServices that handles edge cases
  * @template T - The middleware type to extract from
  * @returns The services type, handling never/any/unknown gracefully
  */
-export type SafeExtractServices<T> =
+export type SafeExtractMiddlewareServices<T> =
   IsNever<T> extends true
     ? {}
     : IsAny<T> extends true
@@ -112,34 +177,83 @@ export type SafeExtractServices<T> =
         : {};
 
 /**
+ * Safe version of ExtractPluginServices that handles edge cases
+ * @template T - The plugin type to extract from
+ * @returns The services type, handling never/any/unknown gracefully
+ */
+export type SafeExtractPluginServices<T> =
+  IsNever<T> extends true
+    ? {}
+    : IsAny<T> extends true
+      ? {}
+      : T extends Plugin<any, infer S>
+        ? unknown extends S
+          ? {}
+          : S
+        : {};
+
+/**
  * Composes state with better edge case handling
  * @template T - ReadonlyArray of Middleware
  * @returns Safely composed state types
  */
-export type SafeComposeStates<T extends ReadonlyArray<Middleware>> = T extends readonly []
+export type SafeComposeMiddlewareStates<T extends ReadonlyArray<Middleware>> = T extends readonly []
   ? {}
   : T extends readonly [infer First, ...infer Rest]
     ? First extends Middleware
       ? Rest extends ReadonlyArray<Middleware>
-        ? SafeExtractState<First> & SafeComposeStates<Rest>
-        : SafeExtractState<First>
+        ? SafeExtractMiddlewareState<First> & SafeComposeMiddlewareStates<Rest>
+        : SafeExtractMiddlewareState<First>
       : {}
-    : UnionToIntersection<SafeExtractState<T[number]>>;
+    : UnionToIntersection<SafeExtractMiddlewareState<T[number]>>;
+
+/**
+ * Composes plugin state with better edge case handling
+ * @template T - ReadonlyArray of Plugin
+ * @returns Safely composed state types
+ */
+export type SafeComposePluginStates<T extends ReadonlyArray<Plugin<any, any>>> =
+  T extends readonly []
+    ? {}
+    : T extends readonly [infer First, ...infer Rest]
+      ? First extends Plugin<any, any>
+        ? Rest extends ReadonlyArray<Plugin<any, any>>
+          ? SafeExtractPluginState<First> & SafeComposePluginStates<Rest>
+          : SafeExtractPluginState<First>
+        : {}
+      : UnionToIntersection<SafeExtractPluginState<T[number]>>;
 
 /**
  * Composes services with better edge case handling
  * @template T - ReadonlyArray of Middleware
  * @returns Safely composed service types
  */
-export type SafeComposeServices<T extends ReadonlyArray<Middleware>> = T extends readonly []
-  ? {}
-  : T extends readonly [infer First, ...infer Rest]
-    ? First extends Middleware
-      ? Rest extends ReadonlyArray<Middleware>
-        ? SafeExtractServices<First> & SafeComposeServices<Rest>
-        : SafeExtractServices<First>
-      : {}
-    : UnionToIntersection<SafeExtractServices<T[number]>>;
+export type SafeComposeMiddlewareServices<T extends ReadonlyArray<Middleware>> =
+  T extends readonly []
+    ? {}
+    : T extends readonly [infer First, ...infer Rest]
+      ? First extends Middleware
+        ? Rest extends ReadonlyArray<Middleware>
+          ? SafeExtractMiddlewareServices<First> & SafeComposeMiddlewareServices<Rest>
+          : SafeExtractMiddlewareServices<First>
+        : {}
+      : UnionToIntersection<SafeExtractMiddlewareServices<T[number]>>;
+
+/**
+ * Composes plugin services with better edge case handling
+ * @template T - ReadonlyArray of Plugin
+ * @returns Safely composed service types
+ */
+export type SafeComposePluginServices<T extends ReadonlyArray<Plugin<any, any>>> =
+  T extends readonly []
+    ? {}
+    : T extends readonly [infer First, ...infer Rest]
+      ? First extends Plugin<any, any>
+        ? Rest extends ReadonlyArray<Plugin<any, any>>
+          ? SafeExtractPluginServices<First> & SafeComposePluginServices<Rest>
+          : SafeExtractPluginServices<First>
+        : {}
+      : UnionToIntersection<SafeExtractPluginServices<T[number]>>;
 
 /**
  * Utility to merge two state types
@@ -167,8 +281,18 @@ export type MergeServices<A, B> = Omit<A, keyof B> & B;
  * @returns Object with state and services types
  */
 export type ExtractMiddlewareTypes<T> = {
-  state: ExtractState<T>;
-  services: ExtractServices<T>;
+  state: ExtractMiddlewareState<T>;
+  services: ExtractMiddlewareServices<T>;
+};
+
+/**
+ * Extract both state and services from a plugin at once
+ * @template T - The plugin type
+ * @returns Object with state and services types
+ */
+export type ExtractPluginTypes<T> = {
+  state: ExtractPluginState<T>;
+  services: ExtractPluginServices<T>;
 };
 
 /**
@@ -177,8 +301,18 @@ export type ExtractMiddlewareTypes<T> = {
  * @returns Object with composed state and services
  */
 export type ComposeMiddlewareTypes<T extends ReadonlyArray<Middleware>> = {
-  state: ComposeStates<T>;
-  services: ComposeServices<T>;
+  state: ComposeMiddlewareStates<T>;
+  services: ComposeMiddlewareServices<T>;
+};
+
+/**
+ * Compose both state and services from plugin array at once
+ * @template T - ReadonlyArray of Plugin
+ * @returns Object with composed state and services
+ */
+export type ComposePluginTypes<T extends ReadonlyArray<Plugin<any, any>>> = {
+  state: ComposePluginStates<T>;
+  services: ComposePluginServices<T>;
 };
 
 /**
@@ -198,6 +332,24 @@ export function isMiddleware(value: unknown): value is Middleware {
 }
 
 /**
+ * Type guard to check if a value is a Plugin
+ * @param value - Value to check
+ * @returns True if value is a Plugin
+ */
+export function isPlugin(value: unknown): value is Plugin {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'name' in value &&
+    'version' in value &&
+    'register' in value &&
+    typeof (value as any).name === 'string' &&
+    typeof (value as any).version === 'string' &&
+    typeof (value as any).register === 'function'
+  );
+}
+
+/**
  * Type helper for middleware arrays
  * Ensures proper readonly array typing for composition
  *
@@ -210,6 +362,18 @@ export function asMiddlewareArray<T extends ReadonlyArray<Middleware>>(middlewar
 }
 
 /**
+ * Type helper for plugin arrays
+ * Ensures proper readonly array typing for composition
+ *
+ * @example
+ * const plugins = asPluginArray([dbPlugin, cachePlugin]);
+ * type Services = ComposePluginServices<typeof plugins>;
+ */
+export function asPluginArray<T extends ReadonlyArray<Plugin<any, any>>>(plugins: T): T {
+  return plugins;
+}
+
+/**
  * Create a typed middleware array with inferred types
  * Useful for getting proper const assertions
  *
@@ -219,4 +383,16 @@ export function asMiddlewareArray<T extends ReadonlyArray<Middleware>>(middlewar
  */
 export function createMiddlewareArray<T extends ReadonlyArray<Middleware>>(...middlewares: T): T {
   return middlewares;
+}
+
+/**
+ * Create a typed plugin array with inferred types
+ * Useful for getting proper const assertions
+ *
+ * @example
+ * const plugins = createPluginArray(dbPlugin, cachePlugin);
+ * type Services = ComposePluginServices<typeof plugins>;
+ */
+export function createPluginArray<T extends ReadonlyArray<Plugin<any, any>>>(...plugins: T): T {
+  return plugins;
 }

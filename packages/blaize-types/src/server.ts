@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 /**
  * BlaizeJS Server Module - Enhanced with Correlation Configuration
  *
@@ -8,6 +9,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import http from 'node:http';
 import http2 from 'node:http2';
 
+import type {
+  ExtractMiddlewareServices,
+  ExtractMiddlewareState,
+  ExtractPluginServices,
+  ExtractPluginState,
+  UnionToIntersection,
+} from './composition';
 import type { Context } from './context';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
@@ -126,9 +134,16 @@ export interface ServerOptions {
 }
 
 /**
- * BlaizeJS Server instance
+ * BlaizeJS Server instance with generic type accumulation
+ *
+ * @template TState - The accumulated state type from middleware
+ * @template TServices - The accumulated services type from middleware and plugins
+ *
  */
-export interface Server {
+export interface Server<
+  TState extends Record<string, unknown> = {},
+  TServices extends Record<string, unknown> = {},
+> {
   /** The underlying HTTP or HTTP/2 server */
   server: http.Server | http2.Http2Server | undefined;
 
@@ -149,16 +164,68 @@ export interface Server {
   _signalHandlers?: { unregister: () => void };
 
   /** Start the server and listen for connections */
-  listen: (port?: number, host?: string) => Promise<Server>;
+  listen: (port?: number, host?: string) => Promise<Server<TState, TServices>>;
 
   /** Stop the server */
   close: (stopOptions?: StopOptions) => Promise<void>;
 
-  /** Add global middleware */
-  use: (middleware: Middleware | Middleware[]) => Server;
+  /**
+   * Add global middleware to the server
+   *
+   * @param middleware - Single middleware or array of middleware to add
+   * @returns New Server instance with accumulated types from the middleware
+   *
+   * @example
+   * ```typescript
+   * // Single middleware
+   * const serverWithAuth = server.use(authMiddleware);
+   * // serverWithAuth has type Server<{user: User}, {auth: AuthService}>
+   *
+   * // Array of middleware
+   * const serverWithMiddleware = server.use([authMiddleware, loggerMiddleware]);
+   * // serverWithMiddleware has type Server<{user, requestId}, {auth, logger}>
+   * ```
+   */
+  use<MS extends Record<string, unknown>, MSvc extends Record<string, unknown>>(
+    middleware: Middleware<MS, MSvc>
+  ): Server<TState & MS, TServices & MSvc>;
 
-  /** Register a plugin */
-  register: (plugin: Plugin) => Promise<Server>;
+  use<MW extends readonly Middleware<any, any>[]>(
+    middleware: MW
+  ): Server<
+    TState & UnionToIntersection<ExtractMiddlewareState<MW[number]>>,
+    TServices & UnionToIntersection<ExtractMiddlewareServices<MW[number]>>
+  >;
+
+  /**
+   * Register a plugin with the server
+   *
+   * @param plugin - Single plugin or array of plugins to register
+   * @returns Promise resolving to new Server instance with accumulated types
+   *
+   * @example
+   * ```typescript
+   * // Single plugin
+   * const serverWithDb = await server.register(databasePlugin);
+   * // serverWithDb has type Server<{}, {db: DatabaseService}>
+   *
+   * // Array of plugins
+   * const serverWithPlugins = await server.register([dbPlugin, cachePlugin]);
+   * // serverWithPlugins has type Server<{}, {db, cache}>
+   * ```
+   */
+  register<PS extends Record<string, unknown>, PSvc extends Record<string, unknown>>(
+    plugin: Plugin<PS, PSvc>
+  ): Promise<Server<TState & PS, TServices & PSvc>>;
+
+  register<P extends readonly Plugin<any, any>[]>(
+    plugin: P
+  ): Promise<
+    Server<
+      TState & UnionToIntersection<ExtractPluginState<P[number]>>,
+      TServices & UnionToIntersection<ExtractPluginServices<P[number]>>
+    >
+  >;
 
   /** Access to the routing system */
   router: Router;

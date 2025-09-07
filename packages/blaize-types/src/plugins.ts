@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 /**
  * BlaizeJS Plugin Module
  *
@@ -37,18 +38,32 @@ export interface PluginHooks {
 /**
  * Plugin interface
  */
-export interface Plugin extends PluginHooks {
+export interface Plugin<
+  TState extends Record<string, unknown> = {},
+  TServices extends Record<string, unknown> = {},
+> extends PluginHooks {
   /** Plugin name */
   name: string;
 
   /** Plugin version */
   version: string;
+
+  /**
+   * Type carriers for compile-time type information
+   * These are never used at runtime but allow TypeScript to track types
+   */
+  _state?: TState;
+  _services?: TServices;
 }
 
 /**
  * Plugin factory function
  */
-export type PluginFactory<T = any> = (options?: T) => Plugin;
+export type PluginFactory<
+  T = any,
+  TState extends Record<string, unknown> = {},
+  TServices extends Record<string, unknown> = {},
+> = (options?: T) => Plugin<TState, TServices>;
 
 export interface PluginLifecycleManager {
   initializePlugins(server: Server): Promise<void>;
