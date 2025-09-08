@@ -1,7 +1,8 @@
-import { createGetRoute } from 'blaizejs';
 import { z } from 'zod';
 
-export default createGetRoute({
+import { appRouter } from '../../../../app.js';
+
+export default appRouter.get({
   schema: {
     params: z.object({
       userId: z.string(),

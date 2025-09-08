@@ -1,15 +1,16 @@
 import { z } from 'zod';
 
-import { createGetRoute } from '../../index';
+import { appRouter } from '../basic';
 
-export const IndexRoute = createGetRoute({
+export const IndexRoute = appRouter.get({
   schema: {
     response: z.object({
       message: z.string(),
       timestamp: z.number(),
     }),
   },
-  handler: async () => {
+  handler: async ctx => {
+    ctx.services.logger.info('Handling index route');
     // Returns a JSON object - will be sent using ctx.response.json()
     return {
       message: 'Hello, world!',

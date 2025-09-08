@@ -1,7 +1,8 @@
-import { createGetRoute, createPostRoute } from 'blaizejs';
 import { z } from 'zod';
 
-export const getHello = createGetRoute({
+import { appRouter } from '../app.js';
+
+export const getHello = appRouter.get({
   schema: {
     response: z.object({
       name: z.string(),
@@ -14,7 +15,7 @@ export const getHello = createGetRoute({
   },
 });
 
-export const postHello = createPostRoute({
+export const postHello = appRouter.post({
   schema: {
     response: z.object({
       message: z.string(),

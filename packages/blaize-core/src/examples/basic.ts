@@ -8,24 +8,50 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Blaize } from '../index';
+import { Blaize, type InferContext } from '../index';
+import { createLoggerMiddleware } from './sample-middleware';
+import { createMetricsPlugin } from './sample-plugin';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const routesDir = path.resolve(__dirname, './router/');
 
-// Eventually this example will create and start a simple server
-try {
-  console.log(`BlaizeJS version: ${Blaize.VERSION}`);
-  // Resolve the routes directory path relative to this file
+/**
+ * Logger middleware - adds request ID and logging service
+ */
+const loggerMiddleware = createLoggerMiddleware({
+  prefix: '[API]',
+  logRequests: true,
+  logResponses: true,
+});
 
-  // This will throw an error since the implementation is not yet available
-  const app = Blaize.createServer({
-    port: 3000,
-    host: 'localhost',
-    routesDir,
-  });
+/**
+ * Metrics plugin - adds metrics tracking
+ */
+const metricsPlugin = createMetricsPlugin({
+  enabled: true,
+  logToConsole: process.env.NODE_ENV === 'development',
+  reportInterval: 30000,
+});
+
+console.log(`BlaizeJS version: ${Blaize.VERSION}`);
+
+const app = Blaize.createServer({
+  port: 3000,
+  host: 'localhost',
+  routesDir,
+  middleware: [loggerMiddleware],
+  plugins: [metricsPlugin],
+});
+
+type AppContext = InferContext<typeof app>;
+export const appRouter = Blaize.Router.createRouteFactory<
+  AppContext['state'],
+  AppContext['services']
+>();
+
+try {
   // Start the server
   await app.listen();
 } catch (err) {
