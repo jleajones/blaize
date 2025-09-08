@@ -2,10 +2,10 @@ import { createMockServerWithPlugins, createMockHttpServer } from '@blaizejs/tes
 
 import { stopServer, registerSignalHandlers } from './stop';
 
-import type { Server } from '@blaize-types/server';
+import type { UnknownServer } from '@blaize-types/server';
 
 describe('Server Module', () => {
-  let serverInstance: Server;
+  let serverInstance: UnknownServer;
   let mockServerClose: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {

@@ -1,4 +1,5 @@
 export * from './client';
+export * from './composition';
 export * from './context';
 export * from './errors';
 export * from './server';

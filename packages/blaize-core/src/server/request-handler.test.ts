@@ -11,7 +11,7 @@ import { createErrorBoundary } from '../middleware/error-boundary';
 
 import type { Context } from '@blaize-types/context';
 import type { NextFunction } from '@blaize-types/middleware';
-import type { Server } from '@blaize-types/server';
+import type { UnknownServer } from '@blaize-types/server';
 
 const DEFAULT_CORRELATION_ID = 'generated-correlation-id';
 const DEFAULT_CORRELATION_HEADER_NAME = 'x-correlation-id';
@@ -32,7 +32,7 @@ vi.mock('../tracing/correlation', () => ({
 
 describe('createRequestHandler - Complete Test Suite', () => {
   // Test setup variables
-  let mockServer: Server;
+  let mockServer: UnknownServer;
   let mockReq: any;
   let mockRes: any;
   let mockContext: any;
@@ -54,7 +54,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
         getRoutes: vi.fn().mockReturnValue([]),
         addRoute: vi.fn(),
       },
-    } as unknown as Server;
+    } as unknown as UnknownServer;
 
     mockReq = {
       method: 'GET',

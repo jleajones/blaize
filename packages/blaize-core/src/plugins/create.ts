@@ -1,5 +1,4 @@
-import type { Plugin, PluginFactory, PluginHooks } from '@blaize-types/plugins';
-import type { Server } from '@blaize-types/server';
+import type { Plugin, PluginFactory, PluginHooks, UnknownServer } from '@blaize-types/index';
 
 /**
  * Create a plugin with the given name, version, and setup function
@@ -8,7 +7,7 @@ export function create<T = any>(
   name: string,
   version: string,
   setup: (
-    app: Server,
+    app: UnknownServer,
     options: T
   ) => void | Partial<PluginHooks> | Promise<void> | Promise<Partial<PluginHooks>>,
   defaultOptions: Partial<T> = {}
@@ -37,7 +36,7 @@ export function create<T = any>(
       version,
 
       // The register hook calls the user's setup function
-      register: async (app: Server) => {
+      register: async (app: UnknownServer) => {
         const result = await setup(app, mergedOptions);
 
         // If setup returns hooks, merge them into this plugin

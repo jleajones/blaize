@@ -1,5 +1,5 @@
 import type { Plugin, PluginLifecycleManager, PluginLifecycleOptions } from '@blaize-types/plugins';
-import type { Server } from '@blaize-types/server';
+import type { UnknownServer } from '@blaize-types/server';
 
 /**
  * Create a plugin lifecycle manager
@@ -39,7 +39,7 @@ export function createPluginLifecycleManager(
     /**
      * Initialize all plugins
      */
-    async initializePlugins(server: Server): Promise<void> {
+    async initializePlugins(server: UnknownServer): Promise<void> {
       log('Initializing plugins...');
 
       for (const plugin of server.plugins) {
@@ -59,7 +59,7 @@ export function createPluginLifecycleManager(
     /**
      * Terminate all plugins in reverse order
      */
-    async terminatePlugins(server: Server): Promise<void> {
+    async terminatePlugins(server: UnknownServer): Promise<void> {
       log('Terminating plugins...');
 
       const pluginsToTerminate = [...server.plugins].reverse();
@@ -81,7 +81,7 @@ export function createPluginLifecycleManager(
     /**
      * Notify plugins that the server has started
      */
-    async onServerStart(server: Server, httpServer: any): Promise<void> {
+    async onServerStart(server: UnknownServer, httpServer: any): Promise<void> {
       log('Notifying plugins of server start...');
 
       for (const plugin of server.plugins) {
@@ -99,7 +99,7 @@ export function createPluginLifecycleManager(
     /**
      * Notify plugins that the server is stopping
      */
-    async onServerStop(server: Server, httpServer: any): Promise<void> {
+    async onServerStop(server: UnknownServer, httpServer: any): Promise<void> {
       log('Notifying plugins of server stop...');
 
       const pluginsToNotify = [...server.plugins].reverse();

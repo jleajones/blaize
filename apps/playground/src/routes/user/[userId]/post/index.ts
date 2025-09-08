@@ -1,7 +1,8 @@
-import { createGetRoute } from 'blaizejs';
 import { z } from 'zod';
 
-export const getUserPosts = createGetRoute({
+import { appRouter } from '../../../../app.js';
+
+export const getUserPosts = appRouter.get({
   schema: {
     params: z.object({
       userId: z.string(),

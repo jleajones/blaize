@@ -1,3 +1,6 @@
+
+import { createMockContext } from '@blaizejs/testing-utils';
+
 import {
   contextStorage,
   getContext,
@@ -38,35 +41,7 @@ describe('Context Store', () => {
 
   beforeEach(() => {
     // Create a mock context for testing
-    mockContext = {
-      request: {
-        raw: {} as any,
-        method: 'GET',
-        path: '/test',
-        url: null,
-        query: {},
-        params: {},
-        protocol: 'http',
-        body: {},
-        isHttp2: false,
-        header: vi.fn(),
-        headers: vi.fn().mockReturnValue({}),
-      },
-      response: {
-        raw: {} as any,
-        sent: false,
-        status: vi.fn().mockReturnThis(),
-        header: vi.fn().mockReturnThis(),
-        headers: vi.fn().mockReturnThis(),
-        type: vi.fn().mockReturnThis(),
-        json: vi.fn(),
-        text: vi.fn(),
-        html: vi.fn(),
-        redirect: vi.fn(),
-        stream: vi.fn(),
-      },
-      state: {},
-    };
+    mockContext = createMockContext();
 
     // Reset any previously set context
     vi.mocked(contextStorage.getStore).mockReturnValue(undefined);

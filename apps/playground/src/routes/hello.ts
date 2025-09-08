@@ -1,7 +1,8 @@
-import { createGetRoute, createPostRoute } from 'blaizejs';
 import { z } from 'zod';
 
-export const getHello = createGetRoute({
+import { appRouter } from '../app.js';
+
+export const getHello = appRouter.get({
   schema: {
     response: z.object({
       name: z.string(),
@@ -9,12 +10,12 @@ export const getHello = createGetRoute({
   },
   handler: async () => {
     return {
-      name: 'Hi, it is BlaizeJS!',
+      name: 'Hi, it is Blaize and Bella!',
     };
   },
 });
 
-export const postHello = createPostRoute({
+export const postHello = appRouter.post({
   schema: {
     response: z.object({
       message: z.string(),
@@ -23,9 +24,9 @@ export const postHello = createPostRoute({
       name: z.string(),
     }),
   },
-  handler: async () => {
+  handler: async ctx => {
     return {
-      message: 'Hello from Blaize and Bella and the hello route!',
+      message: `Hello, ${ctx.request.body.name} from Blaize and Bella and the hello route!`,
     };
   },
 });

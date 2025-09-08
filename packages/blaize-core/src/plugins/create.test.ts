@@ -1,10 +1,10 @@
 import { create } from './create';
 
-import type { Server } from '@blaize-types/server';
+import type { UnknownServer } from '@blaize-types/server';
 
 describe('Plugin Creation', () => {
   // Mock server object for testing
-  const mockServer: Server = {
+  const mockServer: UnknownServer = {
     // Add minimal required properties for testing
     use: vi.fn(),
     register: vi.fn(),

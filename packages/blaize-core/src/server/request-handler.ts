@@ -9,9 +9,9 @@ import {
   withCorrelationId,
 } from '../tracing/correlation';
 
-import type { Server, RequestHandler } from '@blaize-types/server';
+import type { RequestHandler, UnknownServer } from '@blaize-types/server';
 
-export function createRequestHandler(serverInstance: Server): RequestHandler {
+export function createRequestHandler(serverInstance: UnknownServer): RequestHandler {
   return async (req, res) => {
     const correlationId = createCorrelationIdFromHeaders(
       req.headers as Record<string, string | string[] | undefined>

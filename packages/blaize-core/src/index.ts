@@ -8,7 +8,11 @@
  */
 // Middleware System
 import { compose } from './middleware/compose';
-import { create as createMiddleware } from './middleware/create';
+import {
+  create as createMiddleware,
+  serviceMiddleware as createServiceMiddleware,
+  stateMiddleware as createStateMiddleware,
+} from './middleware/create';
 // Plugin System
 import { create as createPlugin } from './plugins/create';
 // Router System
@@ -20,9 +24,11 @@ import {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
+  createRouteFactory,
 } from './router/create';
 // Server
 import { create as createServer } from './server/create';
+import { inferContext, type InferContext } from './server/types';
 // Tracing
 import { getCorrelationId } from './tracing/correlation';
 
@@ -35,6 +41,8 @@ export * from '../../blaize-types/src/index';
 export {
   // Server module exports
   createServer,
+  inferContext,
+  type InferContext,
 
   // Router module exports
   createDeleteRoute,
@@ -44,9 +52,12 @@ export {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
+  createRouteFactory,
 
   // Middleware module exports
   createMiddleware,
+  createServiceMiddleware,
+  createStateMiddleware,
   compose,
 
   // Plugins module exports
@@ -60,7 +71,7 @@ export {
 export const VERSION = '0.1.0';
 
 // Namespaced exports with different names to avoid conflicts
-export const ServerAPI = { createServer };
+export const ServerAPI = { createServer, inferContext };
 export const RouterAPI = {
   createDeleteRoute,
   createGetRoute,
@@ -69,8 +80,14 @@ export const RouterAPI = {
   createPatchRoute,
   createPostRoute,
   createPutRoute,
+  createRouteFactory,
 };
-export const MiddlewareAPI = { createMiddleware, compose };
+export const MiddlewareAPI = {
+  createMiddleware,
+  createServiceMiddleware,
+  createStateMiddleware,
+  compose,
+};
 export const PluginsAPI = { createPlugin };
 
 // Server-side error classes
@@ -91,6 +108,8 @@ const Blaize = {
   // Core functions
   createServer,
   createMiddleware,
+  createServiceMiddleware,
+  createStateMiddleware,
   createPlugin,
   getCorrelationId,
 

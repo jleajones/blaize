@@ -11,7 +11,9 @@ import type {
   CreatePatchRoute,
   CreateHeadRoute,
   CreateOptionsRoute,
-} from '@blaize-types/router';
+  State,
+  Services,
+} from '@blaize-types/index';
 
 /**
  * Get the file path of the function that called createXRoute
@@ -61,98 +63,126 @@ function getRoutePath(): string {
  * Create a GET route
  * SIMPLER FIX: Just pass the config through, TypeScript will handle the types
  */
-export const createGetRoute: CreateGetRoute = config => {
-  validateMethodConfig('GET', config);
+export const createGetRoute: CreateGetRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    validateMethodConfig('GET', config);
+    const path = getRoutePath();
 
-  const path = getRoutePath();
-
-  return {
-    GET: config as any, // Let TypeScript infer the proper types
-    path,
+    return {
+      GET: config,
+      path,
+    };
   };
 };
 
 /**
  * Create a POST route
  */
-export const createPostRoute: CreatePostRoute = config => {
-  validateMethodConfig('POST', config);
+export const createPostRoute: CreatePostRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    validateMethodConfig('POST', config);
+    const path = getRoutePath();
 
-  const path = getRoutePath();
-
-  return {
-    POST: config as any, // Let TypeScript infer the proper types
-    path,
+    return {
+      POST: config,
+      path,
+    };
   };
 };
 
 /**
  * Create a PUT route
  */
-export const createPutRoute: CreatePutRoute = config => {
-  validateMethodConfig('PUT', config);
+export const createPutRoute: CreatePutRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    validateMethodConfig('PUT', config);
+    const path = getRoutePath();
 
-  const path = getRoutePath();
-
-  return {
-    PUT: config as any, // Let TypeScript infer the proper types
-    path,
+    return {
+      PUT: config,
+      path,
+    };
   };
 };
 
 /**
  * Create a DELETE route
  */
-export const createDeleteRoute: CreateDeleteRoute = config => {
-  validateMethodConfig('DELETE', config);
+export const createDeleteRoute: CreateDeleteRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    validateMethodConfig('DELETE', config);
+    const path = getRoutePath();
 
-  const path = getRoutePath();
-
-  return {
-    DELETE: config as any, // Let TypeScript infer the proper types
-    path,
+    return {
+      DELETE: config,
+      path,
+    };
   };
 };
 
 /**
  * Create a PATCH route
  */
-export const createPatchRoute: CreatePatchRoute = config => {
-  validateMethodConfig('PATCH', config);
+export const createPatchRoute: CreatePatchRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    validateMethodConfig('PATCH', config);
+    const path = getRoutePath();
 
-  const path = getRoutePath();
-
-  return {
-    PATCH: config as any, // Let TypeScript infer the proper types
-    path,
+    return {
+      PATCH: config,
+      path,
+    };
   };
 };
 
 /**
  * Create a HEAD route (same signature as GET - no body)
  */
-export const createHeadRoute: CreateHeadRoute = config => {
-  validateMethodConfig('HEAD', config);
+export const createHeadRoute: CreateHeadRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    validateMethodConfig('HEAD', config);
+    const path = getRoutePath();
 
-  const path = getRoutePath();
-
-  return {
-    HEAD: config as any, // Let TypeScript infer the proper types
-    path,
+    return {
+      HEAD: config,
+      path,
+    };
   };
 };
 
 /**
  * Create an OPTIONS route (same signature as GET - no body)
  */
-export const createOptionsRoute: CreateOptionsRoute = config => {
-  validateMethodConfig('OPTIONS', config);
+export const createOptionsRoute: CreateOptionsRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    validateMethodConfig('OPTIONS', config);
+    const path = getRoutePath();
 
-  const path = getRoutePath();
-
-  return {
-    OPTIONS: config as any, // Let TypeScript infer the proper types
-    path,
+    return {
+      OPTIONS: config,
+      path,
+    };
   };
 };
 
@@ -207,4 +237,56 @@ function validateSchema(method: string, schema: any): void {
   if (response && (!response._def || typeof response.parse !== 'function')) {
     throw new Error(`Response schema for ${method} must be a valid Zod schema`);
   }
+}
+
+/**
+ * Factory that creates all route methods with consistent types
+ * This is the RECOMMENDED approach for most applications
+ *
+ * Usage in server.ts:
+ * ```typescript
+ * export const route = createRouteFactory<AppState, AppServices>();
+ * ```
+ *
+ * Usage in route files:
+ * ```typescript
+ * import { route } from '../server';
+ *
+ * export const GET = route.get({
+ *   handler: async (ctx) => {
+ *     // ctx.state and ctx.services are fully typed!
+ *   }
+ * });
+ * ```
+ */
+export function createRouteFactory<
+  TState extends State = State,
+  TServices extends Services = Services,
+>() {
+  return {
+    get: createGetRoute<TState, TServices>(),
+    post: createPostRoute<TState, TServices>(),
+    put: createPutRoute<TState, TServices>(),
+    delete: createDeleteRoute<TState, TServices>(),
+    patch: createPatchRoute<TState, TServices>(),
+    head: createHeadRoute<TState, TServices>(),
+    options: createOptionsRoute<TState, TServices>(),
+  } as const;
+}
+
+/**
+ * Type guard to check if a value is a route factory
+ */
+export function isRouteFactory(value: any): value is ReturnType<typeof createRouteFactory> {
+  return (
+    value &&
+    typeof value === 'object' &&
+    'get' in value &&
+    'post' in value &&
+    'put' in value &&
+    'delete' in value &&
+    'patch' in value &&
+    'head' in value &&
+    'options' in value
+  );
 }

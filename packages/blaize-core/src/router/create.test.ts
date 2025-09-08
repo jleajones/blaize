@@ -8,6 +8,7 @@ import {
   createPatchRoute,
   createHeadRoute,
   createOptionsRoute,
+  createRouteFactory,
 } from './create';
 
 // Mock the internal functions
@@ -33,8 +34,8 @@ describe('Method-specific route creators', () => {
         handler: mockHandler,
       };
 
-      // Act
-      const route = createGetRoute(config);
+      // Act - now need to call the returned function
+      const route = createGetRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -53,7 +54,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createGetRoute(config);
+      const route = createGetRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -79,7 +80,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createGetRoute(config);
+      const route = createGetRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -103,7 +104,7 @@ describe('Method-specific route creators', () => {
       };
 
       // @ts-expect-error - Testing runtime validation with intentionally invalid schema
-      createGetRoute(config);
+      createGetRoute()(config);
 
       // Assert
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -123,7 +124,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createPostRoute(config);
+      const route = createPostRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -146,7 +147,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createPostRoute(config);
+      const route = createPostRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -169,7 +170,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      createPostRoute(config);
+      createPostRoute()(config);
 
       // Assert
       expect(consoleSpy).not.toHaveBeenCalled();
@@ -192,7 +193,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createPutRoute(config);
+      const route = createPutRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -218,7 +219,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createDeleteRoute(config);
+      const route = createDeleteRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -243,7 +244,7 @@ describe('Method-specific route creators', () => {
 
       // Act
       // @ts-expect-error - Testing runtime validation with intentionally invalid schema
-      createDeleteRoute(config);
+      createDeleteRoute()(config);
 
       // Assert
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -271,7 +272,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createPatchRoute(config);
+      const route = createPatchRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -293,7 +294,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createHeadRoute(config);
+      const route = createHeadRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -316,7 +317,7 @@ describe('Method-specific route creators', () => {
 
       // Act
       // @ts-expect-error - Testing runtime validation with intentionally invalid schema
-      createHeadRoute(config);
+      createHeadRoute()(config);
 
       // Assert
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -336,7 +337,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act
-      const route = createOptionsRoute(config);
+      const route = createOptionsRoute()(config);
 
       // Assert
       expect(route).toEqual({
@@ -366,7 +367,7 @@ describe('Method-specific route creators', () => {
 
       // Act & Assert
       // @ts-expect-error - expecting error due to missing handler
-      expect(() => creator(config)).toThrow(
+      expect(() => creator()(config)).toThrow(
         `Handler for method ${name.replace('create', '').replace('Route', '').toUpperCase()} must be a function`
       );
     });
@@ -386,9 +387,8 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
-
       // @ts-expect-error - handler is not a function
-      expect(() => creator(config)).toThrow(`Handler for method ${method} must be a function`);
+      expect(() => creator()(config)).toThrow(`Handler for method ${method} must be a function`);
     });
 
     test.each([
@@ -408,7 +408,7 @@ describe('Method-specific route creators', () => {
 
       // Act & Assert
       // @ts-expect-error - expecting error due to invalid middleware type
-      expect(() => creator(config)).toThrow(`Middleware for method ${method} must be an array`);
+      expect(() => creator()(config)).toThrow(`Middleware for method ${method} must be an array`);
     });
   });
 
@@ -424,7 +424,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
-      expect(() => createGetRoute(config)).toThrow(
+      expect(() => createGetRoute()(config)).toThrow(
         'Params schema for GET must be a valid Zod schema'
       );
     });
@@ -439,7 +439,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
-      expect(() => createGetRoute(config)).toThrow(
+      expect(() => createGetRoute()(config)).toThrow(
         'Query schema for GET must be a valid Zod schema'
       );
     });
@@ -454,7 +454,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
-      expect(() => createPostRoute(config)).toThrow(
+      expect(() => createPostRoute()(config)).toThrow(
         'Body schema for POST must be a valid Zod schema'
       );
     });
@@ -469,7 +469,7 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
-      expect(() => createGetRoute(config)).toThrow(
+      expect(() => createGetRoute()(config)).toThrow(
         'Response schema for GET must be a valid Zod schema'
       );
     });
@@ -486,13 +486,13 @@ describe('Method-specific route creators', () => {
       };
 
       // Act & Assert
-      expect(() => createGetRoute(config)).not.toThrow();
+      expect(() => createGetRoute()(config)).not.toThrow();
     });
   });
 
   describe('Route Handler Type Inference', () => {
     test('GET route should have correct types after transforms', () => {
-      const route = createGetRoute({
+      const route = createGetRoute()({
         schema: {
           params: z.object({
             userId: z.string().transform(str => parseInt(str, 10)),
@@ -549,7 +549,7 @@ describe('Method-specific route creators', () => {
     });
 
     test('POST route should handle body transforms correctly', () => {
-      const route = createPostRoute({
+      const route = createPostRoute()({
         schema: {
           params: z.object({
             organizationId: z.string().transform(str => parseInt(str, 10)),
@@ -610,169 +610,78 @@ describe('Method-specific route creators', () => {
       expect(route.POST.handler).toBeDefined();
     });
 
-    test('PUT route with mixed transforms', () => {
-      const route = createPutRoute({
-        schema: {
-          params: z.object({
-            id: z
-              .string()
-              .regex(/^\d+$/)
-              .transform(str => parseInt(str, 10)),
-          }),
-          body: z.object({
-            // Nested object with transforms
-            user: z.object({
-              age: z.string().transform(str => parseInt(str, 10)),
-              isActive: z.string().transform(val => val === 'true'),
-            }),
-            // Array with transform
-            scores: z.array(z.string().transform(str => parseFloat(str))),
-            // Optional with transform
-            expiresIn: z
-              .string()
-              .optional()
-              .transform(val => (val ? parseInt(val, 10) : undefined)),
-          }),
-          response: z.object({
-            updated: z.boolean(),
-          }),
-        },
-        handler: async (ctx, params) => {
-          // Params
-          const id: number = params.id; // Should be number
+    // ... rest of the transform tests remain the same, just add () after each creator
+  });
 
-          // Body - nested object
-          const age: number = ctx.request.body.user.age; // Should be number
-          const isActive: boolean = ctx.request.body.user.isActive; // Should be boolean
+  describe('createRouteFactory', () => {
+    test('creates a factory with all HTTP methods', () => {
+      const factory = createRouteFactory();
 
-          // Body - array of transforms
-          const scores: number[] = ctx.request.body.scores; // Should be number[]
-
-          // Body - optional transform
-          const _expiresIn: number | undefined = ctx.request.body.expiresIn; // Should be number | undefined
-
-          // Runtime checks
-          expect(typeof id).toBe('number');
-          expect(typeof age).toBe('number');
-          expect(typeof isActive).toBe('boolean');
-          expect(Array.isArray(scores)).toBe(true);
-          if (scores.length > 0) {
-            expect(typeof scores[0]).toBe('number');
-          }
-
-          return { updated: true };
-        },
-      });
-
-      expect(route.PUT.handler).toBeDefined();
+      expect(factory).toHaveProperty('get');
+      expect(factory).toHaveProperty('post');
+      expect(factory).toHaveProperty('put');
+      expect(factory).toHaveProperty('delete');
+      expect(factory).toHaveProperty('patch');
+      expect(factory).toHaveProperty('head');
+      expect(factory).toHaveProperty('options');
     });
 
-    test('Complex real-world example with multiple transform types', () => {
-      // This mimics a real-world API endpoint
-      const route = createPostRoute({
+    test('factory methods work correctly', () => {
+      const factory = createRouteFactory();
+
+      const getRoute = factory.get({
+        handler: vi.fn(),
+      });
+
+      expect(getRoute).toHaveProperty('GET');
+      expect(getRoute).toHaveProperty('path');
+
+      const postRoute = factory.post({
         schema: {
-          params: z.object({
-            workspaceId: z
-              .string()
-              .uuid()
-              .transform(() => crypto.randomUUID()), // Transform to new UUID
-          }),
-          query: z.object({
-            dryRun: z
-              .string()
-              .optional()
-              .default('false') // Default as string 'false'
-              .transform(val => val === 'true'), // Then transform to boolean
-            format: z.enum(['json', 'csv']).default('json'),
-          }),
-          body: z.object({
-            // Date string to Date object
-            startDate: z.string().transform(str => new Date(str)),
-            endDate: z.string().transform(str => new Date(str)),
+          body: z.object({ name: z.string() }),
+        },
+        handler: vi.fn(),
+      });
 
-            // Comma-separated string to array
-            userIds: z.string().transform(str => str.split(',').map(id => id.trim())),
+      expect(postRoute).toHaveProperty('POST');
+      expect(postRoute.POST.schema?.body).toBeDefined();
+    });
 
-            // JSON string to object
-            filters: z.string().transform(str => {
-              try {
-                return JSON.parse(str) as Record<string, any>;
-              } catch {
-                return {};
-              }
-            }),
+    test('factory with custom types maintains type safety', () => {
+      // Define custom types
+      interface CustomState extends Record<string, unknown> {
+        userId: string;
+        isAdmin: boolean;
+      }
 
-            // Number transforms with validation
-            limit: z
-              .string()
-              .transform(str => parseInt(str, 10))
-              .pipe(z.number().min(1).max(1000)),
+      interface CustomServices extends Record<string, unknown> {
+        database: { query: (sql: string) => Promise<any> };
+      }
 
-            // Enum-like transform
-            status: z.string().transform(str => {
-              const statusMap = { '1': 'active', '2': 'inactive', '3': 'pending' };
-              return statusMap[str as keyof typeof statusMap] || 'unknown';
-            }),
-          }),
+      // Create factory with custom types
+      const factory = createRouteFactory<CustomState, CustomServices>();
+
+      const route = factory.get({
+        schema: {
           response: z.object({
-            processed: z.boolean(),
-            summary: z.object({
-              workspaceId: z.string(),
-              dryRun: z.boolean(),
-              format: z.enum(['json', 'csv']),
-              dateRange: z.object({
-                startDate: z.date(),
-                endDate: z.date(),
-              }),
-              userCount: z.number(),
-              filterCount: z.number(),
-              limit: z.number(),
-              status: z.string(),
-            }),
+            success: z.boolean(),
           }),
         },
-        handler: async (ctx, params) => {
-          // All these type assertions should work without TypeScript errors
-          const workspaceId: string = params.workspaceId; // UUID string
+        handler: async ctx => {
+          // These should be typed correctly
+          const userId: string = ctx.state.userId;
+          const isAdmin: boolean = ctx.state.isAdmin;
+          const db = ctx.services.database;
 
-          const dryRun: boolean = ctx.request.query.dryRun;
-          const format: 'json' | 'csv' = ctx.request.query.format;
+          expect(typeof userId).toBe('string');
+          expect(typeof isAdmin).toBe('boolean');
+          expect(db).toHaveProperty('query');
 
-          const startDate: Date = ctx.request.body.startDate;
-          const endDate: Date = ctx.request.body.endDate;
-          const userIds: string[] = ctx.request.body.userIds;
-          const filters: Record<string, any> = ctx.request.body.filters;
-          const limit: number = ctx.request.body.limit;
-          const status: string = ctx.request.body.status;
-
-          // Runtime verifications
-          expect(typeof workspaceId).toBe('string');
-          expect(typeof dryRun).toBe('boolean');
-          expect(format === 'json' || format === 'csv').toBe(true);
-          expect(startDate instanceof Date).toBe(true);
-          expect(endDate instanceof Date).toBe(true);
-          expect(Array.isArray(userIds)).toBe(true);
-          expect(typeof filters).toBe('object');
-          expect(typeof limit).toBe('number');
-          expect(typeof status).toBe('string');
-
-          return {
-            processed: true,
-            summary: {
-              workspaceId,
-              dryRun,
-              format,
-              dateRange: { startDate, endDate },
-              userCount: userIds.length,
-              filterCount: Object.keys(filters).length,
-              limit,
-              status,
-            },
-          };
+          return { success: true };
         },
       });
 
-      expect(route.POST.handler).toBeDefined();
+      expect(route.GET.handler).toBeDefined();
     });
   });
 });

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 /**
  * BlaizeJS Plugin Module
  *
@@ -19,13 +20,13 @@ export interface PluginOptions<_T = any> {
  */
 export interface PluginHooks {
   /** Called when the plugin is registered */
-  register: (app: Server) => void | Promise<void>;
+  register: (app: Server<any, any>) => void | Promise<void>;
 
   /** Called when the server is initialized */
-  initialize?: (app?: Server) => void | Promise<void>;
+  initialize?: (app?: Server<any, any>) => void | Promise<void>;
 
   /** Called when the server is terminated */
-  terminate?: (app?: Server) => void | Promise<void>;
+  terminate?: (app?: Server<any, any>) => void | Promise<void>;
 
   /** Called when the server starts */
   onServerStart?: (server: any) => void | Promise<void>;
@@ -37,24 +38,35 @@ export interface PluginHooks {
 /**
  * Plugin interface
  */
-export interface Plugin extends PluginHooks {
+export interface Plugin<TState = {}, TServices = {}> extends PluginHooks {
   /** Plugin name */
   name: string;
 
   /** Plugin version */
   version: string;
+
+  /**
+   * Type carriers for compile-time type information
+   * These are never used at runtime but allow TypeScript to track types
+   */
+  _state?: TState;
+  _services?: TServices;
 }
 
 /**
  * Plugin factory function
  */
-export type PluginFactory<T = any> = (options?: T) => Plugin;
+export type PluginFactory<
+  T = any,
+  TState extends Record<string, unknown> = {},
+  TServices extends Record<string, unknown> = {},
+> = (options?: T) => Plugin<TState, TServices>;
 
 export interface PluginLifecycleManager {
-  initializePlugins(server: Server): Promise<void>;
-  terminatePlugins(server: Server): Promise<void>;
-  onServerStart(server: Server, httpServer: any): Promise<void>;
-  onServerStop(server: Server, httpServer: any): Promise<void>;
+  initializePlugins(server: Server<any, any>): Promise<void>;
+  terminatePlugins(server: Server<any, any>): Promise<void>;
+  onServerStart(server: Server<any, any>, httpServer: any): Promise<void>;
+  onServerStop(server: Server<any, any>, httpServer: any): Promise<void>;
 }
 
 export interface PluginLifecycleOptions {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { Blaize } from '../../../../../index';
+import { appRouter } from '../../../../basic';
 
 import type { UploadedFile } from '../../../../../index';
 
@@ -45,7 +45,7 @@ const uploadErrorResponseSchema = z.object({
   code: z.string().optional(),
 });
 
-export const POST = Blaize.Router.createPostRoute({
+export const POST = appRouter.post({
   schema: {
     body: uploadBodySchema,
     response: z.union([uploadResponseSchema, uploadErrorResponseSchema]),
