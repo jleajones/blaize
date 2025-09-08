@@ -1,11 +1,14 @@
-import type { Server, StopOptions } from '@blaize-types/server';
+import type { StopOptions, UnknownServer } from '@blaize-types/server';
 
 // Add a global flag to prevent multiple shutdowns
 let isShuttingDown = false;
 
 // Replace the stopServer function in stop.ts with this version:
 
-export async function stopServer(serverInstance: Server, options: StopOptions = {}): Promise<void> {
+export async function stopServer(
+  serverInstance: UnknownServer,
+  options: StopOptions = {}
+): Promise<void> {
   const server = serverInstance.server;
   const events = serverInstance.events;
 

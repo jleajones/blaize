@@ -5,7 +5,7 @@ import * as http2 from 'node:http2';
 import { generateDevCertificates } from './dev-certificate';
 import { createRequestHandler } from './request-handler';
 
-import type { Server, Http2Options, ServerOptions } from '@blaize-types/server';
+import type { Http2Options, ServerOptions, UnknownServer } from '@blaize-types/server';
 
 // Extract certificate handling to a separate function
 async function prepareCertificates(
@@ -103,7 +103,7 @@ function listenOnPort(
   });
 }
 
-async function initializePlugins(serverInstance: Server): Promise<void> {
+async function initializePlugins(serverInstance: UnknownServer): Promise<void> {
   for (const plugin of serverInstance.plugins) {
     if (typeof plugin.initialize === 'function') {
       await plugin.initialize(serverInstance);
@@ -113,7 +113,7 @@ async function initializePlugins(serverInstance: Server): Promise<void> {
 
 // Main server start function - now with much lower complexity
 export async function startServer(
-  serverInstance: Server,
+  serverInstance: UnknownServer,
   serverOptions: ServerOptions
 ): Promise<void> {
   // Server already running? Do nothing.

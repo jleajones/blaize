@@ -20,7 +20,13 @@ import type {
 import type { Context } from '@blaize-types/context';
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
-import type { Server, ServerOptions, ServerOptionsInput, StopOptions } from '@blaize-types/server';
+import type {
+  Server,
+  ServerOptions,
+  ServerOptionsInput,
+  StopOptions,
+  UnknownServer,
+} from '@blaize-types/server';
 
 export const DEFAULT_OPTIONS: ServerOptions = {
   port: 3000,
@@ -72,9 +78,9 @@ function configureCorrelation(options: ServerOptions): void {
  * Creates the server listen method
  */
 function createListenMethod(
-  serverInstance: Server,
+  serverInstance: UnknownServer,
   validatedOptions: ServerOptions
-): Server['listen'] {
+): UnknownServer['listen'] {
   return async () => {
     // Configure correlation before starting the server
     configureCorrelation(validatedOptions);
@@ -99,7 +105,7 @@ function createListenMethod(
 /**
  * Initializes plugins
  */
-async function initializePlugins(serverInstance: Server): Promise<void> {
+async function initializePlugins(serverInstance: UnknownServer): Promise<void> {
   // Register plugins from options
   for (const p of serverInstance.plugins) {
     await p.register(serverInstance);
@@ -109,7 +115,7 @@ async function initializePlugins(serverInstance: Server): Promise<void> {
 /**
  * Sets up server lifecycle (signal handlers, events)
  */
-function setupServerLifecycle(serverInstance: Server): void {
+function setupServerLifecycle(serverInstance: UnknownServer): void {
   // Register signal handlers for graceful shutdown
   const signalHandlers = registerSignalHandlers(() => serverInstance.close());
 
@@ -123,7 +129,7 @@ function setupServerLifecycle(serverInstance: Server): void {
 /**
  * Creates the server close method
  */
-function createCloseMethod(serverInstance: Server): Server['close'] {
+function createCloseMethod(serverInstance: UnknownServer): UnknownServer['close'] {
   return async (stopOptions?: StopOptions) => {
     if (!serverInstance.server) {
       return;
@@ -147,10 +153,9 @@ function createCloseMethod(serverInstance: Server): Server['close'] {
  * Creates the server use method for adding middleware
  * This version properly handles type accumulation for both single and array middleware
  */
-function createUseMethod<
-  TState extends Record<string, unknown> = {},
-  TServices extends Record<string, unknown> = {},
->(serverInstance: Server<TState, TServices>): Server<TState, TServices>['use'] {
+function createUseMethod<TState, TServices>(
+  serverInstance: Server<TState, TServices>
+): Server<TState, TServices>['use'] {
   return ((middleware: Middleware | Middleware[]) => {
     const middlewareArray = Array.isArray(middleware) ? middleware : [middleware];
     serverInstance.middleware.push(...middlewareArray);
@@ -164,10 +169,9 @@ function createUseMethod<
  * Creates the server register method for plugins
  * This version properly handles type accumulation for both single and array plugins
  */
-function createRegisterMethod<
-  TState extends Record<string, unknown> = {},
-  TServices extends Record<string, unknown> = {},
->(serverInstance: Server<TState, TServices>): Server<TState, TServices>['register'] {
+function createRegisterMethod<TState, TServices>(
+  serverInstance: Server<TState, TServices>
+): Server<TState, TServices>['register'] {
   return (async (plugin: Plugin | Plugin[]) => {
     if (Array.isArray(plugin)) {
       // Handle array of plugins

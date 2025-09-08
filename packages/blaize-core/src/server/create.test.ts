@@ -9,7 +9,13 @@ import * as startModule from './start';
 import * as stopModule from './stop';
 import * as validationModule from './validation';
 
-import type { Server, ServerOptionsInput, Plugin, Middleware } from '@blaize-types/index';
+import type {
+  Server,
+  ServerOptionsInput,
+  Plugin,
+  Middleware,
+  UnknownServer,
+} from '@blaize-types/index';
 
 // Mock middleware with specific type contributions
 const authMiddleware: Middleware<
@@ -193,7 +199,7 @@ describe('create', () => {
   });
 
   describe('server.listen', () => {
-    let server: Server;
+    let server: UnknownServer;
 
     beforeEach(() => {
       server = create();
@@ -235,7 +241,7 @@ describe('create', () => {
   });
 
   describe('server.close', () => {
-    let server: Server;
+    let server: UnknownServer;
 
     beforeEach(async () => {
       server = create();
