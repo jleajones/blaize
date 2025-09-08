@@ -63,6 +63,7 @@ export interface ContextResponse<S extends State = State> {
 
   // State
   sent: boolean;
+  statusCode: number;
 
   // Status and headers
   status: (code: number) => ContextResponse<S>;

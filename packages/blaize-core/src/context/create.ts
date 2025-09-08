@@ -255,6 +255,11 @@ function createResponseObject<
   return {
     raw: res,
 
+    // TODO: this does not work well and should be enhanced
+    get statusCode() {
+      return res.statusCode || 200;
+    },
+
     get sent() {
       return responseState.sent;
     },
