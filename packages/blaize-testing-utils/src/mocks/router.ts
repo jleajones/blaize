@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import {
+import type {
   CreateDeleteRoute,
   CreateGetRoute,
   CreateHeadRoute,
@@ -11,6 +11,8 @@ import {
   Route,
   RouteMethodOptions,
   Router,
+  State,
+  Services,
 } from '../../../blaize-types/src/index';
 
 /**
@@ -69,92 +71,127 @@ export function createMockRoutes(count: number, basePath = '/test'): Route[] {
 
 /**
  * Mock implementation of createGetRoute for testing
- * Matches the actual implementation's type signature
+ * Now returns a function that accepts state/services generics
  */
-export const mockGetRoute: CreateGetRoute = config => {
-  const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
+export const mockGetRoute: CreateGetRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
 
-  return {
-    GET: { ...config, handler } as any,
-    path: '/mock/path',
+    return {
+      GET: { ...config, handler } as any,
+      path: '/mock/path',
+    };
   };
 };
 
 /**
  * Mock implementation of createPostRoute for testing
- * Matches the actual implementation's type signature
+ * Now returns a function that accepts state/services generics
  */
-export const mockPostRoute: CreatePostRoute = config => {
-  const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
+export const mockPostRoute: CreatePostRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
 
-  return {
-    POST: { ...config, handler } as any,
-    path: '/mock/path',
+    return {
+      POST: { ...config, handler } as any,
+      path: '/mock/path',
+    };
   };
 };
 
 /**
  * Mock implementation of createPutRoute for testing
- * Matches the actual implementation's type signature
+ * Now returns a function that accepts state/services generics
  */
-export const mockPutRoute: CreatePutRoute = config => {
-  const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
+export const mockPutRoute: CreatePutRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
 
-  return {
-    PUT: { ...config, handler } as any,
-    path: '/mock/path',
+    return {
+      PUT: { ...config, handler } as any,
+      path: '/mock/path',
+    };
   };
 };
 
 /**
  * Mock implementation of createDeleteRoute for testing
- * Matches the actual implementation's type signature
+ * Now returns a function that accepts state/services generics
  */
-export const mockDeleteRoute: CreateDeleteRoute = config => {
-  const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
+export const mockDeleteRoute: CreateDeleteRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
 
-  return {
-    DELETE: { ...config, handler } as any,
-    path: '/mock/path',
+    return {
+      DELETE: { ...config, handler } as any,
+      path: '/mock/path',
+    };
   };
 };
 
 /**
  * Mock implementation of createPatchRoute for testing
- * Matches the actual implementation's type signature
+ * Now returns a function that accepts state/services generics
  */
-export const mockPatchRoute: CreatePatchRoute = config => {
-  const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
+export const mockPatchRoute: CreatePatchRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
 
-  return {
-    PATCH: { ...config, handler } as any,
-    path: '/mock/path',
+    return {
+      PATCH: { ...config, handler } as any,
+      path: '/mock/path',
+    };
   };
 };
 
 /**
  * Mock implementation of createHeadRoute for testing
- * Matches the actual implementation's type signature
+ * Now returns a function that accepts state/services generics
  */
-export const mockHeadRoute: CreateHeadRoute = config => {
-  const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
+export const mockHeadRoute: CreateHeadRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
 
-  return {
-    HEAD: { ...config, handler } as any,
-    path: '/mock/path',
+    return {
+      HEAD: { ...config, handler } as any,
+      path: '/mock/path',
+    };
   };
 };
 
 /**
  * Mock implementation of createOptionsRoute for testing
- * Matches the actual implementation's type signature
+ * Now returns a function that accepts state/services generics
  */
-export const mockOptionsRoute: CreateOptionsRoute = config => {
-  const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
+export const mockOptionsRoute: CreateOptionsRoute = <
+  _TState extends State = State,
+  _TServices extends Services = Services,
+>() => {
+  return (config: any) => {
+    const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
 
-  return {
-    OPTIONS: { ...config, handler } as any,
-    path: '/mock/path',
+    return {
+      OPTIONS: { ...config, handler } as any,
+      path: '/mock/path',
+    };
   };
 };
 
@@ -166,13 +203,36 @@ export function withPath<T extends { path: string }>(route: T, path: string): T 
 }
 
 /**
+ * Mock route factory for testing - matches the real createRouteFactory
+ * Usage: const routes = createMockRouteFactory<TestState, TestServices>();
+ */
+export function createMockRouteFactory<
+  TState extends State = State,
+  TServices extends Services = Services,
+>() {
+  return {
+    get: mockGetRoute<TState, TServices>(),
+    post: mockPostRoute<TState, TServices>(),
+    put: mockPutRoute<TState, TServices>(),
+    delete: mockDeleteRoute<TState, TServices>(),
+    patch: mockPatchRoute<TState, TServices>(),
+    head: mockHeadRoute<TState, TServices>(),
+    options: mockOptionsRoute<TState, TServices>(),
+  } as const;
+}
+
+/**
  * Create a set of commonly used mock routes for testing
+ * Now uses the updated mock route creators with state/services support
  */
 export function createMockRoutesSet() {
+  // Create route creators with default state/services
+  const routes = createMockRouteFactory();
+
   return {
     // Route with no schemas - should not require arguments
     healthCheck: withPath(
-      mockGetRoute({
+      routes.get({
         schema: {
           response: z.object({
             status: z.string(),
@@ -186,7 +246,7 @@ export function createMockRoutesSet() {
 
     // Route with params only
     getUser: withPath(
-      mockGetRoute({
+      routes.get({
         schema: {
           params: z.object({ userId: z.string() }),
           response: z.object({
@@ -206,7 +266,7 @@ export function createMockRoutesSet() {
 
     // Route with body only
     createUser: withPath(
-      mockPostRoute({
+      routes.post({
         schema: {
           body: z.object({
             name: z.string(),
@@ -229,7 +289,7 @@ export function createMockRoutesSet() {
 
     // Route with query only
     listUsers: withPath(
-      mockGetRoute({
+      routes.get({
         schema: {
           query: z.object({
             page: z.number().optional(),
@@ -256,7 +316,7 @@ export function createMockRoutesSet() {
 
     // Route with all schemas
     updateUser: withPath(
-      mockPutRoute({
+      routes.put({
         schema: {
           params: z.object({ userId: z.string() }),
           query: z.object({ notify: z.boolean().optional() }),
@@ -279,4 +339,55 @@ export function createMockRoutesSet() {
       '/users/:userId'
     ),
   } as const;
+}
+
+/**
+ * Test helper: Create mock routes with custom state/services types
+ * Useful for testing type-safe route handlers
+ */
+export function createTypedMockRoutesSet<
+  TState extends State = State,
+  TServices extends Services = Services,
+>() {
+  const routes = createMockRouteFactory<TState, TServices>();
+
+  return {
+    typedRoute: routes.get({
+      schema: {
+        response: z.object({
+          success: z.boolean(),
+        }),
+      },
+      handler: async () => {
+        // ctx.state and ctx.services will be typed as TState and TServices
+        return { success: true };
+      },
+    }),
+  };
+}
+
+/**
+ * Test helper: Create a route that uses state and services
+ * For testing middleware/plugin integration
+ */
+export function createStateAwareRoute<
+  TState extends State = State,
+  TServices extends Services = Services,
+>(stateKey: keyof TState, serviceKey: keyof TServices) {
+  const routes = createMockRouteFactory<TState, TServices>();
+
+  return routes.get({
+    schema: {
+      response: z.object({
+        stateValue: z.unknown(),
+        serviceExists: z.boolean(),
+      }),
+    },
+    handler: async ctx => {
+      return {
+        stateValue: ctx.state[stateKey],
+        serviceExists: serviceKey in ctx.services,
+      };
+    },
+  });
 }

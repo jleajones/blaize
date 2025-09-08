@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 import EventEmitter from 'node:events';
 
 import { createMockPluginLifecycleManager, createMockPlugins } from './plugins';
@@ -7,10 +8,10 @@ import { Plugin, PluginLifecycleManager, Server } from '../../../blaize-types/sr
 /**
  * Create a mock server instance for testing
  */
-export function createMockServer(
-  overrides: Partial<Server> = {},
+export function createMockServer<TState, TServices>(
+  overrides: Partial<Server<TState, TServices>> = {},
   pluginManagerOverrides: Partial<PluginLifecycleManager> = {}
-): Server {
+): Server<TState, TServices> {
   const mockRouter = createMockRouter();
   const mockPluginManager = createMockPluginLifecycleManager(pluginManagerOverrides);
 
@@ -22,10 +23,10 @@ export function createMockServer(
     plugins: [],
     middleware: [],
     _signalHandlers: { unregister: vi.fn() },
-    listen: vi.fn().mockResolvedValue({} as Server),
+    listen: vi.fn().mockResolvedValue({} as Server<TState, TServices>),
     close: vi.fn().mockResolvedValue(undefined),
     use: vi.fn().mockReturnThis(),
-    register: vi.fn().mockResolvedValue({} as Server),
+    register: vi.fn().mockResolvedValue({} as Server<TState, TServices>),
     router: mockRouter,
     pluginManager: mockPluginManager,
     context: {
@@ -36,22 +37,22 @@ export function createMockServer(
       exit: vi.fn(),
     } as any,
     ...overrides,
-  };
+  } as Server<TState, TServices>;
 }
 
 /**
  * Create a mock server with plugins for testing
  */
-export function createMockServerWithPlugins(
+export function createMockServerWithPlugins<TState, TServices>(
   pluginCount: number = 2,
-  serverOverrides: Partial<Server> = {},
+  serverOverrides: Partial<Server<TState, TServices>> = {},
   pluginOverrides: Partial<Plugin> = {},
   pluginManagerOverrides: Partial<PluginLifecycleManager> = {}
-): { server: Server; plugins: Plugin[] } {
+): { server: Server<TState, TServices>; plugins: Plugin[] } {
   const plugins = createMockPlugins(pluginCount, pluginOverrides);
 
   const pluginManager = createMockPluginLifecycleManager(pluginManagerOverrides);
-  const server = createMockServer({
+  const server = createMockServer<TState, TServices>({
     plugins,
     pluginManager,
     ...serverOverrides,
@@ -83,9 +84,9 @@ export function createMockHttpServer(overrides: any = {}) {
  * Test server lifecycle (listen -> close) with automatic cleanup
  * This eliminates the repetitive beforeEach/afterEach pattern in server tests
  */
-export async function testServerLifecycle(
-  server: Server,
-  testFn: (server: Server) => Promise<void> | void
+export async function testServerLifecycle<TState = {}, TServices = {}>(
+  server: Server<TState, TServices>,
+  testFn: (server: Server<TState, TServices>) => Promise<void> | void
 ): Promise<void> {
   try {
     await server.listen();
@@ -99,7 +100,7 @@ export async function testServerLifecycle(
  * Create a spy for server events that's easy to test
  * This eliminates repetitive event spying setup
  */
-export function spyOnServerEvents(server: Server) {
+export function spyOnServerEvents<TState = {}, TServices = {}>(server: Server<TState, TServices>) {
   const eventSpy = vi.spyOn(server.events, 'emit');
 
   return {
@@ -116,7 +117,9 @@ export function spyOnServerEvents(server: Server) {
 /**
  * Reset all mocks in a server instance
  */
-export function resetServerMocks(server: Server): void {
+export function resetServerMocks<TState = {}, TServices = {}>(
+  server: Server<TState, TServices>
+): void {
   // Reset plugin mocks
   server.plugins.forEach(plugin => {
     if (vi.isMockFunction(plugin.register)) vi.mocked(plugin.register).mockClear();
