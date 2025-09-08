@@ -1,5 +1,11 @@
 # @blaizejs/client
 
+## 0.4.0
+
+### Minor Changes
+
+- 3d0a769: 🚀 introduced end-to-end request tracing with correlationIds
+
 ## 0.3.3
 
 ### Patch Changes

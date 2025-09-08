@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.3.1
+
+### Patch Changes
+
+- d5c246f: ✨ enhanced type safety by introducing generics; types flow from server to route handlers
+
 ## 0.3.0
 
 ### Minor Changes
