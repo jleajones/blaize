@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { Blaize } from '../../../../index';
+import { appRouter } from 'src/examples/basic';
 
-export const getUserRoute = Blaize.Router.createGetRoute({
+export const getUserRoute = appRouter.get({
   schema: {
     response: z.object({
       message: z.string(),
@@ -31,7 +31,7 @@ export const getUserRoute = Blaize.Router.createGetRoute({
   },
 });
 
-export const postUserRoute = Blaize.Router.createPostRoute({
+export const postUserRoute = appRouter.post({
   schema: {
     body: z.object({
       name: z.string(),

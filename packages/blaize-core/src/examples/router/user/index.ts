@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { Blaize } from '../../../index';
+import { appRouter } from 'src/examples/basic';
 
-export default Blaize.Router.createGetRoute({
+export default appRouter.get({
   schema: {
     response: z.object({
       message: z.string(),
