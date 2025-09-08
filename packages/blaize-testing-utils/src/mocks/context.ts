@@ -57,6 +57,7 @@ export function createMockContext<
   const responseObj: Context['response'] = {
     raw: null as any, // Mock response object
     sent: false,
+    statusCode: 200,
 
     status: vi.fn().mockImplementation((_code: number) => responseObj),
     header: vi.fn().mockImplementation((_name: string, _value: string) => responseObj),
