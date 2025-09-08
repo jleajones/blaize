@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { appRouter } from 'src/examples/basic';
+import { appRouter } from '../../../../basic';
 
 import type { UploadedFile } from '../../../../../index';
 

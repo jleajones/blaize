@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { appRouter } from 'src/examples/basic';
+import { appRouter } from '../../basic';
 
 export default appRouter.get({
   schema: {
