@@ -22,6 +22,8 @@ import type { Plugin, PluginLifecycleManager } from './plugins';
 import type { Router } from './router';
 import type { EventEmitter } from 'node:events';
 
+export type UnknownServer = Server<Record<string, unknown>, Record<string, unknown>>;
+
 export interface Http2Options {
   enabled?: boolean | undefined;
   keyFile?: string | undefined;
@@ -140,10 +142,7 @@ export interface ServerOptions {
  * @template TServices - The accumulated services type from middleware and plugins
  *
  */
-export interface Server<
-  TState extends Record<string, unknown> = {},
-  TServices extends Record<string, unknown> = {},
-> {
+export interface Server<TState, TServices> {
   /** The underlying HTTP or HTTP/2 server */
   server: http.Server | http2.Http2Server | undefined;
 
@@ -186,9 +185,7 @@ export interface Server<
    * // serverWithMiddleware has type Server<{user, requestId}, {auth, logger}>
    * ```
    */
-  use<MS extends Record<string, unknown>, MSvc extends Record<string, unknown>>(
-    middleware: Middleware<MS, MSvc>
-  ): Server<TState & MS, TServices & MSvc>;
+  use<MS, MSvc>(middleware: Middleware<MS, MSvc>): Server<TState & MS, TServices & MSvc>;
 
   use<MW extends readonly Middleware<any, any>[]>(
     middleware: MW
@@ -214,9 +211,7 @@ export interface Server<
    * // serverWithPlugins has type Server<{}, {db, cache}>
    * ```
    */
-  register<PS extends Record<string, unknown>, PSvc extends Record<string, unknown>>(
-    plugin: Plugin<PS, PSvc>
-  ): Promise<Server<TState & PS, TServices & PSvc>>;
+  register<PS, PSvc>(plugin: Plugin<PS, PSvc>): Promise<Server<TState & PS, TServices & PSvc>>;
 
   register<P extends readonly Plugin<any, any>[]>(
     plugin: P
