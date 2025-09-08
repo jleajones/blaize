@@ -1,5 +1,15 @@
 # blaizejs
 
+## 0.4.0
+
+### Minor Changes
+
+- 3d0a769: 🚀 introduced end-to-end request tracing with correlationIds
+
+### Patch Changes
+
+- d5c246f: ✨ enhanced type safety by introducing generics; types flow from server to route handlers
+
 ## 0.3.4
 
 ### Patch Changes
