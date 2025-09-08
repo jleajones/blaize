@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Blaize, type InferContext } from '../index';
-import { createLoggerMiddleware } from './sample-middleware';
+import { loggerMiddleware } from './sample-middleware';
 import { createMetricsPlugin } from './sample-plugin';
 
 // Get the directory name of the current module
@@ -20,7 +20,7 @@ const routesDir = path.resolve(__dirname, './router/');
 /**
  * Logger middleware - adds request ID and logging service
  */
-const loggerMiddleware = createLoggerMiddleware({
+const logger = loggerMiddleware({
   prefix: '[API]',
   logRequests: true,
   logResponses: true,
@@ -41,7 +41,7 @@ const app = Blaize.createServer({
   port: 3000,
   host: 'localhost',
   routesDir,
-  middleware: [loggerMiddleware],
+  middleware: [logger],
   plugins: [metricsPlugin],
 });
 

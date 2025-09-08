@@ -1,10 +1,11 @@
 /**
- * Example logger middleware with full type safety
- * Demonstrates how to create typed middleware for BlaizeJS
+ * Logger middleware using BlaizeJS framework's actual create function
  */
-import { getCorrelationId } from 'src/tracing/correlation';
 
-import type { Middleware, MiddlewareFunction, Services, State } from '@blaize-types/index';
+import { create as createMiddleware } from '../middleware/create';
+import { getCorrelationId } from '../tracing/correlation';
+
+import type { State, Services } from '@blaize-types/index';
 
 /**
  * Logger configuration options
@@ -46,11 +47,17 @@ export interface LoggerServices extends Services {
 }
 
 /**
- * Creates a typed logger middleware
+ * Creates a typed logger middleware using the framework's create function
+ *
+ * @example
+ * ```typescript
+ * import { loggerMiddleware } from './middleware/logger';
+ *
+ * const server = createServer()
+ *   .use(loggerMiddleware({ prefix: '[API]' }));
+ * ```
  */
-export function createLoggerMiddleware(
-  options: LoggerOptions = {}
-): Middleware<LoggerState, LoggerServices> {
+export function loggerMiddleware(options: LoggerOptions = {}) {
   const {
     prefix = '[Server]',
     logRequests = true,
@@ -76,53 +83,59 @@ export function createLoggerMiddleware(
     },
   };
 
-  const execute: MiddlewareFunction = async (ctx, next) => {
-    const startTime = Date.now();
+  // Use the framework's create function with MiddlewareOptions
+  return createMiddleware<LoggerState, LoggerServices>({
+    name: 'logger',
+    handler: async (ctx, next) => {
+      const startTime = Date.now();
+      const correlationId = getCorrelationId();
 
-    // Add state
-    ctx.state.startTime = startTime;
+      // Add state
+      ctx.state.startTime = startTime;
+      ctx.state.correlationId = correlationId;
 
-    // Check for correlation ID from headers
-    const correlationId = getCorrelationId();
+      // Add logger service
+      (ctx.services as any).logger = logger;
 
-    // Add logger service
-    (ctx.services as any).logger = logger;
-
-    // Log request
-    if (logRequests) {
-      logger.info(`→ ${ctx.request.method} ${ctx.request.path}`, {
-        correlationId,
-        query: ctx.request.query,
-        headers: ctx.request.headers,
-      });
-    }
-
-    try {
-      // Continue to next middleware
-      await next();
-
-      // Log response
-      if (logResponses) {
-        const duration = Date.now() - startTime;
-        logger.info(`← ${ctx.request.method} ${ctx.request.path}`, {
+      // Log request
+      if (logRequests) {
+        logger.info(`→ ${ctx.request.method} ${ctx.request.path}`, {
           correlationId,
-          status: ctx.response.status,
-          duration: `${duration}ms`,
+          query: ctx.request.query,
+          headers: ctx.request.headers,
         });
       }
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      logger.error(`✗ ${ctx.request.method} ${ctx.request.path}`, {
-        correlationId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        duration: `${duration}ms`,
-      });
-      throw error;
-    }
-  };
 
-  return {
-    name: 'logger',
-    execute,
-  };
+      try {
+        // Continue to next middleware
+        await next();
+
+        // Log response
+        if (logResponses) {
+          const duration = Date.now() - startTime;
+          logger.info(`← ${ctx.request.method} ${ctx.request.path}`, {
+            correlationId,
+            status: ctx.response.statusCode,
+            duration: `${duration}ms`,
+          });
+        }
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        logger.error(`✗ ${ctx.request.method} ${ctx.request.path}`, {
+          correlationId,
+          status: ctx.response.statusCode,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          duration: `${duration}ms`,
+        });
+        throw error;
+      }
+    },
+    // Optional: add debug flag
+    debug: process.env.NODE_ENV === 'development',
+    // Optional: add skip condition
+    skip: ctx => {
+      // Skip logging for health checks if needed
+      return ctx.request.path === '/health' && !options.logRequests;
+    },
+  });
 }

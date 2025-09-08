@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { appRouter } from '../../app.js';
 
-export const getUser = appRouter.get({
+export const getUsers = appRouter.get({
   schema: {
     response: z.object({
       users: z.array(

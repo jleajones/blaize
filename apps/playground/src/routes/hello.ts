@@ -10,7 +10,7 @@ export const getHello = appRouter.get({
   },
   handler: async () => {
     return {
-      name: 'Hi, it is BlaizeJS!',
+      name: 'Hi, it is Blaize and Bella!',
     };
   },
 });
@@ -24,9 +24,9 @@ export const postHello = appRouter.post({
       name: z.string(),
     }),
   },
-  handler: async () => {
+  handler: async ctx => {
     return {
-      message: 'Hello from Blaize and Bella and the hello route!',
+      message: `Hello, ${ctx.request.body.name} from Blaize and Bella and the hello route!`,
     };
   },
 });

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { appRouter } from '../../../app.js';
 
-export const getUser = appRouter.get({
+export const getUserById = appRouter.get({
   schema: {
     params: z.object({
       userId: z.string(),

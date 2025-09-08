@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { appRouter } from '../../../../app.js';
 
-export default appRouter.get({
+export const getPostById = appRouter.get({
   schema: {
     params: z.object({
       userId: z.string(),
