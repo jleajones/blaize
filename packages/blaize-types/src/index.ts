@@ -7,3 +7,4 @@ export * from './middleware';
 export * from './router';
 export * from './plugins';
 export * from './upload';
+export * from './sse';
