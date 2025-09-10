@@ -257,7 +257,7 @@ function createResponseObject<
 
     // TODO: this does not work well and should be enhanced
     get statusCode() {
-      return res.statusCode || 200;
+      return res.statusCode;
     },
 
     get sent() {
