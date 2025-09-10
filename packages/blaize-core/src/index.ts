@@ -26,6 +26,9 @@ import {
   createPutRoute,
   createRouteFactory,
 } from './router/create';
+import { parseRoutePath } from './router/discovery';
+import { extractParams, compilePathPattern } from './router/matching';
+import { getRouteFromRegistry, getAllRoutesFromRegistry } from './router/registry/fast-registry';
 // Server
 import { create as createServer } from './server/create';
 import { inferContext, type InferContext } from './server/types';
@@ -45,6 +48,11 @@ export {
   type InferContext,
 
   // Router module exports
+  extractParams,
+  compilePathPattern,
+  parseRoutePath,
+  getRouteFromRegistry,
+  getAllRoutesFromRegistry,
   createDeleteRoute,
   createGetRoute,
   createHeadRoute,

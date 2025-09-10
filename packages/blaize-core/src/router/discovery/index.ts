@@ -1,5 +1,6 @@
 import { findRouteFiles } from './finder';
 import { loadRouteModule } from './loader';
+import { parseRoutePath } from './parser';
 
 import type { Route } from '@blaize-types/router';
 
@@ -33,3 +34,5 @@ export async function findRoutes(
 
   return routes;
 }
+
+export { parseRoutePath };
