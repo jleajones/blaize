@@ -2,10 +2,11 @@
  * Logger middleware using BlaizeJS framework's actual create function
  */
 
+import { type State, type Services, BlaizeError } from '@blaize-types/index';
+
 import { create as createMiddleware } from '../middleware/create';
 import { getCorrelationId } from '../tracing/correlation';
 
-import type { State, Services } from '@blaize-types/index';
 
 /**
  * Logger configuration options
@@ -102,7 +103,7 @@ export function loggerMiddleware(options: LoggerOptions = {}) {
         logger.info(`→ ${ctx.request.method} ${ctx.request.path}`, {
           correlationId,
           query: ctx.request.query,
-          headers: ctx.request.headers,
+          headers: ctx.request.headers(),
         });
       }
 
@@ -121,9 +122,11 @@ export function loggerMiddleware(options: LoggerOptions = {}) {
         }
       } catch (error) {
         const duration = Date.now() - startTime;
+        const status = error instanceof BlaizeError ? error.status : 500;
+
         logger.error(`✗ ${ctx.request.method} ${ctx.request.path}`, {
           correlationId,
-          status: ctx.response.statusCode,
+          status,
           error: error instanceof Error ? error.message : 'Unknown error',
           duration: `${duration}ms`,
         });
