@@ -248,6 +248,16 @@ export enum ErrorType {
 
   /** Generic HTTP error (varies) */
   HTTP_ERROR = 'HTTP_ERROR',
+
+  // SSE-specific errors
+  /** SSE connection failed (502) */
+  SSE_CONNECTION_ERROR = 'SSE_CONNECTION_ERROR',
+
+  /** SSE buffer overflow (503) */
+  SSE_BUFFER_OVERFLOW = 'SSE_BUFFER_OVERFLOW',
+
+  /** SSE stream closed (410) */
+  SSE_STREAM_CLOSED = 'SSE_STREAM_CLOSED',
 }
 
 /**
@@ -634,6 +644,7 @@ export interface BodyParseError {
   readonly error: unknown;
 }
 
+// TODO: Consider moving to blaize-core
 /**
  * Type guard to check if an object is a BodyParseError
  */
@@ -662,4 +673,74 @@ export interface ErrorTransformContext {
   contentType?: string;
   responseSample?: string;
   [key: string]: unknown;
+}
+
+/**
+ * SSE-specific error detail interfaces for BlaizeJS framework
+ *
+ * These interfaces define the structure of details for SSE errors.
+ * The actual error classes are implemented in blaize-core.
+ */
+
+/**
+ * Details for SSE connection errors
+ */
+export interface SSEConnectionErrorDetails {
+  /** Client identifier if available */
+  clientId?: string;
+
+  /** Connection attempt number */
+  attemptNumber?: number;
+
+  /** Maximum retry attempts configured */
+  maxRetries?: number;
+
+  /** The underlying error that caused connection failure */
+  cause?: string;
+
+  /** Suggested resolution */
+  suggestion?: string;
+}
+
+/**
+ * Details for SSE buffer overflow errors
+ */
+export interface SSEBufferOverflowErrorDetails {
+  /** Client identifier */
+  clientId?: string;
+
+  /** Current buffer size when overflow occurred */
+  currentSize: number;
+
+  /** Maximum buffer size configured */
+  maxSize: number;
+
+  /** Number of events dropped */
+  eventsDropped?: number;
+
+  /** Buffer strategy that was applied */
+  strategy: 'drop-oldest' | 'drop-newest' | 'close';
+
+  /** Event that triggered the overflow */
+  triggeringEvent?: string;
+}
+
+/**
+ * Details for SSE stream closed errors
+ */
+export interface SSEStreamClosedErrorDetails {
+  /** Client identifier */
+  clientId?: string;
+
+  /** When the stream was closed */
+  closedAt?: string;
+
+  /** Reason for closure */
+  closeReason?: 'client-disconnect' | 'server-close' | 'timeout' | 'error' | 'buffer-overflow';
+
+  /** Whether reconnection is possible */
+  canReconnect?: boolean;
+
+  /** Suggested retry interval in milliseconds */
+  retryAfter?: number;
 }
