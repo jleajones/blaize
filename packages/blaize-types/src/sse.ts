@@ -1,7 +1,13 @@
+import { z } from 'zod';
+
 /**
  * @module sse
  * @description Server-Sent Events (SSE) type definitions for BlaizeJS framework
  */
+
+import type { Context, QueryParams, Services, State } from './context';
+import type { Middleware } from './middleware';
+import type { Infer } from './router';
 
 /**
  * Represents a single Server-Sent Event
@@ -284,38 +290,148 @@ export interface SSEStreamManager {
 }
 
 /**
- * SSE error codes for standardized error handling
+ * Result type for operations that can fail
  */
-export enum SSEErrorCode {
-  /** Connection failed to establish */
-  CONNECTION_FAILED = 'SSE_CONNECTION_FAILED',
+export type RegistryResult<T> = { success: true; value: T } | { success: false; error: string };
 
-  /** Buffer overflow occurred */
-  BUFFER_OVERFLOW = 'SSE_BUFFER_OVERFLOW',
-
-  /** Stream is already closed */
-  STREAM_CLOSED = 'SSE_STREAM_CLOSED',
-
-  /** Invalid event data format */
-  INVALID_DATA = 'SSE_INVALID_DATA',
-
-  /** Client timeout */
-  CLIENT_TIMEOUT = 'SSE_CLIENT_TIMEOUT',
-
-  /** Server error */
-  SERVER_ERROR = 'SSE_SERVER_ERROR',
+/**
+ * Connection metadata stored in the registry
+ */
+export interface ConnectionEntry {
+  stream: SSEStream;
+  connectedAt: number;
+  lastActivity: number;
+  clientIp?: string;
+  userAgent?: string;
 }
 
 /**
- * SSE-specific error class
+ * Configuration for the connection registry
+ * @internal
  */
-export class SSEError extends Error {
-  constructor(
-    public readonly code: SSEErrorCode,
-    message: string,
-    public readonly cause?: Error
-  ) {
-    super(message);
-    this.name = 'SSEError';
-  }
+export interface RegistryConfig {
+  /** Maximum total connections allowed */
+  maxConnections?: number;
+  /** Maximum connections per client IP */
+  maxConnectionsPerClient?: number;
+
+  /** Inactive connection timeout in milliseconds */
+  inactiveTimeout?: number;
+  /** Cleanup interval in milliseconds */
+  cleanupInterval?: number;
 }
+
+/**
+ * Internal connection registry interface
+ */
+export interface ConnectionRegistry {
+  /** Add a new connection to the registry */
+  add: (
+    id: string,
+    stream: SSEStream,
+    metadata?: { clientIp?: string; userAgent?: string }
+  ) => void;
+
+  /** Remove a connection from the registry */
+  remove: (id: string) => void;
+
+  /** Get current connection count */
+  count: () => number;
+
+  /** Clean up inactive or closed connections */
+  cleanup: () => void;
+
+  /** Get connection by ID (for internal use) */
+  get: (id: string) => SSEStream | undefined;
+
+  /** Check if a connection exists */
+  has: (id: string) => boolean;
+
+  /** Get all connection IDs */
+  getIds: () => string[];
+
+  /** Shutdown the registry and close all connections */
+  shutdown: () => void;
+}
+
+/**
+ * Extended stream interface for typed events
+ */
+export interface TypedSSEStream<TEvents extends Record<string, z.ZodType>>
+  extends SSEStreamExtended {
+  send<K extends keyof TEvents>(event: K & string, data: z.infer<TEvents[K]>): void;
+}
+
+/**
+ * Schema for SSE route validation with generic type parameters
+ */
+export interface SSERouteSchema<
+  P extends z.ZodType = z.ZodType<any>,
+  Q extends z.ZodType = z.ZodType<any>,
+  E = any, // Allow any type for events, will be constrained where needed
+> {
+  /** Parameter schema for validation */
+  params?: P;
+
+  /** Query schema for validation */
+  query?: Q;
+
+  /** Events schema for validation (SSE-specific, replaces response) */
+  events?: E;
+}
+
+/**
+ * SSE route handler function with stream as first parameter
+ * This is the user-facing API - they write handlers with this signature
+ */
+export type SSERouteHandler<
+  TStream extends SSEStreamExtended = SSEStreamExtended,
+  TParams = Record<string, string>,
+  TQuery = Record<string, string | string[] | undefined>,
+  TState extends State = State,
+  TServices extends Services = Services,
+> = (
+  stream: TStream,
+  ctx: Context<TState, TServices, never, TQuery>, // SSE never has body
+  params: TParams
+) => Promise<void> | void;
+
+/**
+ * SSE route creator with state and services support
+ * Returns a higher-order function to handle generics properly
+ *
+ * The return type matches what the implementation actually returns:
+ * - A route object with a GET property
+ * - The GET property contains the wrapped handler and schemas
+ * - The wrapped handler has the standard (ctx, params) signature expected by the router
+ */
+export type CreateSSERoute = <
+  TState extends State = State,
+  TServices extends Services = Services,
+>() => <P = never, Q = never, E = never>(config: {
+  schema?: {
+    params?: P extends never ? never : P;
+    query?: Q extends never ? never : Q;
+    events?: E extends never ? never : E; // SSE-specific event schemas
+  };
+  handler: SSERouteHandler<
+    E extends Record<string, z.ZodType> ? TypedSSEStream<E> : SSEStreamExtended,
+    P extends z.ZodType ? Infer<P> : Record<string, string>,
+    Q extends z.ZodType ? Infer<Q> : QueryParams,
+    TState,
+    TServices
+  >;
+  middleware?: Middleware[];
+  options?: Record<string, unknown>;
+}) => {
+  GET: {
+    handler: (ctx: any, params: any) => Promise<void>; // Wrapped handler with standard signature
+    schema?: {
+      params?: P extends never ? undefined : P;
+      query?: Q extends never ? undefined : Q;
+    };
+    middleware?: Middleware[];
+    options?: Record<string, unknown>;
+  };
+  path: string;
+};
