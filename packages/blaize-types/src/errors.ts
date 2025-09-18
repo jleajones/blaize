@@ -215,6 +215,9 @@ export enum ErrorType {
   /** Access forbidden (403) */
   FORBIDDEN = 'FORBIDDEN',
 
+  /** SSE Not Acceptable (406) */
+  SSE_NOT_ACCEPTABLE = 'SSE_NOT_ACCEPTABLE',
+
   /** Resource conflict (409) */
   CONFLICT = 'CONFLICT',
 
