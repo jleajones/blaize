@@ -59,6 +59,12 @@ export type SSEBufferStrategy = 'drop-oldest' | 'drop-newest' | 'close';
  * ```
  */
 export interface SSEOptions {
+  /** ms between heartbeat pings (0 to disable) */
+  heartbeatInterval?: number;
+
+  /** Maximum size in bytes for a single event */
+  maxEventSize?: number;
+
   /** Automatically close stream when client disconnects */
   autoClose?: boolean;
 
@@ -131,6 +137,10 @@ export interface SSEStream {
  * Extended SSE stream with additional control methods
  */
 export interface SSEStreamExtended extends SSEStream {
+  readonly id: string;
+
+  [Symbol.asyncIterator](): AsyncGenerator<BufferedEvent, void, unknown>;
+
   /** Current connection state */
   readonly state: SSEConnectionState;
 
@@ -156,6 +166,8 @@ export interface SSEStreamExtended extends SSEStream {
    * Flush any buffered events immediately
    */
   flush(): void;
+
+  getMetrics(): StreamMetrics;
 }
 
 /**
@@ -435,3 +447,26 @@ export type CreateSSERoute = <
   };
   path: string;
 };
+
+/**
+ * Buffered event with metadata
+ */
+export interface BufferedEvent {
+  id: string;
+  event: string;
+  data: unknown;
+  size: number;
+  timestamp: number;
+  correlationId: string;
+}
+
+/**
+ * Stream metrics for monitoring
+ */
+export interface StreamMetrics {
+  eventsSent: number;
+  eventsDropped: number;
+  bytesWritten: number;
+  bufferHighWatermark: number;
+  lastEventTime: number;
+}
