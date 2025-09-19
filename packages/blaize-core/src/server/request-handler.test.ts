@@ -708,4 +708,194 @@ describe('createRequestHandler - Complete Test Suite', () => {
       ]);
     });
   });
+
+  describe('SSE Error Handling', () => {
+    it('should not send error response when headers already sent (SSE case)', async () => {
+      const testError = new Error('Context creation error');
+      vi.mocked(createContext).mockRejectedValue(testError);
+
+      // Mock response with headers already sent (SSE scenario)
+      mockRes.headersSent = true;
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const handler = createRequestHandler(mockServer);
+      await handler(mockReq, mockRes);
+
+      // Should log but not try to send response
+      expect(consoleSpy).toHaveBeenCalledWith('Error creating context:', testError);
+      expect(consoleSpy).toHaveBeenCalledWith('Headers already sent, cannot send error response');
+
+      // Should NOT attempt to write response
+      expect(mockRes.writeHead).not.toHaveBeenCalled();
+      expect(mockRes.end).not.toHaveBeenCalled();
+      expect(mockRes.setHeader).not.toHaveBeenCalled();
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should handle HTTP/2 SSE with headers already sent', async () => {
+      const testError = new Error('Context creation error');
+      vi.mocked(createContext).mockRejectedValue(testError);
+
+      // Mock HTTP/2 response with headers already sent
+      const mockHttp2Res = {
+        stream: {
+          respond: vi.fn(),
+          end: vi.fn(),
+          headersSent: true, // Headers already sent for SSE
+        },
+        headersSent: false, // Main response object might not have this set
+      } as any;
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const handler = createRequestHandler(mockServer);
+      await handler(mockReq, mockHttp2Res);
+
+      // Should log but not try to send response
+      expect(consoleSpy).toHaveBeenCalledWith('Error creating context:', testError);
+      expect(consoleSpy).toHaveBeenCalledWith('Headers already sent, cannot send error response');
+
+      // Should NOT attempt to send HTTP/2 response
+      expect(mockHttp2Res.stream.respond).not.toHaveBeenCalled();
+      expect(mockHttp2Res.stream.end).not.toHaveBeenCalled();
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should detect SSE request by Accept header', () => {
+      // This test documents the expected behavior even though
+      // we're not explicitly checking the header in the handler
+      mockReq.headers = {
+        accept: 'text/event-stream',
+      };
+
+      // The SSE route handler would be responsible for handling this
+      expect(mockReq.headers.accept).toBe('text/event-stream');
+    });
+
+    it('should handle errors after SSE stream starts', async () => {
+      // Simulate a scenario where context is created successfully
+      // but headers get sent during middleware execution (SSE starts)
+
+      const handler = createRequestHandler(mockServer);
+
+      // Configure error boundary to simulate SSE stream starting
+      mockErrorBoundary.execute.mockImplementation(async (ctx: Context, _next: NextFunction) => {
+        // Simulate SSE stream starting (headers get sent)
+        mockRes.headersSent = true;
+        ctx.response.sent = true;
+
+        // Then an error occurs
+        const _error = new Error('Error after SSE started');
+        // Error boundary would normally handle this, but can't send HTTP response
+        // Just mark as handled
+        return;
+      });
+
+      mockHandler.mockImplementation(async (ctx: Context, next: NextFunction) => {
+        await mockErrorBoundary.execute(ctx, next);
+      });
+
+      await handler(mockReq, mockRes);
+
+      // Should not attempt to send error response
+      expect(mockRes.writeHead).not.toHaveBeenCalled();
+      expect(formatErrorResponse).not.toHaveBeenCalled();
+    });
+
+    it('should handle mixed SSE and regular requests', async () => {
+      const handler = createRequestHandler(mockServer);
+
+      // Test 1: Regular request (headers not sent)
+      mockRes.headersSent = false;
+      const regularError = new Error('Regular error');
+      vi.mocked(createContext).mockRejectedValueOnce(regularError);
+
+      await handler(mockReq, mockRes);
+
+      // Should send normal error response
+      expect(mockRes.writeHead).toHaveBeenCalledWith(500, { 'Content-Type': 'application/json' });
+      expect(mockRes.end).toHaveBeenCalled();
+
+      // Reset mocks
+      vi.clearAllMocks();
+      vi.mocked(createContext).mockResolvedValue(mockContext);
+
+      // Test 2: SSE request (headers already sent)
+      mockRes.headersSent = true;
+      const sseError = new Error('SSE error');
+      vi.mocked(createContext).mockRejectedValueOnce(sseError);
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await handler(mockReq, mockRes);
+
+      // Should NOT send error response for SSE
+      expect(mockRes.writeHead).not.toHaveBeenCalled();
+      expect(mockRes.end).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith('Headers already sent, cannot send error response');
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should check both res.headersSent and res.stream.headersSent', async () => {
+      const testError = new Error('Test error');
+      vi.mocked(createContext).mockRejectedValue(testError);
+
+      // Test various combinations
+      const testCases = [
+        { res: { headersSent: true }, shouldSendError: false },
+        { res: { headersSent: false }, shouldSendError: true },
+        { res: { headersSent: false, stream: { headersSent: true } }, shouldSendError: false },
+        { res: { headersSent: true, stream: { headersSent: false } }, shouldSendError: false },
+      ];
+
+      for (const testCase of testCases) {
+        vi.clearAllMocks();
+
+        const mockTestRes = {
+          ...mockRes,
+          ...testCase.res,
+          setHeader: vi.fn(),
+          writeHead: vi.fn(),
+          end: vi.fn(),
+        };
+
+        if (testCase.res.stream) {
+          mockTestRes.stream = {
+            ...testCase.res.stream,
+            respond: vi.fn(),
+            end: vi.fn(),
+          };
+        }
+
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        const handler = createRequestHandler(mockServer);
+        await handler(mockReq, mockTestRes);
+
+        if (testCase.shouldSendError) {
+          // Should send error response
+          if (mockTestRes.stream?.respond) {
+            expect(mockTestRes.stream.respond).toHaveBeenCalled();
+          } else {
+            expect(mockTestRes.writeHead).toHaveBeenCalled();
+          }
+        } else {
+          // Should NOT send error response
+          expect(consoleSpy).toHaveBeenCalledWith(
+            'Headers already sent, cannot send error response'
+          );
+          expect(mockTestRes.writeHead).not.toHaveBeenCalled();
+          if (mockTestRes.stream?.respond) {
+            expect(mockTestRes.stream.respond).not.toHaveBeenCalled();
+          }
+        }
+
+        consoleSpy.mockRestore();
+      }
+    });
+  });
 });

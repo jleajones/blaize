@@ -53,9 +53,17 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
         });
       });
     } catch (error) {
-      // Fixed to handle HTTP/2
+      // Fixed to handle HTTP/2 and check if headers already sent (SSE case)
       console.error('Error creating context:', error);
       const headerName = getCorrelationHeaderName();
+
+      // Check if headers have already been sent (happens with SSE after stream starts)
+      if (res.headersSent || (res as any).stream?.headersSent) {
+        // Can't send HTTP error response after headers are sent
+        // For SSE, the stream's error handling will take care of it
+        console.error('Headers already sent, cannot send error response');
+        return;
+      }
 
       if ('stream' in res && typeof (res as any).stream?.respond === 'function') {
         // HTTP/2
