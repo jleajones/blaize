@@ -7,12 +7,12 @@ import { z } from 'zod';
 
 /**
  * Buffer overflow strategies when high watermark is reached.
+ * Aligned with SSEBufferStrategy from @blaize-types/sse
  */
 export const BufferStrategySchema = z.enum([
   'drop-oldest', // Drop oldest messages from buffer (FIFO)
   'drop-newest', // Drop newest messages (reject new)
-  'pause', // Pause upstream until buffer drains
-  'sample', // Keep every Nth message when full
+  'close', // Close the stream when buffer limit is reached
 ]);
 
 export type BufferStrategy = z.infer<typeof BufferStrategySchema>;
@@ -62,33 +62,13 @@ export const SizeLimitsSchema = z.object({
 export type SizeLimits = z.infer<typeof SizeLimitsSchema>;
 
 /**
- * Sampling configuration for the 'sample' strategy.
- */
-export const SamplingConfigSchema = z.object({
-  rate: z
-    .number()
-    .positive()
-    .max(1)
-    .default(0.1)
-    .describe('Sampling rate (0-1) when buffer is full'),
-  minInterval: z
-    .number()
-    .int()
-    .nonnegative()
-    .default(100)
-    .describe('Minimum ms between sampled messages'),
-});
-
-export type SamplingConfig = z.infer<typeof SamplingConfigSchema>;
-
-/**
  * Complete backpressure configuration.
  */
 export const BackpressureConfigSchema = z
   .object({
     enabled: z.boolean().default(true).describe('Enable backpressure management'),
 
-    strategy: BufferStrategySchema.default('pause').describe(
+    strategy: BufferStrategySchema.default('drop-oldest').describe(
       'Strategy when buffer reaches high watermark'
     ),
 
@@ -100,8 +80,6 @@ export const BackpressureConfigSchema = z
     limits: SizeLimitsSchema.default({
       maxMessages: 10000,
     }).describe('Buffer size constraints'),
-
-    sampling: SamplingConfigSchema.optional().describe('Configuration for sample strategy'),
 
     metrics: z
       .object({
@@ -119,19 +97,6 @@ export const BackpressureConfigSchema = z
     {
       message: 'High watermark cannot exceed maxMessages limit',
       path: ['watermarks', 'high'],
-    }
-  )
-  .refine(
-    data => {
-      // Require sampling config when using sample strategy
-      if (data.strategy === 'sample' && !data.sampling) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Sampling configuration required when using sample strategy',
-      path: ['sampling'],
     }
   );
 

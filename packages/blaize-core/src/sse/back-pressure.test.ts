@@ -3,7 +3,6 @@ import {
   BufferStrategySchema,
   WatermarkConfigSchema,
   SizeLimitsSchema,
-  SamplingConfigSchema,
   createDefaultConfig,
   validateConfig,
   isValidStrategy,
@@ -17,8 +16,7 @@ describe('Backpressure Types', () => {
     it('should accept valid strategies', () => {
       expect(BufferStrategySchema.parse('drop-oldest')).toBe('drop-oldest');
       expect(BufferStrategySchema.parse('drop-newest')).toBe('drop-newest');
-      expect(BufferStrategySchema.parse('pause')).toBe('pause');
-      expect(BufferStrategySchema.parse('sample')).toBe('sample');
+      expect(BufferStrategySchema.parse('close')).toBe('close');
     });
 
     it('should reject invalid strategies', () => {
@@ -101,35 +99,12 @@ describe('Backpressure Types', () => {
     });
   });
 
-  describe('SamplingConfigSchema', () => {
-    it('should accept valid sampling config', () => {
-      expect(SamplingConfigSchema.parse({ rate: 0.5, minInterval: 200 })).toEqual({
-        rate: 0.5,
-        minInterval: 200,
-      });
-
-      // With defaults
-      expect(SamplingConfigSchema.parse({})).toEqual({ rate: 0.1, minInterval: 100 });
-    });
-
-    it('should reject invalid sampling config', () => {
-      // Invalid rate
-      expect(() => SamplingConfigSchema.parse({ rate: 1.5 })).toThrow();
-      expect(() => SamplingConfigSchema.parse({ rate: -0.1 })).toThrow();
-      expect(() => SamplingConfigSchema.parse({ rate: 0 })).toThrow();
-
-      // Invalid interval
-      expect(() => SamplingConfigSchema.parse({ minInterval: -100 })).toThrow();
-      expect(() => SamplingConfigSchema.parse({ minInterval: 1.5 })).toThrow();
-    });
-  });
-
   describe('BackpressureConfigSchema', () => {
     it('should provide sensible defaults', () => {
       const config = BackpressureConfigSchema.parse({});
       expect(config).toEqual({
         enabled: true,
-        strategy: 'pause',
+        strategy: 'drop-oldest',
         watermarks: { low: 100, high: 1000 },
         limits: { maxMessages: 10000 },
       });
@@ -163,25 +138,6 @@ describe('Backpressure Types', () => {
       ).toThrow(/High watermark cannot exceed maxMessages/);
     });
 
-    it('should require sampling config for sample strategy', () => {
-      expect(() =>
-        BackpressureConfigSchema.parse({
-          strategy: 'sample',
-        })
-      ).toThrow(/Sampling configuration required/);
-
-      // Should work with sampling config
-      expect(
-        BackpressureConfigSchema.parse({
-          strategy: 'sample',
-          sampling: { rate: 0.2, minInterval: 50 },
-        })
-      ).toMatchObject({
-        strategy: 'sample',
-        sampling: { rate: 0.2, minInterval: 50 },
-      });
-    });
-
     it('should handle partial overrides', () => {
       const config = BackpressureConfigSchema.parse({
         strategy: 'drop-newest',
@@ -199,7 +155,7 @@ describe('Backpressure Types', () => {
     it('should create default config', () => {
       const config = createDefaultConfig();
       expect(config.enabled).toBe(true);
-      expect(config.strategy).toBe('pause');
+      expect(config.strategy).toBe('drop-oldest');
       expect(config.watermarks).toEqual({ low: 100, high: 1000 });
     });
 
@@ -226,14 +182,14 @@ describe('Backpressure Types', () => {
   describe('validateConfig', () => {
     it('should return success for valid config', () => {
       const result = validateConfig({
-        strategy: 'pause',
+        strategy: 'drop-newest',
         watermarks: { low: 10, high: 100 },
         limits: { maxMessages: 1000 },
       });
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.strategy).toBe('pause');
+        expect(result.data.strategy).toBe('drop-newest');
       }
     });
 
@@ -247,7 +203,7 @@ describe('Backpressure Types', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.errors).toContain(
-          "strategy: Invalid enum value. Expected 'drop-oldest' | 'drop-newest' | 'pause' | 'sample', received 'invalid'"
+          "strategy: Invalid enum value. Expected 'drop-oldest' | 'drop-newest' | 'close', received 'invalid'"
         );
         expect(
           result.errors.some(e => e.includes('Low watermark must be less than high watermark'))
@@ -270,8 +226,8 @@ describe('Backpressure Types', () => {
 
   describe('Type guards', () => {
     it('isValidStrategy should check buffer strategies', () => {
-      expect(isValidStrategy('pause')).toBe(true);
       expect(isValidStrategy('drop-oldest')).toBe(true);
+      expect(isValidStrategy('drop-newest')).toBe(true);
       expect(isValidStrategy('invalid')).toBe(false);
       expect(isValidStrategy(123)).toBe(false);
       expect(isValidStrategy(null)).toBe(false);
@@ -288,7 +244,7 @@ describe('Backpressure Types', () => {
       expect(
         isValidConfig({
           enabled: true,
-          strategy: 'pause',
+          strategy: 'drop-oldest',
           watermarks: { low: 10, high: 100 },
           limits: { maxMessages: 1000 },
         })
@@ -322,14 +278,6 @@ describe('Backpressure Types', () => {
           maxMessages: 100001,
         })
       ).toThrow();
-    });
-
-    it('should handle floating point precision', () => {
-      const config = SamplingConfigSchema.parse({
-        rate: 0.9999999,
-        minInterval: 100,
-      });
-      expect(config.rate).toBeLessThanOrEqual(1);
     });
 
     it('should handle empty objects with defaults', () => {
