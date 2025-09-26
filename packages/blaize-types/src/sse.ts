@@ -191,23 +191,6 @@ export interface SSESerializedEvent {
 }
 
 /**
- * SSE client configuration for receiving events
- */
-export interface SSEClientOptions {
-  /** Reconnection timeout in milliseconds */
-  reconnectTimeout?: number;
-
-  /** Maximum number of reconnection attempts */
-  maxReconnectAttempts?: number;
-
-  /** Custom headers for the SSE request */
-  headers?: Record<string, string>;
-
-  /** Enable automatic reconnection */
-  autoReconnect?: boolean;
-}
-
-/**
  * SSE event handler function type
  * @template T - Type of the event data
  */

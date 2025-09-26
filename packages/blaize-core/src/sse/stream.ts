@@ -210,29 +210,55 @@ class SSEStreamImpl implements SSEStreamExtended {
       lastEventTime: Date.now(),
     };
 
-    // Set SSE headers
+    // CRITICAL: Do all operations that might throw BEFORE setting headers
+
+    // 1. Try to register with connection registry FIRST
+    // This can throw if connection limits are exceeded
+    try {
+      const registry = getConnectionRegistry();
+      const metadata = {
+        clientIp:
+          this._request.header('x-forwarded-for') ||
+          this._request.header('x-real-ip') ||
+          (this._request.raw as any).socket?.remoteAddress,
+        userAgent: this._request.header('user-agent'),
+      };
+
+      registry.add(this.id, this, metadata);
+    } catch (error) {
+      // If registration fails (e.g., connection limit), fail immediately
+      // BEFORE setting any headers
+      this._state = 'closed';
+      this._writable = false;
+      console.error('[SSE] Failed to register connection:', error);
+      throw error;
+    }
+
+    // 2. Set up disconnect handling (shouldn't throw, but do it before headers)
+    this._setupDisconnectHandling();
+
+    // 3. NOW we can safely set SSE headers
+    // If anything above threw, we haven't sent headers yet
     this._response
       .status(200)
       .header('Content-Type', 'text/event-stream')
       .header('Cache-Control', 'no-cache')
-      .header('Connection', 'keep-alive')
       .header('X-Accel-Buffering', 'no'); // Disable Nginx buffering
 
-    // Register with connection registry
-    this._registerConnection();
+    // Only set Connection header for HTTP/1.x
+    if (!this._request.raw.httpVersionMajor || this._request.raw.httpVersionMajor < 2) {
+      this._response.header('Connection', 'keep-alive');
+    }
 
-    // Set up disconnect handling
-    this._setupDisconnectHandling();
-
-    // Set up heartbeat if configured
+    // 4. Set up heartbeat if configured (after headers are sent)
     if (this._options.heartbeatInterval && this._options.heartbeatInterval > 0) {
       this._setupHeartbeat(this._options.heartbeatInterval);
     }
 
-    // Transition to connected state
+    // 5. Transition to connected state
     this._state = 'connected';
 
-    // Send initial comment to establish connection
+    // 6. Send initial comment to establish connection
     this._writeRaw(`: SSE connection established\n\n`);
   }
 

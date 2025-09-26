@@ -148,6 +148,7 @@ export const createSSERoute: CreateSSERoute = <
 
     // Create a wrapped handler that manages the SSE stream lifecycle
     const wrappedHandler = async (ctx: Context, params: any) => {
+      console.log('in the wrapped handler......');
       // Validate SSE accept header
       const accept = ctx.request.header('accept');
       if (accept && !accept.includes('text/event-stream') && !accept.includes('*/*')) {
@@ -158,7 +159,26 @@ export const createSSERoute: CreateSSERoute = <
         });
       }
 
+      if (config.schema) {
+        try {
+          if (config.schema.params) {
+            params = config.schema.params.parse(params);
+          }
+          if (config.schema.query) {
+            ctx.request.query = config.schema.query.parse(ctx.request.query);
+          }
+        } catch (validationError) {
+          // Validation failed BEFORE SSE started - safe to throw
+          console.error('[SSE] Validation error:', validationError);
+          throw validationError;
+        }
+      }
+
+      console.log('in here....');
+
       // Create the SSE stream
+      // CRITICAL FIX: Mark the response as sent immediately
+      // This prevents the framework from trying to send any additional response
       const baseStream = createSSEStream(ctx, config.options);
 
       // Create typed stream if event schemas provided
@@ -176,12 +196,13 @@ export const createSSERoute: CreateSSERoute = <
         // Execute the original handler with (stream, ctx, params) signature
         await config.handler(stream, ctx, params);
       } catch (error) {
+        console.error('[SSE] Handler error - THIS IS THE REAL ERROR:', error);
+        console.error('[SSE] Stack trace:', error instanceof Error ? error.stack : 'No stack');
         // Send error to stream if still writable
         if (stream.isWritable) {
           stream.sendError(error instanceof Error ? error : new Error(String(error)));
         }
         stream.close();
-        throw error;
       }
     };
 

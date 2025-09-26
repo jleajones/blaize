@@ -19,6 +19,7 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
     try {
       await withCorrelationId(correlationId, async () => {
+        console.log('withCorrelationId');
         // Create context for this request
         const context = await createContext(req, res, {
           parseBody: true, // Enable automatic body parsing
@@ -38,18 +39,25 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
         // Run the request with context in AsyncLocalStorage
         await runWithContext(context, async () => {
+          console.log('runWithContext');
           await handler(context, async () => {
+            console.log('handler');
             if (!context.response.sent) {
+              console.log('handle request');
               // Let the router handle the request
               await serverInstance.router.handleRequest(context);
               // If router didn't handle it either, send a 404
-              if (!context.response.sent) {
+              if (!res.headersSent && !context.response.sent) {
                 throw new NotFoundError(
                   `Route not found: ${context.request.method} ${context.request.path}`
                 );
               }
             }
+
+            console.log('handler complete');
           });
+
+          console.log('runWithContext complete');
         });
       });
     } catch (error) {
