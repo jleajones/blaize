@@ -10,6 +10,11 @@ export async function testClient() {
   try {
     const _helloResponse = await client.$get.getHello();
     const _helloPostResponse = await client.$post.postHello({ body: { name: 'World' } });
+
+    // const notifications = await client.$sse.getNotification();
+    // notifications.on('message', data => {
+    //   console.log('SSE Message:', data);
+    // });
     console.log('GET Hello Response:');
     console.log('GET Hello Response:', _helloResponse.name); // fully typed response
   } catch (error) {
