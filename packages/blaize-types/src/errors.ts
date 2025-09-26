@@ -747,3 +747,78 @@ export interface SSEStreamClosedErrorDetails {
   /** Suggested retry interval in milliseconds */
   retryAfter?: number;
 }
+
+/**
+ * Context for SSE connection errors
+ */
+export interface SSEConnectionErrorContext {
+  /** The SSE endpoint URL */
+  url: string;
+
+  /** Correlation ID for tracing */
+  correlationId: string;
+
+  /** Connection state when error occurred */
+  state: 'connecting' | 'connected' | 'disconnected' | 'closed';
+
+  /** Number of reconnection attempts made */
+  reconnectAttempts?: number;
+
+  /** The original error if available */
+  originalError?: Error;
+
+  /** Additional SSE-specific details */
+  sseDetails?: {
+    /** Whether credentials were included */
+    withCredentials?: boolean;
+
+    /** Last received event ID */
+    lastEventId?: string;
+
+    /** EventSource ready state */
+    readyState?: number;
+  };
+}
+
+/**
+ * Context for SSE stream errors (server-sent errors)
+ */
+export interface SSEStreamErrorContext {
+  /** The SSE endpoint URL */
+  url: string;
+
+  /** Correlation ID from server or client */
+  correlationId: string;
+
+  /** Error message from server */
+  message: string;
+
+  /** Error code if provided */
+  code?: string;
+
+  /** Error name/type from server */
+  name?: string;
+
+  /** Raw error data from server */
+  rawData?: any;
+}
+
+/**
+ * Context for SSE heartbeat timeout errors
+ */
+export interface SSEHeartbeatErrorContext {
+  /** The SSE endpoint URL */
+  url: string;
+
+  /** Correlation ID for tracing */
+  correlationId: string;
+
+  /** Configured heartbeat timeout in ms */
+  heartbeatTimeout: number;
+
+  /** Time since last event in ms */
+  timeSinceLastEvent?: number;
+
+  /** Last event ID received */
+  lastEventId?: string;
+}

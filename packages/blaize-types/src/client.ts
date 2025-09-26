@@ -2,6 +2,7 @@
 import { z } from 'zod';
 
 import type { Infer, RouteMethodOptions } from './router';
+import type { SSEClient, SSEClientOptions } from './sse-client';
 
 // ============================================
 // ROUTE ORGANIZATION BY HTTP METHOD
@@ -111,3 +112,82 @@ export interface RequestOptions {
   body?: string;
   timeout: number;
 }
+
+// ============================================
+// SSE ROUTE DETECTION
+// ============================================
+
+/**
+ * Detect if a route has SSE support
+ * SSE routes have a special 'SSE' method key
+ */
+export type HasSSEMethod<TRoute> = TRoute extends { SSE: any } ? true : false;
+
+/**
+ * Extract SSE event types from route schema
+ */
+export type ExtractSSEEvents<TRoute> = TRoute extends { SSE: { events?: infer E } }
+  ? E extends z.ZodType
+    ? z.infer<E>
+    : Record<string, unknown>
+  : Record<string, unknown>;
+
+/**
+ * Extract SSE query parameters from route
+ */
+export type ExtractSSEQuery<TRoute> = TRoute extends { SSE: { schema?: { query?: infer Q } } }
+  ? Q extends z.ZodType
+    ? z.infer<Q>
+    : Record<string, unknown>
+  : never;
+
+/**
+ * Extract SSE params from route
+ */
+export type ExtractSSEParams<TRoute> = TRoute extends { SSE: { schema?: { params?: infer P } } }
+  ? P extends z.ZodType
+    ? z.infer<P>
+    : Record<string, string>
+  : never;
+
+/**
+ * Build SSE method arguments
+ */
+export type BuildSSEArgs<TRoute> =
+  ExtractSSEParams<TRoute> extends never
+    ? ExtractSSEQuery<TRoute> extends never
+      ? { options?: SSEClientOptions }
+      : { query: ExtractSSEQuery<TRoute>; options?: SSEClientOptions }
+    : ExtractSSEQuery<TRoute> extends never
+      ? { params: ExtractSSEParams<TRoute>; options?: SSEClientOptions }
+      : {
+          params: ExtractSSEParams<TRoute>;
+          query: ExtractSSEQuery<TRoute>;
+          options?: SSEClientOptions;
+        };
+
+/**
+ * Create SSE client method
+ */
+export type CreateSSEMethod<TRoute> =
+  HasSSEMethod<TRoute> extends true
+    ? BuildSSEArgs<TRoute> extends { options?: SSEClientOptions }
+      ? (args?: BuildSSEArgs<TRoute>) => Promise<SSEClient<ExtractSSEEvents<TRoute>>>
+      : (args: BuildSSEArgs<TRoute>) => Promise<SSEClient<ExtractSSEEvents<TRoute>>>
+    : never;
+
+/**
+ * Extract SSE routes from registry
+ */
+export type ExtractSSERoutes<TRoutes extends Record<string, any>> = {
+  [K in keyof TRoutes as HasSSEMethod<TRoutes[K]> extends true ? K : never]: TRoutes[K];
+};
+
+/**
+ * Enhanced client with SSE support
+ */
+export type CreateEnhancedClient<TRoutes extends Record<string, any>, TRegistry> = TRegistry & {
+  $sse: {
+    [K in keyof ExtractSSERoutes<TRoutes>]: CreateSSEMethod<TRoutes[K]>;
+  };
+};
