@@ -93,6 +93,9 @@ export interface ClientConfig {
   baseUrl: string;
   defaultHeaders?: Record<string, string>;
   timeout?: number;
+
+  // Add SSE configuration
+  sse?: SSEClientOptions;
 }
 
 // ============================================
