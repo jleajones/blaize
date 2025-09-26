@@ -148,7 +148,6 @@ export const createSSERoute: CreateSSERoute = <
 
     // Create a wrapped handler that manages the SSE stream lifecycle
     const wrappedHandler = async (ctx: Context, params: any) => {
-      console.log('in the wrapped handler......');
       // Validate SSE accept header
       const accept = ctx.request.header('accept');
       if (accept && !accept.includes('text/event-stream') && !accept.includes('*/*')) {
@@ -173,8 +172,6 @@ export const createSSERoute: CreateSSERoute = <
           throw validationError;
         }
       }
-
-      console.log('in here....');
 
       // Create the SSE stream
       // CRITICAL FIX: Mark the response as sent immediately
@@ -203,6 +200,8 @@ export const createSSERoute: CreateSSERoute = <
           stream.sendError(error instanceof Error ? error : new Error(String(error)));
         }
         stream.close();
+
+        throw error;
       }
     };
 
