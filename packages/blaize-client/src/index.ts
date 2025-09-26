@@ -1,8 +1,18 @@
 import { createClient } from './client';
-export const blaizeClientVersion = '0.1.0';
+import { version } from '../package.json';
+import {
+  fibonacciBackoff,
+  fixedDelay,
+  linearBackoff,
+  exponentialBackoff,
+} from './sse-reconnection-strategies';
 
 const bc = {
   create: createClient,
-  version: blaizeClientVersion,
+  version,
+  fibonacciBackoff,
+  fixedDelay,
+  linearBackoff,
+  exponentialBackoff,
 };
 export default bc;

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 
 import { getRoutesDir } from '../config';
 import { parseRoutePath } from './discovery/parser';
+import { createSSERoute } from '../sse/create';
 
 import type {
   CreateGetRoute,
@@ -49,7 +50,7 @@ function getCallerFilePath(): string {
 /**
  * Convert caller file path to route path using existing parsing logic
  */
-function getRoutePath(): string {
+export function getRoutePath(): string {
   const callerPath = getCallerFilePath();
   const routesDir = getRoutesDir();
 
@@ -271,6 +272,7 @@ export function createRouteFactory<
     patch: createPatchRoute<TState, TServices>(),
     head: createHeadRoute<TState, TServices>(),
     options: createOptionsRoute<TState, TServices>(),
+    sse: createSSERoute<TState, TServices>(),
   } as const;
 }
 

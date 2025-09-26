@@ -12,6 +12,7 @@ import {
   resetServerMocks,
   createMockRoutesSet,
   createMockContext,
+  createSSEMockContext,
   mockGetRoute,
   mockDeleteRoute,
   mockPatchRoute,
@@ -38,4 +39,5 @@ export {
   mockPatchRoute,
   mockPostRoute,
   mockPutRoute,
+  createSSEMockContext,
 };

@@ -215,6 +215,9 @@ export enum ErrorType {
   /** Access forbidden (403) */
   FORBIDDEN = 'FORBIDDEN',
 
+  /** SSE Not Acceptable (406) */
+  SSE_NOT_ACCEPTABLE = 'SSE_NOT_ACCEPTABLE',
+
   /** Resource conflict (409) */
   CONFLICT = 'CONFLICT',
 
@@ -248,6 +251,16 @@ export enum ErrorType {
 
   /** Generic HTTP error (varies) */
   HTTP_ERROR = 'HTTP_ERROR',
+
+  // SSE-specific errors
+  /** SSE connection failed (502) */
+  SSE_CONNECTION_ERROR = 'SSE_CONNECTION_ERROR',
+
+  /** SSE buffer overflow (503) */
+  SSE_BUFFER_OVERFLOW = 'SSE_BUFFER_OVERFLOW',
+
+  /** SSE stream closed (410) */
+  SSE_STREAM_CLOSED = 'SSE_STREAM_CLOSED',
 }
 
 /**
@@ -634,6 +647,7 @@ export interface BodyParseError {
   readonly error: unknown;
 }
 
+// TODO: Consider moving to blaize-core
 /**
  * Type guard to check if an object is a BodyParseError
  */
@@ -662,4 +676,149 @@ export interface ErrorTransformContext {
   contentType?: string;
   responseSample?: string;
   [key: string]: unknown;
+}
+
+/**
+ * SSE-specific error detail interfaces for BlaizeJS framework
+ *
+ * These interfaces define the structure of details for SSE errors.
+ * The actual error classes are implemented in blaize-core.
+ */
+
+/**
+ * Details for SSE connection errors
+ */
+export interface SSEConnectionErrorDetails {
+  /** Client identifier if available */
+  clientId?: string;
+
+  /** Connection attempt number */
+  attemptNumber?: number;
+
+  /** Maximum retry attempts configured */
+  maxRetries?: number;
+
+  /** The underlying error that caused connection failure */
+  cause?: string;
+
+  /** Suggested resolution */
+  suggestion?: string;
+}
+
+/**
+ * Details for SSE buffer overflow errors
+ */
+export interface SSEBufferOverflowErrorDetails {
+  /** Client identifier */
+  clientId?: string;
+
+  /** Current buffer size when overflow occurred */
+  currentSize: number;
+
+  /** Maximum buffer size configured */
+  maxSize: number;
+
+  /** Number of events dropped */
+  eventsDropped?: number;
+
+  /** Buffer strategy that was applied */
+  strategy: 'drop-oldest' | 'drop-newest' | 'close';
+
+  /** Event that triggered the overflow */
+  triggeringEvent?: string;
+}
+
+/**
+ * Details for SSE stream closed errors
+ */
+export interface SSEStreamClosedErrorDetails {
+  /** Client identifier */
+  clientId?: string;
+
+  /** When the stream was closed */
+  closedAt?: string;
+
+  /** Reason for closure */
+  closeReason?: 'client-disconnect' | 'server-close' | 'timeout' | 'error' | 'buffer-overflow';
+
+  /** Whether reconnection is possible */
+  canReconnect?: boolean;
+
+  /** Suggested retry interval in milliseconds */
+  retryAfter?: number;
+}
+
+/**
+ * Context for SSE connection errors
+ */
+export interface SSEConnectionErrorContext {
+  /** The SSE endpoint URL */
+  url: string;
+
+  /** Correlation ID for tracing */
+  correlationId: string;
+
+  /** Connection state when error occurred */
+  state: 'connecting' | 'connected' | 'disconnected' | 'closed';
+
+  /** Number of reconnection attempts made */
+  reconnectAttempts?: number;
+
+  /** The original error if available */
+  originalError?: Error;
+
+  /** Additional SSE-specific details */
+  sseDetails?: {
+    /** Whether credentials were included */
+    withCredentials?: boolean;
+
+    /** Last received event ID */
+    lastEventId?: string;
+
+    /** EventSource ready state */
+    readyState?: number;
+  };
+}
+
+/**
+ * Context for SSE stream errors (server-sent errors)
+ */
+export interface SSEStreamErrorContext {
+  /** The SSE endpoint URL */
+  url: string;
+
+  /** Correlation ID from server or client */
+  correlationId: string;
+
+  /** Error message from server */
+  message: string;
+
+  /** Error code if provided */
+  code?: string;
+
+  /** Error name/type from server */
+  name?: string;
+
+  /** Raw error data from server */
+  rawData?: any;
+}
+
+/**
+ * Context for SSE heartbeat timeout errors
+ */
+export interface SSEHeartbeatErrorContext {
+  /** The SSE endpoint URL */
+  url: string;
+
+  /** Correlation ID for tracing */
+  correlationId: string;
+
+  /** Configured heartbeat timeout in ms */
+  heartbeatTimeout: number;
+
+  /** Time since last event in ms */
+  timeSinceLastEvent?: number;
+
+  /** Last event ID received */
+  lastEventId?: string;
 }

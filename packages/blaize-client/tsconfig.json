@@ -3,6 +3,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "../../packages",
+    "lib": ["ES2022", "DOM"],
     "tsBuildInfoFile": "./.tsbuildinfo",
     "exactOptionalPropertyTypes": false,
     "baseUrl": ".",
@@ -10,6 +11,6 @@
       "@blaize-types/*": ["../blaize-types/src/*"]
     }
   },
-  "include": ["src/**/*.ts", "../blaize-types/src/**/*.ts"],
+  "include": ["package.json", "src/**/*.ts", "../blaize-types/src/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist/**/*"]
 }

@@ -19,6 +19,7 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
     try {
       await withCorrelationId(correlationId, async () => {
+        console.log('withCorrelationId');
         // Create context for this request
         const context = await createContext(req, res, {
           parseBody: true, // Enable automatic body parsing
@@ -38,24 +39,39 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
         // Run the request with context in AsyncLocalStorage
         await runWithContext(context, async () => {
+          console.log('runWithContext');
           await handler(context, async () => {
+            console.log('handler');
             if (!context.response.sent) {
+              console.log('handle request');
               // Let the router handle the request
               await serverInstance.router.handleRequest(context);
               // If router didn't handle it either, send a 404
-              if (!context.response.sent) {
+              if (!res.headersSent && !context.response.sent) {
                 throw new NotFoundError(
                   `Route not found: ${context.request.method} ${context.request.path}`
                 );
               }
             }
+
+            console.log('handler complete');
           });
+
+          console.log('runWithContext complete');
         });
       });
     } catch (error) {
-      // Fixed to handle HTTP/2
+      // Fixed to handle HTTP/2 and check if headers already sent (SSE case)
       console.error('Error creating context:', error);
       const headerName = getCorrelationHeaderName();
+
+      // Check if headers have already been sent (happens with SSE after stream starts)
+      if (res.headersSent || (res as any).stream?.headersSent) {
+        // Can't send HTTP error response after headers are sent
+        // For SSE, the stream's error handling will take care of it
+        console.error('Headers already sent, cannot send error response');
+        return;
+      }
 
       if ('stream' in res && typeof (res as any).stream?.respond === 'function') {
         // HTTP/2

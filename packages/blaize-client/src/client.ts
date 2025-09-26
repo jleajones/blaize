@@ -1,56 +1,71 @@
-import { makeRequest } from './request';
+/**
+ * Enhanced BlaizeJS Client with SSE Support
+ * Location: packages/blaize-client/src/client.ts
+ */
+
+import { buildProxyClient } from './proxy';
 
 import type {
-  CreateClient,
   BuildRoutesRegistry,
   ClientConfig,
-  InternalRequestArgs,
-} from '../../blaize-types/src/index';
+  CreateClient,
+  CreateEnhancedClient,
+} from '@blaize-types/client';
 
 /**
- * Create a type-safe client for BlaizeJS APIs
+ * Create a type-safe client for BlaizeJS APIs with SSE support
  *
  * @param baseUrlOrConfig - Base URL string or configuration object
  * @param routeRegistry - Route definitions from your server (the raw routes object)
- * @returns Type-safe client with methods organized by HTTP verb
+ * @returns Type-safe client with methods organized by HTTP verb and SSE namespace
  *
  * @example
  * ```typescript
  * import { createClient } from '@blaizejs/client';
  * import { routes } from './routes'; // Your raw route exports
  *
- * // ✅ CORRECT - Let TypeScript infer the types
  * const client = createClient('https://api.example.com', routes);
  *
- * // ✅ CORRECT - With configuration
- * const client = createClient({
- *   baseUrl: 'https://api.example.com',
- *   timeout: 10000,
- *   defaultHeaders: { 'X-API-Key': 'secret' }
- * }, routes);
- *
- * // ❌ INCORRECT - Don't pass AppType or BuildRoutesRegistry types
- * // const client = createClient<AppType>('https://api.example.com', routes);
- *
- * // Usage - TypeScript knows which arguments are needed:
+ * // Standard HTTP calls
  * await client.$get.getUser({ params: { id: '123' } });
  * await client.$post.createUser({ body: { name: 'John' } });
- * await client.$get.healthCheck(); // No args needed if no schemas defined
+ *
+ * // SSE connections
+ * const events = await client.$sse.notifications();
+ * events.on('message', (data) => console.log(data));
+ * events.close();
  * ```
  *
  * @remarks
  * The function automatically transforms your route definitions into a client
- * with methods organized by HTTP verb. TypeScript's inference handles all
- * the type transformations - you don't need to provide explicit type parameters.
+ * with methods organized by HTTP verb and SSE namespace. TypeScript's inference
+ * handles all the type transformations - you don't need to provide explicit type parameters.
  */
 export function createClient<TRoutes extends Record<string, any>>(
   baseUrlOrConfig: string | ClientConfig,
   routeRegistry: TRoutes
-): CreateClient<BuildRoutesRegistry<TRoutes>> {
+): CreateEnhancedClient<TRoutes, CreateClient<BuildRoutesRegistry<TRoutes>>> {
   const config = normalizeConfig(baseUrlOrConfig);
-  const registry = organizeRoutesByMethod(routeRegistry);
 
-  return buildProxyClient(config, registry) as CreateClient<BuildRoutesRegistry<TRoutes>>;
+  // Set default SSE options if not provided
+  if (!config.sse) {
+    config.sse = {
+      reconnect: {
+        enabled: true,
+        maxAttempts: 5,
+        initialDelay: 1000,
+      },
+      heartbeatTimeout: 30000,
+      parseJSON: true,
+    };
+  }
+  const httpRegistry = organizeRoutesByMethod(routeRegistry);
+
+  // Pass both organized HTTP routes and raw routes for SSE extraction
+  return buildProxyClient(config, httpRegistry, routeRegistry) as CreateEnhancedClient<
+    TRoutes,
+    CreateClient<BuildRoutesRegistry<TRoutes>>
+  >;
 }
 
 /**
@@ -109,51 +124,4 @@ function organizeRoutesByMethod(routes: Record<string, any>): Record<string, Rec
   }
 
   return organized;
-}
-
-/**
- * Build the proxy-based client
- * @internal
- */
-function buildProxyClient(
-  config: ClientConfig,
-  registry: Record<string, Record<string, any>>
-): unknown {
-  return new Proxy(
-    {},
-    {
-      get(_, httpMethodKey: string) {
-        if (typeof httpMethodKey !== 'string' || !httpMethodKey.startsWith('$')) {
-          return undefined;
-        }
-
-        const httpMethod = httpMethodKey.slice(1).toUpperCase();
-        const methodRoutes = registry[httpMethodKey] || {};
-
-        return new Proxy(
-          {},
-          {
-            get(_, routeName: string) {
-              const route = methodRoutes[routeName];
-
-              if (!route) {
-                return undefined;
-              }
-
-              // Return a function that can be called with or without args
-              // The type system enforces whether args are required
-              return (...args: any[]) => {
-                // Get the first argument if provided, otherwise use empty object
-                const requestArgs: InternalRequestArgs = args[0] || {};
-
-                return makeRequest(config, httpMethod, routeName, requestArgs, {
-                  [`$${httpMethod.toLowerCase()}`]: { [routeName]: route },
-                });
-              };
-            },
-          }
-        );
-      },
-    }
-  );
 }

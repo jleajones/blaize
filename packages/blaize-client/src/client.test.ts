@@ -8,6 +8,10 @@ vi.mock('./request', () => ({
   makeRequest: vi.fn(),
 }));
 
+vi.mock('./sse-connection', () => ({
+  createSSEConnection: vi.fn(),
+}));
+
 const mockMakeRequest = vi.mocked(makeRequest);
 
 // ============================================
@@ -201,7 +205,20 @@ describe('createClient', () => {
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
-        { baseUrl: 'https://api.example.com', timeout: 5000 },
+        {
+          baseUrl: 'https://api.example.com',
+          timeout: 5000,
+          sse: {
+            // Add SSE config to the expectation
+            reconnect: {
+              enabled: true,
+              maxAttempts: 5,
+              initialDelay: 1000,
+            },
+            heartbeatTimeout: 30000,
+            parseJSON: true,
+          },
+        },
         'GET',
         'healthCheck',
         {
@@ -231,7 +248,20 @@ describe('createClient', () => {
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
-        { baseUrl: 'https://api.example.com', timeout: 5000 },
+        {
+          baseUrl: 'https://api.example.com',
+          timeout: 5000,
+          sse: {
+            // Add SSE config to the expectation
+            reconnect: {
+              enabled: true,
+              maxAttempts: 5,
+              initialDelay: 1000,
+            },
+            heartbeatTimeout: 30000,
+            parseJSON: true,
+          },
+        },
         'GET',
         'getUser',
         { params: { userId: '123' }, query: {} as any, body: {} as any },
@@ -257,7 +287,20 @@ describe('createClient', () => {
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
-        { baseUrl: 'https://api.example.com', timeout: 5000 },
+        {
+          baseUrl: 'https://api.example.com',
+          timeout: 5000,
+          sse: {
+            // Add SSE config to the expectation
+            reconnect: {
+              enabled: true,
+              maxAttempts: 5,
+              initialDelay: 1000,
+            },
+            heartbeatTimeout: 30000,
+            parseJSON: true,
+          },
+        },
         'POST',
         'createUser',
         { body: { name: 'John', email: 'john@example.com' }, params: {} as any, query: {} as any },
@@ -283,7 +326,20 @@ describe('createClient', () => {
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
-        { baseUrl: 'https://api.example.com', timeout: 5000 },
+        {
+          baseUrl: 'https://api.example.com',
+          timeout: 5000,
+          sse: {
+            // Add SSE config to the expectation
+            reconnect: {
+              enabled: true,
+              maxAttempts: 5,
+              initialDelay: 1000,
+            },
+            heartbeatTimeout: 30000,
+            parseJSON: true,
+          },
+        },
         'GET',
         'listUsers',
         { query: { page: 1, limit: 10, sort: 'asc' }, params: {} as any, body: {} as any },
@@ -309,7 +365,20 @@ describe('createClient', () => {
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
-        { baseUrl: 'https://api.example.com', timeout: 5000 },
+        {
+          baseUrl: 'https://api.example.com',
+          timeout: 5000,
+          sse: {
+            // Add SSE config to the expectation
+            reconnect: {
+              enabled: true,
+              maxAttempts: 5,
+              initialDelay: 1000,
+            },
+            heartbeatTimeout: 30000,
+            parseJSON: true,
+          },
+        },
         'PUT',
         'updateUser',
         {
