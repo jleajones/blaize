@@ -29,6 +29,14 @@ export default defineConfig({
 
     // override the include pattern
     include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    environment: 'happy-dom', // Default to happy-dom
+
+    // Setup file to ensure browser globals are available
+    setupFiles: ['./src/test/setup.ts'],
+    // environmentMatchGlobs: [
+    //   // Use jsdom for specific patterns
+    //   ['**/*.node.test.ts', 'node'],
+    // ],
     // Custom coverage thresholds
     coverage: {
       reportsDirectory: './coverage',
