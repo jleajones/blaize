@@ -8,8 +8,8 @@ export const generateTsConfig = (): string => {
       // Target and module settings
       target: 'ES2022',
       lib: ['ES2022'],
-      module: 'NodeNext',
-      moduleResolution: 'NodeNext',
+      module: 'ESNext',
+      moduleResolution: 'bundler',
 
       // Strict type checking
       strict: true,
