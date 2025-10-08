@@ -1,7 +1,7 @@
 import { getHello, postHello } from './routes/hello.js';
 import { getNotifications } from './routes/user/[userId]/notifications/index.js';
 
-import type { BuildRoutesRegistry } from 'blaizejs';
+// import type { BuildRoutesRegistry } from 'blaizejs';
 
 export const routes = {
   getHello,
@@ -9,4 +9,4 @@ export const routes = {
   getNotifications,
 } as const;
 
-export type AppType = BuildRoutesRegistry<typeof routes>;
+// export type AppType = BuildRoutesRegistry<typeof routes>;

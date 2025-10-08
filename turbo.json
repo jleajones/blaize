@@ -38,6 +38,13 @@
       "outputs": [],
       "cache": false
     },
+    "@blaizejs/playground#dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true,
+      "env": ["NODE_ENV"],
+      "inputs": ["src/**", "package.json"]
+    },
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,
