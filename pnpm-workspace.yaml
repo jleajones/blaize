@@ -1,19 +1,14 @@
 packages:
   # Core packages
   - 'packages/*'
-  
-  # Plugin packages (nested structure)
+
+  # Plugin packages
   - 'plugins/*'
-  
+
   # Apps and examples (nested structure)
   - 'apps/**'
-  
+
   # Shared configurations
   - 'configs/*'
 
-  
-# Exclude non-package directories
-  - '!tests'
-  - '!benchmarks'
-  - '!tooling/scripts'
-  - '!docs'
+  # Exclude non-package directories
