@@ -3,7 +3,6 @@ import * as path from 'node:path';
 import { watch } from 'chokidar';
 
 import { hasRouteContentChanged, processChangedFile } from './cache';
-import { findRouteFiles } from './finder';
 
 import type { Route, WatchOptions } from '@blaize-types/router';
 
@@ -37,21 +36,6 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
   }
   // Track loaded routes by file path - now stores arrays of routes
   const routesByPath = new Map<string, Route[]>();
-
-  // Initial loading of routes
-  async function loadInitialRoutes() {
-    try {
-      const files = await findRouteFiles(routesDir, {
-        ignore: options.ignore,
-      });
-
-      for (const filePath of files) {
-        await loadAndNotify(filePath);
-      }
-    } catch (error) {
-      handleError(error);
-    }
-  }
 
   // Optimized load and notify function
   async function loadAndNotify(filePath: string) {
@@ -116,6 +100,7 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
   // Start file watcher
   // Create optimized watcher
   const watcher = watch(routesDir, {
+    ignoreInitial: true,
     // Much faster response times
     awaitWriteFinish: {
       stabilityThreshold: 50, // Reduced from 300ms
@@ -160,9 +145,6 @@ export function watchRoutes(routesDir: string, options: WatchOptions = {}) {
       debouncedRemove(filePath);
     })
     .on('error', handleError);
-
-  // Load initial routes
-  loadInitialRoutes().catch(handleError);
 
   // Return control methods
   return {

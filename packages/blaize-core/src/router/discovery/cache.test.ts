@@ -22,16 +22,6 @@ vi.mock('node:path', async () => {
   };
 });
 
-// Create a safe mock for require that doesn't throw
-const mockRequireCache: Record<string, any> = {};
-const mockRequire = {
-  resolve: vi.fn(),
-  cache: mockRequireCache,
-} as any;
-
-// Mock global require
-vi.stubGlobal('require', mockRequire);
-
 const mockLoadRouteModule = vi.mocked(loadRouteModule);
 const mockFsStat = vi.mocked(fs.stat);
 const mockPathResolve = vi.mocked(path.resolve);
@@ -51,12 +41,6 @@ describe('cache.ts - File Caching', () => {
 
     // Setup default mocks
     mockPathResolve.mockReturnValue('/absolute/test/routes/users.ts');
-    mockRequire.resolve.mockReturnValue('/absolute/test/routes/users.ts');
-
-    // Clear mock require cache
-    Object.keys(mockRequireCache).forEach(key => {
-      delete mockRequireCache[key];
-    });
   });
 
   describe('processChangedFile', () => {
@@ -136,11 +120,6 @@ describe('cache.ts - File Caching', () => {
         mtime: { getTime: () => 1000 },
       } as any);
       mockLoadRouteModule.mockResolvedValue([mockRoute]);
-
-      // Mock require.resolve to throw (simulating file not in cache)
-      mockRequire.resolve.mockImplementation(() => {
-        throw new Error('Cannot resolve module');
-      });
 
       // Should still work despite cache invalidation error
       const routes = await processChangedFile(testFilePath, testRoutesDir);
