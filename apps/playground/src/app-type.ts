@@ -1,5 +1,5 @@
-import { getHello, postHello } from './routes/hello.js';
-import { getNotifications } from './routes/user/[userId]/notifications/index.js';
+import { getHello, postHello } from './routes/hello';
+import { getNotifications } from './routes/user/[userId]/notifications/index';
 
 // import type { BuildRoutesRegistry } from 'blaizejs';
 
