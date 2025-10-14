@@ -17,6 +17,7 @@ import type {
   UnionToIntersection,
 } from './composition';
 import type { Context } from './context';
+import type { CorsOptions } from './cors';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
 import type { Router } from './router';
@@ -95,6 +96,36 @@ export interface ServerOptionsInput {
    * @since 0.4.0
    */
   correlation?: CorrelationOptions;
+
+  /**
+   * CORS configuration
+   *
+   * - `true`: Enable CORS with development defaults (allow all origins)
+   * - `false`: Disable CORS (no headers set)
+   * - `CorsOptions`: Custom CORS configuration
+   *
+   * @default false (CORS disabled)
+   * @since 0.5.0
+   *
+   * @example
+   * ```typescript
+   * // Enable with dev defaults
+   * const server = createServer({ cors: true });
+   *
+   * // Custom configuration
+   * const server = createServer({
+   *   cors: {
+   *     origin: 'https://example.com',
+   *     credentials: true,
+   *     maxAge: 86400
+   *   }
+   * });
+   *
+   * // Disable CORS
+   * const server = createServer({ cors: false });
+   * ```
+   */
+  cors?: CorsOptions | boolean;
 }
 
 /**
@@ -133,6 +164,12 @@ export interface ServerOptions {
    * @since 0.4.0
    */
   correlation?: CorrelationOptions;
+
+  /**
+   * CORS configuration
+   * @since 0.5.0
+   */
+  cors?: CorsOptions | boolean;
 }
 
 /**
@@ -148,6 +185,9 @@ export interface Server<TState, TServices> {
 
   /** The port the server is configured to listen on */
   port: number;
+
+  /** CORS configuration for this server */
+  corsOptions?: CorsOptions | boolean;
 
   /** The host the server is bound to */
   host: string;
