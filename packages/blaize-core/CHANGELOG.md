@@ -1,5 +1,15 @@
 # blaizejs
 
+## 0.5.0
+
+### Minor Changes
+
+- a5de72d: enhanced server and client w/ SSE
+
+### Patch Changes
+
+- 8f8fe4f: 🚀 Support for CORS
+
 ## 0.4.0
 
 ### Minor Changes
