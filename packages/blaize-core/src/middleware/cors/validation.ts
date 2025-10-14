@@ -147,7 +147,7 @@ export const corsOptionsSchema = z
  * Schema for server options CORS field
  * Can be boolean or CorsOptions
  */
-export const serverCorsSchema = z.union([z.boolean(), corsOptionsSchema]).optional().default({});
+export const serverCorsSchema = z.union([z.boolean(), corsOptionsSchema]).optional();
 
 /**
  * Validate CORS options with detailed error messages

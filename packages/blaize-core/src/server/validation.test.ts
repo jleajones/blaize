@@ -30,7 +30,6 @@ describe('Server Options Validation', () => {
       // Assert
       expect(result).toEqual({
         port: 3000,
-        cors: false,
         host: 'localhost',
         routesDir: './routes',
         http2: {
