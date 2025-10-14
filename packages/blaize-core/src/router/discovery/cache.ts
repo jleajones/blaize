@@ -1,7 +1,6 @@
+// packages/blaize-core/src/router/discovery/cache.ts
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import * as path from 'node:path';
 
 import { loadRouteModule } from './loader';
 
@@ -22,9 +21,6 @@ export async function processChangedFile(
   if (updateCache && cachedEntry && cachedEntry.timestamp === lastModified) {
     return cachedEntry.routes;
   }
-
-  // Clear module cache for this specific file
-  invalidateModuleCache(filePath);
 
   // Load only this file
   const routes = await loadRouteModule(filePath, routesDir);
@@ -90,45 +86,4 @@ function hashRoutes(routes: Route[]): string {
   const hash = crypto.createHash('md5').update(dataString).digest('hex');
 
   return hash;
-}
-
-function invalidateModuleCache(filePath: string): void {
-  try {
-    // Try to resolve the absolute path
-    const absolutePath = path.resolve(filePath);
-
-    // Check if we're in a CommonJS environment (require is available)
-    if (typeof require !== 'undefined') {
-      // Delete from require cache if it exists
-      delete require.cache[absolutePath];
-
-      // Also try to resolve using require.resolve if the file exists
-      try {
-        const resolvedPath = require.resolve(absolutePath);
-        delete require.cache[resolvedPath];
-      } catch (resolveError) {
-        // Type guard to ensure resolveError is an Error object
-        const errorMessage =
-          resolveError instanceof Error ? resolveError.message : String(resolveError);
-        console.log(`⚠️ Could not resolve path: ${errorMessage}`);
-      }
-    } else {
-      // In pure ESM environment, try to use createRequire for cache invalidation
-      try {
-        const require = createRequire(import.meta.url);
-        delete require.cache[absolutePath];
-
-        try {
-          const resolvedPath = require.resolve(absolutePath);
-          delete require.cache[resolvedPath];
-        } catch {
-          console.log(`⚠️ Could not resolve ESM path`);
-        }
-      } catch {
-        console.log(`⚠️ createRequire not available in pure ESM`);
-      }
-    }
-  } catch (error) {
-    console.log(`⚠️ Error during module cache invalidation for ${filePath}:`, error);
-  }
 }

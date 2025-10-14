@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { appRouter } from '../../../../app.js';
+import { appRouter } from '../../../../app-router';
 
 // Define the event schemas
 const NotificationEventSchema = z.object({

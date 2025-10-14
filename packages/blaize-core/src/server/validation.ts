@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { serverCorsSchema } from 'src/middleware/cors/validation';
+
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
 import type { ServerOptions, ServerOptionsInput } from '@blaize-types/server';
@@ -84,6 +86,7 @@ export const serverOptionsSchema = z.object({
   middleware: z.array(middlewareSchema).optional().default([]),
   plugins: z.array(pluginSchema).optional().default([]),
   correlation: correlationSchema,
+  cors: serverCorsSchema,
 });
 
 export function validateServerOptions(options: ServerOptionsInput): ServerOptions {

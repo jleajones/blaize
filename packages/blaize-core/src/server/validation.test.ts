@@ -51,6 +51,9 @@ describe('Server Options Validation', () => {
 
       const options: ServerOptionsInput = {
         port: 8080,
+        cors: {
+          origin: ['https://example.com'],
+        },
         host: '0.0.0.0',
         routesDir: './api',
         http2: {
@@ -66,6 +69,9 @@ describe('Server Options Validation', () => {
       // Assert
       expect(result).toEqual({
         port: 8080,
+        cors: {
+          origin: ['https://example.com'],
+        },
         host: '0.0.0.0',
         routesDir: './api',
         http2: {

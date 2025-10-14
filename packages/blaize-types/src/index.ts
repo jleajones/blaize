@@ -1,6 +1,7 @@
 export * from './client';
 export * from './composition';
 export * from './context';
+export * from './cors';
 export * from './errors';
 export * from './middleware';
 export * from './plugins';

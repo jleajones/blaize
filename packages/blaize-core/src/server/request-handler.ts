@@ -2,6 +2,7 @@ import { createContext } from '../context/create';
 import { runWithContext } from '../context/store';
 import { NotFoundError } from '../errors/not-found-error';
 import { compose } from '../middleware/compose';
+import { cors } from '../middleware/cors';
 import { createErrorBoundary } from '../middleware/error-boundary';
 import {
   createCorrelationIdFromHeaders,
@@ -9,6 +10,7 @@ import {
   withCorrelationId,
 } from '../tracing/correlation';
 
+import type { Middleware } from '@blaize-types/middleware';
 import type { RequestHandler, UnknownServer } from '@blaize-types/server';
 
 export function createRequestHandler(serverInstance: UnknownServer): RequestHandler {
@@ -19,7 +21,6 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
     try {
       await withCorrelationId(correlationId, async () => {
-        console.log('withCorrelationId');
         // Create context for this request
         const context = await createContext(req, res, {
           parseBody: true, // Enable automatic body parsing
@@ -30,20 +31,22 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
         // Create error boundary middleware that catches all thrown error classes
         const errorBoundary = createErrorBoundary();
+        const middlewareChain: Middleware[] = [errorBoundary];
+
+        if ('corsOptions' in serverInstance && serverInstance.corsOptions !== false) {
+          middlewareChain.push(cors(serverInstance.corsOptions));
+        }
 
         // Compose all middleware with error boundary first (to catch all errors)
-        const allMiddleware = [errorBoundary, ...serverInstance.middleware];
+        middlewareChain.push(...serverInstance.middleware);
 
         // Compose all middleware into a single function
-        const handler = compose(allMiddleware);
+        const handler = compose(middlewareChain);
 
         // Run the request with context in AsyncLocalStorage
         await runWithContext(context, async () => {
-          console.log('runWithContext');
           await handler(context, async () => {
-            console.log('handler');
             if (!context.response.sent) {
-              console.log('handle request');
               // Let the router handle the request
               await serverInstance.router.handleRequest(context);
               // If router didn't handle it either, send a 404
@@ -53,11 +56,7 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
                 );
               }
             }
-
-            console.log('handler complete');
           });
-
-          console.log('runWithContext complete');
         });
       });
     } catch (error) {

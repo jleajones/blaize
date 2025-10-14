@@ -479,7 +479,12 @@ export interface ForbiddenErrorDetails {
   action?: string;
 
   /** Reason for access denial */
-  reason?: 'insufficient_permissions' | 'account_suspended' | 'resource_locked' | string;
+  reason?:
+    | 'insufficient_permissions'
+    | 'account_suspended'
+    | 'resource_locked'
+    | 'origin_not_allowed'
+    | string;
 
   /** Additional context */
   [key: string]: unknown;

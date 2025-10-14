@@ -98,6 +98,7 @@ describe('watchers.ts - File Watching', () => {
       watchRoutes(routesDir, options);
 
       expect(mockChokidarWatch).toHaveBeenCalledWith(routesDir, {
+        ignoreInitial: true,
         awaitWriteFinish: {
           stabilityThreshold: 50,
           pollInterval: 10,
@@ -128,34 +129,6 @@ describe('watchers.ts - File Watching', () => {
       expect(mockWatcher.on).toHaveBeenCalledWith('change', expect.any(Function));
       expect(mockWatcher.on).toHaveBeenCalledWith('unlink', expect.any(Function));
       expect(mockWatcher.on).toHaveBeenCalledWith('error', expect.any(Function));
-    });
-
-    it('should load initial routes on startup', async () => {
-      const files = ['/test/routes/users.ts', '/test/routes/posts.ts'];
-      mockFindRouteFiles.mockResolvedValue(files);
-      mockProcessChangedFile.mockResolvedValue([mockRoute1]);
-
-      watchRoutes(routesDir);
-
-      // Wait for initial loading to complete
-      await vi.waitFor(async () => {
-        expect(mockFindRouteFiles).toHaveBeenCalledWith(routesDir, {
-          ignore: undefined,
-        });
-      });
-    });
-
-    it('should handle initial loading errors gracefully', async () => {
-      mockFindRouteFiles.mockRejectedValue(new Error('Directory not found'));
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-      watchRoutes(routesDir);
-
-      await vi.waitFor(() => {
-        expect(consoleSpy).toHaveBeenCalledWith('⚠️ Route watcher error:', expect.any(Error));
-      });
-
-      consoleSpy.mockRestore();
     });
   });
 

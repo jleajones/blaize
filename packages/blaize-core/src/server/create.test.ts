@@ -888,4 +888,27 @@ describe('create', () => {
       });
     });
   });
+
+  describe('CORS options storage', () => {
+    test('should store cors options when provided', () => {
+      const server = create({
+        cors: { origin: 'https://example.com', credentials: true },
+      });
+
+      expect(server.corsOptions).toEqual({
+        origin: 'https://example.com',
+        credentials: true,
+      });
+    });
+
+    test('should store false when cors is explicitly false', () => {
+      const server = create({ cors: false });
+      expect(server.corsOptions).toBe(false);
+    });
+
+    test('should store undefined when cors is not provided', () => {
+      const server = create({});
+      expect(server.corsOptions).toBeUndefined();
+    });
+  });
 });
