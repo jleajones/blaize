@@ -58,6 +58,7 @@ function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
     middleware: [...(baseOptions.middleware || []), ...(options.middleware || [])],
     plugins: [...(baseOptions.plugins || []), ...(options.plugins || [])],
     correlation: options.correlation,
+    cors: options.cors,
   };
 }
 
@@ -220,7 +221,8 @@ export function create<
   }
 
   // Extract options and prepare initial components
-  const { port, host, middleware, plugins } = validatedOptions;
+  const { port, host, middleware, plugins, cors } = validatedOptions;
+
   // TODO: create registries to manage middleware and plugins
   const initialMiddleware = Array.isArray(middleware) ? [...middleware] : [];
   const initialPlugins = Array.isArray(plugins) ? [...plugins] : [];
@@ -251,6 +253,7 @@ export function create<
     events,
     plugins: [...initialPlugins],
     middleware: [...initialMiddleware],
+    corsOptions: cors,
     _signalHandlers: { unregister: () => {} },
     use: () => serverInstance,
     register: async () => serverInstance,

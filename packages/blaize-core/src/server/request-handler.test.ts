@@ -7,6 +7,7 @@ import { formatErrorResponse } from '../errors/boundary';
 import { NotFoundError } from '../errors/not-found-error';
 import { ValidationError } from '../errors/validation-error';
 import { compose } from '../middleware/compose';
+import { cors } from '../middleware/cors';
 import { createErrorBoundary } from '../middleware/error-boundary';
 
 import type { Context } from '@blaize-types/context';
@@ -20,6 +21,12 @@ const DEFAULT_CORRELATION_HEADER_NAME = 'x-correlation-id';
 vi.mock('../context/create');
 vi.mock('../context/store');
 vi.mock('../middleware/compose');
+vi.mock('../middleware/cors', () => ({
+  cors: vi.fn().mockReturnValue({
+    name: 'cors',
+    execute: vi.fn(),
+  }),
+}));
 vi.mock('../middleware/error-boundary');
 vi.mock('../errors/boundary');
 vi.mock('../tracing/correlation', () => ({
@@ -896,6 +903,65 @@ describe('createRequestHandler - Complete Test Suite', () => {
 
         consoleSpy.mockRestore();
       }
+    });
+  });
+  describe('CORS Integration', () => {
+    it('should include CORS middleware when corsOptions is present and not false', async () => {
+      const mockCorsMiddleware = { name: 'cors', execute: vi.fn() };
+      vi.mocked(cors).mockReturnValue(mockCorsMiddleware);
+
+      const serverWithCors = {
+        ...mockServer,
+        corsOptions: { origin: 'https://example.com' },
+      };
+
+      const handler = createRequestHandler(serverWithCors);
+      await handler(mockReq, mockRes);
+
+      // Verify cors was called with the options
+      expect(cors).toHaveBeenCalledWith({ origin: 'https://example.com' });
+
+      // Verify compose was called with CORS in the right position
+      expect(compose).toHaveBeenCalledWith([
+        mockErrorBoundary,
+        mockCorsMiddleware,
+        ...mockServer.middleware,
+      ]);
+    });
+
+    it('should skip CORS when corsOptions is false', async () => {
+      const serverWithoutCors = {
+        ...mockServer,
+        corsOptions: false,
+      };
+
+      const handler = createRequestHandler(serverWithoutCors);
+      await handler(mockReq, mockRes);
+
+      // Verify cors was NOT called
+      expect(cors).not.toHaveBeenCalled();
+
+      // Verify compose was called without CORS
+      expect(compose).toHaveBeenCalledWith([mockErrorBoundary, ...mockServer.middleware]);
+    });
+
+    it('should include CORS when corsOptions is undefined (uses defaults)', async () => {
+      const mockCorsMiddleware = { name: 'cors', execute: vi.fn() };
+      vi.mocked(cors).mockReturnValue(mockCorsMiddleware);
+
+      const serverWithDefaultCors = {
+        ...mockServer,
+        corsOptions: undefined,
+      };
+
+      const handler = createRequestHandler(serverWithDefaultCors);
+      await handler(mockReq, mockRes);
+
+      // Verify cors was called with undefined (will use defaults)
+      expect(cors).toHaveBeenCalledWith(undefined);
+
+      // Verify CORS is included
+      expect(compose).toHaveBeenCalledWith(expect.arrayContaining([mockCorsMiddleware]));
     });
   });
 });
