@@ -86,7 +86,7 @@ export const serverOptionsSchema = z.object({
   middleware: z.array(middlewareSchema).optional().default([]),
   plugins: z.array(pluginSchema).optional().default([]),
   correlation: correlationSchema,
-  cors: serverCorsSchema.optional().default(false),
+  cors: serverCorsSchema,
 });
 
 export function validateServerOptions(options: ServerOptionsInput): ServerOptions {
