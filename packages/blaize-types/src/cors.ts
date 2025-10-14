@@ -269,3 +269,20 @@ export interface CorsStats {
    */
   avgValidationTime: number;
 }
+
+/**
+ * Cache entry type
+ */
+export interface CacheEntry {
+  allowed: boolean;
+  expiresAt: number;
+  lastAccessed: number;
+}
+
+/**
+ * Cache configuration
+ */
+export interface CacheConfig {
+  ttl: number;
+  maxSize: number;
+}
