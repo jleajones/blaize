@@ -8,6 +8,7 @@
  */
 // Middleware System
 import { compose } from './middleware/compose';
+import { cors } from './middleware/cors';
 import {
   create as createMiddleware,
   serviceMiddleware as createServiceMiddleware,
@@ -26,6 +27,13 @@ import {
   createPutRoute,
   createRouteFactory,
 } from './router/create';
+import { createMatcher } from './router/matching/matcher';
+import {
+  extractParams,
+  compilePathPattern,
+  paramsToQuery,
+  buildUrl,
+} from './router/matching/params';
 // Server
 import { create as createServer } from './server/create';
 import { inferContext, type InferContext } from './server/types';
@@ -53,12 +61,18 @@ export {
   createPostRoute,
   createPutRoute,
   createRouteFactory,
+  createMatcher,
+  extractParams,
+  compilePathPattern,
+  paramsToQuery,
+  buildUrl,
 
   // Middleware module exports
   createMiddleware,
   createServiceMiddleware,
   createStateMiddleware,
   compose,
+  cors,
 
   // Plugins module exports
   createPlugin,
@@ -81,12 +95,18 @@ export const RouterAPI = {
   createPostRoute,
   createPutRoute,
   createRouteFactory,
+  createMatcher,
+  extractParams,
+  compilePathPattern,
+  paramsToQuery,
+  buildUrl,
 };
 export const MiddlewareAPI = {
   createMiddleware,
   createServiceMiddleware,
   createStateMiddleware,
   compose,
+  cors,
 };
 export const PluginsAPI = { createPlugin };
 
