@@ -1,5 +1,11 @@
 # @blaizejs/client
 
+## 0.5.0
+
+### Minor Changes
+
+- a5de72d: enhanced server and client w/ SSE
+
 ## 0.4.0
 
 ### Minor Changes

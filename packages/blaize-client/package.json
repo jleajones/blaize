@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/client",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Type-safe, universal HTTP client for BlaizeJS APIs with automatic route inference, zero configuration, and support for browsers, Node.js, serverless, and edge environments.",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
