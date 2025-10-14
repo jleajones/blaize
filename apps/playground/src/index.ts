@@ -12,6 +12,7 @@ export const server = Blaize.createServer({
   http2: {
     enabled: true,
   },
+  cors: true,
 });
 
 try {

@@ -10,7 +10,7 @@ export const getHello = appRouter.get({
   },
   handler: async () => {
     return {
-      name: 'Hi, it is Blaize and Bella, thanks!',
+      name: 'Hi, it is Blaize and Bella!',
     };
   },
 });

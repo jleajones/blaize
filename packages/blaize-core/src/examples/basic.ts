@@ -40,6 +40,9 @@ console.log(`BlaizeJS version: ${Blaize.VERSION}`);
 const app = Blaize.createServer({
   port: 3000,
   host: 'localhost',
+  cors: {
+    origin: ['https://localhost:3000/*'],
+  },
   routesDir,
   middleware: [logger],
   plugins: [metricsPlugin],
