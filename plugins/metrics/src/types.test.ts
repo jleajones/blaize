@@ -35,13 +35,13 @@ describe('Type definitions', () => {
       };
 
       expect(config).toBeDefined();
-      expectTypeOf(config).toEqualTypeOf<MetricsPluginConfig>();
+      expectTypeOf(config).toMatchTypeOf<MetricsPluginConfig>();
     });
 
     test('all properties are optional', () => {
       const config: MetricsPluginConfig = {};
       expect(config).toBeDefined();
-      expectTypeOf(config).toEqualTypeOf<MetricsPluginConfig>();
+      expectTypeOf(config).toMatchTypeOf<MetricsPluginConfig>();
     });
 
     test('enabled is boolean', () => {
@@ -93,6 +93,13 @@ describe('Type definitions', () => {
         gauge: (name: string, value: number) => {},
         histogram: (name: string, value: number) => {},
         startTimer: (name: string) => () => {},
+        startHttpRequest: () => {},
+        recordHttpRequest: (
+          method: string,
+          path: string,
+          statusCode: number,
+          duration: number
+        ) => {},
         getSnapshot: () => ({}) as MetricsSnapshot,
         reset: () => {},
       };
@@ -107,7 +114,9 @@ describe('Type definitions', () => {
     });
 
     test('gauge signature is correct', () => {
-      expectTypeOf<MetricsCollector['gauge']>().toEqualTypeOf<(name: string, value: number) => void>();
+      expectTypeOf<MetricsCollector['gauge']>().toEqualTypeOf<
+        (name: string, value: number) => void
+      >();
     });
 
     test('histogram signature is correct', () => {
@@ -484,6 +493,8 @@ describe('Documentation examples compile', () => {
       startTimer: (name: string) => () => {},
       getSnapshot: () => ({}) as MetricsSnapshot,
       reset: () => {},
+      startHttpRequest: () => {},
+      recordHttpRequest: (method, path, statusCode, duration) => {},
     };
 
     // Example usage

@@ -187,6 +187,42 @@ export interface MetricsCollector {
   startTimer(name: string): () => void;
 
   /**
+   * Start tracking an HTTP request
+   *
+   * Increments the active request counter.
+   * Should be called at the start of request processing.
+   *
+   * @example
+   * ```typescript
+   * metrics.startHttpRequest();
+   * // ... handle request ...
+   * metrics.recordHttpRequest('GET', '/api/users', 200, duration);
+   * ```
+   */
+  startHttpRequest(): void;
+
+  /**
+   * Record a completed HTTP request
+   *
+   * Records the request method, path, status code, and duration.
+   * Decrements the active request counter.
+   *
+   * @param method - HTTP method (GET, POST, etc.)
+   * @param path - Request path
+   * @param statusCode - HTTP status code
+   * @param duration - Request duration in milliseconds
+   *
+   * @example
+   * ```typescript
+   * const start = performance.now();
+   * // ... handle request ...
+   * const duration = performance.now() - start;
+   * metrics.recordHttpRequest('GET', '/api/users', 200, duration);
+   * ```
+   */
+  recordHttpRequest(method: string, path: string, statusCode: number, duration: number): void;
+
+  /**
    * Get a snapshot of all current metrics
    *
    * @returns Complete metrics snapshot
