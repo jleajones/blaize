@@ -50,3 +50,13 @@ export function createMetricsPlugin() {
 
 // Re-export everything (types, utilities, etc. will be added in future tasks)
 export * from './types';
+export type {
+  MetricsPluginConfig,
+  MetricsCollector,
+  MetricsSnapshot,
+  HttpMetrics,
+  ProcessMetrics,
+  CustomMetrics,
+  HistogramStats,
+  RouteMetrics,
+} from './types';
