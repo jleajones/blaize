@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.5.1
+
+### Patch Changes
+
+- 9b7df51: ✨ Official blaizejs metrics plugin and blaize-core plugin enhancements
+
 ## 0.5.0
 
 ### Minor Changes
