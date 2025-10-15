@@ -90,6 +90,65 @@ export interface MetricsPluginConfig {
 }
 
 /**
+ * State contributed by metrics plugin to context.state
+ * Available in all route handlers when plugin is installed
+ *
+ * @example
+ * ```typescript
+ * export const GET = appRoute.get({
+ *   handler: async (ctx) => {
+ *     console.log('Metrics enabled:', ctx.state.metricsEnabled);
+ *     console.log('Request start time:', ctx.state.metricsStartTime);
+ *   }
+ * });
+ * ```
+ */
+export interface MetricsPluginState {
+  /**
+   * Whether metrics collection is enabled
+   */
+  metricsEnabled?: boolean;
+
+  /**
+   * Timestamp when metrics tracking started for this request
+   */
+  metricsStartTime?: number;
+
+  /**
+   * Index signature to satisfy BlaizeJS State constraint
+   */
+  [key: string]: any;
+}
+
+/**
+ * Services contributed by metrics plugin to context.services
+ * Available in all route handlers when plugin is installed
+ *
+ * @example
+ * ```typescript
+ * export const POST = appRoute.post({
+ *   handler: async (ctx) => {
+ *     // Access metrics collector
+ *     ctx.services.metrics.increment('orders.created');
+ *     ctx.services.metrics.gauge('queue.size', 42);
+ *   }
+ * });
+ * ```
+ */
+export interface MetricsPluginServices {
+  /**
+   * Metrics collector instance
+   * Provides methods for tracking custom metrics
+   */
+  metrics: MetricsCollector;
+
+  /**
+   * Index signature to satisfy BlaizeJS State constraint
+   */
+  [key: string]: any;
+}
+
+/**
  * Core metrics collector interface
  *
  * Provides methods for tracking different types of metrics:
@@ -246,6 +305,20 @@ export interface MetricsCollector {
    * ```
    */
   reset(): void;
+  /**
+   * Start periodic metrics collection
+   */
+  startCollection(): void;
+
+  /**
+   * Stop periodic metrics collection
+   */
+  stopCollection(): void;
+
+  /**
+   * Check if periodic collection is active
+   */
+  isCollecting(): boolean;
 }
 
 /**

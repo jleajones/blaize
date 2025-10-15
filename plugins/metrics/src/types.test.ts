@@ -102,6 +102,9 @@ describe('Type definitions', () => {
         ) => {},
         getSnapshot: () => ({}) as MetricsSnapshot,
         reset: () => {},
+        startCollection: () => {},
+        stopCollection: () => {},
+        isCollecting: () => false,
       };
 
       expectTypeOf(mockCollector).toMatchTypeOf<MetricsCollector>();
@@ -495,6 +498,9 @@ describe('Documentation examples compile', () => {
       reset: () => {},
       startHttpRequest: () => {},
       recordHttpRequest: (method, path, statusCode, duration) => {},
+      startCollection: () => {},
+      stopCollection: () => {},
+      isCollecting: () => false,
     };
 
     // Example usage
