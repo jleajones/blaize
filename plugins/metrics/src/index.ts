@@ -50,22 +50,6 @@ const DEFAULT_CONFIG: Required<Omit<MetricsPluginConfig, 'reporter'>> & {
 };
 
 /**
- * Augment Context types with metrics plugin state and services
- * Note: This is for convenience in standalone usage.
- * When used with InferContext, types flow automatically through the Plugin<TState, TServices> generics.
- */
-declare module 'blaizejs' {
-  interface ContextState {
-    metricsEnabled?: boolean;
-    metricsStartTime?: number;
-  }
-
-  interface ContextServices {
-    metrics?: MetricsCollector;
-  }
-}
-
-/**
  * Check if a path should be excluded from metrics
  */
 function shouldExcludePath(path: string, excludePaths: string[]): boolean {
