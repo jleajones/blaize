@@ -3,15 +3,32 @@ import { fileURLToPath } from 'node:url';
 
 import { Blaize } from 'blaizejs';
 
+import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
+
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Create the metrics plugin
+const metricsPlugin = createMetricsPlugin({
+  enabled: true,
+  excludePaths: ['/health', '/favicon.ico'], // Don't track health checks
+  histogramLimit: 1000,
+  collectionInterval: 60000, // Report every 60 seconds
+  logToConsole: true, // See metrics in console during development
+  labels: {
+    service: 'playground-app',
+    environment: process.env.NODE_ENV || 'development',
+  },
+});
+
 export const server = Blaize.createServer({
   port: 7485,
   routesDir: path.resolve(__dirname, './routes'),
   http2: {
     enabled: true,
   },
+  plugins: [metricsPlugin],
 });
 
 try {

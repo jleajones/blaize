@@ -56,6 +56,9 @@ importers:
       '@blaizejs/client':
         specifier: workspace:*
         version: link:../../packages/blaize-client
+      '@blaizejs/plugin-metrics':
+        specifier: workspace:*
+        version: link:../../plugins/metrics
       blaizejs:
         specifier: workspace:*
         version: link:../../packages/blaize-core
