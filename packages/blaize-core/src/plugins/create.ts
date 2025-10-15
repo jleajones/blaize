@@ -1,17 +1,18 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 import type { Plugin, PluginFactory, PluginHooks, UnknownServer } from '@blaize-types/index';
 
 /**
  * Create a plugin with the given name, version, and setup function
  */
-export function create<T = any>(
+export function create<TConfig = any, TState = {}, TServices = {}>(
   name: string,
   version: string,
   setup: (
     app: UnknownServer,
-    options: T
+    options: TConfig
   ) => void | Partial<PluginHooks> | Promise<void> | Promise<Partial<PluginHooks>>,
-  defaultOptions: Partial<T> = {}
-): PluginFactory<T> {
+  defaultOptions: Partial<TConfig> = {}
+): PluginFactory<TConfig, TState, TServices> {
   // Input validation
   if (!name || typeof name !== 'string') {
     throw new Error('Plugin name must be a non-empty string');
@@ -26,12 +27,12 @@ export function create<T = any>(
   }
 
   // Return the factory function
-  return function pluginFactory(userOptions?: Partial<T>) {
+  return function pluginFactory(userOptions?: Partial<TConfig>) {
     // Merge default options with user options
-    const mergedOptions = { ...defaultOptions, ...userOptions } as T;
+    const mergedOptions = { ...defaultOptions, ...userOptions } as TConfig;
 
     // Create the base plugin object
-    const plugin: Plugin = {
+    const plugin: Plugin<TState, TServices> = {
       name,
       version,
 
