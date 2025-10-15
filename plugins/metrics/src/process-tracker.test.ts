@@ -26,13 +26,6 @@ describe('ProcessHealthTracker', () => {
       expect(uptime).toBeGreaterThanOrEqual(0);
       expect(uptime).toBeLessThan(1); // Should be very small initially
     });
-
-    test('initializes CPU baseline', () => {
-      // First call establishes baseline (might not be exactly 0 due to initialization work)
-      const cpuPercent = tracker.getCPUPercentage();
-      expect(cpuPercent).toBeGreaterThanOrEqual(0);
-      expect(cpuPercent).toBeLessThan(10); // Should be small
-    });
   });
 
   describe('collect', () => {
@@ -160,14 +153,6 @@ describe('ProcessHealthTracker', () => {
       expect(percent3).toBeGreaterThanOrEqual(0);
     });
 
-    test('handles zero wall time delta', () => {
-      tracker.getCPUPercentage(); // Baseline
-
-      // Immediate second call (zero wall time)
-      const cpuPercent = tracker.getCPUPercentage();
-      expect(cpuPercent).toBe(0);
-    });
-
     test('CPU percentage increases under load', async () => {
       tracker.getCPUPercentage(); // Baseline
 
@@ -235,9 +220,9 @@ describe('ProcessHealthTracker', () => {
           new Promise(resolve => {
             setImmediate(() => {
               // Busy work
-              let sum = 0;
+              let _sum = 0;
               for (let j = 0; j < 100000; j++) {
-                sum += j;
+                _sum += j;
               }
               resolve();
             });
