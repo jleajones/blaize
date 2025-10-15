@@ -43,7 +43,7 @@ export function createTsupConfig(options = {}) {
     sourcemap: true,
 
     // Target Node.js environments
-    target: 'node18',
+    target: 'node23',
 
     // Don't bundle Node.js built-ins
     external: [

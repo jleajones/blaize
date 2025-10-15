@@ -56,11 +56,9 @@ export interface Plugin<TState = {}, TServices = {}> extends PluginHooks {
 /**
  * Plugin factory function
  */
-export type PluginFactory<
-  T = any,
-  TState extends Record<string, unknown> = {},
-  TServices extends Record<string, unknown> = {},
-> = (options?: T) => Plugin<TState, TServices>;
+export type PluginFactory<TConfig = any, TState = {}, TServices = {}> = (
+  options?: TConfig
+) => Plugin<TState, TServices>;
 
 export interface PluginLifecycleManager {
   initializePlugins(server: Server<any, any>): Promise<void>;

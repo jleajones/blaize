@@ -160,6 +160,20 @@ export interface ValidationFieldError {
   expectedType?: string;
 }
 
+export interface ServiceNotAvailableDetails {
+  /** Service that's unavailable */
+  service?: string;
+
+  /** Seconds to wait before retry */
+  retryAfter?: number;
+
+  /** Why service is unavailable */
+  reason?: 'maintenance' | 'overload' | 'circuit_breaker' | 'dependency_down';
+
+  /** Additional context */
+  [key: string]: unknown;
+}
+
 /**
  * Validation error details structure
  *
@@ -261,6 +275,9 @@ export enum ErrorType {
 
   /** SSE stream closed (410) */
   SSE_STREAM_CLOSED = 'SSE_STREAM_CLOSED',
+
+  /** Service temporarily unavailable (503) */
+  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
 }
 
 /**

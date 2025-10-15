@@ -2,6 +2,9 @@ packages:
   # Core packages
   - 'packages/*'
 
+  # Middleware packages
+  - 'middleware/*'
+
   # Plugin packages
   - 'plugins/*'
 
