@@ -1,7 +1,7 @@
 {
   "name": "@blaizejs/playground",
   "private": true,
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Development playground for BlaizeJS",
   "scripts": {
     "dev": "NODE_ENV=development tsx --watch src/index.ts ",
