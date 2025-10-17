@@ -37,29 +37,73 @@ export const DEFAULT_OPTIONS: ServerOptions = {
   },
   middleware: [],
   plugins: [],
+  bodyLimits: {
+    // 🆕 NEW
+    json: 512 * 1024,
+    form: 1024 * 1024,
+    text: 5 * 1024 * 1024,
+    raw: 10 * 1024 * 1024,
+    multipart: {
+      maxFileSize: 50 * 1024 * 1024,
+      maxTotalSize: 100 * 1024 * 1024,
+      maxFiles: 10,
+      maxFieldSize: 1024 * 1024,
+    },
+  },
 };
 
 /**
  * Creates the configuration options by merging defaults with user-provided options
  */
 function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
-  const baseOptions: ServerOptions = { ...DEFAULT_OPTIONS };
-  setRuntimeConfig({ routesDir: options.routesDir || baseOptions.routesDir });
-
-  return {
-    port: options.port ?? baseOptions.port,
-    host: options.host ?? baseOptions.host,
-    routesDir: options.routesDir ?? baseOptions.routesDir,
+  const mergedOptions: ServerOptions = {
+    port: options.port ?? DEFAULT_OPTIONS.port,
+    host: options.host ?? DEFAULT_OPTIONS.host,
+    routesDir: options.routesDir ?? DEFAULT_OPTIONS.routesDir,
     http2: {
-      enabled: options.http2?.enabled ?? baseOptions.http2?.enabled,
-      keyFile: options.http2?.keyFile ?? baseOptions.http2?.keyFile,
-      certFile: options.http2?.certFile ?? baseOptions.http2?.certFile,
+      enabled: options.http2?.enabled ?? DEFAULT_OPTIONS.http2!.enabled,
+      keyFile: options.http2?.keyFile,
+      certFile: options.http2?.certFile,
     },
-    middleware: [...(baseOptions.middleware || []), ...(options.middleware || [])],
-    plugins: [...(baseOptions.plugins || []), ...(options.plugins || [])],
+    middleware: options.middleware ?? DEFAULT_OPTIONS.middleware,
+    plugins: options.plugins ?? DEFAULT_OPTIONS.plugins,
     correlation: options.correlation,
     cors: options.cors,
+    bodyLimits: options.bodyLimits
+      ? {
+          json: options.bodyLimits.json ?? DEFAULT_OPTIONS.bodyLimits.json,
+          form: options.bodyLimits.form ?? DEFAULT_OPTIONS.bodyLimits.form,
+          text: options.bodyLimits.text ?? DEFAULT_OPTIONS.bodyLimits.text,
+          raw: options.bodyLimits.raw ?? DEFAULT_OPTIONS.bodyLimits.raw,
+          multipart: {
+            maxFileSize:
+              options.bodyLimits.multipart?.maxFileSize ??
+              DEFAULT_OPTIONS.bodyLimits.multipart.maxFileSize,
+            maxTotalSize:
+              options.bodyLimits.multipart?.maxTotalSize ??
+              DEFAULT_OPTIONS.bodyLimits.multipart.maxTotalSize,
+            maxFiles:
+              options.bodyLimits.multipart?.maxFiles ??
+              DEFAULT_OPTIONS.bodyLimits.multipart.maxFiles,
+            maxFieldSize:
+              options.bodyLimits.multipart?.maxFieldSize ??
+              DEFAULT_OPTIONS.bodyLimits.multipart.maxFieldSize,
+          },
+        }
+      : DEFAULT_OPTIONS.bodyLimits,
   };
+  try {
+    const validated = validateServerOptions(mergedOptions);
+
+    // Set runtime config after successful validation
+    setRuntimeConfig({ routesDir: validated.routesDir });
+    return validated;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to create server: ${error.message}`);
+    }
+    throw new Error(`Failed to create server: ${String(error)}`);
+  }
 }
 
 /**
@@ -208,20 +252,10 @@ export function create<
   ComposeMiddlewareServices<TMw> & ComposePluginServices<TP>
 > {
   // Create and validate options
-  const mergedOptions = createServerOptions(options);
-
-  let validatedOptions: ServerOptions;
-  try {
-    validatedOptions = validateServerOptions(mergedOptions);
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to create server: ${error.message}`);
-    }
-    throw new Error(`Failed to create server: ${String(error)}`);
-  }
+  const validatedOptions = createServerOptions(options);
 
   // Extract options and prepare initial components
-  const { port, host, middleware, plugins, cors } = validatedOptions;
+  const { port, host, middleware, plugins, cors, bodyLimits } = validatedOptions;
 
   // TODO: create registries to manage middleware and plugins
   const initialMiddleware = Array.isArray(middleware) ? [...middleware] : [];
@@ -254,6 +288,7 @@ export function create<
     plugins: [...initialPlugins],
     middleware: [...initialMiddleware],
     corsOptions: cors,
+    bodyLimits,
     _signalHandlers: { unregister: () => {} },
     use: () => serverInstance,
     register: async () => serverInstance,

@@ -911,4 +911,42 @@ describe('create', () => {
       expect(server.corsOptions).toBeUndefined();
     });
   });
+
+  describe('Server creation with bodyLimits', () => {
+    test('should use default body limits when not provided', () => {
+      const server = create({
+        routesDir: './routes',
+      });
+
+      expect(server.bodyLimits).toEqual({
+        json: 512 * 1024,
+        form: 1024 * 1024,
+        text: 5 * 1024 * 1024,
+        raw: 10 * 1024 * 1024,
+        multipart: {
+          maxFileSize: 50 * 1024 * 1024,
+          maxTotalSize: 100 * 1024 * 1024,
+          maxFiles: 10,
+          maxFieldSize: 1024 * 1024,
+        },
+      });
+    });
+
+    test('should merge partial body limits with defaults', () => {
+      const server = create({
+        routesDir: './routes',
+        bodyLimits: {
+          json: 2 * 1024 * 1024, // 2MB override
+          multipart: {
+            maxFileSize: 100 * 1024 * 1024, // 100MB override
+          },
+        },
+      });
+
+      expect(server.bodyLimits.json).toBe(2 * 1024 * 1024);
+      expect(server.bodyLimits.form).toBe(1024 * 1024); // Default
+      expect(server.bodyLimits.multipart.maxFileSize).toBe(100 * 1024 * 1024);
+      expect(server.bodyLimits.multipart.maxFiles).toBe(10); // Default
+    });
+  });
 });
