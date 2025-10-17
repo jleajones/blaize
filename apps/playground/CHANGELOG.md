@@ -1,5 +1,14 @@
 # @blaizejs/playground
 
+## 0.1.13
+
+### Patch Changes
+
+- Updated dependencies [a632eb8]
+- Updated dependencies [79689a9]
+  - blaizejs@0.5.2
+  - @blaizejs/plugin-metrics@0.1.1
+
 ## 0.1.12
 
 ### Patch Changes

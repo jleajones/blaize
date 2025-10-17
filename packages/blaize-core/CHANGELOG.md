@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.5.2
+
+### Patch Changes
+
+- a632eb8: ✨ server configuration now support body limits
+
 ## 0.5.1
 
 ### Patch Changes
