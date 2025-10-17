@@ -54,6 +54,7 @@ export function renderDashboard(snapshot: MetricsSnapshot): string {
     <!-- Key Metrics Cards -->
     <section class="cards">
       ${renderMetricCards(snapshot)}
+      
     </section>
 
     <!-- HTTP Metrics -->
@@ -162,7 +163,7 @@ export function formatBytes(bytes: number): string {
  * @private
  */
 function renderMetricCards(snapshot: MetricsSnapshot): string {
-  const { http, process } = snapshot;
+  const { http, process, _meta } = snapshot;
   const avgResponseTime = http.latency.count > 0 ? http.latency.mean.toFixed(2) : '0';
 
   return `
@@ -190,6 +191,29 @@ function renderMetricCards(snapshot: MetricsSnapshot): string {
       <div class="card-label">Event Loop Lag</div>
       <div class="card-value">${process.eventLoopLag.toFixed(2)}ms</div>
     </div>
+    ${
+      _meta
+        ? `
+      <div class="metric-card">
+        <h3>Metric Cardinality</h3>
+        <div class="value">
+          ${_meta.cardinality.toLocaleString()}
+          <span class="unit">/ ${_meta.maxCardinality.toLocaleString()}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${_meta.cardinalityUsagePercent}%; background: ${
+            _meta.cardinalityUsagePercent >= 90
+              ? '#dc3545'
+              : _meta.cardinalityUsagePercent >= 80
+                ? '#ffc107'
+                : '#28a745'
+          }"></div>
+        </div>
+        <small>${_meta.cardinalityUsagePercent}% used</small>
+      </div>
+      `
+        : ''
+    }
   `;
 }
 
@@ -670,6 +694,21 @@ function getStyles(): string {
 
     .link:hover {
       color: #f107a3;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e9ecef;
+      border-radius: 4px;
+      margin-top: 0.5rem;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      transition: width 0.3s ease, background 0.3s ease;
+      border-radius: 4px;
     }
 
     @media (max-width: 768px) {

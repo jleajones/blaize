@@ -48,6 +48,38 @@ export interface MetricsPluginConfig {
    */
   histogramLimit?: number;
 
+  // ✅ NEW: Cardinality limits
+
+  /**
+   * Maximum number of unique metrics to track
+   * Prevents memory leaks from high-cardinality metrics
+   *
+   * When limit is reached:
+   * - New metrics are dropped (not recorded)
+   * - Warning logged at 80%, 90%, 100%
+   * - Existing metrics continue to update
+   *
+   * @default 10000
+   * @example
+   * // Conservative limit for memory-constrained environments
+   * maxCardinality: 5000
+   *
+   * // Higher limit for services with many routes
+   * maxCardinality: 20000
+   */
+  maxCardinality?: number;
+
+  /**
+   * Action to take when cardinality limit is reached
+   *
+   * - 'drop': Silently drop new metrics (default)
+   * - 'warn': Log warning and drop
+   * - 'error': Throw error (useful for testing)
+   *
+   * @default 'drop'
+   */
+  onCardinalityLimit?: 'drop' | 'warn' | 'error';
+
   /**
    * Interval in milliseconds for automatic metrics collection
    * Set to 0 to disable automatic collection
@@ -407,6 +439,15 @@ export interface MetricsSnapshot {
    * Custom application metrics
    */
   custom: CustomMetrics;
+
+  _meta?: {
+    /** Current number of unique metrics */
+    cardinality: number;
+    /** Maximum allowed cardinality */
+    maxCardinality: number;
+    /** Percentage of cardinality limit used */
+    cardinalityUsagePercent: number;
+  };
 }
 
 /**

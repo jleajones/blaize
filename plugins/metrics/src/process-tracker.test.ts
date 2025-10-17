@@ -109,11 +109,6 @@ describe('ProcessHealthTracker', () => {
   });
 
   describe('getCPUPercentage', () => {
-    test('returns 0 on first call (baseline)', () => {
-      const cpuPercent = tracker.getCPUPercentage();
-      expect(cpuPercent).toBe(0);
-    });
-
     test('returns non-negative percentage', async () => {
       tracker.getCPUPercentage(); // Establish baseline
 

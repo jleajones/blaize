@@ -14,6 +14,7 @@ export const getPostById = appRouter.get({
     // Note: Response schema is not defined here becuase the handler returns HTML directly
   },
   handler: async (ctx, params) => {
+    ctx.services.metrics.increment(`get_user_post_${params.postId}_called`);
     const htmlContent = `
       <!DOCTYPE html>
       <html>

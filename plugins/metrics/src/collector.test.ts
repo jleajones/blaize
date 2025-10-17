@@ -3,8 +3,8 @@
  * @description Comprehensive tests for MetricsCollectorImpl
  */
 
-import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MetricsCollectorImpl } from './collector';
+
 import type { MetricsCollector } from './types';
 
 describe('MetricsCollectorImpl', () => {
@@ -710,6 +710,537 @@ describe('MetricsCollectorImpl', () => {
 
       const snapshot = collector.getSnapshot();
       expect(snapshot.custom.timers['concurrent']?.count).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Cardinality Limits', () => {
+    describe('Basic Cardinality Tracking', () => {
+      test('tracks cardinality correctly', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10000,
+        });
+
+        collector.increment('counter1');
+        collector.increment('counter2');
+        collector.gauge('gauge1', 42);
+        collector.histogram('hist1', 100);
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot._meta?.cardinality).toBe(4);
+      });
+
+      test('does not count duplicate metric names', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10000,
+        });
+
+        collector.increment('metric1');
+        collector.increment('metric1'); // Same metric
+        collector.increment('metric1');
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot._meta?.cardinality).toBe(1);
+      });
+
+      test('counts across different metric types', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10000,
+        });
+
+        collector.increment('counter1');
+        collector.gauge('gauge1', 10);
+        collector.histogram('hist1', 50);
+        const stop = collector.startTimer('timer1');
+        stop();
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot._meta?.cardinality).toBe(4);
+      });
+    });
+
+    describe('Limit Enforcement', () => {
+      test('drops new metrics when limit reached', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 5,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Add 5 metrics (at limit)
+        collector.increment('metric1');
+        collector.increment('metric2');
+        collector.increment('metric3');
+        collector.increment('metric4');
+        collector.increment('metric5');
+
+        expect(collector.getSnapshot()._meta?.cardinality).toBe(5);
+
+        // Try to add 6th metric (should be dropped)
+        collector.increment('metric6');
+
+        expect(collector.getSnapshot()._meta?.cardinality).toBe(5);
+        expect(collector.getSnapshot().custom.counters['metric6']).toBeUndefined();
+        expect(consoleWarn).toHaveBeenCalled();
+
+        consoleWarn.mockRestore();
+      });
+
+      test('allows updates to existing metrics even at limit', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 3,
+          onCardinalityLimit: 'drop',
+        });
+
+        collector.increment('metric1');
+        collector.increment('metric2');
+        collector.increment('metric3');
+
+        // At limit, but updating existing metric should work
+        collector.increment('metric1', 10);
+
+        expect(collector.getSnapshot().custom.counters['metric1']).toBe(11);
+      });
+
+      test('works across different metric types', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 4,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        collector.increment('counter1');
+        collector.gauge('gauge1', 42);
+        collector.histogram('hist1', 100);
+        const stop = collector.startTimer('timer1');
+        stop();
+
+        // All 4 slots used
+        expect(collector.getSnapshot()._meta?.cardinality).toBe(4);
+
+        // Try to add 5th metric (different type, should still be dropped)
+        collector.increment('counter2');
+
+        expect(collector.getSnapshot()._meta?.cardinality).toBe(4);
+        expect(collector.getSnapshot().custom.counters['counter2']).toBeUndefined();
+
+        consoleWarn.mockRestore();
+      });
+
+      test('allows gauge updates at limit', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 2,
+          onCardinalityLimit: 'drop',
+        });
+
+        collector.gauge('gauge1', 100);
+        collector.gauge('gauge2', 200);
+
+        // At limit, update existing gauge
+        collector.gauge('gauge1', 150);
+
+        expect(collector.getSnapshot().custom.gauges['gauge1']).toBe(150);
+        expect(collector.getSnapshot()._meta?.cardinality).toBe(2);
+      });
+
+      test('allows histogram updates at limit', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 2,
+          onCardinalityLimit: 'drop',
+        });
+
+        collector.histogram('hist1', 10);
+        collector.histogram('hist2', 20);
+
+        // At limit, add to existing histogram
+        collector.histogram('hist1', 30);
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot.custom.histograms['hist1']?.count).toBe(2);
+        expect(snapshot._meta?.cardinality).toBe(2);
+      });
+
+      test('allows timer updates at limit', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 2,
+          onCardinalityLimit: 'drop',
+        });
+
+        const stop1 = collector.startTimer('timer1');
+        stop1();
+        const stop2 = collector.startTimer('timer2');
+        stop2();
+
+        // At limit, record another duration for existing timer
+        const stop3 = collector.startTimer('timer1');
+        stop3();
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot.custom.timers['timer1']?.count).toBe(2);
+        expect(snapshot._meta?.cardinality).toBe(2);
+      });
+    });
+
+    describe('Warning Levels', () => {
+      test('warns at 80% capacity', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Add 8 metrics (80%)
+        for (let i = 1; i <= 8; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('80%'));
+
+        consoleWarn.mockRestore();
+      });
+
+      test('warns at 90% capacity', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Add 9 metrics (90%)
+        for (let i = 1; i <= 9; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('90%'));
+
+        consoleWarn.mockRestore();
+      });
+
+      test('only warns once per threshold', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Add metrics to reach 80% multiple times (via updates)
+        for (let i = 1; i <= 8; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        const warningCount = consoleWarn.mock.calls.filter(call => call[0].includes('80%')).length;
+
+        expect(warningCount).toBe(1); // Only warned once
+
+        // Add more to same metrics - should not warn again
+        for (let i = 1; i <= 8; i++) {
+          collector.increment(`metric${i}`, 5);
+        }
+
+        const warningCountAfter = consoleWarn.mock.calls.filter(call =>
+          call[0].includes('80%')
+        ).length;
+
+        expect(warningCountAfter).toBe(1); // Still only once
+
+        consoleWarn.mockRestore();
+      });
+
+      test('warns at 100% capacity when trying to add new metric', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 5,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Fill to capacity
+        for (let i = 1; i <= 5; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        // Try to exceed
+        collector.increment('metric6');
+
+        expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('limit reached'));
+
+        consoleWarn.mockRestore();
+      });
+    });
+
+    describe('onCardinalityLimit Actions', () => {
+      test('drops silently when action is "drop"', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 2,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        collector.increment('metric1');
+        collector.increment('metric2');
+
+        // Clear warnings from reaching limit
+        consoleWarn.mockClear();
+
+        // This should be dropped, with only general warning
+        collector.increment('metric3');
+
+        // Should have warned about limit, but not about specific metric
+        const calls = consoleWarn.mock.calls;
+        const hasGeneralWarning = calls.some(call => call[0].includes('limit reached'));
+        const hasSpecificWarning = calls.some(call => call[0].includes('metric3'));
+
+        expect(hasGeneralWarning).toBe(true);
+        expect(hasSpecificWarning).toBe(false);
+
+        consoleWarn.mockRestore();
+      });
+
+      test('warns with metric name when action is "warn"', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 2,
+          onCardinalityLimit: 'warn',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        collector.increment('metric1');
+        collector.increment('metric2');
+        collector.increment('metric3');
+
+        expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('metric3'));
+
+        consoleWarn.mockRestore();
+      });
+
+      test('throws error when action is "error"', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 2,
+          onCardinalityLimit: 'error',
+        });
+
+        collector.increment('metric1');
+        collector.increment('metric2');
+
+        expect(() => collector.increment('metric3')).toThrow(/cardinality limit reached/i);
+      });
+
+      test('error action throws for gauge', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 1,
+          onCardinalityLimit: 'error',
+        });
+
+        collector.gauge('gauge1', 10);
+
+        expect(() => collector.gauge('gauge2', 20)).toThrow(/cardinality limit reached/i);
+      });
+
+      test('error action throws for histogram', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 1,
+          onCardinalityLimit: 'error',
+        });
+
+        collector.histogram('hist1', 10);
+
+        expect(() => collector.histogram('hist2', 20)).toThrow(/cardinality limit reached/i);
+      });
+
+      test('error action throws for timer', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 1,
+          onCardinalityLimit: 'error',
+        });
+        const stop1 = collector.startTimer('timer1');
+        stop1();
+
+        // ✅ The error should be thrown when calling startTimer, not stop()
+        expect(() => collector.startTimer('timer2')).toThrow(/cardinality limit reached/i);
+      });
+    });
+
+    describe('Reset Behavior with Cardinality', () => {
+      test('resets cardinality warnings', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10,
+          onCardinalityLimit: 'drop',
+        });
+
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Trigger 80% warning
+        for (let i = 1; i <= 8; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        expect(consoleWarn).toHaveBeenCalled();
+        consoleWarn.mockClear();
+
+        // Reset
+        collector.reset();
+
+        // Should warn again after reset
+        for (let i = 1; i <= 8; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        expect(consoleWarn).toHaveBeenCalled();
+
+        consoleWarn.mockRestore();
+      });
+
+      test('resets cardinality count', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10,
+        });
+
+        collector.increment('metric1');
+        collector.gauge('metric2', 10);
+        collector.histogram('metric3', 50);
+
+        expect(collector.getSnapshot()._meta?.cardinality).toBe(3);
+
+        collector.reset();
+
+        expect(collector.getSnapshot()._meta?.cardinality).toBe(0);
+      });
+    });
+
+    describe('Snapshot Metadata', () => {
+      test('includes cardinality stats in snapshot', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 100,
+        });
+
+        collector.increment('metric1');
+        collector.increment('metric2');
+        collector.gauge('metric3', 42);
+
+        const snapshot = collector.getSnapshot();
+
+        expect(snapshot._meta).toEqual({
+          cardinality: 3,
+          maxCardinality: 100,
+          cardinalityUsagePercent: 3,
+        });
+      });
+
+      test('calculates usage percentage correctly', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 10,
+        });
+
+        // Add 5 metrics (50%)
+        for (let i = 1; i <= 5; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot._meta?.cardinalityUsagePercent).toBe(50);
+      });
+
+      test('handles 0% usage', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 100,
+        });
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot._meta?.cardinalityUsagePercent).toBe(0);
+      });
+
+      test('handles 100% usage', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 5,
+        });
+
+        for (let i = 1; i <= 5; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot._meta?.cardinalityUsagePercent).toBe(100);
+      });
+
+      test('rounds down percentage', () => {
+        const collector = new MetricsCollectorImpl({
+          histogramLimit: 100,
+          maxCardinality: 7,
+        });
+
+        // Add 2 metrics (28.57%)
+        collector.increment('metric1');
+        collector.increment('metric2');
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot._meta?.cardinalityUsagePercent).toBe(28); // Floor
+      });
+    });
+
+    describe('Integration with existing tests', () => {
+      test('cardinality tracking works with existing counter tests', () => {
+        collector.increment('test.counter');
+        collector.increment('test.counter');
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot.custom.counters['test.counter']).toBe(2);
+        expect(snapshot._meta?.cardinality).toBe(1); // Still only 1 unique metric
+      });
+
+      test('cardinality tracking works with histogram limit', () => {
+        const smallCollector = new MetricsCollectorImpl({
+          histogramLimit: 3,
+          maxCardinality: 10,
+        });
+
+        for (let i = 1; i <= 5; i++) {
+          smallCollector.histogram('test', i * 10);
+        }
+
+        const snapshot = smallCollector.getSnapshot();
+        expect(snapshot.custom.histograms['test']?.count).toBe(3); // Histogram limit
+        expect(snapshot._meta?.cardinality).toBe(1); // Cardinality unaffected
+      });
+
+      test('cardinality independent of histogram samples', () => {
+        collector.histogram('test', 10);
+        collector.histogram('test', 20);
+        collector.histogram('test', 30);
+
+        const snapshot = collector.getSnapshot();
+        expect(snapshot.custom.histograms['test']?.count).toBe(3); // 3 samples
+        expect(snapshot._meta?.cardinality).toBe(1); // 1 unique metric name
+      });
     });
   });
 });

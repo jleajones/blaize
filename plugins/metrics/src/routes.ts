@@ -13,11 +13,12 @@
 
 import { InternalServerError, ServiceNotAvailableError } from 'blaizejs';
 
-import type { Context } from 'blaizejs';
 
-import { exportPrometheus } from './prometheus-formatter';
 import { renderDashboard } from './dashboard';
+import { exportPrometheus } from './prometheus-formatter';
+
 import type { MetricsCollector } from './types';
+import type { Context } from 'blaizejs';
 
 /**
  * Get metrics collector from context or throw
