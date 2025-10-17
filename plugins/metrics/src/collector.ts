@@ -7,6 +7,9 @@
  * @module @blaizejs/plugin-metrics/collector
  */
 
+import { HttpRequestTracker } from './http-tracker';
+import { ProcessHealthTracker } from './process-tracker';
+
 import type {
   MetricsCollector,
   MetricsSnapshot,
@@ -14,8 +17,6 @@ import type {
   HistogramStats,
   HistogramData,
 } from './types';
-import { HttpRequestTracker } from './http-tracker';
-import { ProcessHealthTracker } from './process-tracker';
 
 /**
  * Metrics Collector Implementation
@@ -54,6 +55,10 @@ export class MetricsCollectorImpl implements MetricsCollector {
   private readonly processTracker: ProcessHealthTracker;
   private readonly histogramLimit: number;
 
+  private maxCardinality: number;
+  private cardinalityWarnings = new Set<number>(); // Track which % we've warned about
+  private onCardinalityLimit: 'drop' | 'warn' | 'error';
+
   // Custom metrics storage
   private counters = new Map<string, number>();
   private gauges = new Map<string, number>();
@@ -71,18 +76,92 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * @param options - Configuration options
    * @param options.histogramLimit - Maximum samples per histogram (default: 1000)
    * @param options.collectionInterval - Periodic collection interval in ms (default: 60000)
+   * @param options.maxCardinality - Maximum unique metric names (default: 10000)
+   * @param options.onCardinalityLimit - Action on cardinality limit ('drop', 'warn', 'error') (default: 'drop')
    */
   constructor(
     options: {
       histogramLimit?: number;
       collectionInterval?: number;
+      maxCardinality?: number;
+      onCardinalityLimit?: 'drop' | 'warn' | 'error';
     } = {}
   ) {
     this.histogramLimit = options.histogramLimit ?? 1000;
     this.collectionInterval = options.collectionInterval ?? 60000;
+    this.maxCardinality = options.maxCardinality ?? 10000;
+    this.onCardinalityLimit = options.onCardinalityLimit ?? 'drop';
 
     this.httpTracker = new HttpRequestTracker(this.histogramLimit);
     this.processTracker = new ProcessHealthTracker();
+  }
+
+  /**
+   * Get current cardinality (total unique metrics)
+   */
+  private getCardinality(): number {
+    return this.counters.size + this.gauges.size + this.histograms.size + this.timers.size;
+  }
+
+  /**
+   * Check if we can add a new metric
+   * Logs warnings at 80%, 90%, 100% capacity
+   */
+  private canAddMetric(metricName: string, metricType: string): boolean {
+    const currentCardinality = this.getCardinality();
+
+    // If metric already exists, always allow update
+    if (
+      this.counters.has(metricName) ||
+      this.gauges.has(metricName) ||
+      this.histograms.has(metricName) ||
+      this.timers.has(metricName)
+    ) {
+      return true;
+    }
+
+    // Check if we're already at the limit
+    if (currentCardinality >= this.maxCardinality) {
+      const message = `Metric cardinality limit reached (${this.maxCardinality}). Dropping new ${metricType}: "${metricName}"`;
+
+      switch (this.onCardinalityLimit) {
+        case 'error':
+          throw new Error(message);
+        case 'warn':
+          console.warn(`⚠️ ${message}`);
+          break;
+        case 'drop':
+          // Silent drop - only log at 100% if we haven't already
+          if (!this.cardinalityWarnings.has(100)) {
+            console.warn(
+              `⚠️ Metric cardinality limit reached (${this.maxCardinality}). New metrics will be dropped.`
+            );
+            this.cardinalityWarnings.add(100);
+          }
+          break;
+      }
+
+      return false;
+    }
+
+    // ✅ Calculate what percentage we'll be at AFTER adding this metric
+    const newCardinality = currentCardinality + 1;
+    const percentUsed = Math.floor((newCardinality / this.maxCardinality) * 100);
+
+    if (percentUsed >= 90 && !this.cardinalityWarnings.has(90)) {
+      console.warn(
+        `⚠️ Metric cardinality at ${percentUsed}% (${newCardinality}/${this.maxCardinality}). ` +
+          `Consider increasing maxCardinality or reducing metric dimensions.`
+      );
+      this.cardinalityWarnings.add(90);
+    } else if (percentUsed >= 80 && !this.cardinalityWarnings.has(80)) {
+      console.warn(
+        `⚠️ Metric cardinality at ${percentUsed}% (${newCardinality}/${this.maxCardinality}).`
+      );
+      this.cardinalityWarnings.add(80);
+    }
+
+    return true;
   }
 
   /**
@@ -99,6 +178,9 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * ```
    */
   increment(name: string, value = 1): void {
+    if (!this.canAddMetric(name, 'counter')) {
+      return;
+    }
     const current = this.counters.get(name) ?? 0;
     this.counters.set(name, current + value);
   }
@@ -117,6 +199,9 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * ```
    */
   gauge(name: string, value: number): void {
+    if (!this.canAddMetric(name, 'gauge')) {
+      return;
+    }
     this.gauges.set(name, value);
   }
 
@@ -134,6 +219,9 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * ```
    */
   histogram(name: string, value: number): void {
+    if (!this.canAddMetric(name, 'histogram')) {
+      return;
+    }
     let histogram = this.histograms.get(name);
 
     if (!histogram) {
@@ -173,6 +261,11 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * ```
    */
   startTimer(name: string): () => void {
+    if (!this.canAddMetric(name, 'timer')) {
+      return () => {
+        /* no-op */
+      };
+    }
     const start = Date.now();
 
     return () => {
@@ -220,6 +313,11 @@ export class MetricsCollectorImpl implements MetricsCollector {
         eventLoopLag: this.lastEventLoopLag,
       },
       custom: this.getCustomMetrics(),
+      _meta: {
+        cardinality: this.getCardinality(),
+        maxCardinality: this.maxCardinality,
+        cardinalityUsagePercent: Math.floor((this.getCardinality() / this.maxCardinality) * 100),
+      },
     };
   }
 
@@ -244,6 +342,7 @@ export class MetricsCollectorImpl implements MetricsCollector {
     this.gauges.clear();
     this.histograms.clear();
     this.timers.clear();
+    this.cardinalityWarnings.clear();
     this.lastEventLoopLag = 0;
   }
 
@@ -421,7 +520,7 @@ export class MetricsCollectorImpl implements MetricsCollector {
     // Measure event loop lag
     try {
       this.lastEventLoopLag = await this.processTracker.getEventLoopLag();
-    } catch (error) {
+    } catch {
       // Ignore errors in background collection
       this.lastEventLoopLag = 0;
     }

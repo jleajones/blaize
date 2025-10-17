@@ -9,14 +9,16 @@
  */
 
 import { createMiddleware } from 'blaizejs';
-import type { Plugin, Server, Context } from 'blaizejs';
+
 import { MetricsCollectorImpl } from './collector';
+
 import type {
   MetricsPluginConfig,
   MetricsCollector,
   MetricsPluginState,
   MetricsPluginServices,
 } from './types';
+import type { Plugin, Server, Context } from 'blaizejs';
 
 // Re-export types for convenience
 export type {
@@ -47,6 +49,8 @@ const DEFAULT_CONFIG: Required<Omit<MetricsPluginConfig, 'reporter'>> & {
   labels: {},
   logToConsole: false,
   reporter: undefined,
+  maxCardinality: 10000, // ✅ NEW
+  onCardinalityLimit: 'drop', // ✅ NEW
 };
 
 /**
@@ -129,6 +133,7 @@ export function createMetricsPlugin(
 
       // 2. Add typed middleware - provides access to the singleton
       server.use(
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
         createMiddleware<{}, { metrics: MetricsCollector }>({
           name: 'metrics',
           handler: async (ctx: Context, next) => {
@@ -183,6 +188,8 @@ export function createMetricsPlugin(
       collector = new MetricsCollectorImpl({
         histogramLimit: finalConfig.histogramLimit,
         collectionInterval: finalConfig.collectionInterval,
+        maxCardinality: finalConfig.maxCardinality,
+        onCardinalityLimit: finalConfig.onCardinalityLimit,
       });
 
       collector.startCollection();

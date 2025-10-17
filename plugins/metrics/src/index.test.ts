@@ -2,8 +2,8 @@
  * Tests for metrics plugin factory
  */
 
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMetricsPlugin } from './index';
+
 import type { MetricsPluginConfig, MetricsPluginState, MetricsPluginServices } from './types';
 import type { Context, Plugin } from 'blaizejs';
 
@@ -179,6 +179,8 @@ describe('createMetricsPlugin', () => {
       expect(MetricsCollectorImpl).toHaveBeenCalledWith({
         histogramLimit: 1000,
         collectionInterval: 60000,
+        maxCardinality: 10000,
+        onCardinalityLimit: 'drop',
       });
     });
 
