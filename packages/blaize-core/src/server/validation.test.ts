@@ -2,11 +2,12 @@ import { z } from 'zod';
 
 import { createMockMiddleware } from '@blaizejs/testing-utils';
 
+import { DEFAULT_OPTIONS } from './create';
 import { validateServerOptions, serverOptionsSchema } from './validation';
 
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
-import type { ServerOptionsInput } from '@blaize-types/server';
+import type { ServerOptions } from '@blaize-types/server';
 
 describe('Server Options Validation', () => {
   // Store original NODE_ENV and restore after tests
@@ -23,23 +24,6 @@ describe('Server Options Validation', () => {
   });
 
   describe('validateServerOptions', () => {
-    it('should return default options when empty input is provided', () => {
-      // Act
-      const result = validateServerOptions({});
-
-      // Assert
-      expect(result).toEqual({
-        port: 3000,
-        host: 'localhost',
-        routesDir: './routes',
-        http2: {
-          enabled: true,
-        },
-        middleware: [],
-        plugins: [],
-      });
-    });
-
     it('should accept valid custom options', () => {
       // Arrange
       const mockMiddleware: Middleware = createMockMiddleware();
@@ -49,7 +33,7 @@ describe('Server Options Validation', () => {
         register: vi.fn(),
       };
 
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
         port: 8080,
         cors: {
           origin: ['https://example.com'],
@@ -61,6 +45,8 @@ describe('Server Options Validation', () => {
         },
         middleware: [mockMiddleware],
         plugins: [mockPlugin],
+
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       // Act
@@ -79,13 +65,28 @@ describe('Server Options Validation', () => {
         },
         middleware: [mockMiddleware],
         plugins: [mockPlugin],
+        bodyLimits: {
+          json: 512 * 1024,
+          form: 1024 * 1024,
+          text: 5 * 1024 * 1024,
+          raw: 10 * 1024 * 1024,
+          multipart: {
+            maxFileSize: 50 * 1024 * 1024,
+            maxTotalSize: 100 * 1024 * 1024,
+            maxFiles: 10,
+            maxFieldSize: 1024 * 1024,
+          },
+        },
       });
     });
 
     it('should throw error for negative port number', () => {
       // Arrange
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
         port: -1,
+        host: 'localhost',
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       // Act & Assert
@@ -94,7 +95,11 @@ describe('Server Options Validation', () => {
 
     it('should throw error for invalid middleware', () => {
       // Arrange
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
+        port: 8080,
+        host: 'localhost',
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         middleware: ['not-a-function' as any],
       };
 
@@ -104,12 +109,180 @@ describe('Server Options Validation', () => {
 
     it('should throw error for invalid plugin', () => {
       // Arrange
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
+        port: 8080,
+        host: 'localhost',
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         plugins: [{ name: 'invalid-plugin' } as any],
       };
 
       // Act & Assert
       expect(() => validateServerOptions(options)).toThrow('Invalid server options');
+    });
+
+    it('should validate body limits are positive numbers', () => {
+      expect(() =>
+        validateServerOptions({
+          port: 8080,
+          cors: {
+            origin: ['https://example.com'],
+          },
+          host: '0.0.0.0',
+          routesDir: './api',
+          http2: {
+            enabled: false,
+          },
+          bodyLimits: {
+            json: -1000, // Invalid
+            form: 1024 * 1024,
+            text: 5 * 1024 * 1024,
+            raw: 10 * 1024 * 1024,
+            multipart: {
+              maxFileSize: 50 * 1024 * 1024,
+              maxTotalSize: 100 * 1024 * 1024,
+              maxFiles: 10,
+              maxFieldSize: 1024 * 1024,
+            },
+          },
+        })
+      ).toThrow(/Invalid server options/);
+
+      // Verify the error contains useful information
+      expect(() =>
+        validateServerOptions({
+          port: 8080,
+          cors: {
+            origin: ['https://example.com'],
+          },
+          host: '0.0.0.0',
+          routesDir: './api',
+          http2: {
+            enabled: false,
+          },
+          bodyLimits: {
+            json: -1000, // Invalid
+            form: 1024 * 1024,
+            text: 5 * 1024 * 1024,
+            raw: 10 * 1024 * 1024,
+            multipart: {
+              maxFileSize: 50 * 1024 * 1024,
+              maxTotalSize: 100 * 1024 * 1024,
+              maxFiles: 10,
+              maxFieldSize: 1024 * 1024,
+            },
+          },
+        })
+      ).toThrow(/Invalid server options/); // Should mention "positive" in error
+    });
+
+    it('should reject negative multipart limits', () => {
+      expect(() =>
+        validateServerOptions({
+          port: 8080,
+          cors: {
+            origin: ['https://example.com'],
+          },
+          host: '0.0.0.0',
+          routesDir: './api',
+          http2: {
+            enabled: false,
+          },
+          bodyLimits: {
+            json: 512 * 1024,
+            form: 1024 * 1024,
+            text: 5 * 1024 * 1024,
+            raw: 10 * 1024 * 1024,
+            multipart: {
+              maxFileSize: 50 * 1024 * 1024,
+              maxTotalSize: -100, // Invalid
+              maxFiles: 10,
+              maxFieldSize: 1024 * 1024,
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    it('should reject zero values', () => {
+      expect(() =>
+        validateServerOptions({
+          port: 8080,
+          cors: {
+            origin: ['https://example.com'],
+          },
+          host: '0.0.0.0',
+          routesDir: './api',
+          http2: {
+            enabled: false,
+          },
+          bodyLimits: {
+            json: 512 * 1024,
+            form: 1024 * 1024,
+            text: 5 * 1024 * 1024,
+            raw: 10 * 1024 * 1024,
+            multipart: {
+              maxFileSize: 50 * 1024 * 1024,
+              maxTotalSize: 0, // Invalid
+              maxFiles: 10,
+              maxFieldSize: 1024 * 1024,
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    it('should reject non-integer maxFiles', () => {
+      expect(() =>
+        validateServerOptions({
+          port: 8080,
+          host: 'localhost',
+          routesDir: './routes',
+          bodyLimits: {
+            json: 512 * 1024,
+            form: 1024 * 1024,
+            text: 5 * 1024 * 1024,
+            raw: 10 * 1024 * 1024,
+            multipart: {
+              maxFiles: 3.5, // Must be integer
+              maxFileSize: 50 * 1024 * 1024,
+              maxTotalSize: 100 * 1024 * 1024,
+              maxFieldSize: 1024 * 1024,
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    it('should accept valid custom limits', () => {
+      const result = validateServerOptions({
+        port: 8080,
+        cors: {
+          origin: ['https://example.com'],
+        },
+        host: '0.0.0.0',
+        routesDir: './api',
+        http2: {
+          enabled: false,
+        },
+        bodyLimits: {
+          json: 10 * 1024 * 1024,
+          form: 5 * 1024 * 1024,
+          text: 5 * 1024 * 1024,
+          raw: 10 * 1024 * 1024,
+          multipart: {
+            maxFileSize: 200 * 1024 * 1024,
+            maxTotalSize: 50 * 1024 * 1024,
+            maxFiles: 50,
+            maxFieldSize: 1024 * 1024,
+          },
+        },
+      });
+
+      expect(result.bodyLimits.json).toBe(10 * 1024 * 1024);
+      expect(result.bodyLimits.form).toBe(5 * 1024 * 1024);
+      expect(result.bodyLimits.multipart.maxFileSize).toBe(200 * 1024 * 1024);
+      expect(result.bodyLimits.multipart.maxFiles).toBe(50);
     });
   });
 
@@ -117,11 +290,16 @@ describe('Server Options Validation', () => {
     it('should not require SSL files in development mode', () => {
       // Arrange
       process.env.NODE_ENV = 'development';
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
         http2: {
           enabled: true,
           // No keyFile or certFile provided
         },
+        host: 'localhost',
+        port: 3000,
+        routesDir: './routes',
+
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       // Act & Assert - should not throw
@@ -131,11 +309,15 @@ describe('Server Options Validation', () => {
     it('should require SSL files in production mode when http2 is enabled', () => {
       // Arrange
       process.env.NODE_ENV = 'production';
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
         http2: {
           enabled: true,
           // No keyFile or certFile provided
         },
+        host: 'localhost',
+        port: 3000,
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       // Act & Assert
@@ -145,12 +327,16 @@ describe('Server Options Validation', () => {
     it('should accept valid SSL files in production mode', () => {
       // Arrange
       process.env.NODE_ENV = 'production';
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
         http2: {
           enabled: true,
           keyFile: '/path/to/key.pem',
           certFile: '/path/to/cert.pem',
         },
+        host: 'localhost',
+        port: 3000,
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       // Act
@@ -167,11 +353,15 @@ describe('Server Options Validation', () => {
     it('should not require SSL files when http2 is disabled in production', () => {
       // Arrange
       process.env.NODE_ENV = 'production';
-      const options: ServerOptionsInput = {
+      const options: ServerOptions = {
         http2: {
           enabled: false,
           // No keyFile or certFile provided
         },
+        host: 'localhost',
+        port: 3000,
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       // Act & Assert - should not throw
@@ -198,7 +388,12 @@ describe('Server Options Validation', () => {
 
       // Act & Assert
       try {
-        validateServerOptions({ port: 'invalid' as any });
+        validateServerOptions({
+          port: 'invalid' as any,
+          host: 'localhost',
+          routesDir: './routes',
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        });
         // Should not reach here
         expect(true).toBe(false);
       } catch (error) {
@@ -223,7 +418,12 @@ describe('Server Options Validation', () => {
 
       // Act & Assert
       try {
-        validateServerOptions({});
+        validateServerOptions({
+          port: 8080,
+          host: 'localhost',
+          routesDir: './routes',
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        });
         // Should not reach here
         expect(true).toBe(false);
       } catch (error) {
