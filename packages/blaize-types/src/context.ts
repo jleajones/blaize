@@ -197,7 +197,7 @@ export interface ContextOptions {
   /**
    * Limits for various body types to prevent abuse
    */
-  bodyLimits?: BodyLimits;
+  bodyLimits: BodyLimits;
 }
 
 /**

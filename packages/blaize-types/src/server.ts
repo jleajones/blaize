@@ -192,6 +192,9 @@ export interface Server<TState, TServices> {
   /** CORS configuration for this server */
   corsOptions?: CorsOptions | boolean;
 
+  /** Body size limits for incoming requests */
+  bodyLimits: BodyLimits;
+
   /** The host the server is bound to */
   host: string;
   events: EventEmitter;
