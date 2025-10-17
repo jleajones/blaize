@@ -11,6 +11,7 @@ import { createContext, getCurrentContext, isInRequestContext } from './create';
 import { ResponseSentError } from './errors';
 import * as storeModule from './store';
 import { runWithContext } from './store';
+import { DEFAULT_OPTIONS } from '../server/create';
 import { _setCorrelationConfig } from '../tracing/correlation';
 
 import type { ContextOptions, Services, State } from '@blaize-types/context';
@@ -34,7 +35,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       expect(context).toBeDefined();
       expect(context.request.method).toBe('GET');
@@ -54,7 +57,9 @@ describe('Context Module', () => {
       };
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       expect(context).toBeDefined();
       expect(context.request.method).toBe('GET');
@@ -72,7 +77,9 @@ describe('Context Module', () => {
       };
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       expect(context).toBeDefined();
       expect(context.request.method).toBe('GET');
@@ -86,7 +93,10 @@ describe('Context Module', () => {
       const res = createMockResponse();
       const initialState = { user: { id: 1, name: 'Test User' } };
 
-      const context = await createContext(req as any, res as any, { initialState });
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        initialState,
+      });
 
       expect(context.state).toEqual(initialState);
     });
@@ -101,7 +111,11 @@ describe('Context Module', () => {
       };
 
       const res = createMockResponse();
-      await expect(createContext(req as any, res as any)).rejects.toThrow(/Invalid URL/);
+      await expect(
+        createContext(req as any, res as any, {
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        })
+      ).rejects.toThrow(/Invalid URL/);
     });
   });
 
@@ -110,7 +124,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       expect(context.request.header('user-agent')).toBe('test-agent');
       expect(context.request.header('x-custom-header')).toBe('custom-value');
@@ -121,7 +137,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Get all headers
       const allHeaders = context.request.headers();
@@ -142,7 +160,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.status(404);
       expect(res.statusCode).toBe(404);
@@ -152,7 +172,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.header('X-Custom', 'Value');
       expect(res.setHeader).toHaveBeenCalledWith('X-Custom', 'Value');
@@ -162,7 +184,10 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.headers({
         'X-Custom1': 'Value1',
@@ -177,7 +202,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.type('application/xml');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/xml');
@@ -187,7 +214,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
       const data = { success: true, message: 'Test' };
 
       context.response.json(data, 201);
@@ -202,7 +231,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.text('Hello World', 200);
 
@@ -216,7 +247,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.html('<p>Hello</p>', 200);
 
@@ -230,7 +263,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.redirect('/new-location', 301);
 
@@ -253,7 +288,9 @@ describe('Context Module', () => {
       // Mock pipe
       readable.pipe = vi.fn();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.stream(readable, {
         status: 200,
@@ -285,7 +322,9 @@ describe('Context Module', () => {
       // Spy on console.error
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       context.response.stream(readable);
 
@@ -308,7 +347,9 @@ describe('Context Module', () => {
       const req = createMockHttp2Request();
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any);
+      const context = await createContext(req as any, res as any, {
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Send the response
       context.response.text('Done');
@@ -438,7 +479,10 @@ describe('Context Module', () => {
       const req = createMultipartRequest(body, boundary);
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any, { parseBody: true });
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Check that multipart data was parsed
       expect(context.request.multipart).toBeDefined();
@@ -478,7 +522,10 @@ describe('Context Module', () => {
       const req = createMultipartRequest(body, boundary);
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any, { parseBody: true });
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Check that multipart data was parsed
       expect(context.request.multipart).toBeDefined();
@@ -523,7 +570,10 @@ describe('Context Module', () => {
       const req = createMultipartRequest(body, boundary);
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any, { parseBody: true });
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Check fields
       expect(context.request.body).toEqual({
@@ -546,7 +596,10 @@ describe('Context Module', () => {
       const req = createMultipartRequest(invalidBody, boundary);
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any, { parseBody: true });
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Should handle error gracefully
       expect(context.request.body).toBeNull();
@@ -565,7 +618,10 @@ describe('Context Module', () => {
       };
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any, { parseBody: true });
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Should not have multipart properties for non-multipart requests
       expect(context.request.multipart).toBeUndefined();
@@ -587,7 +643,10 @@ describe('Context Module', () => {
       const req = createMultipartRequest(body, boundary);
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any, { parseBody: true });
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Should handle size limit error
       expect(context.request.body).toBeNull();
@@ -605,7 +664,10 @@ describe('Context Module', () => {
       const req = createMultipartRequest(body, boundary);
       const res = createMockResponse();
 
-      const context = await createContext(req as any, res as any, { parseBody: true });
+      const context = await createContext(req as any, res as any, {
+        parseBody: true,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // These should all be properly typed (test compilation)
       const multipart = context.request.multipart;
@@ -632,6 +694,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         // Set correlation ID in state
@@ -652,6 +715,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         // No correlation ID in state
@@ -671,6 +735,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'custom-header-456';
@@ -688,6 +753,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-text-789';
@@ -706,6 +772,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-html-abc';
@@ -725,6 +792,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-redirect-xyz';
@@ -742,6 +810,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-redirect-default';
@@ -759,6 +828,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         // Create a mock readable stream
@@ -790,6 +860,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         let errorCallback: any;
@@ -821,6 +892,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-http2-correlation';
@@ -842,6 +914,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-status-201';
@@ -859,6 +932,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         // Set a non-string value (shouldn't happen in practice)
@@ -875,6 +949,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-other-state';
@@ -895,6 +970,7 @@ describe('Context Module', () => {
 
         const context = await createContext(mockReq, mockRes, {
           parseBody: false,
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
 
         context.state.correlationId = 'test-already-sent';
@@ -920,7 +996,10 @@ describe('Context Module', () => {
     });
 
     test('should initialize context with empty services by default', async () => {
-      const ctx = await createContext(req, res);
+      const ctx = await createContext(req, res, {
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       expect(ctx.services).toBeDefined();
       expect(ctx.services).toEqual({});
@@ -936,6 +1015,8 @@ describe('Context Module', () => {
 
       const options: ContextOptions = {
         initialServices,
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       const ctx = await createContext(req, res, options);
@@ -948,7 +1029,10 @@ describe('Context Module', () => {
     });
 
     test('services should be mutable', async () => {
-      const ctx = await createContext(req, res);
+      const ctx = await createContext(req, res, {
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Add new service - need to type assert or use proper typing
       ctx.services.newService = { test: 'value' };
@@ -971,7 +1055,10 @@ describe('Context Module', () => {
         test: string;
       }
 
-      const ctx = await createContext(req, res);
+      const ctx = await createContext(req, res, {
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Add new service with type assertion
       ctx.services.newService = { test: 'value' } as TestService;
@@ -1014,6 +1101,8 @@ describe('Context Module', () => {
 
       const ctx = await createContext<State, AppServices>(req, res, {
         initialServices: services,
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       });
 
       // TypeScript should know the exact types
@@ -1032,7 +1121,11 @@ describe('Context Module', () => {
         testService: { value: 42 },
       };
 
-      const ctx = await createContext(req, res, { initialServices: services });
+      const ctx = await createContext(req, res, {
+        initialServices: services,
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       await runWithContext(ctx, async () => {
         const retrievedCtx = getCurrentContext<State, TestServices>();
@@ -1050,7 +1143,10 @@ describe('Context Module', () => {
         db: DbService;
       }
 
-      const ctx = await createContext<State, AppServices>(req, res);
+      const ctx = await createContext<State, AppServices>(req, res, {
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+      });
 
       // Simulate middleware adding a service
       const addDatabaseMiddleware = async () => {
@@ -1087,6 +1183,8 @@ describe('Context Module', () => {
           logger: { log: (msg: string) => console.log(msg) },
           config: { apiUrl: 'https://api.example.com' },
         },
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
       const ctx = await createContext<AppState, AppServices>(req, res, options);
@@ -1104,6 +1202,7 @@ describe('Context Module', () => {
       const ctx = await createContext(req, res, {
         parseBody: false,
         initialState: { test: 'value' },
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       });
 
       // Existing properties should work as before
@@ -1124,6 +1223,8 @@ describe('Context Module', () => {
 
       const ctx = await createContext<State, TestServices>(req, res, {
         initialServices: { test: { value: 100 } },
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       });
 
       await runWithContext(ctx, () => {
@@ -1135,10 +1236,14 @@ describe('Context Module', () => {
     test('services should be separate per request context', async () => {
       const ctx1 = await createContext(req, res, {
         initialServices: { id: 'context-1' },
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       });
 
       const ctx2 = await createContext(req, res, {
         initialServices: { id: 'context-2' },
+        parseBody: false,
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       });
 
       await runWithContext(ctx1, () => {

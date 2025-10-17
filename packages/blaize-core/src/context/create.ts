@@ -25,19 +25,6 @@ import type { BodyParseError } from '@blaize-types/errors';
 
 const CONTENT_TYPE_HEADER = 'Content-Type';
 
-const DEFAULT_BODY_LIMITS = {
-  json: 512 * 1024, // 512KB - Most APIs should be much smaller
-  form: 1024 * 1024, // 1MB - Reasonable for form submissions
-  text: 5 * 1024 * 1024, // 5MB - Documents, logs, code files
-  multipart: {
-    maxFileSize: 50 * 1024 * 1024, // 50MB per file
-    maxTotalSize: 100 * 1024 * 1024, // 100MB total request
-    maxFiles: 10,
-    maxFieldSize: 1024 * 1024, // 1MB for form fields
-  },
-  raw: 10 * 1024 * 1024, // 10MB for unknown content types
-};
-
 /**
  * Parse URL and extract path and query parameters using modern URL API
  */
@@ -123,7 +110,7 @@ export async function createContext<
 >(
   req: UnifiedRequest,
   res: UnifiedResponse,
-  options: ContextOptions = {}
+  options: ContextOptions
 ): Promise<Context<S, Svc, TBody, TQuery>> {
   // Extract basic request information
   const { path, url, query } = parseRequestUrl(req);
@@ -486,7 +473,7 @@ function createStreamResponder(
 async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
   ctx: Context<State, Services, TBody, TQuery>,
-  options: ContextOptions = {}
+  options: ContextOptions
 ): Promise<void> {
   // Skip parsing for methods that typically don't have bodies
   if (shouldSkipParsing(req.method)) {
@@ -501,21 +488,7 @@ async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
     return;
   }
 
-  const limits = {
-    json: options.bodyLimits?.json ?? DEFAULT_BODY_LIMITS.json,
-    form: options.bodyLimits?.form ?? DEFAULT_BODY_LIMITS.form,
-    text: options.bodyLimits?.text ?? DEFAULT_BODY_LIMITS.text,
-    raw: options.bodyLimits?.raw ?? DEFAULT_BODY_LIMITS.raw,
-    multipart: {
-      maxFileSize:
-        options.bodyLimits?.multipart?.maxFileSize ?? DEFAULT_BODY_LIMITS.multipart.maxFileSize,
-      maxFiles: options.bodyLimits?.multipart?.maxFiles ?? DEFAULT_BODY_LIMITS.multipart.maxFiles,
-      maxFieldSize:
-        options.bodyLimits?.multipart?.maxFieldSize ?? DEFAULT_BODY_LIMITS.multipart.maxFieldSize,
-      maxTotalSize:
-        options.bodyLimits?.multipart?.maxTotalSize ?? DEFAULT_BODY_LIMITS.multipart.maxTotalSize,
-    },
-  };
+  const limits = options.bodyLimits;
 
   try {
     // Apply content-type specific size validation
@@ -653,7 +626,7 @@ async function parseMultipartBody<TBody = unknown, TQuery = QueryParams>(
   multipartLimits: MultipartLimits
 ): Promise<void> {
   try {
-    const limits = multipartLimits || DEFAULT_BODY_LIMITS.multipart;
+    const limits = multipartLimits;
     const multipartData = await parseMultipartRequest(req, {
       strategy: 'stream',
       maxFileSize: limits.maxFileSize,
