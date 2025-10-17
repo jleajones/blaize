@@ -16,6 +16,8 @@ const metricsPlugin = createMetricsPlugin({
   histogramLimit: 1000,
   collectionInterval: 60000, // Report every 60 seconds
   logToConsole: true, // See metrics in console during development
+  maxCardinality: 10,
+  onCardinalityLimit: 'warn',
   labels: {
     service: 'playground-app',
     environment: process.env.NODE_ENV || 'development',

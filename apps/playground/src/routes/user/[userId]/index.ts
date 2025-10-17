@@ -25,7 +25,8 @@ export const getUserById = appRouter.get({
     }),
     // Note: Response schema is not defined here becuase the handler returns HTML directly
   },
-  handler: async (_ctx, params) => {
+  handler: async (ctx, params) => {
+    ctx.services.metrics.increment('user_requests_total');
     const user = {
       id: params.userId,
       name: `User ${params.userId}`,
