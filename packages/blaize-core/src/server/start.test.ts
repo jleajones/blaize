@@ -69,6 +69,18 @@ describe('Server Module', () => {
       routesDir: './routes',
       middleware: [],
       plugins: [],
+      bodyLimits: {
+        json: 512 * 1024,
+        form: 1024 * 1024,
+        text: 5 * 1024 * 1024,
+        raw: 10 * 1024 * 1024,
+        multipart: {
+          maxFileSize: 50 * 1024 * 1024,
+          maxTotalSize: 100 * 1024 * 1024,
+          maxFiles: 10,
+          maxFieldSize: 1024 * 1024,
+        },
+      },
     };
 
     // Mock process.env

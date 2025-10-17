@@ -4,7 +4,7 @@ import { serverCorsSchema } from 'src/middleware/cors/validation';
 
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
-import type { ServerOptions, ServerOptionsInput } from '@blaize-types/server';
+import type { ServerOptions } from '@blaize-types/server';
 
 // Create a more flexible validation for the middleware function type
 const middlewareSchema = z.custom<Middleware>(
@@ -75,6 +75,42 @@ const correlationSchema = z
   })
   .optional();
 
+const multipartLimitsSchema = z.object({
+  maxFileSize: z
+    .number()
+    .positive()
+    .default(50 * 1024 * 1024),
+  maxTotalSize: z
+    .number()
+    .positive()
+    .default(100 * 1024 * 1024),
+  maxFiles: z.number().positive().int().default(10),
+  maxFieldSize: z
+    .number()
+    .positive()
+    .default(1024 * 1024),
+});
+
+const bodyLimitsSchema = z.object({
+  json: z
+    .number()
+    .positive()
+    .default(512 * 1024),
+  form: z
+    .number()
+    .positive()
+    .default(1024 * 1024),
+  text: z
+    .number()
+    .positive()
+    .default(5 * 1024 * 1024),
+  raw: z
+    .number()
+    .positive()
+    .default(10 * 1024 * 1024),
+  multipart: multipartLimitsSchema,
+});
+
 // Validation schema for server options
 export const serverOptionsSchema = z.object({
   port: z.number().int().positive().optional().default(3000),
@@ -87,9 +123,10 @@ export const serverOptionsSchema = z.object({
   plugins: z.array(pluginSchema).optional().default([]),
   correlation: correlationSchema,
   cors: serverCorsSchema,
+  bodyLimits: bodyLimitsSchema,
 });
 
-export function validateServerOptions(options: ServerOptionsInput): ServerOptions {
+export function validateServerOptions(options: ServerOptions): ServerOptions {
   try {
     return serverOptionsSchema.parse(options);
   } catch (error) {

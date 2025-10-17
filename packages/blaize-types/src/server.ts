@@ -16,7 +16,7 @@ import type {
   ExtractPluginState,
   UnionToIntersection,
 } from './composition';
-import type { Context } from './context';
+import type { BodyLimits, Context } from './context';
 import type { CorsOptions } from './cors';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
@@ -126,6 +126,8 @@ export interface ServerOptionsInput {
    * ```
    */
   cors?: CorsOptions | boolean;
+
+  bodyLimits?: Partial<BodyLimits>;
 }
 
 /**
@@ -170,6 +172,7 @@ export interface ServerOptions {
    * @since 0.5.0
    */
   cors?: CorsOptions | boolean;
+  bodyLimits: BodyLimits;
 }
 
 /**
@@ -188,6 +191,9 @@ export interface Server<TState, TServices> {
 
   /** CORS configuration for this server */
   corsOptions?: CorsOptions | boolean;
+
+  /** Body size limits for incoming requests */
+  bodyLimits: BodyLimits;
 
   /** The host the server is bound to */
   host: string;
