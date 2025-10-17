@@ -27,6 +27,7 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
           initialState: {
             correlationId,
           },
+          bodyLimits: serverInstance.bodyLimits,
         });
 
         // Create error boundary middleware that catches all thrown error classes
