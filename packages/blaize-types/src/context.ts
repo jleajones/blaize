@@ -148,6 +148,23 @@ export interface Context<
   services: Svc;
 }
 
+export interface BodyLimits {
+  /** Maximum JSON body size in bytes (default: 512KB) */
+  json: number;
+
+  /** Maximum form data size in bytes (default: 1MB) */
+  form: number;
+
+  /** Maximum text body size in bytes (default: 5MB) */
+  text: number;
+
+  /** Maximum raw/binary body size in bytes (default: 10MB) */
+  raw: number;
+
+  /** Multipart/form-data limits */
+  multipart: MultipartLimits;
+}
+
 // Define the multipart limits type properly
 export type MultipartLimits = {
   maxFileSize?: number;
@@ -180,13 +197,7 @@ export interface ContextOptions {
   /**
    * Limits for various body types to prevent abuse
    */
-  bodyLimits?: {
-    json?: number; // Default: 512KB (large JSON usually indicates design issues)
-    form?: number; // Default: 1MB (reasonable for form data)
-    text?: number; // Default: 5MB (documents, logs, code)
-    multipart?: MultipartLimits;
-    raw?: number; // Default: 10MB (for custom content types)
-  };
+  bodyLimits?: BodyLimits;
 }
 
 /**
