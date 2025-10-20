@@ -485,6 +485,24 @@ export interface LoggerConfig {
 }
 
 /**
+ * Resolved logger configuration with all defaults applied
+ *
+ */
+export interface ResolvedLoggerConfig {
+  /** Minimum log level to output */
+  level: LogLevel;
+
+  /** Transport adapter for log output */
+  transport: BlaizeLogTransport;
+
+  /** Keys to redact from metadata (case-insensitive) */
+  redactKeys: string[];
+
+  /** Whether to include ISO 8601 timestamps */
+  includeTimestamp: boolean;
+}
+
+/**
  * Options for request logger middleware
  *
  * Controls what request data is automatically included in log metadata
