@@ -50,6 +50,24 @@ describe('createRequestHandler - Complete Test Suite', () => {
     // Reset mocks
     vi.resetAllMocks();
 
+    // Create mock logger and logger middleware
+    const mockLogger = {
+      child: vi.fn().mockReturnThis(),
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const mockLoggerMiddleware = {
+      name: 'requestLoggerMiddleware',
+      execute: vi.fn().mockImplementation(async (ctx: Context, next: NextFunction) => {
+        // Simulate replacing ctx.services.log with child logger
+        ctx.services.log = mockLogger.child({ correlationId: ctx.state.correlationId });
+        await next();
+      }),
+    };
+
     // Set up test doubles
     mockServer = {
       middleware: [
@@ -61,6 +79,8 @@ describe('createRequestHandler - Complete Test Suite', () => {
         getRoutes: vi.fn().mockReturnValue([]),
         addRoute: vi.fn(),
       },
+      _logger: mockLogger, // ROOT LOGGER (new)
+      _loggerMiddleware: mockLoggerMiddleware,
     } as unknown as UnknownServer;
 
     mockReq = {
@@ -89,6 +109,9 @@ describe('createRequestHandler - Complete Test Suite', () => {
         status: vi.fn().mockReturnThis(),
         raw: mockRes,
       },
+
+      state: { correlationId: DEFAULT_CORRELATION_ID }, // ADD THIS
+      services: { log: mockLogger },
     };
 
     mockHandler = vi.fn();
@@ -145,13 +168,15 @@ describe('createRequestHandler - Complete Test Suite', () => {
       expect(handler).toBeInstanceOf(Function);
     });
 
-    it('should create context with correct parameters', async () => {
+    it('should create context with correct parameters including root logger', async () => {
       const handler = createRequestHandler(mockServer);
       await handler(mockReq, mockRes);
 
       expect(createContext).toHaveBeenCalledWith(mockReq, mockRes, {
         parseBody: true,
         initialState: { correlationId: DEFAULT_CORRELATION_ID },
+        initialServices: { log: mockServer._logger },
+        bodyLimits: undefined,
       });
     });
 
@@ -188,15 +213,23 @@ describe('createRequestHandler - Complete Test Suite', () => {
       expect(createErrorBoundary).toHaveBeenCalled();
 
       // Verify compose was called with error boundary first
-      expect(compose).toHaveBeenCalledWith([mockErrorBoundary, ...mockServer.middleware]);
+      expect(compose).toHaveBeenCalledWith([
+        mockServer._loggerMiddleware,
+        mockErrorBoundary,
+        ...mockServer.middleware,
+      ]);
     });
 
-    it('should compose middleware with error boundary first', async () => {
+    it('should compose middleware with requestLogger → errorBoundary → user middleware', async () => {
       const handler = createRequestHandler(mockServer);
       await handler(mockReq, mockRes);
 
       // Verify error boundary is first, followed by existing middleware
-      const expectedMiddleware = [mockErrorBoundary, ...mockServer.middleware];
+      const expectedMiddleware = [
+        mockServer._loggerMiddleware,
+        mockErrorBoundary,
+        ...mockServer.middleware,
+      ];
 
       expect(compose).toHaveBeenCalledWith(expectedMiddleware);
     });
@@ -665,21 +698,36 @@ describe('createRequestHandler - Complete Test Suite', () => {
   });
 
   describe('Middleware Chain Composition', () => {
-    it('should preserve middleware execution order with error boundary first', async () => {
+    it('should preserve middleware execution order: requestLogger → errorBoundary → user middleware', async () => {
       const executionOrder: string[] = [];
 
-      // Track execution order
-      mockErrorBoundary.execute.mockImplementation(async (ctx: Context, next: NextFunction) => {
-        executionOrder.push('error-boundary-start');
-        try {
+      // Reset and reconfigure the logger middleware mock
+      (mockServer._loggerMiddleware!.execute as any).mockReset();
+      (mockServer._loggerMiddleware!.execute as any).mockImplementation(
+        async (ctx: Context, next: NextFunction) => {
+          executionOrder.push('requestLogger-start');
+          // Replace logger with child
+          ctx.services.log = mockServer._logger!.child({ correlationId: ctx.state.correlationId });
           await next();
-        } catch (error) {
-          if (ctx.response.sent) return;
-          const errorResponse = formatErrorResponse(error);
-          ctx.response.status(errorResponse.status).json(errorResponse);
+          executionOrder.push('requestLogger-end');
         }
-        executionOrder.push('error-boundary-end');
-      });
+      );
+
+      // Reset and reconfigure the error boundary mock
+      (mockErrorBoundary.execute as any).mockReset();
+      (mockErrorBoundary.execute as any).mockImplementation(
+        async (ctx: Context, next: NextFunction) => {
+          executionOrder.push('error-boundary-start');
+          try {
+            await next();
+          } catch (error) {
+            if (ctx.response.sent) return;
+            const errorResponse = formatErrorResponse(error);
+            ctx.response.status(errorResponse.status).json(errorResponse);
+          }
+          executionOrder.push('error-boundary-end');
+        }
+      );
 
       mockServer.middleware[0]!.execute = vi
         .fn()
@@ -695,23 +743,40 @@ describe('createRequestHandler - Complete Test Suite', () => {
           await next();
         });
 
-      // Mock the composed handler to execute middleware in order
-      mockHandler.mockImplementation(async (ctx: Context, _next: NextFunction) => {
-        await mockErrorBoundary.execute(ctx, async () => {
-          await mockServer.middleware[0]!.execute(ctx, async () => {
-            await mockServer.middleware[1]!.execute(ctx, _next);
-          });
-        });
+      // Reset compose mock and make it actually chain the middleware
+      vi.mocked(compose).mockReset();
+      vi.mocked(compose).mockImplementation(middleware => {
+        return async (ctx: Context, finalNext: NextFunction) => {
+          let index = 0;
+
+          const dispatch = async (): Promise<void> => {
+            if (index >= middleware.length) {
+              await finalNext();
+              return;
+            }
+
+            const mw = middleware[index++];
+            if (mw && mw.execute) {
+              await mw.execute(ctx, dispatch);
+            } else {
+              await dispatch();
+            }
+          };
+
+          await dispatch();
+        };
       });
 
       const handler = createRequestHandler(mockServer);
       await handler(mockReq, mockRes);
 
       expect(executionOrder).toEqual([
+        'requestLogger-start',
         'error-boundary-start',
         'middleware-1',
         'middleware-2',
         'error-boundary-end',
+        'requestLogger-end',
       ]);
     });
   });
@@ -923,6 +988,7 @@ describe('createRequestHandler - Complete Test Suite', () => {
 
       // Verify compose was called with CORS in the right position
       expect(compose).toHaveBeenCalledWith([
+        mockServer._loggerMiddleware,
         mockErrorBoundary,
         mockCorsMiddleware,
         ...mockServer.middleware,
@@ -942,7 +1008,11 @@ describe('createRequestHandler - Complete Test Suite', () => {
       expect(cors).not.toHaveBeenCalled();
 
       // Verify compose was called without CORS
-      expect(compose).toHaveBeenCalledWith([mockErrorBoundary, ...mockServer.middleware]);
+      expect(compose).toHaveBeenCalledWith([
+        mockServer._loggerMiddleware,
+        mockErrorBoundary,
+        ...mockServer.middleware,
+      ]);
     });
 
     it('should include CORS when corsOptions is undefined (uses defaults)', async () => {

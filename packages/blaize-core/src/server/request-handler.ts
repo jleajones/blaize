@@ -27,12 +27,22 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
           initialState: {
             correlationId,
           },
+          initialServices: {
+            log: serverInstance._logger,
+          },
           bodyLimits: serverInstance.bodyLimits,
         });
 
+        // Build middleware chain with CORRECT ORDER
+        const middlewareChain: Middleware[] = [];
+
+        if (serverInstance._loggerMiddleware) {
+          middlewareChain.push(serverInstance._loggerMiddleware);
+        }
+
         // Create error boundary middleware that catches all thrown error classes
         const errorBoundary = createErrorBoundary();
-        const middlewareChain: Middleware[] = [errorBoundary];
+        middlewareChain.push(errorBoundary);
 
         if ('corsOptions' in serverInstance && serverInstance.corsOptions !== false) {
           middlewareChain.push(cors(serverInstance.corsOptions));
