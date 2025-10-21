@@ -7,6 +7,9 @@
  * @packageDocumentation
  */
 
+import { ConsoleTransport } from './transports/console';
+import { JSONTransport } from './transports/json';
+
 import type {
   BlaizeLogger,
   BlaizeLogTransport,
@@ -260,13 +263,9 @@ function getDefaultTransport(): BlaizeLogTransport {
 
   if (isDevelopment) {
     // Development: ConsoleTransport with colors
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { ConsoleTransport } = require('./transports/ConsoleTransport');
     return new ConsoleTransport();
   } else {
     // Production: JSONTransport for log aggregators
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { JSONTransport } = require('./transports/JSONTransport');
     return new JSONTransport();
   }
 }

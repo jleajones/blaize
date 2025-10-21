@@ -132,7 +132,8 @@ export function requestLoggerMiddleware(
   options?: RequestLoggerOptions,
   requestLogging = true
 ): Middleware {
-  return createMiddleware({
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  return createMiddleware<{}, { log: BlaizeLogger }>({
     name: 'requestLogger',
     handler: async (ctx, next) => {
       // Get root logger from services (set by server during initialization)

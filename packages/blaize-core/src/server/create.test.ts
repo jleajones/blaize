@@ -999,11 +999,27 @@ describe('create', () => {
       expect(server._logger).toBeDefined();
     });
 
-    test('does NOT initialize logger when no logging config', () => {
-      const server = create({}) as UnknownServer;
+    test('initializes logger when logging config provided', () => {
+      const loggingConfig = {
+        level: 'info' as const,
+        redactKeys: ['password', 'apiKey'],
+        includeTimestamp: true,
+      };
 
-      expect(createLogger).not.toHaveBeenCalled();
-      expect(server._logger).toBeUndefined();
+      const server = create({
+        logging: loggingConfig,
+      }) as UnknownServer;
+
+      // Verify createLogger was called with correct config
+      expect(createLogger).toHaveBeenCalledWith({
+        level: 'info',
+        transport: undefined,
+        redactKeys: ['password', 'apiKey'],
+        includeTimestamp: true,
+      });
+
+      // Verify logger is stored on server
+      expect(server._logger).toBeDefined();
     });
 
     test('passes transport to logger when provided', () => {
@@ -1064,11 +1080,17 @@ describe('create', () => {
       expect(server._loggerMiddleware?.name).toBe('requestLogger');
     });
 
-    test('does NOT create middleware when no logging config', () => {
+    test('initializes logger with defaults when no logging config', () => {
       const server = create({}) as UnknownServer;
 
-      expect(requestLoggerMiddleware).not.toHaveBeenCalled();
-      expect(server._loggerMiddleware).toBeUndefined();
+      // Logger should always be created, even with no config
+      expect(createLogger).toHaveBeenCalledWith({
+        level: undefined,
+        transport: undefined,
+        redactKeys: undefined,
+        includeTimestamp: undefined,
+      });
+      expect(server._logger).toBeDefined();
     });
 
     test('passes requestLogging=true by default', () => {
@@ -1220,8 +1242,8 @@ describe('create', () => {
       // Should work fine without logger
       expect(server.port).toBe(8080);
       expect(server.host).toBe('0.0.0.0');
-      expect(server._logger).toBeUndefined();
-      expect(server._loggerMiddleware).toBeUndefined();
+      expect(server._logger).toBeDefined();
+      expect(server._loggerMiddleware).toBeDefined();
     });
   });
 });

@@ -248,29 +248,22 @@ function createRegisterMethod<TState, TServices>(
  * @param validatedOptions - The validated server options
  * @returns Object containing logger and middleware, or undefined if logging not configured
  */
-function initializeLogger(validatedOptions: ServerOptions):
-  | {
-      logger: BlaizeLogger;
-      middleware: Middleware;
-    }
-  | undefined {
-  // If no logging config provided, return undefined (no logger)
-  if (!validatedOptions.logging) {
-    return undefined;
-  }
-
-  // STEP 1: Initialize root logger with configuration
+function initializeLogger(validatedOptions: ServerOptions): {
+  logger: BlaizeLogger;
+  middleware: Middleware;
+} {
+  // STEP 1: Initialize root logger with configuration (or defaults)
   const rootLogger = createLogger({
-    level: validatedOptions.logging.level,
-    transport: validatedOptions.logging.transport,
-    redactKeys: validatedOptions.logging.redactKeys,
-    includeTimestamp: validatedOptions.logging.includeTimestamp,
+    level: validatedOptions.logging?.level,
+    transport: validatedOptions.logging?.transport,
+    redactKeys: validatedOptions.logging?.redactKeys,
+    includeTimestamp: validatedOptions.logging?.includeTimestamp,
   });
 
   // STEP 2: Create request logger middleware
-  const requestLogging = validatedOptions.logging.requestLogging ?? true;
+  const requestLogging = validatedOptions.logging?.requestLogging ?? true;
   const loggerMiddleware = requestLoggerMiddleware(
-    validatedOptions.logging.requestLoggerOptions,
+    validatedOptions.logging?.requestLoggerOptions,
     requestLogging
   );
 
@@ -336,8 +329,8 @@ export function create<
     bodyLimits,
     _signalHandlers: { unregister: () => {} },
 
-    _logger: loggerSystem?.logger,
-    _loggerMiddleware: loggerSystem?.middleware,
+    _logger: loggerSystem.logger,
+    _loggerMiddleware: loggerSystem.middleware,
     use: () => serverInstance,
     register: async () => serverInstance,
     listen: async () => serverInstance,
