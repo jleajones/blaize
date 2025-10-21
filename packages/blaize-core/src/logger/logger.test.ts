@@ -530,32 +530,26 @@ describe('Logger', () => {
   });
 
   describe('createLogger() factory', () => {
-    let originalEnv: string | undefined;
-
-    beforeEach(() => {
-      originalEnv = process.env.NODE_ENV;
-    });
-
-    afterEach(() => {
-      process.env.NODE_ENV = originalEnv;
-    });
-
     test('uses debug level in development', () => {
+      const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'development';
 
       const logger = createLogger({
-        transport,
+        transport, // Provide transport explicitly
       });
 
       logger.debug('Test');
       expect(transport.logs).toHaveLength(1);
+
+      process.env.NODE_ENV = originalEnv;
     });
 
     test('uses info level in production', () => {
+      const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
 
       const logger = createLogger({
-        transport,
+        transport, // Provide transport explicitly
       });
 
       logger.debug('Should be filtered');
@@ -563,9 +557,12 @@ describe('Logger', () => {
 
       expect(transport.logs).toHaveLength(1);
       expect(transport.logs[0]!.level).toBe('info');
+
+      process.env.NODE_ENV = originalEnv;
     });
 
     test('respects provided level override', () => {
+      const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
 
       const logger = createLogger({
@@ -575,6 +572,8 @@ describe('Logger', () => {
 
       logger.debug('Should be logged');
       expect(transport.logs).toHaveLength(1);
+
+      process.env.NODE_ENV = originalEnv;
     });
 
     test('includes timestamp by default', () => {
@@ -621,6 +620,27 @@ describe('Logger', () => {
       // Should use custom transport, not default
       expect(customTransport.logs).toHaveLength(1);
       expect(transport.logs).toHaveLength(0);
+    });
+
+    test('creates logger with minimal config', () => {
+      // Should not throw when only transport is provided
+      expect(() => createLogger({ transport })).not.toThrow();
+    });
+
+    test('creates logger with full config', () => {
+      const logger = createLogger({
+        level: 'warn',
+        transport,
+        redactKeys: ['password', 'apiKey'],
+        includeTimestamp: true,
+      });
+
+      logger.warn('Test', { password: 'secret', userId: '123' });
+
+      expect(transport.logs).toHaveLength(1);
+      expect(transport.logs[0]!.meta.password).toBe('[REDACTED]');
+      expect(transport.logs[0]!.meta.userId).toBe('123');
+      expect(transport.logs[0]!.meta).toHaveProperty('timestamp');
     });
   });
 
