@@ -20,6 +20,14 @@ export async function stopServer(
   if (!server) {
     return;
   }
+  if (serverInstance._logger) {
+    try {
+      await serverInstance._logger.flush();
+    } catch (error) {
+      // Log flush failure but continue shutdown - don't block server stop
+      console.error('Failed to flush logger during shutdown:', error);
+    }
+  }
 
   isShuttingDown = true;
   const timeout = options.timeout || 5000; // Reduced to 5 seconds for faster restarts
