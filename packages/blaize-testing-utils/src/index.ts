@@ -1,4 +1,4 @@
-import {
+export {
   createMockHttp1Request,
   createMockHttp2Request,
   createMockResponse,
@@ -20,24 +20,4 @@ import {
   mockPutRoute,
 } from './mocks';
 
-export {
-  createMockHttp1Request,
-  createMockHttp2Request,
-  createMockResponse,
-  createMockMiddleware,
-  createMockPlugins,
-  createMockPlugin,
-  createMockRouter,
-  createMockServer,
-  createMockServerWithPlugins,
-  createMockHttpServer,
-  createMockContext,
-  resetServerMocks,
-  createMockRoutesSet,
-  mockGetRoute,
-  mockDeleteRoute,
-  mockPatchRoute,
-  mockPostRoute,
-  mockPutRoute,
-  createSSEMockContext,
-};
+export { SpyTransport, type CapturedLog } from './spies/transport';
