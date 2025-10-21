@@ -1,3 +1,4 @@
+/* eslint-disable import/order */
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
@@ -99,8 +100,32 @@ vi.mock('../tracing/correlation', () => ({
   getCorrelationId: vi.fn(() => 'test-correlation-id'),
 }));
 
+// Mock the logger module
+vi.mock('../logger/logger', () => ({
+  createLogger: vi.fn(config => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(),
+    flush: vi.fn(),
+    _mockConfig: config, // Store config for testing
+  })),
+}));
+
+vi.mock('../logger/middleware/request-logger', () => ({
+  requestLoggerMiddleware: vi.fn((options, requestLogging) => ({
+    name: 'requestLogger',
+    execute: vi.fn(),
+    _mockOptions: options,
+    _mockRequestLogging: requestLogging,
+  })),
+}));
+
 // eslint-disable-next-line import/order
 import { _setCorrelationConfig } from '../tracing/correlation';
+import { createLogger } from '../logger/logger';
+import { requestLoggerMiddleware } from '../logger/middleware/request-logger';
 
 describe('create', () => {
   beforeEach(() => {
@@ -947,6 +972,256 @@ describe('create', () => {
       expect(server.bodyLimits.form).toBe(1024 * 1024); // Default
       expect(server.bodyLimits.multipart.maxFileSize).toBe(100 * 1024 * 1024);
       expect(server.bodyLimits.multipart.maxFiles).toBe(10); // Default
+    });
+  });
+
+  describe('Logger initialization', () => {
+    test('initializes logger when logging config provided', () => {
+      const loggingConfig = {
+        level: 'info' as const,
+        redactKeys: ['password', 'apiKey'],
+        includeTimestamp: true,
+      };
+
+      const server = create({
+        logging: loggingConfig,
+      }) as UnknownServer;
+
+      // Verify createLogger was called with correct config
+      expect(createLogger).toHaveBeenCalledWith({
+        level: 'info',
+        transport: undefined,
+        redactKeys: ['password', 'apiKey'],
+        includeTimestamp: true,
+      });
+
+      // Verify logger is stored on server
+      expect(server._logger).toBeDefined();
+    });
+
+    test('does NOT initialize logger when no logging config', () => {
+      const server = create({}) as UnknownServer;
+
+      expect(createLogger).not.toHaveBeenCalled();
+      expect(server._logger).toBeUndefined();
+    });
+
+    test('passes transport to logger when provided', () => {
+      const mockTransport = {
+        write: vi.fn(),
+      };
+
+      create({
+        logging: {
+          transport: mockTransport,
+        },
+      });
+
+      expect(createLogger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transport: mockTransport,
+        })
+      );
+    });
+
+    test('passes all logger config options', () => {
+      const mockTransport = {
+        write: vi.fn(),
+        flush: vi.fn(),
+      };
+
+      create({
+        logging: {
+          level: 'debug',
+          transport: mockTransport,
+          redactKeys: ['secret', 'token'],
+          includeTimestamp: false,
+        },
+      });
+
+      expect(createLogger).toHaveBeenCalledWith({
+        level: 'debug',
+        transport: mockTransport,
+        redactKeys: ['secret', 'token'],
+        includeTimestamp: false,
+      });
+    });
+  });
+
+  describe('Request logger middleware initialization', () => {
+    test('creates request logger middleware when logging configured', () => {
+      const server = create({
+        logging: {
+          level: 'info',
+        },
+      }) as UnknownServer;
+
+      // Verify requestLoggerMiddleware was called
+      expect(requestLoggerMiddleware).toHaveBeenCalled();
+
+      // Verify middleware is stored on server
+      expect(server._loggerMiddleware).toBeDefined();
+      expect(server._loggerMiddleware?.name).toBe('requestLogger');
+    });
+
+    test('does NOT create middleware when no logging config', () => {
+      const server = create({}) as UnknownServer;
+
+      expect(requestLoggerMiddleware).not.toHaveBeenCalled();
+      expect(server._loggerMiddleware).toBeUndefined();
+    });
+
+    test('passes requestLogging=true by default', () => {
+      create({
+        logging: {
+          level: 'info',
+        },
+      });
+
+      expect(requestLoggerMiddleware).toHaveBeenCalledWith(undefined, true);
+    });
+
+    test('passes requestLogging=false when explicitly set', () => {
+      create({
+        logging: {
+          level: 'info',
+          requestLogging: false,
+        },
+      });
+
+      expect(requestLoggerMiddleware).toHaveBeenCalledWith(undefined, false);
+    });
+
+    test('passes requestLoggerOptions to middleware', () => {
+      const requestLoggerOptions = {
+        includeHeaders: true,
+        headerWhitelist: ['content-type', 'user-agent'],
+        includeQuery: true,
+      };
+
+      create({
+        logging: {
+          level: 'info',
+          requestLoggerOptions,
+        },
+      });
+
+      expect(requestLoggerMiddleware).toHaveBeenCalledWith(requestLoggerOptions, true);
+    });
+  });
+
+  describe('User middleware separation', () => {
+    test('stores user middleware separately from logger middleware', () => {
+      const server = create({
+        logging: {
+          level: 'info',
+        },
+        middleware: [authMiddleware] as const,
+      }) as UnknownServer;
+
+      // User middleware should be in middleware array
+      expect(server.middleware).toEqual([authMiddleware]);
+
+      // Logger middleware should be separate
+      expect(server._loggerMiddleware).toBeDefined();
+      expect(server.middleware).not.toContain(server._loggerMiddleware);
+    });
+
+    test('middleware field only contains user middleware', () => {
+      const server = create({
+        logging: {
+          level: 'info',
+        },
+        middleware: [authMiddleware] as const,
+      }) as UnknownServer;
+
+      expect(server.middleware).toHaveLength(1);
+      expect(server.middleware[0]!.name).toBe('auth');
+    });
+  });
+
+  describe('CORS configuration storage', () => {
+    test('stores corsOptions when provided', () => {
+      const corsOptions = {
+        origin: 'https://example.com',
+        credentials: true,
+      };
+
+      const server = create({
+        cors: corsOptions,
+      }) as UnknownServer;
+
+      expect(server.corsOptions).toEqual(corsOptions);
+    });
+
+    test('stores cors=true', () => {
+      const server = create({
+        cors: true,
+      }) as UnknownServer;
+
+      expect(server.corsOptions).toBe(true);
+    });
+
+    test('stores cors=false', () => {
+      const server = create({
+        cors: false,
+      }) as UnknownServer;
+
+      expect(server.corsOptions).toBe(false);
+    });
+
+    test('corsOptions defaults to undefined when not provided', () => {
+      const server = create({}) as UnknownServer;
+
+      expect(server.corsOptions).toBeUndefined();
+    });
+  });
+
+  describe('Integration scenarios', () => {
+    test('creates server with logging and user middleware', () => {
+      const userMiddleware = [{ name: 'auth', execute: vi.fn() }];
+
+      const server = create({
+        logging: {
+          level: 'info',
+          requestLogging: true,
+        },
+        middleware: userMiddleware,
+      }) as UnknownServer;
+
+      // Both should be present and separate
+      expect(server._logger).toBeDefined();
+      expect(server._loggerMiddleware).toBeDefined();
+      expect(server.middleware).toEqual(userMiddleware);
+    });
+
+    test('creates server with logging, CORS, and middleware', () => {
+      const server = create({
+        logging: {
+          level: 'debug',
+          redactKeys: ['password'],
+        },
+        cors: true,
+        middleware: [authMiddleware] as const,
+      }) as UnknownServer;
+
+      expect(server._logger).toBeDefined();
+      expect(server._loggerMiddleware).toBeDefined();
+      expect(server.corsOptions).toBe(true);
+      expect(server.middleware).toHaveLength(1);
+    });
+
+    test('existing tests still pass without logging config', () => {
+      const server = create({
+        port: 8080,
+        host: '0.0.0.0',
+      }) as UnknownServer;
+
+      // Should work fine without logger
+      expect(server.port).toBe(8080);
+      expect(server.host).toBe('0.0.0.0');
+      expect(server._logger).toBeUndefined();
+      expect(server._loggerMiddleware).toBeUndefined();
     });
   });
 });

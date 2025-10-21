@@ -9,6 +9,7 @@
 
 import { BlaizeError } from '@blaize-types/errors';
 
+import { create as createMiddleware } from '../../middleware/create';
 import { getCorrelationId } from '../../tracing/correlation';
 
 import type { RequestLoggerOptions, LogMetadata, BlaizeLogger } from '@blaize-types/logger';
@@ -131,9 +132,9 @@ export function requestLoggerMiddleware(
   options?: RequestLoggerOptions,
   requestLogging = true
 ): Middleware {
-  return {
+  return createMiddleware({
     name: 'requestLogger',
-    execute: async (ctx, next) => {
+    handler: async (ctx, next) => {
       // Get root logger from services (set by server during initialization)
       const rootLogger = ctx.services.log as BlaizeLogger | undefined;
 
@@ -263,5 +264,5 @@ export function requestLoggerMiddleware(
         }
       }
     },
-  };
+  });
 }

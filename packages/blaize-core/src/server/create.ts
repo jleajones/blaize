@@ -6,6 +6,8 @@ import { setRuntimeConfig } from '../config';
 import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
 import { validateServerOptions } from './validation';
+import { createLogger } from '../logger/logger';
+import { requestLoggerMiddleware } from '../logger/middleware/request-logger';
 import { createPluginLifecycleManager } from '../plugins/lifecycle';
 import { validatePlugin } from '../plugins/validation';
 import { createRouter } from '../router/router';
@@ -18,6 +20,7 @@ import type {
   ComposePluginServices,
 } from '@blaize-types/composition';
 import type { Context } from '@blaize-types/context';
+import type { BlaizeLogger } from '@blaize-types/logger';
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
 import type {
@@ -68,6 +71,7 @@ function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
     middleware: options.middleware ?? DEFAULT_OPTIONS.middleware,
     plugins: options.plugins ?? DEFAULT_OPTIONS.plugins,
     correlation: options.correlation,
+    logging: options.logging,
     cors: options.cors,
     bodyLimits: options.bodyLimits
       ? {
@@ -237,6 +241,46 @@ function createRegisterMethod<TState, TServices>(
 }
 
 /**
+ * Initializes the logger system based on server options
+ *
+ * Creates root logger and request logger middleware if logging is configured.
+ *
+ * @param validatedOptions - The validated server options
+ * @returns Object containing logger and middleware, or undefined if logging not configured
+ */
+function initializeLogger(validatedOptions: ServerOptions):
+  | {
+      logger: BlaizeLogger;
+      middleware: Middleware;
+    }
+  | undefined {
+  // If no logging config provided, return undefined (no logger)
+  if (!validatedOptions.logging) {
+    return undefined;
+  }
+
+  // STEP 1: Initialize root logger with configuration
+  const rootLogger = createLogger({
+    level: validatedOptions.logging.level,
+    transport: validatedOptions.logging.transport,
+    redactKeys: validatedOptions.logging.redactKeys,
+    includeTimestamp: validatedOptions.logging.includeTimestamp,
+  });
+
+  // STEP 2: Create request logger middleware
+  const requestLogging = validatedOptions.logging.requestLogging ?? true;
+  const loggerMiddleware = requestLoggerMiddleware(
+    validatedOptions.logging.requestLoggerOptions,
+    requestLogging
+  );
+
+  return {
+    logger: rootLogger,
+    middleware: loggerMiddleware,
+  };
+}
+
+/**
  * Creates a BlaizeJS server instance
  */
 export function create<
@@ -256,6 +300,7 @@ export function create<
 
   // Extract options and prepare initial components
   const { port, host, middleware, plugins, cors, bodyLimits } = validatedOptions;
+  const loggerSystem = initializeLogger(validatedOptions);
 
   // TODO: create registries to manage middleware and plugins
   const initialMiddleware = Array.isArray(middleware) ? [...middleware] : [];
@@ -290,6 +335,9 @@ export function create<
     corsOptions: cors,
     bodyLimits,
     _signalHandlers: { unregister: () => {} },
+
+    _logger: loggerSystem?.logger,
+    _loggerMiddleware: loggerSystem?.middleware,
     use: () => serverInstance,
     register: async () => serverInstance,
     listen: async () => serverInstance,

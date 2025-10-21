@@ -18,7 +18,7 @@ import type {
 } from './composition';
 import type { BodyLimits, Context } from './context';
 import type { CorsOptions } from './cors';
-import type { LoggerConfig } from './logger';
+import type { BlaizeLogger, LoggerConfig } from './logger';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
 import type { Router } from './router';
@@ -322,6 +322,26 @@ export interface Server<TState, TServices> {
   context: AsyncLocalStorage<Context>;
 
   pluginManager: PluginLifecycleManager;
+
+  /**
+   * Root logger instance (internal)
+   *
+   * The root logger is used to create child loggers for each request.
+   * It's stored with an underscore prefix to indicate it's internal.
+   *
+   * @internal
+   */
+  _logger?: BlaizeLogger;
+
+  /**
+   * Request logger middleware instance (internal)
+   *
+   * Pre-configured middleware that creates child loggers for requests.
+   * Stored separately from user middleware to ensure it runs first.
+   *
+   * @internal
+   */
+  _loggerMiddleware?: Middleware;
 }
 
 export type RequestHandler = (
