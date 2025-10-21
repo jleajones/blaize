@@ -503,6 +503,15 @@ export interface ResolvedLoggerConfig {
 }
 
 /**
+ * Serialized error structure
+ */
+export interface SerializedError {
+  message: string;
+  name: string;
+  stack?: string;
+}
+
+/**
  * Options for request logger middleware
  *
  * Controls what request data is automatically included in log metadata
