@@ -5,7 +5,10 @@ import {
   ResponseSentHeaderError,
 } from './errors';
 import { hasContext, getContext } from './store';
-import { getCorrelationHeaderName } from '../tracing/correlation';
+import { PayloadTooLargeError } from '../errors/payload-too-large-error';
+import { UnsupportedMediaTypeError } from '../errors/unsupported-media-type-error';
+import { ValidationError } from '../errors/validation-error';
+import { getCorrelationHeaderName, getCorrelationId } from '../tracing/correlation';
 import { parseMultipartRequest } from '../upload/multipart-parser';
 import { isMultipartContent } from '../upload/utils';
 
@@ -21,7 +24,6 @@ import type {
   UnifiedResponse,
   Services,
 } from '@blaize-types/context';
-import type { BodyParseError } from '@blaize-types/errors';
 
 const CONTENT_TYPE_HEADER = 'Content-Type';
 
@@ -469,6 +471,11 @@ function createStreamResponder(
 
 /**
  * Parse request body if enabled in options
+ *
+ * Throws appropriate errors on parsing failures:
+ * - ValidationError (400) for malformed data
+ * - PayloadTooLargeError (413) for size limit violations
+ * - UnsupportedMediaTypeError (415) for unsupported content types
  */
 async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
   req: UnifiedRequest,
@@ -490,40 +497,52 @@ async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
 
   const limits = options.bodyLimits;
 
-  try {
-    // Apply content-type specific size validation
-    if (contentType.includes('application/json')) {
-      if (contentLength > limits.json) {
-        throw new Error(`JSON body too large: ${contentLength} > ${limits.json} bytes`);
-      }
-      await parseJsonBody(req, ctx);
-    } else if (contentType.includes('application/x-www-form-urlencoded')) {
-      if (contentLength > limits.form) {
-        throw new Error(`Form body too large: ${contentLength} > ${limits.form} bytes`);
-      }
-      await parseFormUrlEncodedBody(req, ctx);
-    } else if (contentType.includes('text/')) {
-      if (contentLength > limits.text) {
-        throw new Error(`Text body too large: ${contentLength} > ${limits.text} bytes`);
-      }
-      await parseTextBody(req, ctx);
-    } else if (isMultipartContent(contentType)) {
-      // Multipart has its own sophisticated size validation
-      await parseMultipartBody(req, ctx, limits.multipart);
-    } else {
-      // Unknown content type - apply raw limit
-      if (contentLength > limits.raw) {
-        throw new Error(`Request body too large: ${contentLength} > ${limits.raw} bytes`);
-      }
-      // Don't parse unknown content types, but allow them through
-      return;
+  // ✅ Check size limits BEFORE parsing and throw immediately
+  if (contentType.includes('application/json')) {
+    if (contentLength > limits.json) {
+      throw new PayloadTooLargeError('JSON body exceeds size limit', {
+        currentSize: contentLength,
+        maxSize: limits.json,
+        contentType: 'application/json',
+      });
     }
-  } catch (error) {
-    const errorType = contentType.includes('multipart')
-      ? 'multipart_parse_error'
-      : 'body_read_error';
-    setBodyError(ctx, errorType, 'Error reading request body', error);
+    await parseJsonBody(req, ctx); // Throws ValidationError on malformed JSON
+  } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    if (contentLength > limits.form) {
+      throw new PayloadTooLargeError('Form body exceeds size limit', {
+        currentSize: contentLength,
+        maxSize: limits.form,
+        contentType: 'application/x-www-form-urlencoded',
+      });
+    }
+    await parseFormUrlEncodedBody(req, ctx); // Throws ValidationError on malformed form
+  } else if (contentType.includes('text/')) {
+    if (contentLength > limits.text) {
+      throw new PayloadTooLargeError('Text body exceeds size limit', {
+        currentSize: contentLength,
+        maxSize: limits.text,
+        contentType,
+      });
+    }
+    await parseTextBody(req, ctx);
+  } else if (isMultipartContent(contentType)) {
+    // Multipart has its own size validation in parseMultipartRequest
+    // Throws PayloadTooLargeError or UnsupportedMediaTypeError
+    await parseMultipartBody(req, ctx, limits.multipart);
+  } else {
+    // Unknown content type - apply raw limit
+    if (contentLength > limits.raw) {
+      throw new PayloadTooLargeError('Request body exceeds size limit', {
+        currentSize: contentLength,
+        maxSize: limits.raw,
+        contentType: contentType || 'unknown',
+      });
+    }
+    // Don't parse unknown content types, but allow them through
+    return;
   }
+
+  // ✅ No try/catch - let errors bubble up to error boundary
 }
 
 /**
@@ -559,8 +578,23 @@ async function parseJsonBody<TBody = unknown, TQuery = QueryParams>(
     const json = JSON.parse(body);
     ctx.request.body = json as TBody;
   } catch (error) {
-    ctx.request.body = null as TBody;
-    setBodyError(ctx, 'json_parse_error', 'Invalid JSON in request body', error);
+    throw new ValidationError(
+      'Invalid JSON in request body',
+      {
+        fields: [
+          {
+            field: 'body',
+            messages: [
+              'Request body contains malformed JSON',
+              error instanceof Error ? error.message : 'JSON parse failed',
+            ],
+          },
+        ],
+        errorCount: 1,
+        section: 'body',
+      },
+      getCorrelationId()
+    );
   }
 }
 
@@ -577,8 +611,19 @@ async function parseFormUrlEncodedBody<TBody = unknown, TQuery = QueryParams>(
   try {
     ctx.request.body = parseUrlEncodedData(body) as TBody;
   } catch (error) {
-    ctx.request.body = null as TBody;
-    setBodyError(ctx, 'form_parse_error', 'Invalid form data in request body', error);
+    throw new ValidationError('Request body contains malformed form data', {
+      fields: [
+        {
+          field: 'body',
+          messages: [
+            'Invalid URL-encoded form data',
+            error instanceof Error ? error.message : 'Form parse failed',
+          ],
+        },
+      ],
+      errorCount: 1,
+      section: 'body',
+    });
   }
 }
 
@@ -642,22 +687,18 @@ async function parseMultipartBody<TBody = unknown, TQuery = QueryParams>(
     // Set body to fields for backward compatibility with existing form handling
     ctx.request.body = multipartData.fields as TBody;
   } catch (error) {
-    ctx.request.body = null as TBody;
-    setBodyError(ctx, 'multipart_parse_error', 'Failed to parse multipart data', error);
+    if (error instanceof PayloadTooLargeError) {
+      throw error; // Already correct type
+    }
+    if (error instanceof UnsupportedMediaTypeError) {
+      throw error; // Already correct type
+    }
+    // Generic multipart errors
+    throw new UnsupportedMediaTypeError('Failed to parse multipart/form-data', {
+      receivedContentType: req.headers['content-type'],
+      expectedFormat: 'multipart/form-data; boundary=...',
+    });
   }
-}
-
-/**
- * Set body parsing error in context state with proper typing
- */
-function setBodyError<TBody = unknown, TQuery = QueryParams>(
-  ctx: Context<State, Services, TBody, TQuery>,
-  type: BodyParseError['type'],
-  message: string,
-  error: unknown
-): void {
-  const bodyError: BodyParseError = { type, message, error };
-  ctx.state._bodyError = bodyError;
 }
 
 /**
