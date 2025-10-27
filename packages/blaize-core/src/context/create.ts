@@ -500,29 +500,41 @@ async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
   // ✅ Check size limits BEFORE parsing and throw immediately
   if (contentType.includes('application/json')) {
     if (contentLength > limits.json) {
-      throw new PayloadTooLargeError('JSON body exceeds size limit', {
-        currentSize: contentLength,
-        maxSize: limits.json,
-        contentType: 'application/json',
-      });
+      throw new PayloadTooLargeError(
+        'JSON body exceeds size limit',
+        {
+          currentSize: contentLength,
+          maxSize: limits.json,
+          contentType: 'application/json',
+        },
+        getCorrelationId()
+      );
     }
     await parseJsonBody(req, ctx); // Throws ValidationError on malformed JSON
   } else if (contentType.includes('application/x-www-form-urlencoded')) {
     if (contentLength > limits.form) {
-      throw new PayloadTooLargeError('Form body exceeds size limit', {
-        currentSize: contentLength,
-        maxSize: limits.form,
-        contentType: 'application/x-www-form-urlencoded',
-      });
+      throw new PayloadTooLargeError(
+        'Form body exceeds size limit',
+        {
+          currentSize: contentLength,
+          maxSize: limits.form,
+          contentType: 'application/x-www-form-urlencoded',
+        },
+        getCorrelationId()
+      );
     }
     await parseFormUrlEncodedBody(req, ctx); // Throws ValidationError on malformed form
   } else if (contentType.includes('text/')) {
     if (contentLength > limits.text) {
-      throw new PayloadTooLargeError('Text body exceeds size limit', {
-        currentSize: contentLength,
-        maxSize: limits.text,
-        contentType,
-      });
+      throw new PayloadTooLargeError(
+        'Text body exceeds size limit',
+        {
+          currentSize: contentLength,
+          maxSize: limits.text,
+          contentType,
+        },
+        getCorrelationId()
+      );
     }
     await parseTextBody(req, ctx);
   } else if (isMultipartContent(contentType)) {
@@ -532,11 +544,15 @@ async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
   } else {
     // Unknown content type - apply raw limit
     if (contentLength > limits.raw) {
-      throw new PayloadTooLargeError('Request body exceeds size limit', {
-        currentSize: contentLength,
-        maxSize: limits.raw,
-        contentType: contentType || 'unknown',
-      });
+      throw new PayloadTooLargeError(
+        'Request body exceeds size limit',
+        {
+          currentSize: contentLength,
+          maxSize: limits.raw,
+          contentType: contentType || 'unknown',
+        },
+        getCorrelationId()
+      );
     }
     // Don't parse unknown content types, but allow them through
     return;
@@ -611,19 +627,23 @@ async function parseFormUrlEncodedBody<TBody = unknown, TQuery = QueryParams>(
   try {
     ctx.request.body = parseUrlEncodedData(body) as TBody;
   } catch (error) {
-    throw new ValidationError('Request body contains malformed form data', {
-      fields: [
-        {
-          field: 'body',
-          messages: [
-            'Invalid URL-encoded form data',
-            error instanceof Error ? error.message : 'Form parse failed',
-          ],
-        },
-      ],
-      errorCount: 1,
-      section: 'body',
-    });
+    throw new ValidationError(
+      'Request body contains malformed form data',
+      {
+        fields: [
+          {
+            field: 'body',
+            messages: [
+              'Invalid URL-encoded form data',
+              error instanceof Error ? error.message : 'Form parse failed',
+            ],
+          },
+        ],
+        errorCount: 1,
+        section: 'body',
+      },
+      getCorrelationId()
+    );
   }
 }
 
@@ -694,10 +714,14 @@ async function parseMultipartBody<TBody = unknown, TQuery = QueryParams>(
       throw error; // Already correct type
     }
     // Generic multipart errors
-    throw new UnsupportedMediaTypeError('Failed to parse multipart/form-data', {
-      receivedContentType: req.headers['content-type'],
-      expectedFormat: 'multipart/form-data; boundary=...',
-    });
+    throw new UnsupportedMediaTypeError(
+      'Failed to parse multipart/form-data',
+      {
+        receivedContentType: req.headers['content-type'],
+        expectedFormat: 'multipart/form-data; boundary=...',
+      },
+      getCorrelationId()
+    );
   }
 }
 
