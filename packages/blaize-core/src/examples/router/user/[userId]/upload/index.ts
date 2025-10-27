@@ -52,17 +52,6 @@ export const POST = appRouter.post({
   },
   handler: async (ctx, _params) => {
     // Check for parsing errors first
-    if (ctx.state._bodyError) {
-      const error = ctx.state._bodyError;
-      return {
-        success: false as const,
-        error: error.type,
-        message: error.message,
-        details: error.error instanceof Error ? error.error.message : String(error.error),
-        code: getErrorCode(error.type),
-      };
-    }
-
     // Access validated form fields (validated by schema)
     const fields = ctx.request.body;
 
@@ -140,17 +129,6 @@ export const POST = appRouter.post({
     };
   },
 });
-
-// Utility functions
-function getErrorCode(errorType: string): string {
-  const errorCodes = {
-    multipart_parse_error: 'MULTIPART_PARSE_FAILED',
-    json_parse_error: 'JSON_PARSE_FAILED',
-    form_parse_error: 'FORM_PARSE_FAILED',
-    body_read_error: 'BODY_READ_FAILED',
-  };
-  return errorCodes[errorType as keyof typeof errorCodes] || 'UNKNOWN_ERROR';
-}
 
 function validateUploadedFiles(files: Record<string, UploadedFile | UploadedFile[]>): {
   valid: boolean;
