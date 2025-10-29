@@ -1,4 +1,4 @@
-import { getHello, postHello } from './routes/hello';
+import { getHello, postHello } from './routes';
 import { getNotifications } from './routes/user/[userId]/notifications/index';
 
 // import type { BuildRoutesRegistry } from 'blaizejs';

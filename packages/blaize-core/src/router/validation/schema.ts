@@ -75,6 +75,21 @@ export function createRequestValidator(schema: RouteSchema, debug: boolean = fal
 }
 
 /**
+ * Type guard to detect error responses
+ * Error responses have: type, status, correlationId, timestamp
+ */
+function isErrorResponse(body: unknown): boolean {
+  return (
+    body !== null &&
+    typeof body === 'object' &&
+    'type' in body &&
+    'status' in body &&
+    'correlationId' in body &&
+    'timestamp' in body
+  );
+}
+
+/**
  * Create a validation middleware for response data
  */
 export function createResponseValidator<T>(
@@ -82,33 +97,51 @@ export function createResponseValidator<T>(
   debug: boolean = false
 ): Middleware {
   const middlewareFn: MiddlewareFunction = async (ctx, next) => {
-    // Store the original json method
     const originalJson = ctx.response.json;
+    let validatorActive = true; // Track if validator should run
 
-    // Override the json method to validate the response
+    // Override json method to validate responses
     ctx.response.json = (body: unknown, status?: number) => {
+      // If validator was deactivated (error occurred), skip validation
+      if (!validatorActive) {
+        return originalJson.call(ctx.response, body, status);
+      }
+
+      // Don't validate error responses - they have their own schema
+      // This allows NotFoundError, ValidationError, etc. to pass through
+      if (isErrorResponse(body)) {
+        return originalJson.call(ctx.response, body, status);
+      }
+
+      // Validate success responses
       try {
-        // Validate the response body
         const validatedBody = validateResponse(body, responseSchema);
-
-        // Restore the original json method
-        ctx.response.json = originalJson;
-
-        // Send the validated response
         return originalJson.call(ctx.response, validatedBody, status);
       } catch (error) {
-        // Restore the original json method
-        ctx.response.json = originalJson;
+        // Deactivate validator to prevent recursion when error is thrown
+        validatorActive = false;
 
+        // Throw validation error for error boundary to catch
         throw new InternalServerError('Response validation failed', {
-          responseSchema: responseSchema.description || 'Unknown schema',
           validationError: extractZodFieldErrors(error),
-          originalResponse: body,
+          hint: 'The handler returned data that does not match the response schema',
         });
       }
     };
 
-    await next();
+    try {
+      // Execute the handler and downstream middleware
+      await next();
+    } catch (error) {
+      // On any error, deactivate validator and restore original method
+      validatorActive = false;
+      ctx.response.json = originalJson;
+      // Re-throw for error boundary to handle
+      throw error;
+    } finally {
+      // Always restore original json method when middleware completes
+      ctx.response.json = originalJson;
+    }
   };
 
   return {

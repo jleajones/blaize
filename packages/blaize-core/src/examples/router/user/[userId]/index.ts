@@ -1,33 +1,31 @@
 import { z } from 'zod';
 
+import { NotFoundError } from '../../../../errors/not-found-error';
 import { appRouter } from '../../../basic';
+import { users } from '../../../users';
 
 export const getUserRoute = appRouter.get({
   schema: {
     response: z.object({
-      message: z.string(),
-      timestamp: z.number(),
+      id: z.number(),
+      name: z.string(),
+      email: z.string().email(),
     }),
     params: z.object({
-      userId: z.string(),
-    }),
-    query: z.object({
-      q: z.string().optional(),
+      userId: z.coerce.number(),
     }),
   },
-  handler: async ({ request }, params) => {
-    const { q } = request.query;
-
-    if (q === 'test') {
-      return {
-        message: `rebuild user ${params.userId}`,
-        timestamp: Date.now(),
-      };
+  handler: async (_ctx, params) => {
+    const user = users.find(user => user.id === Number(params.userId));
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'User',
+        resourceId: params.userId.toString(),
+        suggestion: 'Please check the user ID and try again.',
+      });
     }
-    return {
-      message: `hello user ${params.userId}`,
-      timestamp: Date.now(),
-    };
+    // const { q } = request.query;
+    return user;
   },
 });
 

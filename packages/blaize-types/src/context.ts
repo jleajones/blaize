@@ -1,7 +1,6 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Http2ServerRequest, Http2ServerResponse } from 'node:http2';
 
-import type { BodyParseError } from './errors';
 import type { MultipartData, UploadedFile } from './upload';
 
 /**
@@ -43,11 +42,6 @@ export interface StreamOptions {
  */
 export interface State {
   [key: string]: unknown;
-  /**
-   * Body parsing error information
-   * Set when body parsing fails during request processing
-   */
-  _bodyError?: BodyParseError;
 }
 
 /**

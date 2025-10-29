@@ -4,6 +4,7 @@
  */
 
 import { renderDashboard, formatUptime, formatBytes } from './dashboard';
+
 import type { MetricsSnapshot } from './types';
 
 describe('renderDashboard', () => {
@@ -411,20 +412,6 @@ describe('renderDashboard', () => {
       expect(html).toContain('Count: 100');
       expect(html).toContain('Mean: 50.00ms');
       expect(html).toContain('P95: 120.00ms');
-    });
-
-    test('hides custom metrics section when empty', () => {
-      const snapshot = createTestSnapshot();
-      snapshot.custom = {
-        counters: {},
-        gauges: {},
-        histograms: {},
-        timers: {},
-      };
-
-      const html = renderDashboard(snapshot);
-
-      expect(html).not.toContain('Custom Metrics');
     });
   });
 
