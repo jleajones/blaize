@@ -11,8 +11,7 @@
  * @module @blaizejs/plugin-metrics/routes
  */
 
-import { InternalServerError, ServiceNotAvailableError } from 'blaizejs';
-
+import { InternalServerError, ServiceNotAvailableError, getCorrelationId } from 'blaizejs';
 
 import { renderDashboard } from './dashboard';
 import { exportPrometheus } from './prometheus-formatter';
@@ -27,11 +26,15 @@ function getCollectorOrThrow(ctx: Context): MetricsCollector {
   const collector = ctx.services.metrics as MetricsCollector | undefined;
 
   if (!collector) {
-    throw new ServiceNotAvailableError('Metrics service unavailable', {
-      service: 'metrics-collector',
-      reason: 'dependency_down',
-      suggestion: 'Ensure the metrics plugin is properly registered with the server',
-    });
+    throw new ServiceNotAvailableError(
+      'Metrics service unavailable',
+      {
+        service: 'metrics-collector',
+        reason: 'dependency_down',
+        suggestion: 'Ensure the metrics plugin is properly registered with the server',
+      },
+      getCorrelationId()
+    );
   }
 
   return collector;
@@ -83,11 +86,15 @@ export const metricsJsonRoute = {
       const snapshot = collector.getSnapshot();
       ctx.response.json(snapshot);
     } catch (error) {
-      throw new InternalServerError('Error generating metrics snapshot', {
-        originalError: error instanceof Error ? error.message : String(error),
-        component: 'metrics-plugin',
-        operation: 'getSnapshot',
-      });
+      throw new InternalServerError(
+        'Error generating metrics snapshot',
+        {
+          originalError: error instanceof Error ? error.message : String(error),
+          component: 'metrics-plugin',
+          operation: 'getSnapshot',
+        },
+        getCorrelationId()
+      );
     }
   },
 };
@@ -119,11 +126,15 @@ export const metricsPrometheusRoute = {
 
       ctx.response.type('text/plain; version=0.0.4; charset=utf-8').text(prometheusText);
     } catch (error) {
-      throw new InternalServerError('Error generating Prometheus metrics', {
-        originalError: error instanceof Error ? error.message : String(error),
-        component: 'metrics-plugin',
-        operation: 'exportPrometheus',
-      });
+      throw new InternalServerError(
+        'Error generating Prometheus metrics',
+        {
+          originalError: error instanceof Error ? error.message : String(error),
+          component: 'metrics-plugin',
+          operation: 'exportPrometheus',
+        },
+        getCorrelationId()
+      );
     }
   },
 };
@@ -154,11 +165,15 @@ export const metricsDashboardRoute = {
 
       ctx.response.type('text/html; charset=utf-8').html(html);
     } catch (error) {
-      throw new InternalServerError('Error generating metrics dashboard', {
-        originalError: error instanceof Error ? error.message : String(error),
-        component: 'metrics-plugin',
-        operation: 'renderDashboard',
-      });
+      throw new InternalServerError(
+        'Error generating metrics dashboard',
+        {
+          originalError: error instanceof Error ? error.message : String(error),
+          component: 'metrics-plugin',
+          operation: 'renderDashboard',
+        },
+        getCorrelationId()
+      );
     }
   },
 };
