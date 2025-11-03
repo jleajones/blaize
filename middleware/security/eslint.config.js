@@ -12,7 +12,7 @@ export default [
   },
   {
     // Test file configuration
-    files: ['test/**/*.ts'],
+    files: ['/**/*.test.ts'],
     rules: {
       // Relaxed rules for test files
       'no-console': 'off',
