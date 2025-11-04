@@ -10,8 +10,9 @@
   },
   "dependencies": {
     "blaizejs": "workspace:*",
-    "@blaizejs/plugin-metrics": "workspace:*",
     "@blaizejs/client": "workspace:*",
+    "@blaizejs/middleware-security": "workspace:*",
+    "@blaizejs/plugin-metrics": "workspace:*",
     "zod": "^3.24.4"
   },
   "type": "module",

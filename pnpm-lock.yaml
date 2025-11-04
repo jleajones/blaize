@@ -56,6 +56,9 @@ importers:
       '@blaizejs/client':
         specifier: workspace:*
         version: link:../../packages/blaize-client
+      '@blaizejs/middleware-security':
+        specifier: workspace:*
+        version: link:../../middleware/security
       '@blaizejs/plugin-metrics':
         specifier: workspace:*
         version: link:../../plugins/metrics
