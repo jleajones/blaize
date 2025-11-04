@@ -43,7 +43,7 @@ describe('CSPDirectives', () => {
       baseUri: ["'self'"],
     };
 
-    expectTypeOf(directives).toMatchTypeOf<CSPDirectives>();
+    expectTypeOf(directives).toEqualTypeOf<CSPDirectives>();
   });
 
   it('should accept boolean directives', () => {
@@ -52,7 +52,7 @@ describe('CSPDirectives', () => {
       blockAllMixedContent: false,
     };
 
-    expectTypeOf(directives).toMatchTypeOf<CSPDirectives>();
+    expectTypeOf(directives).toEqualTypeOf<CSPDirectives>();
   });
 
   it('should accept string directives', () => {
@@ -61,7 +61,7 @@ describe('CSPDirectives', () => {
       sandbox: 'allow-forms allow-scripts',
     };
 
-    expectTypeOf(directives).toMatchTypeOf<CSPDirectives>();
+    expectTypeOf(directives).toEqualTypeOf<CSPDirectives>();
   });
 
   it('should allow undefined values', () => {
@@ -70,13 +70,13 @@ describe('CSPDirectives', () => {
       scriptSrc: ["'self'"],
     };
 
-    expectTypeOf(directives).toMatchTypeOf<CSPDirectives>();
+    expectTypeOf(directives).toEqualTypeOf<CSPDirectives>();
   });
 
   it('should allow empty object', () => {
     const directives: CSPDirectives = {};
 
-    expectTypeOf(directives).toMatchTypeOf<CSPDirectives>();
+    expectTypeOf(directives).toEqualTypeOf<CSPDirectives>();
   });
 });
 
@@ -88,7 +88,7 @@ describe('CSPOptions', () => {
       },
     };
 
-    expectTypeOf(options).toMatchTypeOf<CSPOptions>();
+    expectTypeOf(options).toEqualTypeOf<CSPOptions>();
     expectTypeOf(options.directives).not.toEqualTypeOf<undefined>();
   });
 
@@ -98,7 +98,7 @@ describe('CSPOptions', () => {
       reportOnly: true,
     };
 
-    expectTypeOf(options).toMatchTypeOf<CSPOptions>();
+    expectTypeOf(options).toEqualTypeOf<CSPOptions>();
     expectTypeOf(options.reportOnly).toEqualTypeOf<boolean | undefined>();
   });
 
@@ -108,7 +108,7 @@ describe('CSPOptions', () => {
       reportUri: 'https://csp-reports.example.com',
     };
 
-    expectTypeOf(options).toMatchTypeOf<CSPOptions>();
+    expectTypeOf(options).toEqualTypeOf<CSPOptions>();
     expectTypeOf(options.reportUri).toEqualTypeOf<string | undefined>();
   });
 
@@ -122,7 +122,7 @@ describe('CSPOptions', () => {
       reportUri: 'https://csp-reports.example.com',
     };
 
-    expectTypeOf(options).toMatchTypeOf<CSPOptions>();
+    expectTypeOf(options).toEqualTypeOf<CSPOptions>();
   });
 });
 
@@ -132,7 +132,7 @@ describe('HSTSOptions', () => {
       maxAge: 31536000,
     };
 
-    expectTypeOf(options).toMatchTypeOf<HSTSOptions>();
+    expectTypeOf(options).toEqualTypeOf<HSTSOptions>();
     expectTypeOf(options.maxAge).toEqualTypeOf<number>();
   });
 
@@ -142,7 +142,7 @@ describe('HSTSOptions', () => {
       includeSubDomains: true,
     };
 
-    expectTypeOf(options).toMatchTypeOf<HSTSOptions>();
+    expectTypeOf(options).toEqualTypeOf<HSTSOptions>();
     expectTypeOf(options.includeSubDomains).toEqualTypeOf<boolean | undefined>();
   });
 
@@ -152,7 +152,7 @@ describe('HSTSOptions', () => {
       preload: true,
     };
 
-    expectTypeOf(options).toMatchTypeOf<HSTSOptions>();
+    expectTypeOf(options).toEqualTypeOf<HSTSOptions>();
     expectTypeOf(options.preload).toEqualTypeOf<boolean | undefined>();
   });
 
@@ -163,7 +163,7 @@ describe('HSTSOptions', () => {
       preload: true,
     };
 
-    expectTypeOf(options).toMatchTypeOf<HSTSOptions>();
+    expectTypeOf(options).toEqualTypeOf<HSTSOptions>();
   });
 });
 
@@ -194,7 +194,7 @@ describe('SecurityOptions', () => {
   it('should allow empty object (all properties optional)', () => {
     const options: SecurityOptions = {};
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
   });
 
   it('should accept enabled property', () => {
@@ -202,7 +202,7 @@ describe('SecurityOptions', () => {
       enabled: false,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
     expectTypeOf(options.enabled).toEqualTypeOf<boolean | undefined>();
   });
 
@@ -215,7 +215,7 @@ describe('SecurityOptions', () => {
       },
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
     expectTypeOf(options.csp).toEqualTypeOf<CSPOptions | false | undefined>();
   });
 
@@ -224,7 +224,7 @@ describe('SecurityOptions', () => {
       csp: false,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
   });
 
   it('should accept HSTSOptions for hsts property', () => {
@@ -234,7 +234,7 @@ describe('SecurityOptions', () => {
       },
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
     expectTypeOf(options.hsts).toEqualTypeOf<HSTSOptions | false | undefined>();
   });
 
@@ -243,7 +243,7 @@ describe('SecurityOptions', () => {
       hsts: false,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
   });
 
   it('should accept frameOptions values', () => {
@@ -251,9 +251,9 @@ describe('SecurityOptions', () => {
     const sameorigin: SecurityOptions = { frameOptions: 'SAMEORIGIN' };
     const disabled: SecurityOptions = { frameOptions: false };
 
-    expectTypeOf(deny).toMatchTypeOf<SecurityOptions>();
-    expectTypeOf(sameorigin).toMatchTypeOf<SecurityOptions>();
-    expectTypeOf(disabled).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(deny).toEqualTypeOf<SecurityOptions>();
+    expectTypeOf(sameorigin).toEqualTypeOf<SecurityOptions>();
+    expectTypeOf(disabled).toEqualTypeOf<SecurityOptions>();
     expectTypeOf<SecurityOptions['frameOptions']>().toEqualTypeOf<
       'DENY' | 'SAMEORIGIN' | false | undefined
     >();
@@ -264,7 +264,7 @@ describe('SecurityOptions', () => {
       xssFilter: true,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
     expectTypeOf(options.xssFilter).toEqualTypeOf<boolean | undefined>();
   });
 
@@ -273,7 +273,7 @@ describe('SecurityOptions', () => {
       noSniff: true,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
     expectTypeOf(options.noSniff).toEqualTypeOf<boolean | undefined>();
   });
 
@@ -282,7 +282,7 @@ describe('SecurityOptions', () => {
       referrerPolicy: 'strict-origin-when-cross-origin',
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
     expectTypeOf(options.referrerPolicy).toEqualTypeOf<ReferrerPolicyOption | false | undefined>();
   });
 
@@ -291,16 +291,7 @@ describe('SecurityOptions', () => {
       referrerPolicy: false,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
-  });
-
-  it('should accept hidePoweredBy as boolean', () => {
-    const options: SecurityOptions = {
-      hidePoweredBy: true,
-    };
-
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
-    expectTypeOf(options.hidePoweredBy).toEqualTypeOf<boolean | undefined>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
   });
 
   it('should accept audit as boolean', () => {
@@ -308,7 +299,7 @@ describe('SecurityOptions', () => {
       audit: true,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
     expectTypeOf(options.audit).toEqualTypeOf<boolean | undefined>();
   });
 
@@ -331,11 +322,10 @@ describe('SecurityOptions', () => {
       xssFilter: true,
       noSniff: true,
       referrerPolicy: 'strict-origin-when-cross-origin',
-      hidePoweredBy: true,
       audit: false,
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
   });
 
   it('should allow partial configuration', () => {
@@ -348,7 +338,7 @@ describe('SecurityOptions', () => {
       frameOptions: 'SAMEORIGIN',
     };
 
-    expectTypeOf(options).toMatchTypeOf<SecurityOptions>();
+    expectTypeOf(options).toEqualTypeOf<SecurityOptions>();
   });
 
   it('should not contain any types', () => {

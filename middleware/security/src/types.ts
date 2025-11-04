@@ -580,6 +580,7 @@ export interface SecurityOptions {
    */
   referrerPolicy?: ReferrerPolicyOption | false;
 
+  /** TODO: Enable this when we add ability to remove context */
   /**
    * Remove X-Powered-By header.
    *
@@ -594,7 +595,7 @@ export interface SecurityOptions {
    * hidePoweredBy: false  // Keep X-Powered-By header
    * ```
    */
-  hidePoweredBy?: boolean;
+  // hidePoweredBy?: boolean;
 
   /**
    * Enable audit mode.
