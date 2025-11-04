@@ -3,10 +3,10 @@
  * @description Integration tests for metrics route handlers
  */
 
-import { describe, test, expect, vi } from 'vitest';
 import { metricsJsonRoute, metricsPrometheusRoute, metricsDashboardRoute } from './routes';
-import type { Context } from 'blaizejs';
+
 import type { MetricsCollector, MetricsSnapshot } from './types';
+import type { Context } from 'blaizejs';
 
 /**
  * Create a mock context for testing
@@ -39,44 +39,44 @@ function createMockContext(
       raw: {} as any,
       statusCode,
       sent,
-      status: function (code: number) {
+      status(code: number) {
         statusCode = code;
         return this;
       },
-      header: function (name: string, value: string) {
+      header(name: string, value: string) {
         headers[name.toLowerCase()] = value;
         return this;
       },
-      headers: function (hdrs: Record<string, string>) {
+      headers(hdrs: Record<string, string>) {
         Object.entries(hdrs).forEach(([k, v]) => {
           headers[k.toLowerCase()] = v;
         });
         return this;
       },
-      type: function (ct: string) {
+      type(ct: string) {
         contentType = ct;
         return this;
       },
-      json: function (data: any, status?: number) {
+      json(data: any, status?: number) {
         if (status !== undefined) statusCode = status;
         responseBody = data;
         contentType = contentType || 'application/json';
         sent = true;
       },
-      text: function (data: string, status?: number) {
+      text(data: string, status?: number) {
         if (status !== undefined) statusCode = status;
         responseBody = data;
         sent = true;
       },
-      html: function (data: string, status?: number) {
+      html(data: string, status?: number) {
         if (status !== undefined) statusCode = status;
         responseBody = data;
         sent = true;
       },
-      redirect: function () {
+      redirect() {
         sent = true;
       },
-      stream: function () {
+      stream() {
         sent = true;
       },
     } as any,

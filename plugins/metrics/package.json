@@ -42,10 +42,11 @@
     "lint": "eslint .",
     "clean": "rimraf dist"
   },
-  "dependencies": {
-    "blaizejs": "workspace:*"
+  "peerDependencies": {
+    "blaizejs": "^0.4.0"
   },
   "devDependencies": {
+    "blaizejs": "workspace:*",
     "@blaizejs/eslint-config": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
     "@blaizejs/tsup-config": "workspace:*",
