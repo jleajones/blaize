@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { serverCorsSchema } from 'src/middleware/cors/validation';
+import { serverCorsSchema } from '../middleware/cors/validation';
 
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
