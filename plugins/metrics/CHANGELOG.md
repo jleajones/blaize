@@ -1,5 +1,16 @@
 # @blaizejs/plugin-metrics
 
+## 0.1.2
+
+### Patch Changes
+
+- acacde9: ✨ Enhance metric plugin errors w/ correlationId; ✨Remove \_bodyError and replaced with blaize errors
+- 4d5cd4c: ✨ new security middleware
+- ee2b17f: 🐛 add correlation id for metric errors
+- Updated dependencies [acacde9]
+- Updated dependencies [4d5cd4c]
+  - blaizejs@0.5.3
+
 ## 0.1.1
 
 ### Patch Changes

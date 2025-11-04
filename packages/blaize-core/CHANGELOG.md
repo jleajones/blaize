@@ -1,5 +1,12 @@
 # blaizejs
 
+## 0.5.3
+
+### Patch Changes
+
+- acacde9: ✨ Enhance metric plugin errors w/ correlationId; ✨Remove \_bodyError and replaced with blaize errors
+- 4d5cd4c: ✨ new security middleware
+
 ## 0.5.2
 
 ### Patch Changes
