@@ -4,7 +4,7 @@
 
 import { createMockContext } from '@blaizejs/testing-utils';
 
-import { security } from './index.js';
+import { createSecurityMiddleware as security } from './index.js';
 
 import type { SecurityOptions } from './types.js';
 import type { NextFunction } from 'blaizejs';
@@ -308,8 +308,10 @@ describe('security middleware', () => {
       );
     });
 
-    it('should skip CSP header when csp is undefined', async () => {
-      const middleware = security({});
+    it('should skip CSP header when csp is false', async () => {
+      const middleware = security({
+        csp: false,
+      });
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
@@ -349,19 +351,6 @@ describe('security middleware', () => {
       const middleware = security({
         hsts: false,
       });
-      const ctx = createMockContext();
-      const { fn: next } = createNextFn();
-
-      await middleware.execute(ctx, next);
-
-      expect(ctx.response.header).not.toHaveBeenCalledWith(
-        'Strict-Transport-Security',
-        expect.any(String)
-      );
-    });
-
-    it('should skip HSTS header when hsts is undefined', async () => {
-      const middleware = security({});
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
@@ -629,29 +618,21 @@ describe('security middleware', () => {
   });
 
   describe('Edge cases', () => {
-    it('should handle empty CSP directives', async () => {
+    test('should merge empty CSP directives with defaults', async () => {
       const middleware = security({
-        csp: {
-          directives: {},
-        },
+        csp: { directives: {} },
       });
+
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
-
       await middleware.execute(ctx, next);
 
-      // Should not throw, empty CSP is valid (though not useful)
-      // The buildCSPHeader should return empty string for empty directives
-      expect(ctx.response.header).not.toHaveBeenCalledWith(
+      // Should have CSP from environment defaults
+      expect(ctx.response.header).toHaveBeenCalledWith(
         'Content-Security-Policy',
-        expect.any(String)
-      );
-      expect(ctx.response.header).not.toHaveBeenCalledWith(
-        'Content-Security-Policy-Report-Only',
-        expect.any(String)
+        expect.stringContaining("default-src 'self'")
       );
     });
-
     it('should handle context with missing request properties gracefully', async () => {
       const middleware = security();
       const ctx = createMockContext();

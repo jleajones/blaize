@@ -34,7 +34,9 @@
 
 import { createMiddleware } from 'blaizejs';
 
+import { mergeSecurityOptions } from './defaults';
 import { applySecurityHeaders } from './headers';
+import { validateSecurityOptions } from './validation';
 
 import type { SecurityOptions } from './types';
 import type { Context, Middleware, NextFunction } from 'blaizejs';
@@ -60,18 +62,18 @@ import type { Context, Middleware, NextFunction } from 'blaizejs';
  * @example
  * ```typescript
  * import { createServer } from 'blaizejs';
- * import { security } from '@blaizejs/middleware-security';
+ * import { createSecurityMiddleware } from '@blaizejs/middleware-security';
  *
  * const server = createServer();
  *
  * // Zero-config usage (environment-aware defaults)
- * server.use(security());
+ * server.use(createSecurityMiddleware());
  * ```
  *
  * @example
  * ```typescript
  * // Custom CSP configuration
- * server.use(security({
+ * server.use(createSecurityMiddleware({
  *   csp: {
  *     directives: {
  *       defaultSrc: ["'self'"],
@@ -85,7 +87,7 @@ import type { Context, Middleware, NextFunction } from 'blaizejs';
  * @example
  * ```typescript
  * // Disable specific headers
- * server.use(security({
+ * server.use(createSecurityMiddleware({
  *   csp: false,              // Disable CSP
  *   hsts: false,             // Disable HSTS
  *   frameOptions: 'SAMEORIGIN',
@@ -96,7 +98,7 @@ import type { Context, Middleware, NextFunction } from 'blaizejs';
  * @example
  * ```typescript
  * // Audit mode for testing configurations
- * server.use(security({
+ * server.use(createSecurityMiddleware({
  *   audit: true,  // Logs warnings without throwing errors
  *   csp: {
  *     directives: {
@@ -110,7 +112,7 @@ import type { Context, Middleware, NextFunction } from 'blaizejs';
  * ```typescript
  * // Using with route-specific configuration
  * // Admin routes with strict CSP
- * server.use('/admin', security({
+ * server.use('/admin', createSecurityMiddleware({
  *   csp: {
  *     directives: {
  *       defaultSrc: ["'self'"],
@@ -121,7 +123,7 @@ import type { Context, Middleware, NextFunction } from 'blaizejs';
  * }));
  *
  * // Public routes with more permissive CSP
- * server.use('/public', security({
+ * server.use('/public', createSecurityMiddleware({
  *   csp: {
  *     directives: {
  *       defaultSrc: ["'self'"],
@@ -131,11 +133,11 @@ import type { Context, Middleware, NextFunction } from 'blaizejs';
  * }));
  * ```
  */
-export function security(userOptions?: Partial<SecurityOptions>): Middleware {
+export function createSecurityMiddleware(userOptions?: Partial<SecurityOptions>): Middleware {
   // Merge user options with defaults (handled by applySecurityHeaders)
-  // Note: We pass userOptions as-is; applySecurityHeaders doesn't need merged defaults
-  // since it applies headers conditionally based on what's present in the options
-  const options: SecurityOptions = userOptions ?? {};
+  const options = mergeSecurityOptions(userOptions);
+  validateSecurityOptions(options);
+
   return createMiddleware({
     name: 'security',
 
