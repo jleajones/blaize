@@ -3,6 +3,8 @@
  * @description Tests for TypeScript interfaces and type guards
  */
 
+import { isMetricsPluginConfig } from './types';
+
 import type {
   MetricsPluginConfig,
   MetricsCollector,
@@ -14,7 +16,6 @@ import type {
   RouteMetrics,
   HistogramData,
 } from './types';
-import { isMetricsPluginConfig } from './types';
 
 describe('Type definitions', () => {
   describe('MetricsPluginConfig', () => {
@@ -35,13 +36,13 @@ describe('Type definitions', () => {
       };
 
       expect(config).toBeDefined();
-      expectTypeOf(config).toMatchTypeOf<MetricsPluginConfig>();
+      expectTypeOf(config).toEqualTypeOf<MetricsPluginConfig>();
     });
 
     test('all properties are optional', () => {
       const config: MetricsPluginConfig = {};
       expect(config).toBeDefined();
-      expectTypeOf(config).toMatchTypeOf<MetricsPluginConfig>();
+      expectTypeOf(config).toEqualTypeOf<MetricsPluginConfig>();
     });
 
     test('enabled is boolean', () => {
@@ -89,16 +90,16 @@ describe('Type definitions', () => {
   describe('MetricsCollector', () => {
     test('has required methods', () => {
       const mockCollector: MetricsCollector = {
-        increment: (name: string, value?: number) => {},
-        gauge: (name: string, value: number) => {},
-        histogram: (name: string, value: number) => {},
-        startTimer: (name: string) => () => {},
+        increment: (_name: string, _value?: number) => {},
+        gauge: (_name: string, _value: number) => {},
+        histogram: (_name: string, _value: number) => {},
+        startTimer: (_name: string) => () => {},
         startHttpRequest: () => {},
         recordHttpRequest: (
-          method: string,
-          path: string,
-          statusCode: number,
-          duration: number
+          _method: string,
+          _path: string,
+          _statusCode: number,
+          _duration: number
         ) => {},
         getSnapshot: () => ({}) as MetricsSnapshot,
         reset: () => {},
@@ -182,7 +183,7 @@ describe('Type definitions', () => {
         byRoute: {},
       };
 
-      expectTypeOf(metrics).toMatchTypeOf<HttpMetrics>();
+      expectTypeOf(metrics).toEqualTypeOf<HttpMetrics>();
     });
 
     test('all numeric properties are numbers', () => {
@@ -295,7 +296,7 @@ describe('Type definitions', () => {
         p99: 180,
       };
 
-      expectTypeOf(stats).toMatchTypeOf<HistogramStats>();
+      expectTypeOf(stats).toEqualTypeOf<HistogramStats>();
     });
 
     test('all properties are numbers', () => {
@@ -336,7 +337,7 @@ describe('Type definitions', () => {
         limit: 1000,
       };
 
-      expectTypeOf(data).toMatchTypeOf<HistogramData>();
+      expectTypeOf(data).toEqualTypeOf<HistogramData>();
     });
 
     test('samples is number array', () => {
@@ -444,10 +445,10 @@ describe('Type safety - no any types', () => {
 
   test('MetricsCollector has no any types', () => {
     const collector: MetricsCollector = {
-      increment: (name: string, value?: number) => {},
-      gauge: (name: string, value: number) => {},
-      histogram: (name: string, value: number) => {},
-      startTimer: (name: string) => () => {},
+      increment: (_name: string, _value?: number) => {},
+      gauge: (_name: string, _value: number) => {},
+      histogram: (_name: string, _value: number) => {},
+      startTimer: (_name: string) => () => {},
       getSnapshot: () => ({}) as MetricsSnapshot,
       reset: () => {},
       // @ts-expect-error - should not accept any type
@@ -490,14 +491,14 @@ describe('Documentation examples compile', () => {
   test('MetricsCollector example compiles', () => {
     // Mock context for example
     const mockCollector: MetricsCollector = {
-      increment: (name: string, value?: number) => {},
-      gauge: (name: string, value: number) => {},
-      histogram: (name: string, value: number) => {},
-      startTimer: (name: string) => () => {},
+      increment: (_name: string, _value?: number) => {},
+      gauge: (_name: string, _value: number) => {},
+      histogram: (_name: string, _value: number) => {},
+      startTimer: (_name: string) => () => {},
       getSnapshot: () => ({}) as MetricsSnapshot,
       reset: () => {},
       startHttpRequest: () => {},
-      recordHttpRequest: (method, path, statusCode, duration) => {},
+      recordHttpRequest: (_method: string, _path: string, _statusCode: number, _duration: number) => {},
       startCollection: () => {},
       stopCollection: () => {},
       isCollecting: () => false,

@@ -1,14 +1,14 @@
 {
-  "name": "@blaizejs/plugin-metrics",
-  "version": "0.1.1",
-  "description": "Production-ready metrics collection and observability plugin for BlaizeJS",
+  "name": "@blaizejs/middleware-security",
+  "version": "0.0.0",
+  "description": "Production-ready security middleware for BlaizeJS",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
     "type": "git",
     "url": "https://github.com/jleajones/blaize.git",
-    "directory": "plugins/metrics"
+    "directory": "middleware/security"
   },
-  "homepage": "https://github.com/jleajones/blaize/tree/main/plugins/metrics#readme",
+  "homepage": "https://github.com/jleajones/blaize/tree/main/middleware/security#readme",
   "bugs": {
     "url": "https://github.com/jleajones/blaize/issues"
   },
@@ -20,11 +20,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    },
-    "./routes": {
-      "types": "./dist/routes.d.ts",
-      "import": "./dist/routes.js",
-      "require": "./dist/routes.cjs"
     }
   },
   "files": [
@@ -48,26 +43,27 @@
   "devDependencies": {
     "blaizejs": "workspace:*",
     "@blaizejs/eslint-config": "workspace:*",
+    "@blaizejs/testing-utils": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
     "@blaizejs/tsup-config": "workspace:*",
     "@blaizejs/vitest-config": "workspace:*",
     "@vitest/coverage-v8": "^3.1.3",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^3.1.3"
+    "vitest": "^3.1.3",
+    "zod": "^3.24.4"
   },
   "publishConfig": {
     "access": "public"
   },
   "keywords": [
     "blaizejs",
-    "plugin",
-    "metrics",
-    "observability",
-    "monitoring",
-    "prometheus",
-    "openmetrics",
-    "performance",
-    "telemetry"
+    "security",
+    "middleware",
+    "csp",
+    "hsts",
+    "security-headers",
+    "xss",
+    "content-security-policy"
   ],
   "license": "MIT"
 }

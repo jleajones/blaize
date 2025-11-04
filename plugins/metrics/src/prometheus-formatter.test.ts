@@ -4,6 +4,7 @@
  */
 
 import { exportPrometheus, sanitizeMetricName, escapeLabel } from './prometheus-formatter';
+
 import type { MetricsSnapshot } from './types';
 
 describe('exportPrometheus', () => {

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Blaize } from 'blaizejs';
 
+import { createSecurityMiddleware } from '@blaizejs/middleware-security';
 import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
 
 // Get the directory name of the current module
@@ -24,12 +25,15 @@ const metricsPlugin = createMetricsPlugin({
   },
 });
 
+const securityMiddleware = createSecurityMiddleware();
+
 export const server = Blaize.createServer({
   port: 7485,
   routesDir: path.resolve(__dirname, './routes'),
   http2: {
     enabled: true,
   },
+  middleware: [securityMiddleware],
   plugins: [metricsPlugin],
 });
 
