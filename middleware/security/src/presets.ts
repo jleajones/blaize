@@ -7,6 +7,7 @@
  *
  * @module @blaizejs/middleware-security/presets
  */
+import { DEVELOPMENT_DEFAULTS, PRODUCTION_DEFAULTS } from './defaults.js';
 
 import type { SecurityOptions, SecurityPreset } from './types.js';
 
@@ -45,27 +46,7 @@ export const securityPresets: Record<SecurityPreset, SecurityOptions> = {
    * - SAMEORIGIN frame options
    * - Permissive CSP for development tools
    */
-  development: {
-    enabled: true,
-    hsts: false,
-    csp: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'blob:', 'http:', 'https:'],
-        fontSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'", 'ws:', 'wss:'],
-        objectSrc: ["'none'"],
-        frameSrc: ["'self'"],
-      },
-    },
-    frameOptions: 'SAMEORIGIN',
-    xssFilter: true,
-    noSniff: true,
-    referrerPolicy: 'no-referrer-when-downgrade',
-    audit: false,
-  },
+  development: DEVELOPMENT_DEFAULTS,
 
   /**
    * Production preset: Strict security for production deployments.
@@ -77,31 +58,7 @@ export const securityPresets: Record<SecurityPreset, SecurityOptions> = {
    * - Strict CSP policy
    * - All security headers enabled
    */
-  production: {
-    enabled: true,
-    hsts: {
-      maxAge: 31536000, // 1 year
-      includeSubDomains: true,
-      preload: false,
-    },
-    csp: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
-        fontSrc: ["'self'"],
-        connectSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        frameSrc: ["'none'"],
-      },
-    },
-    frameOptions: 'DENY',
-    xssFilter: true,
-    noSniff: true,
-    referrerPolicy: 'strict-origin-when-cross-origin',
-    audit: false,
-  },
+  production: PRODUCTION_DEFAULTS,
 
   /**
    * API preset: Optimized for REST/GraphQL APIs.
@@ -114,23 +71,14 @@ export const securityPresets: Record<SecurityPreset, SecurityOptions> = {
    * - Focus on data security headers
    */
   api: {
-    enabled: true,
-    hsts: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-      preload: false,
-    },
+    ...PRODUCTION_DEFAULTS,
     csp: {
       directives: {
         defaultSrc: ["'none'"],
-        connectSrc: ["'self'"],
       },
     },
     frameOptions: false,
     xssFilter: false,
-    noSniff: true,
-    referrerPolicy: false,
-    audit: false,
   },
 
   /**
@@ -144,12 +92,7 @@ export const securityPresets: Record<SecurityPreset, SecurityOptions> = {
    * - Balanced security for modern SPAs
    */
   spa: {
-    enabled: true,
-    hsts: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-      preload: false,
-    },
+    ...PRODUCTION_DEFAULTS,
     csp: {
       directives: {
         defaultSrc: ["'self'"],
