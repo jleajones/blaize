@@ -192,6 +192,16 @@ export interface Plugin<TState = {}, TServices = {}> extends PluginHooks<TState,
   version: string;
 
   /**
+   * Called when plugin is registered to server
+   *
+   * This hook is always present - createPlugin provides a default empty async function
+   * if not specified by the plugin author.
+   *
+   * @override Makes register required (not optional like in PluginHooks)
+   */
+  register: (server: Server<TState, TServices>) => void | Promise<void>;
+
+  /**
    * Type carriers for compile-time type information
    * These are never used at runtime but allow TypeScript to track types
    */
@@ -203,7 +213,7 @@ export interface Plugin<TState = {}, TServices = {}> extends PluginHooks<TState,
  * Plugin factory function
  */
 export type PluginFactory<TConfig = any, TState = {}, TServices = {}> = (
-  options?: TConfig
+  options?: Partial<TConfig>
 ) => Plugin<TState, TServices>;
 
 export interface PluginLifecycleManager {

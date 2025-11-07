@@ -1,53 +1,132 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import type { Plugin, PluginFactory, PluginHooks, UnknownServer } from '@blaize-types/index';
+import type { Plugin, PluginFactory, CreatePluginOptions } from '@blaize-types/index';
 
 /**
- * Create a plugin with the given name, version, and setup function
+ * Create a type-safe plugin with full IntelliSense support
+ *
+ * This is the primary way to create plugins in BlaizeJS. It provides:
+ * - IntelliSense for all lifecycle hooks
+ * - Automatic config merging with defaults
+ * - Full type safety for state and services
+ * - Consistent DX with createMiddleware
+ *
+ * @template TConfig - Plugin configuration shape
+ * @template TState - State added to context (default: {})
+ * @template TServices - Services added to context (default: {})
+ *
+ * @param options - Plugin creation options
+ * @returns Plugin factory function
+ *
+ * @example Basic plugin with config
+ * ```typescript
+ * const createDbPlugin = createPlugin<
+ *   { host: string; port: number },
+ *   {},
+ *   { db: Database }
+ * >({
+ *   name: '@my-app/database',
+ *   version: '1.0.0',
+ *   defaultConfig: {
+ *     host: 'localhost',
+ *     port: 5432,
+ *   },
+ *   setup: (config) => {
+ *     let db: Database;
+ *
+ *     return {
+ *       register: async (server) => {
+ *         // Add typed middleware
+ *         server.use(createMiddleware<{}, { db: Database }>({
+ *           handler: async (ctx, next) => {
+ *             ctx.services.db = db;
+ *             await next();
+ *           },
+ *         }));
+ *       },
+ *
+ *       initialize: async () => {
+ *         db = await Database.connect(config);
+ *       },
+ *
+ *       terminate: async () => {
+ *         await db?.close();
+ *       },
+ *     };
+ *   },
+ * });
+ *
+ * // Usage
+ * const plugin = createDbPlugin({ host: 'prod.db.com' });
+ * ```
+ *
+ * @example Simple plugin without config
+ * ```typescript
+ * const loggerPlugin = createPlugin<{}, {}, { logger: Logger }>({
+ *   name: '@my-app/logger',
+ *   version: '1.0.0',
+ *   setup: () => ({
+ *     initialize: async () => {
+ *       console.log('Logger initialized');
+ *     },
+ *   }),
+ * });
+ *
+ * // Usage (no config needed)
+ * const plugin = loggerPlugin();
+ * ```
  */
-export function create<TConfig = any, TState = {}, TServices = {}>(
-  name: string,
-  version: string,
-  setup: (
-    app: UnknownServer,
-    options: TConfig
-  ) => void | Partial<PluginHooks> | Promise<void> | Promise<Partial<PluginHooks>>,
-  defaultOptions: Partial<TConfig> = {}
+export function createPlugin<TConfig = {}, TState = {}, TServices = {}>(
+  options: CreatePluginOptions<TConfig, TState, TServices>
 ): PluginFactory<TConfig, TState, TServices> {
-  // Input validation
-  if (!name || typeof name !== 'string') {
+  // Validate inputs
+  if (!options.name || typeof options.name !== 'string') {
     throw new Error('Plugin name must be a non-empty string');
   }
 
-  if (!version || typeof version !== 'string') {
+  if (!options.version || typeof options.version !== 'string') {
     throw new Error('Plugin version must be a non-empty string');
   }
 
-  if (typeof setup !== 'function') {
+  if (typeof options.setup !== 'function') {
     throw new Error('Plugin setup must be a function');
   }
 
-  // Return the factory function
-  return function pluginFactory(userOptions?: Partial<TConfig>) {
-    // Merge default options with user options
-    const mergedOptions = { ...defaultOptions, ...userOptions } as TConfig;
+  // Return factory function
+  return function pluginFactory(userConfig?: Partial<TConfig>): Plugin<TState, TServices> {
+    // Merge config (defaultConfig + userConfig)
+    const config = {
+      ...(options.defaultConfig || ({} as TConfig)),
+      ...(userConfig || {}),
+    } as TConfig;
 
-    // Create the base plugin object
+    // Call setup to get hooks
+    const hooks = options.setup(config);
+
+    // Validate hooks (must return object)
+    if (hooks === null || typeof hooks !== 'object') {
+      throw new Error(
+        `Plugin "${options.name}" setup() must return an object with lifecycle hooks`
+      );
+    }
+
+    // Build plugin with all hooks
     const plugin: Plugin<TState, TServices> = {
-      name,
-      version,
+      name: options.name,
+      version: options.version,
 
-      // The register hook calls the user's setup function
-      register: async (app: UnknownServer) => {
-        const result = await setup(app, mergedOptions);
+      // Required hook (always present, even if empty)
+      register: hooks.register || (async () => {}),
 
-        // If setup returns hooks, merge them into this plugin
-        if (result && typeof result === 'object') {
-          // Now we explicitly assign to our plugin object
-          Object.assign(plugin, result);
-        }
-      },
+      // Optional hooks (undefined if not provided)
+      initialize: hooks.initialize,
+      onServerStart: hooks.onServerStart,
+      onServerStop: hooks.onServerStop,
+      terminate: hooks.terminate,
     };
 
     return plugin;
   };
 }
+
+// Re-export for backward compatibility (deprecate later)
+export { createPlugin as create };

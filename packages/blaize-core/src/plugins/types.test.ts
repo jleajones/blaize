@@ -262,10 +262,11 @@ describe('Task 1.1: PluginHooks Interface with JSDoc', () => {
         version: '1.0.0',
         initialize: async () => {},
         terminate: async () => {},
+        register: async () => {},
       };
+      expect(plugin.register).toBeDefined();
       expect(plugin.initialize).toBeDefined();
       expect(plugin.terminate).toBeDefined();
-      expect(plugin.register).toBeUndefined();
       expect(plugin.onServerStart).toBeUndefined();
       expect(plugin.onServerStop).toBeUndefined();
     });

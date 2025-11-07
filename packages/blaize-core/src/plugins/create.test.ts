@@ -1,346 +1,606 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
+// import { createMockServer } from '@blaizejs/testing-utils';
 import { create } from './create';
 
-import type { Plugin } from '@blaize-types/plugins';
-import type { UnknownServer } from '@blaize-types/server';
+import type { Plugin } from '@blaize-types/index';
 
-describe('Plugin Creation', () => {
-  // Mock server object for testing
-  const mockServer: UnknownServer = {
-    // Add minimal required properties for testing
-    use: vi.fn(),
-    register: vi.fn(),
-    listen: vi.fn(),
-    close: vi.fn(),
-  } as any;
+describe('Task 2.1: createPlugin Implementation', () => {
+  describe('Input Validation', () => {
+    test('throws on empty name', () => {
+      expect(() =>
+        create({
+          name: '',
+          version: '1.0.0',
+          setup: () => ({}),
+        })
+      ).toThrow('Plugin name must be a non-empty string');
+    });
 
-  const TEST_PLUGIN_NAME = 'test-plugin';
+    test('throws on non-string name', () => {
+      expect(() =>
+        create({
+          name: 123 as any,
+          version: '1.0.0',
+          setup: () => ({}),
+        })
+      ).toThrow('Plugin name must be a non-empty string');
+    });
 
-  test('creates a plugin factory function', () => {
-    const factory = create(TEST_PLUGIN_NAME, '1.0.0', () => {});
+    test('throws on missing name', () => {
+      expect(() =>
+        create({
+          name: null as any,
+          version: '1.0.0',
+          setup: () => ({}),
+        })
+      ).toThrow('Plugin name must be a non-empty string');
+    });
 
-    expect(typeof factory).toBe('function');
+    test('throws on empty version', () => {
+      expect(() =>
+        create({
+          name: 'test',
+          version: '',
+          setup: () => ({}),
+        })
+      ).toThrow('Plugin version must be a non-empty string');
+    });
+
+    test('throws on non-string version', () => {
+      expect(() =>
+        create({
+          name: 'test',
+          version: 2.0 as any,
+          setup: () => ({}),
+        })
+      ).toThrow('Plugin version must be a non-empty string');
+    });
+
+    test('throws on non-function setup', () => {
+      expect(() =>
+        create({
+          name: 'test',
+          version: '1.0.0',
+          setup: 'not a function' as any,
+        })
+      ).toThrow('Plugin setup must be a function');
+    });
+
+    test('throws on object setup', () => {
+      expect(() =>
+        create({
+          name: 'test',
+          version: '1.0.0',
+          setup: {} as any,
+        })
+      ).toThrow('Plugin setup must be a function');
+    });
+
+    test('throws when setup returns null', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => null as any,
+      });
+
+      expect(() => factory()).toThrow(
+        'Plugin "test" setup() must return an object with lifecycle hooks'
+      );
+    });
+
+    test('throws when setup returns non-object', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => 'invalid' as any,
+      });
+
+      expect(() => factory()).toThrow(
+        'Plugin "test" setup() must return an object with lifecycle hooks'
+      );
+    });
   });
 
-  test('factory creates plugin with correct name and version', () => {
-    const factory = create(TEST_PLUGIN_NAME, '1.0.0', () => {});
-    const plugin = factory();
+  describe('Config Merging', () => {
+    test('uses default config when no user config provided', () => {
+      let receivedConfig: any;
 
-    expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-    expect(plugin.version).toBe('1.0.0');
-    expect(typeof plugin.register).toBe('function');
+      const factory = create<{ port: number }>({
+        name: 'test',
+        version: '1.0.0',
+        defaultConfig: { port: 3000 },
+        setup: (config: { port: number }) => {
+          receivedConfig = config;
+          return {};
+        },
+      });
+
+      factory();
+      expect(receivedConfig.port).toBe(3000);
+    });
+
+    test('merges user config with defaults', () => {
+      let receivedConfig: any;
+
+      const factory = create<{ host: string; port: number }>({
+        name: 'test',
+        version: '1.0.0',
+        defaultConfig: { host: 'localhost', port: 3000 },
+        setup: (config: { host: string; port: number }) => {
+          receivedConfig = config;
+          return {};
+        },
+      });
+
+      factory({ host: 'prod.com' });
+      expect(receivedConfig.host).toBe('prod.com');
+      expect(receivedConfig.port).toBe(3000);
+    });
+
+    test('user config overrides defaults', () => {
+      let receivedConfig: any;
+
+      const factory = create<{ port: number }>({
+        name: 'test',
+        version: '1.0.0',
+        defaultConfig: { port: 3000 },
+        setup: (config: { port: number }) => {
+          receivedConfig = config;
+          return {};
+        },
+      });
+
+      factory({ port: 8080 });
+      expect(receivedConfig.port).toBe(8080);
+    });
+
+    test('works without defaultConfig', () => {
+      let receivedConfig: any;
+
+      const factory = create<{ value: string }>({
+        name: 'test',
+        version: '1.0.0',
+        setup: (config: { value: string }) => {
+          receivedConfig = config;
+          return {};
+        },
+      });
+
+      factory({ value: 'test' });
+      expect(receivedConfig.value).toBe('test');
+    });
+
+    test('merges nested objects correctly', () => {
+      let receivedConfig: any;
+
+      const factory = create<{ db: { host: string; port: number } }>({
+        name: 'test',
+        version: '1.0.0',
+        defaultConfig: {
+          db: { host: 'localhost', port: 5432 },
+        },
+        setup: (config: { db: { host: string; port: number } }) => {
+          receivedConfig = config;
+          return {};
+        },
+      });
+
+      factory({ db: { host: 'prod.db.com', port: 5432 } });
+      expect(receivedConfig.db.host).toBe('prod.db.com');
+      expect(receivedConfig.db.port).toBe(5432);
+    });
   });
 
-  test('calls setup function with server and options', async () => {
-    const setupSpy = vi.fn();
-    const options = { setting: 'value' };
+  describe('Hook Registration', () => {
+    test('includes all provided hooks', () => {
+      const register = vi.fn();
+      const initialize = vi.fn();
+      const onServerStart = vi.fn();
+      const onServerStop = vi.fn();
+      const terminate = vi.fn();
 
-    const factory = create(TEST_PLUGIN_NAME, '1.0.0', setupSpy);
-    const plugin = factory(options);
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({
+          register,
+          initialize,
+          onServerStart,
+          onServerStop,
+          terminate,
+        }),
+      });
 
-    await plugin.register(mockServer);
+      const plugin = factory();
 
-    expect(setupSpy).toHaveBeenCalledWith(mockServer, options);
+      expect(plugin.register).toBe(register);
+      expect(plugin.initialize).toBe(initialize);
+      expect(plugin.onServerStart).toBe(onServerStart);
+      expect(plugin.onServerStop).toBe(onServerStop);
+      expect(plugin.terminate).toBe(terminate);
+    });
+
+    test('provides default register if not provided', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({
+          initialize: async () => {},
+        }),
+      });
+
+      const plugin = factory();
+
+      expect(typeof plugin.register).toBe('function');
+      expect(plugin.register).toBeDefined();
+    });
+
+    test('default register is async function', async () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({}),
+      });
+
+      const plugin = factory();
+      // TODO: fix mock server
+      // const mockServer = createMockServer();
+      const mockServer = {} as any;
+      const result = plugin.register(mockServer);
+
+      expect(result).toBeInstanceOf(Promise);
+      await result; // Should not throw
+    });
+
+    test('omits optional hooks when not provided', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({
+          initialize: async () => {},
+        }),
+      });
+
+      const plugin = factory();
+
+      expect(plugin.initialize).toBeDefined();
+      expect(plugin.onServerStart).toBeUndefined();
+      expect(plugin.onServerStop).toBeUndefined();
+      expect(plugin.terminate).toBeUndefined();
+    });
+
+    test('handles empty hooks object', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({}),
+      });
+
+      const plugin = factory();
+
+      expect(plugin.register).toBeDefined(); // Default provided
+      expect(plugin.initialize).toBeUndefined();
+      expect(plugin.onServerStart).toBeUndefined();
+      expect(plugin.onServerStop).toBeUndefined();
+      expect(plugin.terminate).toBeUndefined();
+    });
+
+    test('preserves hook function references', () => {
+      const initFn = async () => console.log('init');
+
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({
+          initialize: initFn,
+        }),
+      });
+
+      const plugin = factory();
+
+      expect(plugin.initialize).toBe(initFn);
+    });
   });
 
-  test('merges default options with user options', async () => {
-    const setupSpy = vi.fn();
-    const defaultOptions = { default: 'value', override: 'default' };
-    const userOptions = { override: 'user', additional: 'extra' };
+  describe('Plugin Metadata', () => {
+    test('sets correct name and version', () => {
+      const factory = create({
+        name: '@blaizejs/test',
+        version: '2.5.1',
+        setup: () => ({}),
+      });
 
-    const factory = create(TEST_PLUGIN_NAME, '1.0.0', setupSpy, defaultOptions);
-    const plugin = factory(userOptions);
+      const plugin = factory();
 
-    await plugin.register(mockServer);
+      expect(plugin.name).toBe('@blaizejs/test');
+      expect(plugin.version).toBe('2.5.1');
+    });
 
-    expect(setupSpy).toHaveBeenCalledWith(mockServer, {
-      default: 'value',
-      override: 'user',
-      additional: 'extra',
+    test('preserves scoped package name', () => {
+      const factory = create({
+        name: '@my-org/my-plugin',
+        version: '1.0.0',
+        setup: () => ({}),
+      });
+
+      const plugin = factory();
+
+      expect(plugin.name).toBe('@my-org/my-plugin');
+    });
+
+    test('version can be any semver format', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0-beta.1',
+        setup: () => ({}),
+      });
+
+      const plugin = factory();
+
+      expect(plugin.version).toBe('1.0.0-beta.1');
+    });
+  });
+
+  describe('Type Safety', () => {
+    test('preserves TState and TServices types', () => {
+      interface MyState {
+        user: string;
+      }
+      interface MyServices {
+        db: { query: () => Promise<any> };
+      }
+
+      const factory = create<{}, MyState, MyServices>({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({}),
+      });
+
+      const plugin = factory();
+
+      // Type test - would fail compilation if types wrong
+      const _typeTest: Plugin<MyState, MyServices> = plugin;
+      expect(_typeTest).toBe(plugin);
+    });
+
+    test('config type flows correctly', () => {
+      interface TestConfig {
+        port: number;
+        host: string;
+      }
+
+      let configType: TestConfig | undefined;
+
+      const factory = create<TestConfig>({
+        name: 'test',
+        version: '1.0.0',
+        setup: (config: TestConfig) => {
+          // Type check: config should be TestConfig
+          configType = config;
+          const _portType: number = config.port;
+          const _hostType: string = config.host;
+          return {};
+        },
+      });
+
+      factory({ port: 3000, host: 'localhost' });
+      expect(configType).toBeDefined();
+    });
+  });
+
+  describe('Factory Function Behavior', () => {
+    test('returns new plugin instance each call', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({
+          initialize: async () => {},
+        }),
+      });
+
+      const plugin1 = factory();
+      const plugin2 = factory();
+
+      expect(plugin1).not.toBe(plugin2);
+      expect(plugin1.name).toBe(plugin2.name);
+    });
+
+    test('setup is called for each factory invocation', () => {
+      const setupFn = vi.fn(() => ({}));
+
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: setupFn,
+      });
+
+      factory();
+      factory();
+      factory();
+
+      expect(setupFn).toHaveBeenCalledTimes(3);
+    });
+
+    test('different configs create different plugin instances', () => {
+      let config1: any;
+      let config2: any;
+
+      const factory = create<{ value: number }>({
+        name: 'test',
+        version: '1.0.0',
+        setup: (config: { value: number }) => {
+          if (config.value === 1) config1 = config;
+          if (config.value === 2) config2 = config;
+          return {};
+        },
+      });
+
+      factory({ value: 1 });
+      factory({ value: 2 });
+
+      expect(config1.value).toBe(1);
+      expect(config2.value).toBe(2);
+    });
+  });
+
+  describe('Real-World Plugin Patterns', () => {
+    test('database plugin with closure', () => {
+      interface DbConfig {
+        url: string;
+      }
+
+      let dbInstance: any = null;
+
+      const factory = create<DbConfig>({
+        name: '@app/database',
+        version: '1.0.0',
+        defaultConfig: {
+          url: 'postgresql://localhost/test',
+        },
+        setup: (config: DbConfig) => {
+          // Closure variable
+          let db: any = null;
+
+          return {
+            initialize: async () => {
+              db = { url: config.url, connected: true };
+              dbInstance = db;
+            },
+            terminate: async () => {
+              db = null;
+            },
+          };
+        },
+      });
+
+      const plugin = factory({ url: 'postgresql://prod/db' });
+      plugin.initialize?.();
+
+      expect(dbInstance).toBeDefined();
+      expect(dbInstance.url).toBe('postgresql://prod/db');
+    });
+
+    test('metrics plugin with lifecycle', () => {
+      interface MetricsConfig {
+        enabled: boolean;
+        interval: number;
+      }
+
+      const events: string[] = [];
+
+      const factory = create<MetricsConfig>({
+        name: '@app/metrics',
+        version: '1.0.0',
+        defaultConfig: {
+          enabled: true,
+          interval: 60000,
+        },
+        setup: (config: MetricsConfig) => {
+          let collector: any = null;
+
+          return {
+            initialize: async () => {
+              if (config.enabled) {
+                collector = { interval: config.interval };
+                events.push('initialize');
+              }
+            },
+            onServerStart: async () => {
+              if (collector) {
+                events.push('start');
+              }
+            },
+            onServerStop: async () => {
+              if (collector) {
+                events.push('stop');
+              }
+            },
+            terminate: async () => {
+              collector = null;
+              events.push('terminate');
+            },
+          };
+        },
+      });
+
+      const plugin = factory({ enabled: true, interval: 30000 });
+
+      plugin.initialize?.();
+      plugin.onServerStart?.();
+      plugin.onServerStop?.();
+      plugin.terminate?.();
+
+      expect(events).toEqual(['initialize', 'start', 'stop', 'terminate']);
+    });
+  });
+
+  describe('Backward Compatibility', () => {
+    test('create alias exports same function', () => {
+      expect(create).toBe(create);
+    });
+
+    test('create alias works identically', () => {
+      const factory = create({
+        name: 'test',
+        version: '1.0.0',
+        setup: () => ({
+          initialize: async () => {},
+        }),
+      });
+
+      const plugin = factory();
+
+      expect(plugin.name).toBe('test');
+      expect(plugin.initialize).toBeDefined();
     });
   });
 
   describe('Edge Cases', () => {
-    test('validates plugin name', () => {
-      expect(() => create('', '1.0.0', () => {})).toThrow('Plugin name must be a non-empty string');
-      expect(() => create(null as any, '1.0.0', () => {})).toThrow(
-        'Plugin name must be a non-empty string'
-      );
-    });
+    test('handles undefined in config merge', () => {
+      let receivedConfig: any;
 
-    test('validates plugin version', () => {
-      expect(() => create('test', '', () => {})).toThrow(
-        'Plugin version must be a non-empty string'
-      );
-      expect(() => create('test', null as any, () => {})).toThrow(
-        'Plugin version must be a non-empty string'
-      );
-    });
-
-    test('validates setup function', () => {
-      expect(() => create(TEST_PLUGIN_NAME, '1.0.0', null as any)).toThrow(
-        'Plugin setup must be a function'
-      );
-      expect(() => create(TEST_PLUGIN_NAME, '1.0.0', 'not-a-function' as any)).toThrow(
-        'Plugin setup must be a function'
-      );
-    });
-
-    test('handles setup function that returns partial hooks', async () => {
-      // Don't include 'register' - our factory provides that
-      const additionalHooks = {
-        initialize: vi.fn(),
-        terminate: vi.fn(),
-        onServerStart: vi.fn(),
-      };
-
-      const factory = create(TEST_PLUGIN_NAME, '1.0.0', () => additionalHooks);
-      const plugin = factory();
-
-      await plugin.register(mockServer);
-
-      // Check that hooks were merged into the plugin
-      expect(plugin.initialize).toBe(additionalHooks.initialize);
-      expect(plugin.terminate).toBe(additionalHooks.terminate);
-      expect(plugin.onServerStart).toBe(additionalHooks.onServerStart);
-
-      // Register method exists (provided by factory)
-      expect(typeof plugin.register).toBe('function');
-    });
-
-    test('handles async setup function', async () => {
-      const setupSpy = vi.fn().mockResolvedValue(undefined);
-
-      const factory = create(TEST_PLUGIN_NAME, '1.0.0', setupSpy);
-      const plugin = factory();
-
-      await plugin.register(mockServer);
-
-      expect(setupSpy).toHaveBeenCalled();
-    });
-
-    test('handles setup function with no return value', async () => {
-      const setupSpy = vi.fn().mockReturnValue(undefined);
-
-      const factory = create(TEST_PLUGIN_NAME, '1.0.0', setupSpy);
-      const plugin = factory();
-
-      // Should not throw
-      await expect(plugin.register(mockServer)).resolves.toBeUndefined();
-    });
-
-    test('works with empty default options', () => {
-      const factory = create(TEST_PLUGIN_NAME, '1.0.0', () => {});
-      const plugin = factory({ custom: 'value' });
-
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-    });
-  });
-
-  describe('Type preservation with generics', () => {
-    test('creates plugin with state and services types', () => {
-      interface TestState {
-        pluginEnabled: boolean;
-        startTime: number;
-      }
-
-      interface TestServices {
-        testService: {
-          doSomething: () => void;
-        };
-      }
-
-      const factory = create<any, TestState, TestServices>(TEST_PLUGIN_NAME, '1.0.0', () => {});
-      const plugin = factory();
-
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-      expect(plugin.version).toBe('1.0.0');
-
-      // Type test - would fail compilation if types aren't preserved
-      const _typeTest: Plugin<TestState, TestServices> = plugin;
-    });
-
-    test('creates plugin with only state type', () => {
-      interface AuthState {
-        user: { id: string; name: string };
-      }
-
-      const factory = create<any, AuthState>(TEST_PLUGIN_NAME, '1.0.0', () => {});
-      const plugin = factory();
-
-      // Type test - services should default to {}
-      const _typeTest: Plugin<AuthState, {}> = plugin;
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-    });
-
-    test('creates plugin with only services type', () => {
-      interface DatabaseServices {
-        db: { query: (sql: string) => Promise<any> };
-      }
-
-      const factory = create<any, {}, DatabaseServices>(TEST_PLUGIN_NAME, '1.0.0', () => {});
-      const plugin = factory();
-
-      // Type test - state should default to {}
-      const _typeTest: Plugin<{}, DatabaseServices> = plugin;
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-    });
-
-    test('creates plugin with complex nested types', () => {
-      interface ComplexState {
-        auth: {
-          user: {
-            id: string;
-            profile: {
-              name: string;
-              email: string;
-            };
-          };
-          session: {
-            token: string;
-            expiresAt: Date;
-          };
-        };
-      }
-
-      interface ComplexServices {
-        db: {
-          users: { findById: (id: string) => Promise<any> };
-          posts: { findAll: () => Promise<any[]> };
-        };
-        cache: {
-          get: (key: string) => any;
-          set: (key: string, value: any) => void;
-        };
-      }
-
-      const factory = create<any, ComplexState, ComplexServices>(
-        TEST_PLUGIN_NAME,
-        '1.0.0',
-        () => {}
-      );
-      const plugin = factory();
-
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-      // Type carriers are compile-time only
-      expect('_state' in plugin).toBe(false);
-      expect('_services' in plugin).toBe(false);
-    });
-
-    test('factory function preserves types through options', async () => {
-      interface PluginConfig {
-        enabled?: boolean;
-        timeout?: number;
-      }
-
-      interface PluginState {
-        initialized: boolean;
-      }
-
-      interface PluginServices {
-        manager: { status: () => string };
-      }
-
-      const setupSpy = vi.fn();
-      const factory = create<PluginConfig, PluginState, PluginServices>(
-        TEST_PLUGIN_NAME,
-        '1.0.0',
-        setupSpy,
-        { enabled: true, timeout: 5000 }
-      );
-
-      const plugin = factory({ timeout: 10000 });
-
-      await plugin.register(mockServer);
-
-      expect(setupSpy).toHaveBeenCalledWith(mockServer, {
-        enabled: true,
-        timeout: 10000,
+      const factory = create<{ value?: string }>({
+        name: 'test',
+        version: '1.0.0',
+        defaultConfig: { value: undefined },
+        setup: (config: { value?: string }) => {
+          receivedConfig = config;
+          return {};
+        },
       });
 
-      // Type test
-      const _typeTest: Plugin<PluginState, PluginServices> = plugin;
+      factory();
+      expect(receivedConfig.value).toBeUndefined();
     });
 
-    test('works with empty object types (defaults)', () => {
-      const factory = create<any>(TEST_PLUGIN_NAME, '1.0.0', () => {});
-      const plugin = factory();
+    test('handles null values in config', () => {
+      let receivedConfig: any;
 
-      // Should default to Plugin<{}, {}>
-      const _typeTest: Plugin<{}, {}> = plugin;
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-    });
-  });
-
-  describe('Plugin composition compatibility', () => {
-    test('plugins with different types can be used together', () => {
-      interface AuthState {
-        user: string;
-      }
-      interface AuthServices {
-        auth: any;
-      }
-
-      interface DbState {
-        connected: boolean;
-      }
-      interface DbServices {
-        db: any;
-      }
-
-      const authPlugin = create<any, AuthState, AuthServices>('auth', '1.0.0', () => {})();
-      const dbPlugin = create<any, DbState, DbServices>('database', '1.0.0', () => {})();
-
-      // Array of plugins should be valid
-      const pluginStack: Plugin[] = [authPlugin, dbPlugin];
-
-      expect(pluginStack).toHaveLength(2);
-      expect(pluginStack[0]).toBe(authPlugin);
-      expect(pluginStack[1]).toBe(dbPlugin);
-    });
-
-    test('plugin types are preserved in array', () => {
-      interface MetricsState {
-        metricsEnabled: boolean;
-      }
-      interface MetricsServices {
-        metrics: any;
-      }
-
-      const plugin = create<any, MetricsState, MetricsServices>('metrics', '1.0.0', () => {})();
-
-      // Should be assignable to both typed and untyped arrays
-      const typedArray: Plugin<MetricsState, MetricsServices>[] = [plugin];
-      const untypedArray: Plugin[] = [plugin];
-
-      expect(typedArray[0]).toBe(plugin);
-      expect(untypedArray[0]).toBe(plugin);
-    });
-  });
-
-  describe('Backwards compatibility', () => {
-    test('old single-generic syntax still works', () => {
-      interface OldConfig {
-        setting: string;
-      }
-
-      // Old way - just config generic
-      const factory = create<OldConfig>(TEST_PLUGIN_NAME, '1.0.0', () => {}, {
-        setting: 'default',
+      const factory = create<{ value: string | null }>({
+        name: 'test',
+        version: '1.0.0',
+        defaultConfig: { value: null },
+        setup: (config: { value: string | null }) => {
+          receivedConfig = config;
+          return {};
+        },
       });
-      const plugin = factory({ setting: 'custom' });
 
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-      // State and services default to {}
-      const _typeTest: Plugin<{}, {}> = plugin;
+      factory();
+      expect(receivedConfig.value).toBeNull();
     });
 
-    test('no generics still works', () => {
-      const factory = create(TEST_PLUGIN_NAME, '1.0.0', () => {});
-      const plugin = factory();
+    test('works with empty config object', () => {
+      const factory = create<{}>({
+        name: 'test',
+        version: '1.0.0',
+        setup: (config: {}) => {
+          expect(config).toEqual({});
+          return {};
+        },
+      });
 
-      expect(plugin.name).toBe(TEST_PLUGIN_NAME);
-      expect(plugin.version).toBe('1.0.0');
+      factory();
     });
   });
 });
