@@ -120,6 +120,68 @@ export interface PluginHooks<TState = {}, TServices = {}> {
 }
 
 /**
+ * Options for creating a plugin with createPlugin()
+ *
+ * @template TConfig - Plugin configuration shape
+ * @template TState - State added to context
+ * @template TServices - Services added to context
+ */
+export interface CreatePluginOptions<TConfig, TState = {}, TServices = {}> {
+  /**
+   * Plugin name (e.g., '@blaizejs/metrics')
+   * Must be unique within a server instance
+   */
+  name: string;
+
+  /**
+   * Semantic version (e.g., '1.0.0')
+   * Used for compatibility checks
+   */
+  version: string;
+
+  /**
+   * Default configuration values
+   * Merged with user config when plugin is created
+   *
+   * @example
+   * ```typescript
+   * defaultConfig: {
+   *   enabled: true,
+   *   timeout: 30000,
+   * }
+   * ```
+   */
+  defaultConfig?: TConfig;
+
+  /**
+   * Setup function that returns lifecycle hooks
+   *
+   * Receives merged config (defaultConfig + userConfig).
+   * Returns partial hook object - all hooks optional.
+   *
+   * @param config - Merged configuration
+   * @returns Partial plugin hooks
+   *
+   * @example
+   * ```typescript
+   * setup: (config) => {
+   *   let db: Database;
+   *
+   *   return {
+   *     initialize: async () => {
+   *       db = await Database.connect(config);
+   *     },
+   *     terminate: async () => {
+   *       await db?.close();
+   *     },
+   *   };
+   * }
+   * ```
+   */
+  setup: (config: TConfig) => Partial<PluginHooks<TState, TServices>>;
+}
+
+/**
  * Plugin interface
  */
 export interface Plugin<TState = {}, TServices = {}> extends PluginHooks<TState, TServices> {
