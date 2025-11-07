@@ -6,8 +6,9 @@ import type {
   Plugin,
   PluginFactory,
   CreatePluginOptions,
-} from '@blaize-types/plugins';
-import type { UnknownServer, Server } from '@blaize-types/server';
+  UnknownServer,
+  Server,
+} from '@blaize-types/index';
 
 describe('Task 1.1: PluginHooks Interface with JSDoc', () => {
   describe('Type Safety', () => {
