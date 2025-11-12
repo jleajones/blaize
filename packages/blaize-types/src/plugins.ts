@@ -4,8 +4,9 @@
  *
  * Provides the plugin system for extending framework functionality.
  */
-
 import type { Server } from './server';
+import type { Server as HttpServer } from 'node:http';
+import type { Http2Server } from 'node:http2';
 
 /**
  * Plugin options
@@ -82,7 +83,7 @@ export interface PluginHooks<TState = {}, TServices = {}> {
    * }
    * ```
    */
-  onServerStart?: (server: Server<TState, TServices>) => void | Promise<void>;
+  onServerStart?: (server: Http2Server | HttpServer) => void | Promise<void>;
 
   /**
    * Called when server stops listening
@@ -99,7 +100,7 @@ export interface PluginHooks<TState = {}, TServices = {}> {
    * }
    * ```
    */
-  onServerStop?: (server: Server<TState, TServices>) => void | Promise<void>;
+  onServerStop?: (server: Http2Server | HttpServer) => void | Promise<void>;
 
   /**
    * Called during server termination
