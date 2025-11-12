@@ -1,3 +1,6 @@
+/**
+ * Base error class for plugin-related errors
+ */
 export class PluginError extends Error {
   constructor(
     public pluginName: string,
@@ -9,6 +12,9 @@ export class PluginError extends Error {
   }
 }
 
+/**
+ * Error thrown when a plugin fails during a lifecycle phase
+ */
 export class PluginLifecycleError extends PluginError {
   constructor(
     pluginName: string,
@@ -20,6 +26,9 @@ export class PluginLifecycleError extends PluginError {
   }
 }
 
+/**
+ * Error thrown when a plugin has missing dependencies
+ */
 export class PluginDependencyError extends PluginError {
   constructor(
     pluginName: string,
@@ -30,8 +39,9 @@ export class PluginDependencyError extends PluginError {
   }
 }
 
-// packages/blaizejs/src/plugins/errors.ts (or add to existing errors file)
-
+/**
+ * Error thrown when plugin validation fails
+ */
 export class PluginValidationError extends Error {
   constructor(
     public pluginName: string,
@@ -42,6 +52,9 @@ export class PluginValidationError extends Error {
   }
 }
 
+/**
+ * Error thrown when plugin registration fails
+ */
 export class PluginRegistrationError extends Error {
   constructor(
     public pluginName: string,

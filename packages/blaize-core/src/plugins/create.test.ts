@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-// import { createMockServer } from '@blaizejs/testing-utils';
+import { createMockServer } from '@blaizejs/testing-utils';
+
 import { create } from './create';
 
 import type { Plugin } from '@blaize-types/index';
@@ -474,7 +475,9 @@ describe('Task 2.1: createPlugin Implementation', () => {
       });
 
       const plugin = factory({ url: 'postgresql://prod/db' });
-      plugin.initialize?.();
+      // Create mock server to pass to hooks
+      const mockServer = createMockServer();
+      plugin.initialize!(mockServer);
 
       expect(dbInstance).toBeDefined();
       expect(dbInstance.url).toBe('postgresql://prod/db');
@@ -524,11 +527,12 @@ describe('Task 2.1: createPlugin Implementation', () => {
       });
 
       const plugin = factory({ enabled: true, interval: 30000 });
+      const mockServer = createMockServer();
 
-      plugin.initialize?.();
-      plugin.onServerStart?.();
-      plugin.onServerStop?.();
-      plugin.terminate?.();
+      plugin.initialize?.(mockServer);
+      plugin.onServerStart?.(mockServer);
+      plugin.onServerStop?.(mockServer);
+      plugin.terminate?.(mockServer);
 
       expect(events).toEqual(['initialize', 'start', 'stop', 'terminate']);
     });

@@ -7,7 +7,7 @@ export function createMockPlugin(overrides: Partial<Plugin> = {}): Plugin {
   return {
     name: 'test-plugin',
     version: '1.0.0',
-    register: vi.fn().mockResolvedValue(undefined),
+    register: vi.fn().mockResolvedValue(undefined) as any,
     initialize: vi.fn().mockResolvedValue(undefined),
     terminate: vi.fn().mockResolvedValue(undefined),
     onServerStart: vi.fn().mockResolvedValue(undefined),

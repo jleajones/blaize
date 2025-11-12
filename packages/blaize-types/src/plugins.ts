@@ -64,7 +64,7 @@ export interface PluginHooks<TState = {}, TServices = {}> {
    * }
    * ```
    */
-  initialize?: () => void | Promise<void>;
+  initialize?: (server: Server<TState, TServices>) => void | Promise<void>;
 
   /**
    * Called when server starts listening
@@ -82,7 +82,7 @@ export interface PluginHooks<TState = {}, TServices = {}> {
    * }
    * ```
    */
-  onServerStart?: () => void | Promise<void>;
+  onServerStart?: (server: Server<TState, TServices>) => void | Promise<void>;
 
   /**
    * Called when server stops listening
@@ -99,7 +99,7 @@ export interface PluginHooks<TState = {}, TServices = {}> {
    * }
    * ```
    */
-  onServerStop?: () => void | Promise<void>;
+  onServerStop?: (server: Server<TState, TServices>) => void | Promise<void>;
 
   /**
    * Called during server termination
@@ -116,7 +116,7 @@ export interface PluginHooks<TState = {}, TServices = {}> {
    * }
    * ```
    */
-  terminate?: () => void | Promise<void>;
+  terminate?: (server: Server<TState, TServices>) => void | Promise<void>;
 }
 
 /**

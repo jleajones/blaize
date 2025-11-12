@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import { createMockMiddleware } from '@blaizejs/testing-utils';
+import { createMockMiddleware, createMockServer } from '@blaizejs/testing-utils';
 
 import type {
   PluginHooks,
@@ -533,7 +533,8 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
 
       // Simulate plugin lifecycle
       const hooks1 = options.setup({ host: 'db.example.com', port: 5432 });
-      hooks1.initialize?.();
+      const mockServer = createMockServer();
+      hooks1.initialize?.(mockServer);
       expect(connectionCount).toBe(1);
     });
   });

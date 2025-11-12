@@ -3,10 +3,10 @@ import { createMockServerWithPlugins, createMockPlugin } from '@blaizejs/testing
 import { createPluginLifecycleManager } from './lifecycle';
 
 import type { Plugin, PluginLifecycleManager } from '@blaize-types/plugins';
-import type { UnknownServer } from '@blaize-types/server';
+import type { Server } from '@blaize-types/server';
 
 describe('PluginLifecycleManager', () => {
-  let server: UnknownServer;
+  let server: Server<any, any>;
   let manager: PluginLifecycleManager;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
