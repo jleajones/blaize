@@ -8,7 +8,7 @@
  * @module @blaizejs/plugin-metrics
  */
 
-import { createMiddleware } from 'blaizejs';
+import { createMiddleware, createPlugin } from 'blaizejs';
 
 import { MetricsCollectorImpl } from './collector';
 
@@ -18,7 +18,7 @@ import type {
   MetricsPluginState,
   MetricsPluginServices,
 } from './types';
-import type { Plugin, Server, Context } from 'blaizejs';
+import type { Server, Context, NextFunction } from 'blaizejs';
 
 // Re-export types for convenience
 export type {
@@ -105,187 +105,184 @@ function getErrorStatusCode(error: unknown): number {
  * });
  * ```
  */
-export function createMetricsPlugin(
-  config: MetricsPluginConfig = {}
-): Plugin<MetricsPluginState, MetricsPluginServices> {
-  // Merge with defaults
-  const finalConfig = {
-    ...DEFAULT_CONFIG,
-    ...config,
-    labels: { ...DEFAULT_CONFIG.labels, ...config.labels },
-    excludePaths: [...DEFAULT_CONFIG.excludePaths, ...(config.excludePaths || [])],
-  };
 
-  // 1. Declare resources in closure (singleton pattern)
-  let collector: MetricsCollector;
-  let reportInterval: NodeJS.Timeout | null = null;
+export const createMetricsPlugin = createPlugin<
+  MetricsPluginConfig,
+  MetricsPluginState,
+  MetricsPluginServices
+>({
+  name: '@blaizejs/plugin-metrics',
+  version: '1.0.0',
+  defaultConfig: DEFAULT_CONFIG,
+  setup: (config: MetricsPluginConfig) => {
+    // 1. Declare resources in closure (singleton pattern)
+    let collector: MetricsCollector;
+    let reportInterval: NodeJS.Timeout | null = null;
 
-  // Return the plugin object directly (not using createPlugin)
-  return {
-    name: '@blaizejs/plugin-metrics',
-    version: '1.0.0',
+    // Return the plugin object directly (not using createPlugin)
+    return {
+      register: async (server: Server<any, any>) => {
+        // Skip if disabled
+        if (!config.enabled) {
+          return;
+        }
 
-    register: async (server: Server<any, any>) => {
-      // Skip if disabled
-      if (!finalConfig.enabled) {
-        return;
-      }
+        // 2. Add typed middleware - provides access to the singleton
+        server.use(
+          // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+          createMiddleware<{}, { metrics: MetricsCollector }>({
+            name: 'metrics',
+            handler: async (ctx: Context, next: NextFunction) => {
+              // Inject collector into context (reference to singleton)
+              ctx.services.metrics = collector;
 
-      // 2. Add typed middleware - provides access to the singleton
-      server.use(
-        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-        createMiddleware<{}, { metrics: MetricsCollector }>({
-          name: 'metrics',
-          handler: async (ctx: Context, next) => {
-            // Inject collector into context (reference to singleton)
-            ctx.services.metrics = collector;
+              // Check if path should be excluded
+              const path = ctx.request?.path || '/';
+              if (config.excludePaths && shouldExcludePath(path, config.excludePaths)) {
+                await next();
+                return;
+              }
 
-            // Check if path should be excluded
-            const path = ctx.request?.path || '/';
-            if (shouldExcludePath(path, finalConfig.excludePaths)) {
-              await next();
-              return;
-            }
+              // Start tracking request
+              collector.startHttpRequest();
 
-            // Start tracking request
-            collector.startHttpRequest();
+              // Record start time
+              const startTime = performance.now();
+              let statusCode = 200;
 
-            // Record start time
-            const startTime = performance.now();
-            let statusCode = 200;
-
-            try {
-              await next();
-              statusCode = ctx.response.raw?.statusCode || 200;
-            } catch (error) {
-              statusCode = getErrorStatusCode(error);
-              throw error;
-            } finally {
               try {
-                const duration = performance.now() - startTime;
-                const method = ctx.request?.method || 'UNKNOWN';
-                collector.recordHttpRequest(method, path, statusCode, duration);
-              } catch (metricsError) {
-                if (process.env.NODE_ENV !== 'production') {
-                  console.error('[Metrics] Error recording:', metricsError);
+                await next();
+                statusCode = ctx.response.raw?.statusCode || 200;
+              } catch (error) {
+                statusCode = getErrorStatusCode(error);
+                throw error;
+              } finally {
+                try {
+                  const duration = performance.now() - startTime;
+                  const method = ctx.request?.method || 'UNKNOWN';
+                  collector.recordHttpRequest(method, path, statusCode, duration);
+                } catch (metricsError) {
+                  if (process.env.NODE_ENV !== 'production') {
+                    console.error('[Metrics] Error recording:', metricsError);
+                  }
                 }
               }
-            }
-          },
-        })
-      );
-    },
-
-    // 3. Initialize resources
-    initialize: async () => {
-      if (!finalConfig.enabled) {
-        if (finalConfig.logToConsole) {
-          console.log('[Metrics Plugin] Disabled by configuration');
-        }
-        return;
-      }
-
-      collector = new MetricsCollectorImpl({
-        histogramLimit: finalConfig.histogramLimit,
-        collectionInterval: finalConfig.collectionInterval,
-        maxCardinality: finalConfig.maxCardinality,
-        onCardinalityLimit: finalConfig.onCardinalityLimit,
-      });
-
-      collector.startCollection();
-
-      if (finalConfig.logToConsole) {
-        console.log('[Metrics Plugin] Initialized and collecting metrics');
-      }
-    },
-
-    // 4. Start reporting when server starts
-    onServerStart: async () => {
-      if (!finalConfig.enabled || !collector) return;
-
-      if (finalConfig.reporter) {
-        reportInterval = setInterval(() => {
-          const snapshot = collector.getSnapshot();
-          Promise.resolve(finalConfig.reporter!(snapshot)).catch(error => {
-            console.error('[Metrics Plugin] Reporter error:', error);
-          });
-        }, finalConfig.collectionInterval);
-
-        if (reportInterval.unref) {
-          reportInterval.unref();
-        }
-      }
-
-      if (finalConfig.logToConsole) {
-        const consoleInterval = setInterval(() => {
-          const snapshot = collector.getSnapshot();
-          console.log('[Metrics Plugin] Snapshot:', {
-            timestamp: new Date(snapshot.timestamp).toISOString(),
-            http: {
-              totalRequests: snapshot.http.totalRequests,
-              activeRequests: snapshot.http.activeRequests,
-              requestsPerSecond: snapshot.http.requestsPerSecond.toFixed(2),
             },
-            process: {
-              uptime: `${Math.floor(snapshot.process.uptime)}s`,
-              heapUsed: `${Math.floor(snapshot.process.memoryUsage.heapUsed / 1024 / 1024)}MB`,
-            },
-          });
-        }, finalConfig.collectionInterval);
+          })
+        );
+      },
 
-        if (consoleInterval.unref) {
-          consoleInterval.unref();
+      // 3. Initialize resources
+      initialize: async () => {
+        if (!config.enabled) {
+          if (config.logToConsole) {
+            console.log('[Metrics Plugin] Disabled by configuration');
+          }
+          return;
         }
 
-        if (!reportInterval) {
-          reportInterval = consoleInterval;
-        }
-
-        console.log('[Metrics Plugin] Server started, metrics collection active');
-      }
-    },
-
-    // 5. Stop reporting when server stops
-    onServerStop: async () => {
-      if (!finalConfig.enabled || !collector) return;
-
-      if (reportInterval) {
-        clearInterval(reportInterval);
-        reportInterval = null;
-      }
-
-      if (finalConfig.reporter) {
-        try {
-          const snapshot = collector.getSnapshot();
-          await Promise.resolve(finalConfig.reporter(snapshot));
-        } catch (error) {
-          console.error('[Metrics Plugin] Final report error:', error);
-        }
-      }
-
-      if (finalConfig.logToConsole) {
-        const snapshot = collector.getSnapshot();
-        console.log('[Metrics Plugin] Final snapshot:', {
-          totalRequests: snapshot.http.totalRequests,
-          uptime: `${Math.floor(snapshot.process.uptime)}s`,
+        collector = new MetricsCollectorImpl({
+          histogramLimit: config.histogramLimit,
+          collectionInterval: config.collectionInterval,
+          maxCardinality: config.maxCardinality,
+          onCardinalityLimit: config.onCardinalityLimit,
         });
-      }
-    },
 
-    // 6. Clean up resources
-    terminate: async () => {
-      if (!finalConfig.enabled || !collector) return;
+        collector.startCollection();
 
-      collector.stopCollection();
+        if (config.logToConsole) {
+          console.log('[Metrics Plugin] Initialized and collecting metrics');
+        }
+      },
 
-      if (reportInterval) {
-        clearInterval(reportInterval);
-        reportInterval = null;
-      }
+      // 4. Start reporting when server starts
+      onServerStart: async () => {
+        if (!config.enabled || !collector) return;
 
-      if (finalConfig.logToConsole) {
-        console.log('[Metrics Plugin] Terminated');
-      }
-    },
-  };
-}
+        if (config.reporter) {
+          reportInterval = setInterval(() => {
+            const snapshot = collector.getSnapshot();
+            Promise.resolve(config.reporter!(snapshot)).catch(error => {
+              console.error('[Metrics Plugin] Reporter error:', error);
+            });
+          }, config.collectionInterval);
+
+          if (reportInterval.unref) {
+            reportInterval.unref();
+          }
+        }
+
+        if (config.logToConsole) {
+          const consoleInterval = setInterval(() => {
+            const snapshot = collector.getSnapshot();
+            console.log('[Metrics Plugin] Snapshot:', {
+              timestamp: new Date(snapshot.timestamp).toISOString(),
+              http: {
+                totalRequests: snapshot.http.totalRequests,
+                activeRequests: snapshot.http.activeRequests,
+                requestsPerSecond: snapshot.http.requestsPerSecond.toFixed(2),
+              },
+              process: {
+                uptime: `${Math.floor(snapshot.process.uptime)}s`,
+                heapUsed: `${Math.floor(snapshot.process.memoryUsage.heapUsed / 1024 / 1024)}MB`,
+              },
+            });
+          }, config.collectionInterval);
+
+          if (consoleInterval.unref) {
+            consoleInterval.unref();
+          }
+
+          if (!reportInterval) {
+            reportInterval = consoleInterval;
+          }
+
+          console.log('[Metrics Plugin] Server started, metrics collection active');
+        }
+      },
+
+      // 5. Stop reporting when server stops
+      onServerStop: async () => {
+        if (!config.enabled || !collector) return;
+
+        if (reportInterval) {
+          clearInterval(reportInterval);
+          reportInterval = null;
+        }
+
+        if (config.reporter) {
+          try {
+            const snapshot = collector.getSnapshot();
+            await Promise.resolve(config.reporter(snapshot));
+          } catch (error) {
+            console.error('[Metrics Plugin] Final report error:', error);
+          }
+        }
+
+        if (config.logToConsole) {
+          const snapshot = collector.getSnapshot();
+          console.log('[Metrics Plugin] Final snapshot:', {
+            totalRequests: snapshot.http.totalRequests,
+            uptime: `${Math.floor(snapshot.process.uptime)}s`,
+          });
+        }
+      },
+
+      // 6. Clean up resources
+      terminate: async () => {
+        if (!config.enabled || !collector) return;
+
+        collector.stopCollection();
+
+        if (reportInterval) {
+          clearInterval(reportInterval);
+          reportInterval = null;
+        }
+
+        if (config.logToConsole) {
+          console.log('[Metrics Plugin] Terminated');
+        }
+      },
+    };
+  },
+});

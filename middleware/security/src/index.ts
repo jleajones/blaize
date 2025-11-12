@@ -152,7 +152,6 @@ export function createSecurityMiddleware(userOptions?: Partial<SecurityOptions>)
     handler: async (ctx: Context, next: NextFunction) => {
       // Skip if middleware is disabled
       if (options.enabled === false) {
-        console.log('Security middleware disabled; skipping header application.');
         await next();
         return;
       }
@@ -164,7 +163,6 @@ export function createSecurityMiddleware(userOptions?: Partial<SecurityOptions>)
       }
 
       // Apply all configured security headers
-      console.log('Applying security headers with options:', options);
       applySecurityHeaders(ctx, options);
 
       // Continue to next middleware
