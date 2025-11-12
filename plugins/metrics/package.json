@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/plugin-metrics",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "description": "Production-ready metrics collection and observability plugin for BlaizeJS",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
@@ -43,7 +43,7 @@
     "clean": "rimraf dist"
   },
   "peerDependencies": {
-    "blaizejs": "^0.5.3"
+    "blaizejs": "^0.6.0"
   },
   "devDependencies": {
     "blaizejs": "workspace:*",

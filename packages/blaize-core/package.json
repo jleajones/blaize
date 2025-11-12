@@ -1,6 +1,6 @@
 {
   "name": "blaizejs",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "A blazing-fast, TypeScript-first Node.js framework with HTTP/2 support, file-based routing, powerful middleware system, and end-to-end type safety for building modern APIs.",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
