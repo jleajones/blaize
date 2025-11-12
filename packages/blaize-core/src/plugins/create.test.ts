@@ -530,8 +530,8 @@ describe('Task 2.1: createPlugin Implementation', () => {
       const mockServer = createMockServer();
 
       plugin.initialize?.(mockServer);
-      plugin.onServerStart?.(mockServer);
-      plugin.onServerStop?.(mockServer);
+      plugin.onServerStart?.(mockServer.server!);
+      plugin.onServerStop?.(mockServer.server!);
       plugin.terminate?.(mockServer);
 
       expect(events).toEqual(['initialize', 'start', 'stop', 'terminate']);
