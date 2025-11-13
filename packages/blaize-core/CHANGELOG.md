@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.6.0
+
+### Minor Changes
+
+- 3267373: ✨ fix createPlugin API
+
 ## 0.5.3
 
 ### Patch Changes

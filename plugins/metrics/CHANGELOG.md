@@ -1,5 +1,13 @@
 # @blaizejs/plugin-metrics
 
+## 1.0.0
+
+### Patch Changes
+
+- 3267373: ✨ fix createPlugin API
+- Updated dependencies [3267373]
+  - blaizejs@0.6.0
+
 ## 0.1.2
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @blaizejs/middleware-security
 
+## 1.0.0
+
+### Minor Changes
+
+- 3267373: ✨ fix createPlugin API
+
+### Patch Changes
+
+- Updated dependencies [3267373]
+  - blaizejs@0.6.0
+
 ## 0.1.0
 
 ### Minor Changes

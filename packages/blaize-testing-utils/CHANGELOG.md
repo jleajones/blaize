@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.4.1
+
+### Patch Changes
+
+- 3267373: ✨ fix createPlugin API
+
 ## 0.4.0
 
 ### Minor Changes
