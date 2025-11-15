@@ -2,7 +2,7 @@ import {
   formatErrorResponse,
   extractOrGenerateCorrelationId,
   setErrorResponseHeaders,
-} from '../errors/boundary';
+} from '../../errors/boundary';
 
 import type { Context } from '@blaize-types/context';
 import type { Middleware, MiddlewareFunction, NextFunction } from '@blaize-types/middleware';
