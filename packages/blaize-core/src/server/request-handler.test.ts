@@ -8,7 +8,7 @@ import { NotFoundError } from '../errors/not-found-error';
 import { ValidationError } from '../errors/validation-error';
 import { compose } from '../middleware/compose';
 import { cors } from '../middleware/cors';
-import { createErrorBoundary } from '../middleware/error-boundary';
+import { createErrorBoundary } from '../middleware/error-boundary/create';
 
 import type { Context } from '@blaize-types/context';
 import type { NextFunction } from '@blaize-types/middleware';
@@ -27,7 +27,7 @@ vi.mock('../middleware/cors', () => ({
     execute: vi.fn(),
   }),
 }));
-vi.mock('../middleware/error-boundary');
+vi.mock('../middleware/error-boundary/create');
 vi.mock('../errors/boundary');
 vi.mock('../tracing/correlation', () => ({
   createCorrelationIdFromHeaders: vi.fn(() => DEFAULT_CORRELATION_ID),

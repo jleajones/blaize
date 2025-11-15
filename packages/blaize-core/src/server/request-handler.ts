@@ -3,7 +3,7 @@ import { runWithContext } from '../context/store';
 import { NotFoundError } from '../errors/not-found-error';
 import { compose } from '../middleware/compose';
 import { cors } from '../middleware/cors';
-import { createErrorBoundary } from '../middleware/error-boundary';
+import { createErrorBoundary } from '../middleware/error-boundary/create';
 import {
   createCorrelationIdFromHeaders,
   getCorrelationHeaderName,

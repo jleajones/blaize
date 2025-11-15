@@ -5,7 +5,7 @@ import { UnauthorizedError } from './unauthorized-error';
 import { ValidationError } from './validation-error';
 import { compose } from '../middleware/compose';
 import { create as createMiddleware } from '../middleware/create';
-import { createErrorBoundary } from '../middleware/error-boundary';
+import { createErrorBoundary } from '../middleware/error-boundary/create';
 
 import type { Context } from '@blaize-types/context';
 

@@ -1,8 +1,8 @@
 import { ErrorType } from '@blaize-types/errors';
 
-import { createErrorBoundary } from './error-boundary';
-import { NotFoundError } from '../errors/not-found-error';
-import { ValidationError } from '../errors/validation-error';
+import { createErrorBoundary } from './create';
+import { NotFoundError } from '../../errors/not-found-error';
+import { ValidationError } from '../../errors/validation-error';
 
 import type { Context } from '@blaize-types/context';
 
