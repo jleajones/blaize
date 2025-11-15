@@ -18,6 +18,7 @@ import type {
 } from './composition';
 import type { BodyLimits, Context } from './context';
 import type { CorsOptions } from './cors';
+import type { LoggerConfig } from './logger';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
 import type { Router } from './router';
@@ -128,6 +129,47 @@ export interface ServerOptionsInput {
   cors?: CorsOptions | boolean;
 
   bodyLimits?: Partial<BodyLimits>;
+
+  /**
+   * Logger configuration
+   *
+   * Controls logging behavior including log levels, transports,
+   * redaction, and request lifecycle logging.
+   *
+   * @default Development: ConsoleTransport with debug level
+   * @default Production: JSONTransport with info level
+   * @since 0.4.0
+   *
+   * @example Development Configuration
+   * ```typescript
+   * import { createServer } from 'blaizejs';
+   *
+   * const server = createServer({
+   *   port: 3000,
+   *   logging: {
+   *     level: 'debug',
+   *     includeTimestamp: true,
+   *     requestLogging: true
+   *   }
+   * });
+   * ```
+   *
+   * @example Production Configuration
+   * ```typescript
+   * import { createServer, JSONTransport } from 'blaizejs';
+   *
+   * const server = createServer({
+   *   port: 3000,
+   *   logging: {
+   *     level: 'info',
+   *     transport: new JSONTransport(),
+   *     redactKeys: ['password', 'apiKey', 'secret'],
+   *     requestLogging: true
+   *   }
+   * });
+   * ```
+   */
+  logging?: LoggerConfig;
 }
 
 /**
@@ -172,7 +214,12 @@ export interface ServerOptions {
    * @since 0.5.0
    */
   cors?: CorsOptions | boolean;
+
+  /** Body size limits for incoming requests */
   bodyLimits: BodyLimits;
+
+  /** Logger configuration */
+  logging?: LoggerConfig;
 }
 
 /**
