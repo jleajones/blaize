@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.6.1
+
+### Patch Changes
+
+- 2279a75: 🧹 clean up directory structure
+
 ## 0.6.0
 
 ### Minor Changes

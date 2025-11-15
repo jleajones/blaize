@@ -38,7 +38,7 @@
     "clean": "rimraf dist"
   },
   "peerDependencies": {
-    "blaizejs": "^0.6.0"
+    "blaizejs": "^0.6.1"
   },
   "devDependencies": {
     "blaizejs": "workspace:*",
