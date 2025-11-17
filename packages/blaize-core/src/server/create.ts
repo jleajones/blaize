@@ -6,6 +6,9 @@ import { setRuntimeConfig } from '../config';
 import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
 import { validateServerOptions } from './validation';
+import { configureGlobalLogger, createLogger } from '../logger';
+import { createLoggerMiddleware } from '../middleware/logger/create';
+import { requestLoggerMiddleware } from '../middleware/logger/request-logger';
 import { createPluginLifecycleManager } from '../plugins/lifecycle';
 import { validatePlugin } from '../plugins/validation';
 import { createRouter } from '../router/router';
@@ -18,6 +21,7 @@ import type {
   ComposePluginServices,
 } from '@blaize-types/composition';
 import type { Context } from '@blaize-types/context';
+import type { BlaizeLogger } from '@blaize-types/logger';
 import type { Middleware } from '@blaize-types/middleware';
 import type { Plugin } from '@blaize-types/plugins';
 import type {
@@ -49,6 +53,9 @@ export const DEFAULT_OPTIONS: ServerOptions = {
       maxFiles: 10,
       maxFieldSize: 1024 * 1024,
     },
+  },
+  logging: {
+    requestLogging: true,
   },
 };
 
@@ -91,6 +98,7 @@ function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
           },
         }
       : DEFAULT_OPTIONS.bodyLimits,
+    logging: options.logging || DEFAULT_OPTIONS.logging,
   };
   try {
     const validated = validateServerOptions(mergedOptions);
@@ -237,6 +245,46 @@ function createRegisterMethod<TState, TServices>(
 }
 
 /**
+ * Initializes the logger system based on server options
+ *
+ * Creates root logger and request logger middleware if logging is configured.
+ *
+ * @param validatedOptions - The validated server options
+ * @returns Object containing logger and middleware, or undefined if logging not configured
+ */
+function initializeLogger(validatedOptions: ServerOptions): {
+  logger: BlaizeLogger;
+  middleware: Middleware[];
+} {
+  const logConfig = validatedOptions.logging || {};
+
+  // Extract request-specific config with server defaults
+  // Server only defaults request-specific behavior
+  const {
+    requestLogging = true, // ✅ Server default (controls middleware behavior)
+    requestLoggerOptions, // ✅ Can be undefined (middleware handles safe defaults)
+    ...coreLoggerConfig // ✅ Pass to logger AS-IS (logger handles defaults)
+  } = logConfig;
+
+  // STEP 1: Configure global logger
+  configureGlobalLogger(coreLoggerConfig);
+
+  // STEP 2: Create server logger middleware
+  const serverLogger = createLogger(coreLoggerConfig || {});
+
+  // STEP 2: Create main logger middleware
+  const loggerMiddleware = createLoggerMiddleware(serverLogger);
+
+  // STEP 3: Create request logger middleware
+  const httpRequestLoggerMiddleware = requestLoggerMiddleware(requestLoggerOptions, requestLogging);
+
+  return {
+    logger: serverLogger,
+    middleware: [loggerMiddleware, httpRequestLoggerMiddleware],
+  };
+}
+
+/**
  * Creates a BlaizeJS server instance
  */
 export function create<
@@ -249,16 +297,25 @@ export function create<
   } = {}
 ): Server<
   ComposeMiddlewareStates<TMw> & ComposePluginStates<TP>,
-  ComposeMiddlewareServices<TMw> & ComposePluginServices<TP>
+  ComposeMiddlewareServices<
+    readonly [
+      ReturnType<typeof createLoggerMiddleware>, // ← Prepended!
+      ...TMw, // ← User middleware
+    ]
+  > &
+    ComposePluginServices<TP>
 > {
   // Create and validate options
   const validatedOptions = createServerOptions(options);
 
   // Extract options and prepare initial components
   const { port, host, middleware, plugins, cors, bodyLimits } = validatedOptions;
+  const loggerSystem = initializeLogger(validatedOptions);
 
   // TODO: create registries to manage middleware and plugins
-  const initialMiddleware = Array.isArray(middleware) ? [...middleware] : [];
+  const initialMiddleware = Array.isArray(middleware)
+    ? [...loggerSystem.middleware, ...middleware]
+    : [];
   const initialPlugins = Array.isArray(plugins) ? [...plugins] : [];
 
   // Initialize core server components
@@ -276,7 +333,13 @@ export function create<
 
   // Type alias for the accumulated types
   type AccumulatedState = ComposeMiddlewareStates<TMw> & ComposePluginStates<TP>;
-  type AccumulatedServices = ComposeMiddlewareServices<TMw> & ComposePluginServices<TP>;
+  type AccumulatedServices = ComposeMiddlewareServices<
+    readonly [
+      ReturnType<typeof createLoggerMiddleware>, // { log: BlaizeLogger }
+      ...TMw, // User middleware services
+    ]
+  > &
+    ComposePluginServices<TP>;
 
   // Create server instance with minimal properties
   const serverInstance: Server<AccumulatedState, AccumulatedServices> = {
@@ -290,6 +353,7 @@ export function create<
     corsOptions: cors,
     bodyLimits,
     _signalHandlers: { unregister: () => {} },
+    _logger: loggerSystem.logger,
     use: () => serverInstance,
     register: async () => serverInstance,
     listen: async () => serverInstance,

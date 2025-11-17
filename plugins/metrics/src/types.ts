@@ -98,21 +98,13 @@ export interface MetricsPluginConfig {
   labels?: Record<string, string>;
 
   /**
-   * Enable logging metrics to console
-   * Useful for development and debugging
-   *
-   * @default false
-   */
-  logToConsole?: boolean;
-
-  /**
    * Custom reporter function called when metrics are collected
    * Receives a snapshot of all metrics
    *
    * @example
    * ```typescript
    * reporter: (snapshot) => {
-   *   console.log('HTTP Requests:', snapshot.http.totalRequests);
+   *   logger.info('HTTP Requests:', snapshot.http.totalRequests);
    *   // Send to external monitoring service
    *   sendToDatadog(snapshot);
    * }
@@ -129,8 +121,8 @@ export interface MetricsPluginConfig {
  * ```typescript
  * export const GET = appRoute.get({
  *   handler: async (ctx) => {
- *     console.log('Metrics enabled:', ctx.state.metricsEnabled);
- *     console.log('Request start time:', ctx.state.metricsStartTime);
+ *     ctx.services.log.info('Metrics enabled:', ctx.state.metricsEnabled);
+ *     ctx.services.log.info('Request start time:', ctx.state.metricsStartTime);
  *   }
  * });
  * ```
@@ -321,8 +313,8 @@ export interface MetricsCollector {
    * @example
    * ```typescript
    * const snapshot = metrics.getSnapshot();
-   * console.log('Total requests:', snapshot.http.totalRequests);
-   * console.log('P95 latency:', snapshot.http.latency.p95);
+   * logger.info('Total requests:', snapshot.http.totalRequests);
+   * logger.info('P95 latency:', snapshot.http.latency.p95);
    * ```
    */
   getSnapshot(): MetricsSnapshot;
@@ -778,7 +770,7 @@ export interface HistogramData {
  * ```typescript
  * if (isMetricsPluginConfig(config)) {
  *   // TypeScript knows config is MetricsPluginConfig
- *   console.log(config.enabled);
+ *   logger.info(config.enabled);
  * }
  * ```
  */

@@ -4,6 +4,7 @@ import * as http2 from 'node:http2';
 
 import { generateDevCertificates } from './dev-certificate';
 import { createRequestHandler } from './request-handler';
+import { logger } from '../logger';
 
 import type { Http2Options, ServerOptions, UnknownServer } from '@blaize-types/server';
 
@@ -80,7 +81,7 @@ function listenOnPort(
     server.listen(port, host, () => {
       const protocol = isHttp2 ? 'https' : 'http';
       const url = `${protocol}://${host}:${port}`;
-      console.log(`
+      logger.info(`
 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
 
     ⚡ BlaizeJS DEVELOPMENT SERVER HOT AND READY ⚡
@@ -97,7 +98,7 @@ function listenOnPort(
     });
 
     server.on('error', err => {
-      console.error('Server error:', err);
+      logger.error('Server error:', { error: err, host, port });
       reject(err);
     });
   });
@@ -159,7 +160,7 @@ export async function startServer(
     // Start listening
     await listenOnPort(server, port, host, isHttp2);
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.error('Failed to start server:', { error });
     throw error;
   }
 }

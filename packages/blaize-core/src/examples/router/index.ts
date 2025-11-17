@@ -10,7 +10,7 @@ export const IndexRoute = appRouter.get({
     }),
   },
   handler: async ctx => {
-    ctx.services.logger.info('Handling index route');
+    ctx.services.log.info('Handling index route');
     // Returns a JSON object - will be sent using ctx.response.json()
     return {
       message: 'Hello, world!',

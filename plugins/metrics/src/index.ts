@@ -18,7 +18,7 @@ import type {
   MetricsPluginState,
   MetricsPluginServices,
 } from './types';
-import type { Server, Context, NextFunction } from 'blaizejs';
+import type { Server, Context, NextFunction, BlaizeLogger } from 'blaizejs';
 
 // Re-export types for convenience
 export type {
@@ -47,7 +47,6 @@ const DEFAULT_CONFIG: Required<Omit<MetricsPluginConfig, 'reporter'>> & {
   histogramLimit: 1000,
   collectionInterval: 60000, // 60 seconds
   labels: {},
-  logToConsole: false,
   reporter: undefined,
   maxCardinality: 10000, // ✅ NEW
   onCardinalityLimit: 'drop', // ✅ NEW
@@ -114,7 +113,7 @@ export const createMetricsPlugin = createPlugin<
   name: '@blaizejs/plugin-metrics',
   version: '1.0.0',
   defaultConfig: DEFAULT_CONFIG,
-  setup: (config: MetricsPluginConfig) => {
+  setup: (config: MetricsPluginConfig, logger: BlaizeLogger) => {
     // 1. Declare resources in closure (singleton pattern)
     let collector: MetricsCollector;
     let reportInterval: NodeJS.Timeout | null = null;
@@ -163,7 +162,7 @@ export const createMetricsPlugin = createPlugin<
                   collector.recordHttpRequest(method, path, statusCode, duration);
                 } catch (metricsError) {
                   if (process.env.NODE_ENV !== 'production') {
-                    console.error('[Metrics] Error recording:', metricsError);
+                    logger.error('Error recording:', { metricsError });
                   }
                 }
               }
@@ -175,9 +174,7 @@ export const createMetricsPlugin = createPlugin<
       // 3. Initialize resources
       initialize: async () => {
         if (!config.enabled) {
-          if (config.logToConsole) {
-            console.log('[Metrics Plugin] Disabled by configuration');
-          }
+          logger.info('Disabled by configuration');
           return;
         }
 
@@ -186,13 +183,12 @@ export const createMetricsPlugin = createPlugin<
           collectionInterval: config.collectionInterval,
           maxCardinality: config.maxCardinality,
           onCardinalityLimit: config.onCardinalityLimit,
+          logger,
         });
 
         collector.startCollection();
 
-        if (config.logToConsole) {
-          console.log('[Metrics Plugin] Initialized and collecting metrics');
-        }
+        logger.info('Initialized and collecting metrics');
       },
 
       // 4. Start reporting when server starts
@@ -203,7 +199,7 @@ export const createMetricsPlugin = createPlugin<
           reportInterval = setInterval(() => {
             const snapshot = collector.getSnapshot();
             Promise.resolve(config.reporter!(snapshot)).catch(error => {
-              console.error('[Metrics Plugin] Reporter error:', error);
+              logger.error('[Metrics Plugin] Reporter error:', error);
             });
           }, config.collectionInterval);
 
@@ -212,33 +208,31 @@ export const createMetricsPlugin = createPlugin<
           }
         }
 
-        if (config.logToConsole) {
-          const consoleInterval = setInterval(() => {
-            const snapshot = collector.getSnapshot();
-            console.log('[Metrics Plugin] Snapshot:', {
-              timestamp: new Date(snapshot.timestamp).toISOString(),
-              http: {
-                totalRequests: snapshot.http.totalRequests,
-                activeRequests: snapshot.http.activeRequests,
-                requestsPerSecond: snapshot.http.requestsPerSecond.toFixed(2),
-              },
-              process: {
-                uptime: `${Math.floor(snapshot.process.uptime)}s`,
-                heapUsed: `${Math.floor(snapshot.process.memoryUsage.heapUsed / 1024 / 1024)}MB`,
-              },
-            });
-          }, config.collectionInterval);
+        const consoleInterval = setInterval(() => {
+          const snapshot = collector.getSnapshot();
+          logger.info('Snapshot:', {
+            timestamp: new Date(snapshot.timestamp).toISOString(),
+            http: {
+              totalRequests: snapshot.http.totalRequests,
+              activeRequests: snapshot.http.activeRequests,
+              requestsPerSecond: snapshot.http.requestsPerSecond.toFixed(2),
+            },
+            process: {
+              uptime: `${Math.floor(snapshot.process.uptime)}s`,
+              heapUsed: `${Math.floor(snapshot.process.memoryUsage.heapUsed / 1024 / 1024)}MB`,
+            },
+          });
+        }, config.collectionInterval);
 
-          if (consoleInterval.unref) {
-            consoleInterval.unref();
-          }
-
-          if (!reportInterval) {
-            reportInterval = consoleInterval;
-          }
-
-          console.log('[Metrics Plugin] Server started, metrics collection active');
+        if (consoleInterval.unref) {
+          consoleInterval.unref();
         }
+
+        if (!reportInterval) {
+          reportInterval = consoleInterval;
+        }
+
+        logger.info('[Metrics Plugin] Server started, metrics collection active');
       },
 
       // 5. Stop reporting when server stops
@@ -255,17 +249,15 @@ export const createMetricsPlugin = createPlugin<
             const snapshot = collector.getSnapshot();
             await Promise.resolve(config.reporter(snapshot));
           } catch (error) {
-            console.error('[Metrics Plugin] Final report error:', error);
+            logger.error('Final report error:', { error });
           }
         }
 
-        if (config.logToConsole) {
-          const snapshot = collector.getSnapshot();
-          console.log('[Metrics Plugin] Final snapshot:', {
-            totalRequests: snapshot.http.totalRequests,
-            uptime: `${Math.floor(snapshot.process.uptime)}s`,
-          });
-        }
+        const snapshot = collector.getSnapshot();
+        logger.info('Final snapshot:', {
+          totalRequests: snapshot.http.totalRequests,
+          uptime: `${Math.floor(snapshot.process.uptime)}s`,
+        });
       },
 
       // 6. Clean up resources
@@ -279,9 +271,7 @@ export const createMetricsPlugin = createPlugin<
           reportInterval = null;
         }
 
-        if (config.logToConsole) {
-          console.log('[Metrics Plugin] Terminated');
-        }
+        logger.info('Terminated');
       },
     };
   },

@@ -8,7 +8,8 @@ export const getHello = appRouter.get({
       name: z.string(),
     }),
   },
-  handler: async () => {
+  handler: async ctx => {
+    ctx.services.log.info('Handling hello route');
     return {
       name: 'Hi, it is Blaize and Bella!',
     };
@@ -25,6 +26,7 @@ export const postHello = appRouter.post({
     }),
   },
   handler: async ctx => {
+    ctx.services.log.info('Handling hello POST route');
     return {
       message: `Hello, ${ctx.request.body.name} from Blaize and Bella and the hello route!`,
     };

@@ -3,6 +3,8 @@
  * @description Comprehensive tests for MetricsCollectorImpl
  */
 
+import { createMockLogger } from '@blaizejs/testing-utils';
+
 import { MetricsCollectorImpl } from './collector';
 
 import type { MetricsCollector } from './types';
@@ -14,6 +16,7 @@ describe('MetricsCollectorImpl', () => {
     collector = new MetricsCollectorImpl({
       histogramLimit: 100,
       collectionInterval: 1000,
+      logger: createMockLogger(),
     });
   });
 
@@ -24,7 +27,9 @@ describe('MetricsCollectorImpl', () => {
 
   describe('Constructor', () => {
     test('creates collector with default options', () => {
-      const defaultCollector = new MetricsCollectorImpl();
+      const defaultCollector = new MetricsCollectorImpl({
+        logger: createMockLogger(),
+      });
       expect(defaultCollector).toBeInstanceOf(MetricsCollectorImpl);
       expect(defaultCollector.getHistogramLimit()).toBe(1000);
       expect(defaultCollector.getCollectionInterval()).toBe(60000);
@@ -34,6 +39,7 @@ describe('MetricsCollectorImpl', () => {
       const customCollector = new MetricsCollectorImpl({
         histogramLimit: 500,
         collectionInterval: 30000,
+        logger: createMockLogger(),
       });
 
       expect(customCollector.getHistogramLimit()).toBe(500);
@@ -200,7 +206,10 @@ describe('MetricsCollectorImpl', () => {
     });
 
     test('enforces histogram limit with FIFO', () => {
-      const smallCollector = new MetricsCollectorImpl({ histogramLimit: 3 });
+      const smallCollector = new MetricsCollectorImpl({
+        histogramLimit: 3,
+        logger: createMockLogger(),
+      });
 
       smallCollector.histogram('test', 10);
       smallCollector.histogram('test', 20);
@@ -317,7 +326,10 @@ describe('MetricsCollectorImpl', () => {
     });
 
     test('enforces histogram limit with FIFO', async () => {
-      const smallCollector = new MetricsCollectorImpl({ histogramLimit: 2 });
+      const smallCollector = new MetricsCollectorImpl({
+        histogramLimit: 2,
+        logger: createMockLogger(),
+      });
 
       for (let i = 0; i < 5; i++) {
         const stop = smallCollector.startTimer('test');
@@ -634,7 +646,10 @@ describe('MetricsCollectorImpl', () => {
     });
 
     test('histogram limit applies to custom histograms', () => {
-      const smallCollector = new MetricsCollectorImpl({ histogramLimit: 2 });
+      const smallCollector = new MetricsCollectorImpl({
+        histogramLimit: 2,
+        logger: createMockLogger(),
+      });
 
       smallCollector.histogram('test', 1);
       smallCollector.histogram('test', 2);
@@ -645,7 +660,10 @@ describe('MetricsCollectorImpl', () => {
     });
 
     test('histogram limit applies to timers', async () => {
-      const smallCollector = new MetricsCollectorImpl({ histogramLimit: 2 });
+      const smallCollector = new MetricsCollectorImpl({
+        histogramLimit: 2,
+        logger: createMockLogger(),
+      });
 
       for (let i = 0; i < 3; i++) {
         const stop = smallCollector.startTimer('test');
@@ -719,6 +737,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10000,
+          logger: createMockLogger(),
         });
 
         collector.increment('counter1');
@@ -734,6 +753,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10000,
+          logger: createMockLogger(),
         });
 
         collector.increment('metric1');
@@ -748,6 +768,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10000,
+          logger: createMockLogger(),
         });
 
         collector.increment('counter1');
@@ -763,13 +784,13 @@ describe('MetricsCollectorImpl', () => {
 
     describe('Limit Enforcement', () => {
       test('drops new metrics when limit reached', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 5,
           onCardinalityLimit: 'drop',
+          logger,
         });
-
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         // Add 5 metrics (at limit)
         collector.increment('metric1');
@@ -785,9 +806,7 @@ describe('MetricsCollectorImpl', () => {
 
         expect(collector.getSnapshot()._meta?.cardinality).toBe(5);
         expect(collector.getSnapshot().custom.counters['metric6']).toBeUndefined();
-        expect(consoleWarn).toHaveBeenCalled();
-
-        consoleWarn.mockRestore();
+        expect(logger.warn).toHaveBeenCalled();
       });
 
       test('allows updates to existing metrics even at limit', () => {
@@ -795,6 +814,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 3,
           onCardinalityLimit: 'drop',
+          logger: createMockLogger(),
         });
 
         collector.increment('metric1');
@@ -812,9 +832,8 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 4,
           onCardinalityLimit: 'drop',
+          logger: createMockLogger(),
         });
-
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         collector.increment('counter1');
         collector.gauge('gauge1', 42);
@@ -830,8 +849,6 @@ describe('MetricsCollectorImpl', () => {
 
         expect(collector.getSnapshot()._meta?.cardinality).toBe(4);
         expect(collector.getSnapshot().custom.counters['counter2']).toBeUndefined();
-
-        consoleWarn.mockRestore();
       });
 
       test('allows gauge updates at limit', () => {
@@ -839,6 +856,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 2,
           onCardinalityLimit: 'drop',
+          logger: createMockLogger(),
         });
 
         collector.gauge('gauge1', 100);
@@ -856,6 +874,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 2,
           onCardinalityLimit: 'drop',
+          logger: createMockLogger(),
         });
 
         collector.histogram('hist1', 10);
@@ -874,6 +893,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 2,
           onCardinalityLimit: 'drop',
+          logger: createMockLogger(),
         });
 
         const stop1 = collector.startTimer('timer1');
@@ -893,51 +913,56 @@ describe('MetricsCollectorImpl', () => {
 
     describe('Warning Levels', () => {
       test('warns at 80% capacity', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10,
           onCardinalityLimit: 'drop',
+          logger,
         });
-
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         // Add 8 metrics (80%)
         for (let i = 1; i <= 8; i++) {
           collector.increment(`metric${i}`);
         }
 
-        expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('80%'));
-
-        consoleWarn.mockRestore();
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('80%'));
       });
 
       test('warns at 90% capacity', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10,
           onCardinalityLimit: 'drop',
+          logger,
         });
-
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         // Add 9 metrics (90%)
         for (let i = 1; i <= 9; i++) {
           collector.increment(`metric${i}`);
         }
 
-        expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('90%'));
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('90%'));
 
-        consoleWarn.mockRestore();
+        // Add 9 metrics (90%)
+        for (let i = 1; i <= 9; i++) {
+          collector.increment(`metric${i}`);
+        }
+
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('90%'));
       });
 
       test('only warns once per threshold', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10,
           onCardinalityLimit: 'drop',
+          logger,
         });
 
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const consoleWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
         // Add metrics to reach 80% multiple times (via updates)
         for (let i = 1; i <= 8; i++) {
@@ -963,13 +988,15 @@ describe('MetricsCollectorImpl', () => {
       });
 
       test('warns at 100% capacity when trying to add new metric', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 5,
           onCardinalityLimit: 'drop',
+          logger,
         });
 
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const consoleWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
         // Fill to capacity
         for (let i = 1; i <= 5; i++) {
@@ -987,13 +1014,15 @@ describe('MetricsCollectorImpl', () => {
 
     describe('onCardinalityLimit Actions', () => {
       test('drops silently when action is "drop"', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 2,
           onCardinalityLimit: 'drop',
+          logger,
         });
 
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const consoleWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
         collector.increment('metric1');
         collector.increment('metric2');
@@ -1016,13 +1045,15 @@ describe('MetricsCollectorImpl', () => {
       });
 
       test('warns with metric name when action is "warn"', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 2,
           onCardinalityLimit: 'warn',
+          logger,
         });
 
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const consoleWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
         collector.increment('metric1');
         collector.increment('metric2');
@@ -1038,6 +1069,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 2,
           onCardinalityLimit: 'error',
+          logger: createMockLogger(),
         });
 
         collector.increment('metric1');
@@ -1051,6 +1083,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 1,
           onCardinalityLimit: 'error',
+          logger: createMockLogger(),
         });
 
         collector.gauge('gauge1', 10);
@@ -1063,6 +1096,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 1,
           onCardinalityLimit: 'error',
+          logger: createMockLogger(),
         });
 
         collector.histogram('hist1', 10);
@@ -1075,6 +1109,7 @@ describe('MetricsCollectorImpl', () => {
           histogramLimit: 100,
           maxCardinality: 1,
           onCardinalityLimit: 'error',
+          logger: createMockLogger(),
         });
         const stop1 = collector.startTimer('timer1');
         stop1();
@@ -1086,13 +1121,15 @@ describe('MetricsCollectorImpl', () => {
 
     describe('Reset Behavior with Cardinality', () => {
       test('resets cardinality warnings', () => {
+        const logger = createMockLogger();
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10,
           onCardinalityLimit: 'drop',
+          logger,
         });
 
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const consoleWarn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
         // Trigger 80% warning
         for (let i = 1; i <= 8; i++) {
@@ -1119,6 +1156,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10,
+          logger: createMockLogger(),
         });
 
         collector.increment('metric1');
@@ -1138,6 +1176,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 100,
+          logger: createMockLogger(),
         });
 
         collector.increment('metric1');
@@ -1157,6 +1196,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 10,
+          logger: createMockLogger(),
         });
 
         // Add 5 metrics (50%)
@@ -1172,6 +1212,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 100,
+          logger: createMockLogger(),
         });
 
         const snapshot = collector.getSnapshot();
@@ -1182,6 +1223,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 5,
+          logger: createMockLogger(),
         });
 
         for (let i = 1; i <= 5; i++) {
@@ -1196,6 +1238,7 @@ describe('MetricsCollectorImpl', () => {
         const collector = new MetricsCollectorImpl({
           histogramLimit: 100,
           maxCardinality: 7,
+          logger: createMockLogger(),
         });
 
         // Add 2 metrics (28.57%)
@@ -1221,6 +1264,7 @@ describe('MetricsCollectorImpl', () => {
         const smallCollector = new MetricsCollectorImpl({
           histogramLimit: 3,
           maxCardinality: 10,
+          logger: createMockLogger(),
         });
 
         for (let i = 1; i <= 5; i++) {

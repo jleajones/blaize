@@ -1,5 +1,6 @@
 import { createMockContext, createSSEMockContext } from './context';
 import { createMockHttp1Request, createMockHttp2Request, createMockResponse } from './http';
+import { createMockLogger } from './logger';
 import { createMockMiddleware, executeMiddleware, trackMiddlewareOrder } from './middleware';
 import { createMockPlugins, createMockPlugin } from './plugins';
 import {
@@ -24,6 +25,7 @@ import {
 } from './server';
 
 export {
+  createMockLogger,
   createSSEMockContext,
   createMockContext,
   createMockHttp1Request,

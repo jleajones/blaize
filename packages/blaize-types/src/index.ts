@@ -3,6 +3,7 @@ export * from './composition';
 export * from './context';
 export * from './cors';
 export * from './errors';
+export * from './logger';
 export * from './middleware';
 export * from './plugins';
 export * from './router';

@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import type { Plugin, PluginFactory, CreatePluginOptions } from '@blaize-types/index';
+import { createLogger } from '../logger';
+
+import type { Plugin, PluginFactory, CreatePluginOptions, BlaizeLogger } from '@blaize-types/index';
 
 /**
  * Create a type-safe plugin with full IntelliSense support
@@ -99,8 +101,14 @@ export function createPlugin<TConfig = {}, TState = {}, TServices = {}>(
       ...(userConfig || {}),
     } as TConfig;
 
+    // Create plugin-specific child logger with context
+    const pluginLogger: BlaizeLogger = createLogger().child({
+      plugin: options.name,
+      version: options.version,
+    });
+
     // Call setup to get hooks
-    const hooks = options.setup(config);
+    const hooks = options.setup(config, pluginLogger);
 
     // Validate hooks (must return object)
     if (hooks === null || typeof hooks !== 'object') {
@@ -115,7 +123,11 @@ export function createPlugin<TConfig = {}, TState = {}, TServices = {}>(
       version: options.version,
 
       // Required hook (always present, even if empty)
-      register: hooks.register || (async () => {}),
+      register:
+        hooks.register ||
+        (async () => {
+          pluginLogger.debug('Plugin registered (no-op)');
+        }),
 
       // Optional hooks (undefined if not provided)
       initialize: hooks.initialize,

@@ -48,6 +48,7 @@
   "devDependencies": {
     "blaizejs": "workspace:*",
     "@blaizejs/eslint-config": "workspace:*",
+    "@blaizejs/testing-utils": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",
     "@blaizejs/tsup-config": "workspace:*",
     "@blaizejs/vitest-config": "workspace:*",

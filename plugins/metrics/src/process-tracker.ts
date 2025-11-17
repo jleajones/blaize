@@ -21,12 +21,12 @@ import type { ProcessMetrics } from './types';
  *
  * // Collect current metrics
  * const metrics = tracker.collect();
- * console.log('Memory used:', metrics.memoryUsage.heapUsed);
- * console.log('CPU usage:', tracker.getCPUPercentage());
+ * logger.info('Memory used:', metrics.memoryUsage.heapUsed);
+ * logger.info('CPU usage:', tracker.getCPUPercentage());
  *
  * // Measure event loop lag (async)
  * const lag = await tracker.getEventLoopLag();
- * console.log('Event loop lag:', lag, 'ms');
+ * logger.info('Event loop lag:', lag, 'ms');
  * ```
  */
 export class ProcessHealthTracker {
@@ -57,9 +57,9 @@ export class ProcessHealthTracker {
    * @example
    * ```typescript
    * const metrics = tracker.collect();
-   * console.log('Heap used:', metrics.memoryUsage.heapUsed);
-   * console.log('Uptime:', metrics.uptime, 'seconds');
-   * console.log('CPU user time:', metrics.cpuUsage.user);
+   * logger.info('Heap used:', metrics.memoryUsage.heapUsed);
+   * logger.info('Uptime:', metrics.uptime, 'seconds');
+   * logger.info('CPU user time:', metrics.cpuUsage.user);
    * ```
    */
   collect(): ProcessMetrics {
@@ -103,7 +103,7 @@ export class ProcessHealthTracker {
    *
    * // Second call shows actual usage
    * const cpuPercent = tracker.getCPUPercentage();
-   * console.log('CPU usage:', cpuPercent.toFixed(2), '%');
+   * logger.info('CPU usage:', cpuPercent.toFixed(2), '%');
    * ```
    */
   getCPUPercentage(): number {
@@ -156,11 +156,11 @@ export class ProcessHealthTracker {
    * const lag = await tracker.getEventLoopLag();
    *
    * if (lag > 50) {
-   *   console.warn('High event loop lag:', lag, 'ms');
+   *   logger.warn('High event loop lag:', lag, 'ms');
    * } else if (lag > 10) {
-   *   console.log('Moderate event loop lag:', lag, 'ms');
+   *   logger.info('Moderate event loop lag:', lag, 'ms');
    * } else {
-   *   console.log('Healthy event loop:', lag, 'ms');
+   *   logger.info('Healthy event loop:', lag, 'ms');
    * }
    * ```
    */
@@ -185,7 +185,7 @@ export class ProcessHealthTracker {
    * @example
    * ```typescript
    * const uptime = tracker.getUptime();
-   * console.log('Tracker running for:', uptime, 'seconds');
+   * logger.info('Tracker running for:', uptime, 'seconds');
    * ```
    */
   getUptime(): number {
@@ -201,7 +201,7 @@ export class ProcessHealthTracker {
    *
    * @example
    * ```typescript
-   * console.log('Node version:', tracker.getNodeVersion());
+   * logger.info('Node version:', tracker.getNodeVersion());
    * // Output: "Node version: v20.10.0"
    * ```
    */
@@ -216,7 +216,7 @@ export class ProcessHealthTracker {
    *
    * @example
    * ```typescript
-   * console.log('Platform:', tracker.getPlatform());
+   * logger.info('Platform:', tracker.getPlatform());
    * // Output: "Platform: linux"
    * ```
    */
@@ -231,7 +231,7 @@ export class ProcessHealthTracker {
    *
    * @example
    * ```typescript
-   * console.log('Architecture:', tracker.getArchitecture());
+   * logger.info('Architecture:', tracker.getArchitecture());
    * // Output: "Architecture: x64"
    * ```
    */
@@ -246,7 +246,7 @@ export class ProcessHealthTracker {
    *
    * @example
    * ```typescript
-   * console.log('Process ID:', tracker.getProcessId());
+   * logger.info('Process ID:', tracker.getProcessId());
    * // Output: "Process ID: 12345"
    * ```
    */
