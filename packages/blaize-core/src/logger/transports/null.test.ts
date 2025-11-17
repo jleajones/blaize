@@ -146,8 +146,8 @@ describe('NullTransport', () => {
       const end = performance.now();
       const duration = end - start;
 
-      // Should be extremely fast (< 10ms for 10k no-ops)
-      expect(duration).toBeLessThan(10);
+      // Should be extremely fast (< 5ms for 10k no-ops)
+      expect(duration).toBeLessThan(5);
 
       // Verify no output was produced
       expect(consoleLogSpy).not.toHaveBeenCalled();
