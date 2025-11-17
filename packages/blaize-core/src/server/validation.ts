@@ -111,6 +111,35 @@ const bodyLimitsSchema = z.object({
   multipart: multipartLimitsSchema,
 });
 
+/**
+ * Request logger options validation schema
+ */
+const requestLoggerOptionsSchema = z
+  .object({
+    includeHeaders: z.boolean().optional(),
+    headerWhitelist: z.array(z.string().min(1)).optional(),
+    includeQuery: z.boolean().optional(),
+  })
+  .optional();
+
+/**
+ * Logger configuration validation schema
+ *
+ * NOTE: Defaults are NOT set here - they're handled by:
+ * - Core logger config: logger.ts:createLogger()
+ * - Request config: server/create.ts:initializeLogger()
+ */
+const loggerConfigSchema = z
+  .object({
+    level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+    transport: z.any().optional(),
+    redactKeys: z.array(z.string().min(1)).optional(),
+    includeTimestamp: z.boolean().optional(),
+    requestLogging: z.boolean().optional(),
+    requestLoggerOptions: requestLoggerOptionsSchema,
+  })
+  .optional();
+
 // Validation schema for server options
 export const serverOptionsSchema = z.object({
   port: z.number().int().positive().optional().default(3000),
@@ -124,6 +153,7 @@ export const serverOptionsSchema = z.object({
   correlation: correlationSchema,
   cors: serverCorsSchema,
   bodyLimits: bodyLimitsSchema,
+  logging: loggerConfigSchema,
 });
 
 export function validateServerOptions(options: ServerOptions): ServerOptions {

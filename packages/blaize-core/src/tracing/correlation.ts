@@ -132,7 +132,7 @@ export function setCorrelationId(correlationId: string): void {
  * @example
  * ```typescript
  * const result = await withCorrelationId('req_123', async () => {
- *   console.log(getCurrentCorrelationId()); // 'req_123'
+ *   logger.info(getCurrentCorrelationId()); // 'req_123'
  *   return await processRequest();
  * });
  * ```

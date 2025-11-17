@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import { createMockMiddleware, createMockServer } from '@blaizejs/testing-utils';
+import { createMockLogger, createMockMiddleware, createMockServer } from '@blaizejs/testing-utils';
 
 import type {
   PluginHooks,
@@ -432,7 +432,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         },
       };
 
-      const hooks = options.setup({ enabled: true });
+      const hooks = options.setup({ enabled: true }, createMockLogger());
       expect(hooks).toEqual({});
     });
 
@@ -455,7 +455,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         }),
       };
 
-      const hooks = options.setup({ value: 'test' });
+      const hooks = options.setup({ value: 'test' }, createMockLogger());
       expect(hooks.initialize).toBeDefined();
       expect(hooks.terminate).toBeDefined();
       expect(hooks.register).toBeUndefined();
@@ -488,7 +488,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         }),
       };
 
-      const hooks = options.setup({ name: 'test' });
+      const hooks = options.setup({ name: 'test' }, createMockLogger());
       expect(hooks.register).toBeDefined();
       expect(hooks.initialize).toBeDefined();
       expect(hooks.onServerStart).toBeDefined();
@@ -532,7 +532,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       };
 
       // Simulate plugin lifecycle
-      const hooks1 = options.setup({ host: 'db.example.com', port: 5432 });
+      const hooks1 = options.setup({ host: 'db.example.com', port: 5432 }, createMockLogger());
       const mockServer = createMockServer();
       hooks1.initialize?.(mockServer);
       expect(connectionCount).toBe(1);

@@ -16,7 +16,6 @@ const metricsPlugin = createMetricsPlugin({
   excludePaths: ['/health', '/favicon.ico'], // Don't track health checks
   histogramLimit: 1000,
   collectionInterval: 60000, // Report every 60 seconds
-  logToConsole: true, // See metrics in console during development
   maxCardinality: 10,
   onCardinalityLimit: 'warn',
   labels: {

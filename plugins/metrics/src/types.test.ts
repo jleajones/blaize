@@ -29,7 +29,6 @@ describe('Type definitions', () => {
           service: 'api',
           environment: 'production',
         },
-        logToConsole: false,
         reporter: snapshot => {
           console.log(snapshot.timestamp);
         },
@@ -68,11 +67,6 @@ describe('Type definitions', () => {
     test('labels is string record', () => {
       const config: MetricsPluginConfig = { labels: { key: 'value' } };
       expectTypeOf(config.labels).toEqualTypeOf<Record<string, string> | undefined>();
-    });
-
-    test('logToConsole is boolean', () => {
-      const config: MetricsPluginConfig = { logToConsole: true };
-      expectTypeOf(config.logToConsole).toEqualTypeOf<boolean | undefined>();
     });
 
     test('reporter is function', () => {
@@ -362,7 +356,6 @@ describe('isMetricsPluginConfig type guard', () => {
       histogramLimit: 1000,
       collectionInterval: 60000,
       labels: { service: 'api' },
-      logToConsole: false,
       reporter: () => {},
     };
 
@@ -498,7 +491,12 @@ describe('Documentation examples compile', () => {
       getSnapshot: () => ({}) as MetricsSnapshot,
       reset: () => {},
       startHttpRequest: () => {},
-      recordHttpRequest: (_method: string, _path: string, _statusCode: number, _duration: number) => {},
+      recordHttpRequest: (
+        _method: string,
+        _path: string,
+        _statusCode: number,
+        _duration: number
+      ) => {},
       startCollection: () => {},
       stopCollection: () => {},
       isCollecting: () => false,

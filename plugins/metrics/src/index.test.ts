@@ -181,6 +181,14 @@ describe('createMetricsPlugin', () => {
         collectionInterval: 60000,
         maxCardinality: 10000,
         onCardinalityLimit: 'drop',
+        logger: expect.objectContaining({
+          debug: expect.any(Function),
+          info: expect.any(Function),
+          warn: expect.any(Function),
+          error: expect.any(Function),
+          child: expect.any(Function),
+          flush: expect.any(Function),
+        }),
       });
     });
 
@@ -360,14 +368,12 @@ describe('createMetricsPlugin', () => {
 
     test('logs to console when enabled', async () => {
       const mockServer = createMockServer();
-      const plugin = createMetricsPlugin({ enabled: true, logToConsole: true });
+      const plugin = createMetricsPlugin({ enabled: true });
 
       await plugin.register(mockServer as any);
       if (plugin.initialize) await plugin.initialize(mockServer as any);
 
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[Metrics Plugin] Initialized')
-      );
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Initialized'));
     });
   });
 

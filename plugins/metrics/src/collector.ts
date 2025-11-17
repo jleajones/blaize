@@ -17,6 +17,7 @@ import type {
   HistogramStats,
   HistogramData,
 } from './types';
+import type { BlaizeLogger } from 'blaizejs';
 
 /**
  * Metrics Collector Implementation
@@ -70,23 +71,25 @@ export class MetricsCollectorImpl implements MetricsCollector {
   private collectionTimer: NodeJS.Timeout | null = null;
   private lastEventLoopLag = 0;
 
+  private readonly logger: BlaizeLogger;
+
   /**
    * Create a new metrics collector
    *
    * @param options - Configuration options
+   * @param options.logger - Logger instance for logging metrics events
    * @param options.histogramLimit - Maximum samples per histogram (default: 1000)
    * @param options.collectionInterval - Periodic collection interval in ms (default: 60000)
    * @param options.maxCardinality - Maximum unique metric names (default: 10000)
    * @param options.onCardinalityLimit - Action on cardinality limit ('drop', 'warn', 'error') (default: 'drop')
    */
-  constructor(
-    options: {
-      histogramLimit?: number;
-      collectionInterval?: number;
-      maxCardinality?: number;
-      onCardinalityLimit?: 'drop' | 'warn' | 'error';
-    } = {}
-  ) {
+  constructor(options: {
+    histogramLimit?: number;
+    collectionInterval?: number;
+    maxCardinality?: number;
+    onCardinalityLimit?: 'drop' | 'warn' | 'error';
+    logger: BlaizeLogger;
+  }) {
     this.histogramLimit = options.histogramLimit ?? 1000;
     this.collectionInterval = options.collectionInterval ?? 60000;
     this.maxCardinality = options.maxCardinality ?? 10000;
@@ -94,6 +97,7 @@ export class MetricsCollectorImpl implements MetricsCollector {
 
     this.httpTracker = new HttpRequestTracker(this.histogramLimit);
     this.processTracker = new ProcessHealthTracker();
+    this.logger = options.logger;
   }
 
   /**
@@ -128,12 +132,14 @@ export class MetricsCollectorImpl implements MetricsCollector {
         case 'error':
           throw new Error(message);
         case 'warn':
-          console.warn(`⚠️ ${message}`);
+          if (this.logger) {
+            this.logger.warn(`⚠️ ${message}`);
+          }
           break;
         case 'drop':
           // Silent drop - only log at 100% if we haven't already
           if (!this.cardinalityWarnings.has(100)) {
-            console.warn(
+            this.logger.warn(
               `⚠️ Metric cardinality limit reached (${this.maxCardinality}). New metrics will be dropped.`
             );
             this.cardinalityWarnings.add(100);
@@ -149,13 +155,13 @@ export class MetricsCollectorImpl implements MetricsCollector {
     const percentUsed = Math.floor((newCardinality / this.maxCardinality) * 100);
 
     if (percentUsed >= 90 && !this.cardinalityWarnings.has(90)) {
-      console.warn(
+      this.logger.warn(
         `⚠️ Metric cardinality at ${percentUsed}% (${newCardinality}/${this.maxCardinality}). ` +
           `Consider increasing maxCardinality or reducing metric dimensions.`
       );
       this.cardinalityWarnings.add(90);
     } else if (percentUsed >= 80 && !this.cardinalityWarnings.has(80)) {
-      console.warn(
+      this.logger.warn(
         `⚠️ Metric cardinality at ${percentUsed}% (${newCardinality}/${this.maxCardinality}).`
       );
       this.cardinalityWarnings.add(80);
@@ -298,10 +304,10 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * ```typescript
    * const snapshot = collector.getSnapshot();
    *
-   * console.log('HTTP requests:', snapshot.http.totalRequests);
-   * console.log('Memory used:', snapshot.process.memoryUsage.heapUsed);
-   * console.log('Custom counters:', snapshot.custom.counters);
-   * console.log('P95 latency:', snapshot.http.latency.p95);
+   * logger.info('HTTP requests:', snapshot.http.totalRequests);
+   * logger.info('Memory used:', snapshot.process.memoryUsage.heapUsed);
+   * logger.info('Custom counters:', snapshot.custom.counters);
+   * logger.info('P95 latency:', snapshot.http.latency.p95);
    * ```
    */
   getSnapshot(): MetricsSnapshot {
@@ -331,8 +337,8 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * collector.reset();
    *
    * const snapshot = collector.getSnapshot();
-   * console.log(snapshot.http.totalRequests); // 0
-   * console.log(snapshot.custom.counters);    // {}
+   * logger.info(snapshot.http.totalRequests); // 0
+   * logger.info(snapshot.custom.counters);    // {}
    * ```
    */
   reset(): void {
@@ -408,7 +414,7 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * @example
    * ```typescript
    * if (collector.isCollecting()) {
-   *   console.log('Metrics being collected automatically');
+   *   logger.info('Metrics being collected automatically');
    * }
    * ```
    */
@@ -486,7 +492,7 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * ```typescript
    * const processTracker = collector.getProcessTracker();
    * const cpuPercent = processTracker.getCPUPercentage();
-   * console.log('CPU usage:', cpuPercent.toFixed(2), '%');
+   * logger.info('CPU usage:', cpuPercent.toFixed(2), '%');
    * ```
    */
   getProcessTracker(): ProcessHealthTracker {

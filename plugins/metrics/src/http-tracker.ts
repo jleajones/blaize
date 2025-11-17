@@ -28,8 +28,8 @@ import type { HttpMetrics, HistogramStats, RouteMetrics } from './types';
  *
  * // Get current metrics
  * const metrics = tracker.getMetrics();
- * console.log(metrics.totalRequests); // 1
- * console.log(metrics.latency.p95);   // 45.5
+ * logger.info(metrics.totalRequests); // 1
+ * logger.info(metrics.latency.p95);   // 45.5
  *
  * // Reset all metrics
  * tracker.reset();
@@ -126,10 +126,10 @@ export class HttpRequestTracker {
    * @example
    * ```typescript
    * const metrics = tracker.getMetrics();
-   * console.log('Total requests:', metrics.totalRequests);
-   * console.log('Active requests:', metrics.activeRequests);
-   * console.log('P95 latency:', metrics.latency.p95);
-   * console.log('Status codes:', metrics.statusCodes);
+   * logger.info('Total requests:', metrics.totalRequests);
+   * logger.info('Active requests:', metrics.activeRequests);
+   * logger.info('P95 latency:', metrics.latency.p95);
+   * logger.info('Status codes:', metrics.statusCodes);
    * ```
    */
   getMetrics(): HttpMetrics {
@@ -157,7 +157,7 @@ export class HttpRequestTracker {
    * @example
    * ```typescript
    * tracker.reset();
-   * console.log(tracker.getMetrics().totalRequests); // 0
+   * logger.info(tracker.getMetrics().totalRequests); // 0
    * ```
    */
   reset(): void {

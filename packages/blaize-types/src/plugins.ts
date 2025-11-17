@@ -4,6 +4,7 @@
  *
  * Provides the plugin system for extending framework functionality.
  */
+import type { BlaizeLogger } from './logger';
 import type { Server } from './server';
 import type { Server as HttpServer } from 'node:http';
 import type { Http2Server } from 'node:http2';
@@ -179,7 +180,7 @@ export interface CreatePluginOptions<TConfig, TState = {}, TServices = {}> {
    * }
    * ```
    */
-  setup: (config: TConfig) => Partial<PluginHooks<TState, TServices>>;
+  setup: (config: TConfig, logger: BlaizeLogger) => Partial<PluginHooks<TState, TServices>>;
 }
 
 /**

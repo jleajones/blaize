@@ -389,6 +389,9 @@ importers:
       '@blaizejs/eslint-config':
         specifier: workspace:*
         version: link:../../configs/eslint
+      '@blaizejs/testing-utils':
+        specifier: workspace:*
+        version: link:../../packages/blaize-testing-utils
       '@blaizejs/tsconfig':
         specifier: workspace:*
         version: link:../../configs/tsconfig

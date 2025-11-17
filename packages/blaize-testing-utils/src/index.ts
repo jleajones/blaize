@@ -18,9 +18,11 @@ import {
   mockPatchRoute,
   mockPostRoute,
   mockPutRoute,
+  createMockLogger,
 } from './mocks';
 
 export {
+  createMockLogger,
   createMockHttp1Request,
   createMockHttp2Request,
   createMockResponse,

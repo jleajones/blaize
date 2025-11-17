@@ -18,7 +18,7 @@ import type {
 } from './composition';
 import type { BodyLimits, Context } from './context';
 import type { CorsOptions } from './cors';
-import type { LoggerConfig } from './logger';
+import type { BlaizeLogger, LoggerConfig } from './logger';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
 import type { Router } from './router';
@@ -252,8 +252,11 @@ export interface Server<TState, TServices> {
   /** Direct access to registered plugins */
   middleware: Middleware[];
 
-  /** Internal property for signal hanlders */
+  /** Internal property for signal handlers */
   _signalHandlers?: { unregister: () => void };
+
+  /** Internal logger instance (for server use only) */
+  _logger: BlaizeLogger;
 
   /** Start the server and listen for connections */
   listen: (port?: number, host?: string) => Promise<Server<TState, TServices>>;
