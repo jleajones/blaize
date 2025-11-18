@@ -199,7 +199,7 @@ export const createMetricsPlugin = createPlugin<
           reportInterval = setInterval(() => {
             const snapshot = collector.getSnapshot();
             Promise.resolve(config.reporter!(snapshot)).catch(error => {
-              logger.error('[Metrics Plugin] Reporter error:', error);
+              logger.error('Reporter error:', error);
             });
           }, config.collectionInterval);
 
@@ -232,7 +232,7 @@ export const createMetricsPlugin = createPlugin<
           reportInterval = consoleInterval;
         }
 
-        logger.info('[Metrics Plugin] Server started, metrics collection active');
+        logger.info('Server started, metrics collection active');
       },
 
       // 5. Stop reporting when server stops
