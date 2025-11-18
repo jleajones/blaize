@@ -1,15 +1,34 @@
-import { createMockServerWithPlugins, createMockPlugin } from '@blaizejs/testing-utils';
+/* eslint-disable import/order */
+import {
+  createMockLogger,
+  createMockServerWithPlugins,
+  createMockPlugin,
+} from '@blaizejs/testing-utils';
+import type { MockLogger } from '@blaizejs/testing-utils';
 
 import { createPluginLifecycleManager } from './lifecycle';
 
 import type { Plugin, PluginLifecycleManager } from '@blaize-types/plugins';
 import type { Server } from '@blaize-types/server';
 
+// Mock the logger module
+vi.mock('../logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(),
+    flush: vi.fn(),
+  },
+}));
+
+import { logger } from '../logger';
+
 describe('PluginLifecycleManager', () => {
   let server: Server<any, any>;
   let manager: PluginLifecycleManager;
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let mockLogger: MockLogger;
 
   beforeEach(() => {
     // Create mock server with plugins
@@ -19,15 +38,15 @@ describe('PluginLifecycleManager', () => {
     // Create default manager
     manager = createPluginLifecycleManager();
 
-    // Spy on console methods
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Create mock logger and reset the module mock
+    mockLogger = createMockLogger();
+    vi.mocked(logger.debug).mockImplementation(mockLogger.debug.bind(mockLogger));
+    vi.mocked(logger.info).mockImplementation(mockLogger.info.bind(mockLogger));
+    vi.mocked(logger.error).mockImplementation(mockLogger.error.bind(mockLogger));
   });
 
   afterEach(() => {
-    // Restore console methods
-    consoleLogSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
+    vi.clearAllMocks();
   });
 
   describe('initializePlugins', () => {
@@ -73,6 +92,41 @@ describe('PluginLifecycleManager', () => {
 
       expect(callOrder).toEqual(['plugin-0', 'plugin-1', 'plugin-2']);
     });
+
+    test('should log debug messages during initialization', async () => {
+      await manager.initializePlugins(server);
+
+      // Should log start
+      expect(mockLogger.hasLog('[PluginLifecycle] Initializing plugins', 'debug')).toBe(true);
+
+      // Should log each plugin
+      server.plugins.forEach(plugin => {
+        const logs = mockLogger.logs.filter(
+          l =>
+            l.level === 'debug' &&
+            l.message === '[PluginLifecycle] Initializing plugin' &&
+            l.meta?.plugin === plugin.name
+        );
+        expect(logs.length).toBeGreaterThan(0);
+      });
+
+      // Should log completion
+      expect(mockLogger.hasLog('[PluginLifecycle] Plugins initialized', 'info')).toBe(true);
+    });
+
+    test('should include plugin count and names in completion log', async () => {
+      await manager.initializePlugins(server);
+
+      const completionLog = mockLogger.logs.find(
+        l => l.level === 'info' && l.message === '[PluginLifecycle] Plugins initialized'
+      );
+
+      expect(completionLog).toBeDefined();
+      expect(completionLog?.meta).toMatchObject({
+        count: 3,
+        plugins: ['test-plugin-1', 'test-plugin-2', 'test-plugin-3'],
+      });
+    });
   });
 
   describe('terminatePlugins', () => {
@@ -111,7 +165,22 @@ describe('PluginLifecycleManager', () => {
       expect(server.plugins[2]!.terminate).toHaveBeenCalledWith(server);
       expect(server.plugins[1]!.terminate).toBeUndefined();
     });
+
+    test('should log termination completion', async () => {
+      await manager.terminatePlugins(server);
+
+      expect(mockLogger.hasLog('[PluginLifecycle] Plugins terminated', 'info')).toBe(true);
+
+      const completionLog = mockLogger.logs.find(
+        l => l.level === 'info' && l.message === '[PluginLifecycle] Plugins terminated'
+      );
+
+      expect(completionLog?.meta).toMatchObject({
+        count: 3,
+      });
+    });
   });
+
   describe('onServerStart', () => {
     test('should notify all plugins of server start', async () => {
       const mockHttpServer = { listen: vi.fn() };
@@ -136,6 +205,26 @@ describe('PluginLifecycleManager', () => {
       await manager.onServerStart(server, mockHttpServer);
 
       expect(callOrder).toEqual(['plugin-0', 'plugin-1', 'plugin-2']);
+    });
+
+    test('should log debug messages for server start', async () => {
+      const mockHttpServer = { listen: vi.fn() };
+
+      await manager.onServerStart(server, mockHttpServer);
+
+      expect(
+        mockLogger.hasLog('[PluginLifecycle] Notifying plugins of server start', 'debug')
+      ).toBe(true);
+
+      server.plugins.forEach(plugin => {
+        const logs = mockLogger.logs.filter(
+          l =>
+            l.level === 'debug' &&
+            l.message === '[PluginLifecycle] Notifying plugin of server start' &&
+            l.meta?.plugin === plugin.name
+        );
+        expect(logs.length).toBeGreaterThan(0);
+      });
     });
   });
 
@@ -186,10 +275,10 @@ describe('PluginLifecycleManager', () => {
         expect(server.plugins[2]!.initialize).toHaveBeenCalledWith(server);
 
         // Should log error
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          'Plugin failing-plugin failed during initialize: Plugin init failed',
-          expect.any(Error)
-        );
+        const errorLogs = mockLogger.getLogsByLevel('error');
+        expect(errorLogs.length).toBeGreaterThan(0);
+        expect(errorLogs[0]?.message).toContain('failing-plugin');
+        expect(errorLogs[0]?.message).toContain('initialize');
       });
 
       test('should continue terminating other plugins when one fails', async () => {
@@ -206,10 +295,11 @@ describe('PluginLifecycleManager', () => {
         expect(server.plugins[2]!.terminate).toHaveBeenCalledWith(server);
         expect(server.plugins[0]!.terminate).toHaveBeenCalledWith(server);
 
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          'Plugin failing-terminate-plugin failed during terminate: Plugin terminate failed',
-          expect.any(Error)
-        );
+        // Should log error
+        const errorLogs = mockLogger.getLogsByLevel('error');
+        expect(errorLogs.length).toBeGreaterThan(0);
+        expect(errorLogs[0]?.message).toContain('failing-terminate-plugin');
+        expect(errorLogs[0]?.message).toContain('terminate');
       });
     });
 
@@ -256,7 +346,7 @@ describe('PluginLifecycleManager', () => {
     });
 
     describe('with custom error handler', () => {
-      test('should call custom error handler instead of console.error', async () => {
+      test('should call custom error handler instead of logger.error', async () => {
         const customErrorHandler = vi.fn();
         manager = createPluginLifecycleManager({
           onError: customErrorHandler,
@@ -274,54 +364,47 @@ describe('PluginLifecycleManager', () => {
 
         expect(customErrorHandler).toHaveBeenCalledWith(errorPlugin, 'initialize', error);
 
-        // Should not use console.error when custom handler is provided
-        expect(consoleErrorSpy).not.toHaveBeenCalled();
+        // Should not use logger.error when custom handler is provided
+        const errorLogs = mockLogger.getLogsByLevel('error');
+        expect(errorLogs).toHaveLength(0);
       });
     });
   });
 
-  describe('debug logging', () => {
-    test('should not log debug messages when debug=false (default)', async () => {
+  describe('logging behavior', () => {
+    test('should log at debug level for step-by-step operations', async () => {
       await manager.initializePlugins(server);
 
-      expect(consoleLogSpy).not.toHaveBeenCalled();
+      const debugLogs = mockLogger.getLogsByLevel('debug');
+      expect(debugLogs.length).toBeGreaterThan(0);
+
+      // Should have debug logs for each plugin
+      expect(debugLogs.length).toBeGreaterThanOrEqual(server.plugins.length);
     });
 
-    test('should log debug messages when debug=true', async () => {
-      manager = createPluginLifecycleManager({ debug: true });
-
+    test('should log at info level for completed milestones', async () => {
       await manager.initializePlugins(server);
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[PluginLifecycle] Initializing plugins...');
+      const infoLogs = mockLogger.getLogsByLevel('info');
+      expect(infoLogs.length).toBeGreaterThan(0);
 
-      server.plugins.forEach((plugin, index) => {
-        expect(consoleLogSpy).toHaveBeenCalledWith(
-          `[PluginLifecycle] Initializing plugin: test-plugin-${index + 1}`
-        );
+      // Should have completion log
+      expect(infoLogs[0]?.message).toBe('[PluginLifecycle] Plugins initialized');
+    });
+
+    test('should include structured metadata in all logs', async () => {
+      await manager.initializePlugins(server);
+
+      // Check that logs have metadata
+      mockLogger.logs.forEach(log => {
+        expect(log.meta).toBeDefined();
       });
 
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        `[PluginLifecycle] Initialized ${server.plugins.length} plugins`
+      // Check specific metadata structure
+      const initLog = mockLogger.logs.find(
+        l => l.message === '[PluginLifecycle] Initializing plugins'
       );
-    });
-
-    test('should log termination debug messages in reverse order', async () => {
-      manager = createPluginLifecycleManager({ debug: true });
-
-      await manager.terminatePlugins(server);
-
-      expect(consoleLogSpy).toHaveBeenCalledWith('[PluginLifecycle] Terminating plugins...');
-
-      // Should log in reverse order
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[PluginLifecycle] Terminating plugin: test-plugin-3'
-      );
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[PluginLifecycle] Terminating plugin: test-plugin-2'
-      );
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[PluginLifecycle] Terminating plugin: test-plugin-1'
-      );
+      expect(initLog?.meta).toHaveProperty('count');
     });
   });
 
@@ -333,6 +416,10 @@ describe('PluginLifecycleManager', () => {
       await expect(manager.terminatePlugins(server)).resolves.not.toThrow();
       await expect(manager.onServerStart(server, {})).resolves.not.toThrow();
       await expect(manager.onServerStop(server, {})).resolves.not.toThrow();
+
+      // Should still log completion
+      expect(mockLogger.hasLog('[PluginLifecycle] Plugins initialized', 'info')).toBe(true);
+      expect(mockLogger.hasLog('[PluginLifecycle] Plugins terminated', 'info')).toBe(true);
     });
 
     test('should handle plugins with only some lifecycle methods', async () => {
