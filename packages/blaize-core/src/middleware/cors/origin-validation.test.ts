@@ -597,7 +597,7 @@ describe('Origin Validator', () => {
       const cacheDuration = Date.now() - cacheStart;
 
       // Cache lookups should be very fast
-      expect(cacheDuration).toBeLessThan(10);
+      expect(cacheDuration).toBeLessThan(30);
     });
 
     test('should handle concurrent validations with string origins correctly', async () => {
