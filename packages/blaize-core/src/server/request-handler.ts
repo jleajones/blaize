@@ -30,6 +30,13 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
           bodyLimits: serverInstance.bodyLimits,
         });
 
+        // Create request logger
+        const requestLogger = serverInstance._logger.child({
+          correlationId,
+          method: context.request.method,
+          path: context.request.path,
+        });
+
         // Create error boundary middleware that catches all thrown error classes
         const errorBoundary = createErrorBoundary();
         const middlewareChain: Middleware[] = [errorBoundary];
@@ -46,30 +53,34 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
         // Run the request with context in AsyncLocalStorage
         await runWithContext(context, async () => {
-          await handler(context, async () => {
-            if (!context.response.sent) {
-              // Let the router handle the request
-              await serverInstance.router.handleRequest(context);
-              // If router didn't handle it either, send a 404
-              if (!res.headersSent && !context.response.sent) {
-                throw new NotFoundError(
-                  `Route not found: ${context.request.method} ${context.request.path}`
-                );
+          await handler(
+            context,
+            async () => {
+              if (!context.response.sent) {
+                // Let the router handle the request
+                await serverInstance.router.handleRequest(context, requestLogger);
+                // If router didn't handle it either, send a 404
+                if (!res.headersSent && !context.response.sent) {
+                  throw new NotFoundError(
+                    `Route not found: ${context.request.method} ${context.request.path}`
+                  );
+                }
               }
-            }
-          });
+            },
+            requestLogger
+          );
         });
       });
     } catch (error) {
       // Fixed to handle HTTP/2 and check if headers already sent (SSE case)
-      console.error('Error creating context:', error);
+      serverInstance._logger.error('Unhandled request error', { error, correlationId });
       const headerName = getCorrelationHeaderName();
 
       // Check if headers have already been sent (happens with SSE after stream starts)
       if (res.headersSent || (res as any).stream?.headersSent) {
         // Can't send HTTP error response after headers are sent
         // For SSE, the stream's error handling will take care of it
-        console.error('Headers already sent, cannot send error response');
+        serverInstance._logger.error('Headers already sent, cannot send error response');
         return;
       }
 
@@ -83,7 +94,7 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
         (res as any).stream.end(
           JSON.stringify({
             error: 'Internal Server Error',
-            message: 'Failed to process request',
+            message: 'An unexpected error occurred while processing the request',
             correlationId,
           })
         );
@@ -94,7 +105,7 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
         res.end(
           JSON.stringify({
             error: 'Internal Server Error',
-            message: 'Failed to process request',
+            message: 'An unexpected error occurred while processing the request',
             correlationId,
           })
         );

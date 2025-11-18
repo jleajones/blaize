@@ -3,7 +3,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
-import { createMockLogger, createMockMiddleware } from '@blaizejs/testing-utils';
+import { createMockMiddleware } from '@blaizejs/testing-utils';
 
 import { create, DEFAULT_OPTIONS } from './create';
 import * as startModule from './start';
@@ -12,7 +12,6 @@ import * as validationModule from './validation';
 
 import { _setCorrelationConfig } from '../tracing/correlation';
 import { createLogger } from '../logger';
-import { requestLoggerMiddleware } from '../middleware/logger/request-logger';
 
 import type {
   Server,
@@ -114,10 +113,18 @@ vi.mock('../logger', () => ({
       error: vi.fn(),
       child: vi.fn(),
       flush: vi.fn(),
-      _mockConfig: config, // Store config for testing
+      _mockConfig: config,
     };
   }),
   configureGlobalLogger: vi.fn(),
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(),
+    flush: vi.fn(),
+  },
 }));
 
 vi.mock('../middleware/logger/create', () => ({
@@ -155,9 +162,6 @@ describe('create', () => {
       expect(server).toBeDefined();
       expect(server.port).toBe(DEFAULT_OPTIONS.port);
       expect(server.host).toBe(DEFAULT_OPTIONS.host);
-      expect(server.middleware).toHaveLength(2); // logger + request logging
-      expect(server.middleware[0]!.name).toBe('__logger');
-      expect(server.middleware[1]!.name).toBe('requestLogger');
       expect(server.plugins).toEqual([]);
       expect(server.events).toBeInstanceOf(EventEmitter);
       expect(server.context).toBeInstanceOf(AsyncLocalStorage);
@@ -209,22 +213,22 @@ describe('create', () => {
       // Single middleware
       server.use(middleware1);
       expect(server.middleware).toContain(middleware1);
-      expect(server.middleware).toHaveLength(3); // 2 logger + 1 user
+      expect(server.middleware).toHaveLength(1); // 1 user
 
       // Array of middleware (can contain duplicates - no deduplication!)
       server.use([middleware1, middleware2]);
-      expect(server.middleware).toHaveLength(5); // 2 logger + 3 user (including duplicate)
+      expect(server.middleware).toHaveLength(3); // 3 user (including duplicate)
 
       // Adding same array again (more duplicates)
       server.use([middleware1, middleware2]);
-      expect(server.middleware).toHaveLength(7); // 2 logger + 5 user (more duplicates)
+      expect(server.middleware).toHaveLength(5); // 5 user (more duplicates)
 
       // Verify positions
-      expect(server.middleware[2]).toBe(middleware1); // First add
-      expect(server.middleware[3]).toBe(middleware1); // Second add (duplicate)
+      expect(server.middleware[0]).toBe(middleware1); // First add
+      expect(server.middleware[1]).toBe(middleware1); // Second add (duplicate)
+      expect(server.middleware[2]).toBe(middleware2);
+      expect(server.middleware[3]).toBe(middleware1); // Third add (duplicate)
       expect(server.middleware[4]).toBe(middleware2);
-      expect(server.middleware[5]).toBe(middleware1); // Third add (duplicate)
-      expect(server.middleware[6]).toBe(middleware2);
     });
 
     test('should register plugin with register method', async () => {
@@ -626,11 +630,10 @@ describe('create', () => {
         const _testServices: ServerServices = {
           auth: { verify: (_t: string) => true },
           logger: { log: (_m: string) => {} },
-          log: createMockLogger(),
         };
 
         expect(server).toBeDefined();
-        expect(server.middleware).toHaveLength(4);
+        expect(server.middleware).toHaveLength(2);
       });
 
       it('should infer types from initial plugins array', () => {
@@ -650,7 +653,6 @@ describe('create', () => {
         const _testServices: ServerServices = {
           db: { query: async (_sql: string) => [] },
           metrics: { track: (_e: string) => {} },
-          log: createMockLogger(),
         };
 
         expect(server).toBeDefined();
@@ -680,11 +682,10 @@ describe('create', () => {
           logger: { log: (_m: string) => {} },
           db: { query: async (_sql: string) => [] },
           metrics: { track: (_e: string) => {} },
-          log: createMockLogger(),
         };
 
         expect(server).toBeDefined();
-        expect(server.middleware).toHaveLength(4);
+        expect(server.middleware).toHaveLength(2);
         expect(server.plugins).toHaveLength(2);
       });
     });
@@ -710,7 +711,7 @@ describe('create', () => {
           requestId: 'req_123',
         };
 
-        expect(serverWithAll.middleware).toHaveLength(4);
+        expect(serverWithAll.middleware).toHaveLength(2);
       });
 
       it('should accumulate types through use() with middleware array', () => {
@@ -736,10 +737,9 @@ describe('create', () => {
           auth: { verify: (_t: string) => true },
           logger: { log: (_m: string) => {} },
           cache: { get: (_k: string) => null, set: (_k: string, _v: any) => {} },
-          log: createMockLogger(),
         };
 
-        expect(serverWithMiddleware.middleware).toHaveLength(5);
+        expect(serverWithMiddleware.middleware).toHaveLength(3);
       });
 
       it('should handle mixed single and array middleware', () => {
@@ -757,7 +757,7 @@ describe('create', () => {
           cacheKey: 'key',
         };
 
-        expect(enhanced.middleware).toHaveLength(5);
+        expect(enhanced.middleware).toHaveLength(3);
       });
 
       it('should accumulate types through register() with plugins', async () => {
@@ -770,13 +770,11 @@ describe('create', () => {
 
         const _dbServices: DbServices = {
           db: { query: async (_sql: string) => [] },
-          log: createMockLogger(),
         };
 
         const _allServices: AllServices = {
           db: { query: async (_sql: string) => [] },
           metrics: { track: (_e: string) => {} },
-          log: createMockLogger(),
         };
 
         expect(serverWithAll.plugins).toHaveLength(2);
@@ -796,7 +794,6 @@ describe('create', () => {
         const _testServices: ServerServices = {
           db: { query: async (_sql: string) => [] },
           metrics: { track: (_e: string) => {} },
-          log: createMockLogger(),
         };
 
         expect(serverWithPlugins.plugins).toHaveLength(2);
@@ -823,13 +820,12 @@ describe('create', () => {
 
         const _services: Services = {
           logger: { log: (_m: string) => {} },
-          log: createMockLogger(),
           auth: { verify: (_t: string) => true },
           cache: { get: (_k: string) => null, set: (_k: string, _v: any) => {} },
           db: { query: async (_sql: string) => [] },
         };
 
-        expect(finalServer.middleware).toHaveLength(5);
+        expect(finalServer.middleware).toHaveLength(3);
         expect(finalServer.plugins).toHaveLength(1);
       });
 
@@ -853,7 +849,7 @@ describe('create', () => {
           // cacheKey would be an error here since cache wasn't added
         };
 
-        expect(currentServer.middleware).toHaveLength(4);
+        expect(currentServer.middleware).toHaveLength(2);
       });
     });
 
@@ -905,12 +901,10 @@ describe('create', () => {
         type State = typeof server extends Server<infer S, any> ? S : never;
         type Services = typeof server extends Server<any, infer Svc> ? Svc : never;
 
-        // State is empty, services has logger
+        // State is empty, services is empty
         const _state: State = {};
-        const _services: Services = {
-          log: createMockLogger(),
-        };
-        expect(server.middleware).toHaveLength(2);
+        const _services: Services = {};
+        expect(server.middleware).toHaveLength(0);
       });
 
       it('should handle untyped middleware for backward compatibility', () => {
@@ -928,7 +922,7 @@ describe('create', () => {
         type State = typeof serverWithUntyped extends Server<infer S, any> ? S : never;
         const _state: State = {};
 
-        expect(serverWithUntyped.middleware).toHaveLength(3);
+        expect(serverWithUntyped.middleware).toHaveLength(1);
       });
     });
   });
@@ -1070,57 +1064,6 @@ describe('create', () => {
     });
   });
 
-  describe('Request logger middleware initialization', () => {
-    test('creates request logger middleware when logging configured', () => {
-      const _server = create({
-        logging: {
-          level: 'info',
-        },
-      }) as UnknownServer;
-
-      // Verify requestLoggerMiddleware was called
-      expect(requestLoggerMiddleware).toHaveBeenCalled();
-    });
-
-    test('passes requestLogging=true by default', () => {
-      create({
-        logging: {
-          level: 'info',
-        },
-      });
-
-      expect(requestLoggerMiddleware).toHaveBeenCalledWith(undefined, true);
-    });
-
-    test('passes requestLogging=false when explicitly set', () => {
-      create({
-        logging: {
-          level: 'info',
-          requestLogging: false,
-        },
-      });
-
-      expect(requestLoggerMiddleware).toHaveBeenCalledWith(undefined, false);
-    });
-
-    test('passes requestLoggerOptions to middleware', () => {
-      const requestLoggerOptions = {
-        includeHeaders: true,
-        headerWhitelist: ['content-type', 'user-agent'],
-        includeQuery: true,
-      };
-
-      create({
-        logging: {
-          level: 'info',
-          requestLoggerOptions,
-        },
-      });
-
-      expect(requestLoggerMiddleware).toHaveBeenCalledWith(requestLoggerOptions, true);
-    });
-  });
-
   describe('User middleware separation', () => {
     test('stores user middleware separately from logger middleware', () => {
       const server = create({
@@ -1131,8 +1074,8 @@ describe('create', () => {
       }) as UnknownServer;
 
       // User middleware should be in middleware array
-      expect(server.middleware).toHaveLength(3);
-      expect(server.middleware[2]).toBe(authMiddleware);
+      expect(server.middleware).toHaveLength(1);
+      expect(server.middleware[0]).toBe(authMiddleware);
     });
 
     test('middleware field only contains user middleware', () => {
@@ -1143,8 +1086,8 @@ describe('create', () => {
         middleware: [authMiddleware] as const,
       }) as UnknownServer;
 
-      expect(server.middleware).toHaveLength(3);
-      expect(server.middleware[2]!.name).toBe('auth'); // User middleware at index 2
+      expect(server.middleware).toHaveLength(1);
+      expect(server.middleware[0]!.name).toBe('auth'); // User middleware at index 2
     });
   });
 
@@ -1192,15 +1135,14 @@ describe('create', () => {
       const server = create({
         logging: {
           level: 'info',
-          requestLogging: true,
         },
         middleware: userMiddleware,
       }) as UnknownServer;
 
       // Both should be present and separate
       expect(server._logger).toBeDefined();
-      expect(server.middleware).toHaveLength(3); // 2 logger + 1 user
-      expect(server.middleware[2]).toEqual(userMiddleware[0]);
+      expect(server.middleware).toHaveLength(1); // 2 logger + 1 user
+      expect(server.middleware[0]).toEqual(userMiddleware[0]);
     });
 
     test('creates server with logging, CORS, and middleware', () => {
@@ -1215,7 +1157,7 @@ describe('create', () => {
 
       expect(server._logger).toBeDefined();
       expect(server.corsOptions).toBe(true);
-      expect(server.middleware).toHaveLength(3);
+      expect(server.middleware).toHaveLength(1);
     });
 
     test('existing tests still pass without logging config', () => {
