@@ -1,5 +1,17 @@
 # @blaizejs/playground
 
+## 0.1.16
+
+### Patch Changes
+
+- Updated dependencies [87585c5]
+- Updated dependencies [20e0903]
+- Updated dependencies [2279a75]
+  - blaizejs@0.7.0
+  - @blaizejs/middleware-security@2.0.0
+  - @blaizejs/plugin-metrics@2.0.0
+  - @blaizejs/client@0.5.0
+
 ## 0.1.15
 
 ### Patch Changes

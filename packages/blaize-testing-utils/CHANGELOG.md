@@ -1,5 +1,15 @@
 # @blaizejs/testing-utils
 
+## 0.5.0
+
+### Minor Changes
+
+- 20e0903: ✨ BlaizeLogger
+
+### Patch Changes
+
+- 87585c5: ✨ Made BlaizeLogger a first class citizen
+
 ## 0.4.1
 
 ### Patch Changes
