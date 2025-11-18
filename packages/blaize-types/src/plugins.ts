@@ -228,8 +228,6 @@ export interface PluginLifecycleManager {
 export interface PluginLifecycleOptions {
   /** Continue initialization even if a plugin fails */
   continueOnError?: boolean;
-  /** Log plugin lifecycle events */
-  debug?: boolean;
   /** Custom error handler for plugin failures */
   onError?: (plugin: Plugin, phase: string, error: Error) => void;
 }
