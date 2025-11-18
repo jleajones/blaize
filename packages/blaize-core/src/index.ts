@@ -6,6 +6,16 @@
  *
  * @package blaizejs
  */
+// Logging
+import {
+  logger,
+  createLogger,
+  NullTransport,
+  JSONTransport,
+  ConsoleTransport,
+  configureGlobalLogger,
+  Logger,
+} from './logger';
 // Middleware System
 import { compose } from './middleware/compose';
 import { cors } from './middleware/cors';
@@ -14,6 +24,7 @@ import {
   serviceMiddleware as createServiceMiddleware,
   stateMiddleware as createStateMiddleware,
 } from './middleware/create';
+import { requestLoggerMiddleware } from './middleware/logger/request-logger';
 // Plugin System
 import { create as createPlugin } from './plugins/create';
 // Router System
@@ -73,12 +84,22 @@ export {
   createStateMiddleware,
   compose,
   cors,
+  requestLoggerMiddleware,
 
   // Plugins module exports
   createPlugin,
 
   // Tracing module exports
   getCorrelationId,
+
+  // Logger exports
+  logger,
+  createLogger,
+  configureGlobalLogger,
+  Logger,
+  ConsoleTransport,
+  JSONTransport,
+  NullTransport,
 };
 
 // Version information
@@ -107,6 +128,7 @@ export const MiddlewareAPI = {
   createStateMiddleware,
   compose,
   cors,
+  requestLoggerMiddleware,
 };
 export const PluginsAPI = { createPlugin };
 
@@ -133,6 +155,9 @@ const Blaize = {
   createStateMiddleware,
   createPlugin,
   getCorrelationId,
+  configureGlobalLogger,
+  createLogger,
+  logger,
 
   // Namespaces (using the non-conflicting names)
   Server: ServerAPI,
