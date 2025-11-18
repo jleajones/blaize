@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { Context, QueryParams, State, Services } from './context';
+import type { BlaizeLogger } from './logger';
 import type { Middleware } from './middleware';
 
 /**
@@ -41,6 +42,19 @@ export interface RouteSchema<
 
 /**
  * Route handler function with strongly typed params and response
+ *
+ *  @param ctx - The Blaize context object
+ *  @param params - Extracted route parameters
+ *  @param logger - Logger instance for logging within the handler
+ *
+ *  @returns The response data of type TResponse
+ *
+ *  @example
+ *  const myRouteHandler: RouteHandler = async (ctx, params, logger) => {
+ *    logger.info('Handling route with params:', params);
+ *   // Handler logic here
+ *    return { message: 'Success' }
+ *  };
  */
 export type RouteHandler<
   TParams = Record<string, string>,
@@ -51,7 +65,8 @@ export type RouteHandler<
   TServices extends Services = Services,
 > = (
   ctx: Context<TState, TServices, TBody, TQuery>,
-  params: TParams
+  params: TParams,
+  logger: BlaizeLogger
 ) => Promise<TResponse> | TResponse;
 
 /**
@@ -135,7 +150,7 @@ export interface RouterOptions {
  */
 export interface Router {
   /** Handle an incoming request */
-  handleRequest: (ctx: Context) => Promise<void>;
+  handleRequest: (ctx: Context, logger: BlaizeLogger) => Promise<void>;
 
   /** Get all registered routes */
   getRoutes: () => Route[];

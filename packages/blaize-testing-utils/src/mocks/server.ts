@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 import EventEmitter from 'node:events';
 
+import { createMockLogger } from './logger';
 import { createMockPluginLifecycleManager, createMockPlugins } from './plugins';
 import { createMockRouter } from './router';
 import { Plugin, PluginLifecycleManager, Server } from '../../../blaize-types/src/index';
@@ -14,6 +15,7 @@ export function createMockServer<TState, TServices>(
 ): Server<TState, TServices> {
   const mockRouter = createMockRouter();
   const mockPluginManager = createMockPluginLifecycleManager(pluginManagerOverrides);
+  const logger = createMockLogger();
 
   return {
     server: undefined,
@@ -23,6 +25,7 @@ export function createMockServer<TState, TServices>(
     plugins: [],
     middleware: [],
     _signalHandlers: { unregister: vi.fn() },
+    _logger: logger,
     listen: vi.fn().mockResolvedValue({} as Server<TState, TServices>),
     close: vi.fn().mockResolvedValue(undefined),
     use: vi.fn().mockReturnThis(),

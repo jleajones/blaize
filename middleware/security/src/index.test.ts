@@ -2,7 +2,7 @@
  * Unit tests for security() middleware function
  */
 
-import { createMockContext } from '@blaizejs/testing-utils';
+import { createMockContext, createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
 import { createSecurityMiddleware as security } from './index.js';
 
@@ -22,6 +22,12 @@ const createNextFn = (): { fn: NextFunction; getCalls: () => number } => {
 };
 
 describe('security middleware', () => {
+  let mockLogger: MockLogger;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLogger = createMockLogger();
+  });
   describe('Middleware structure', () => {
     it('should return middleware object with correct properties', () => {
       const middleware = security();
@@ -104,7 +110,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalled();
       expect(getCalls()).toBe(1);
@@ -118,7 +124,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalled();
       expect(getCalls()).toBe(1);
@@ -140,7 +146,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).not.toHaveBeenCalled();
       expect(getCalls()).toBe(1);
@@ -156,7 +162,7 @@ describe('security middleware', () => {
       ctx.response.sent = true;
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).not.toHaveBeenCalled();
       expect(getCalls()).toBe(1);
@@ -170,7 +176,7 @@ describe('security middleware', () => {
       ctx.response.sent = false;
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalled();
       expect(getCalls()).toBe(1);
@@ -183,7 +189,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(getCalls()).toBe(1);
     });
@@ -193,7 +199,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(getCalls()).toBe(1);
     });
@@ -204,7 +210,7 @@ describe('security middleware', () => {
       ctx.response.sent = true;
       const { fn: next, getCalls } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(getCalls()).toBe(1);
     });
@@ -216,7 +222,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await expect(middleware.execute(ctx, next)).resolves.not.toThrow();
+      await expect(middleware.execute(ctx, next, mockLogger)).resolves.not.toThrow();
     });
 
     it('should work with undefined options', async () => {
@@ -224,7 +230,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await expect(middleware.execute(ctx, next)).resolves.not.toThrow();
+      await expect(middleware.execute(ctx, next, mockLogger)).resolves.not.toThrow();
     });
 
     it('should work with empty options object', async () => {
@@ -232,7 +238,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await expect(middleware.execute(ctx, next)).resolves.not.toThrow();
+      await expect(middleware.execute(ctx, next, mockLogger)).resolves.not.toThrow();
     });
   });
 
@@ -253,7 +259,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith(
         'Content-Security-Policy',
@@ -277,7 +283,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith(
         'Content-Security-Policy-Report-Only',
@@ -296,7 +302,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).not.toHaveBeenCalledWith(
         'Content-Security-Policy',
@@ -315,7 +321,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).not.toHaveBeenCalledWith(
         'Content-Security-Policy',
@@ -339,7 +345,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith(
         'Strict-Transport-Security',
@@ -354,7 +360,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).not.toHaveBeenCalledWith(
         'Strict-Transport-Security',
@@ -371,7 +377,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith('X-Frame-Options', 'DENY');
     });
@@ -383,7 +389,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
     });
@@ -395,7 +401,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith('X-XSS-Protection', '1; mode=block');
     });
@@ -407,7 +413,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith(
         'Referrer-Policy',
@@ -440,7 +446,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       // Verify all headers are set
       expect(ctx.response.header).toHaveBeenCalledWith(
@@ -475,7 +481,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith('X-Frame-Options', 'SAMEORIGIN');
       expect(ctx.response.header).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
@@ -550,7 +556,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith(
         'Content-Security-Policy',
@@ -576,7 +582,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith(
         'Content-Security-Policy',
@@ -604,7 +610,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       expect(ctx.response.header).toHaveBeenCalledWith(
         'Content-Security-Policy',
@@ -625,7 +631,7 @@ describe('security middleware', () => {
 
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
-      await middleware.execute(ctx, next);
+      await middleware.execute(ctx, next, mockLogger);
 
       // Should have CSP from environment defaults
       expect(ctx.response.header).toHaveBeenCalledWith(
@@ -638,7 +644,7 @@ describe('security middleware', () => {
       const ctx = createMockContext();
       const { fn: next } = createNextFn();
 
-      await expect(middleware.execute(ctx, next)).resolves.not.toThrow();
+      await expect(middleware.execute(ctx, next, mockLogger)).resolves.not.toThrow();
     });
   });
 });

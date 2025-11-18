@@ -1,6 +1,8 @@
+
 import { execute } from './execute';
 
 import type { Context } from '@blaize-types/context';
+import type { BlaizeLogger } from '@blaize-types/logger';
 import type { Middleware, NextFunction, MiddlewareFunction } from '@blaize-types/middleware';
 
 /**
@@ -9,13 +11,17 @@ import type { Middleware, NextFunction, MiddlewareFunction } from '@blaize-types
 export function compose(middlewareStack: Middleware[]): MiddlewareFunction {
   // No middleware? Return a pass-through function
   if (middlewareStack.length === 0) {
-    return async (_, next) => {
+    return async (_, next, __) => {
       await Promise.resolve(next());
     };
   }
 
   // Return a function that executes the middleware stack
-  return async function (ctx: Context, finalHandler: NextFunction): Promise<void> {
+  return async function (
+    ctx: Context,
+    finalHandler: NextFunction,
+    baseLogger: BlaizeLogger
+  ): Promise<void> {
     // Keep track of which "next" functions have been called
     const called = new Set<number>();
 
@@ -43,8 +49,12 @@ export function compose(middlewareStack: Middleware[]): MiddlewareFunction {
         return dispatch(i + 1);
       };
 
+      const middlewareLogger = baseLogger.child({
+        middleware: middleware?.name || 'anonymous',
+      });
+
       // Use the executeMiddleware function we defined
-      return execute(middleware, ctx, nextDispatch);
+      return execute(middleware, ctx, nextDispatch, middlewareLogger);
     };
 
     // Start middleware chain execution

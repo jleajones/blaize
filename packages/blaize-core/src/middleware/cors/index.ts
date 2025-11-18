@@ -13,6 +13,7 @@ import { validateCorsOptions, mergeCorsOptions, validateOriginSecurity } from '.
 
 import type { Context } from '@blaize-types/context';
 import type { CorsOptions } from '@blaize-types/cors';
+import type { BlaizeLogger } from '@blaize-types/logger';
 import type { Middleware, NextFunction } from '@blaize-types/middleware';
 
 /**
@@ -181,10 +182,10 @@ export function corsDevelopment(): Middleware {
   // Create a wrapper middleware that adds the warning
   return createMiddleware({
     name: 'cors-development',
-    handler: async (ctx: Context, next: NextFunction) => {
-      console.warn('[CORS] Running in development mode - all origins allowed');
+    handler: async (ctx: Context, next: NextFunction, logger: BlaizeLogger) => {
+      logger.warn('[CORS] Running in development mode - all origins allowed');
       // Execute the base CORS middleware
-      await baseMiddleware.execute(ctx, next);
+      await baseMiddleware.execute(ctx, next, logger);
     },
     debug: baseMiddleware.debug,
   });

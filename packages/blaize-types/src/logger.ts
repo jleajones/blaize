@@ -434,54 +434,6 @@ export interface LoggerConfig {
    * ```
    */
   includeTimestamp?: boolean;
-
-  /**
-   * Enable automatic request lifecycle logging
-   *
-   * When enabled, logs "Request started" and "Request completed/failed"
-   * messages automatically for each request. Regardless of this setting,
-   * a child logger with request context is ALWAYS created and available
-   * via ctx.services.log.
-   *
-   * @default true
-   *
-   * @example Disable Lifecycle Logging
-   * ```typescript
-   * logging: {
-   *   requestLogging: false  // No automatic logs, but ctx.services.log still has request context
-   * }
-   *
-   * // You can still manually log:
-   * export const GET = appRoute.get({
-   *   handler: async (ctx) => {
-   *     ctx.services.log.info('Custom request log');  // Still has correlationId, method, path
-   *   }
-   * });
-   * ```
-   */
-  requestLogging?: boolean;
-
-  /**
-   * Options for request logger middleware
-   *
-   * Controls what additional request data is included in logs.
-   * These options only apply when requestLogging is true.
-   *
-   * @default {}
-   *
-   * @example
-   * ```typescript
-   * logging: {
-   *   requestLogging: true,
-   *   requestLoggerOptions: {
-   *     includeHeaders: true,
-   *     includeQuery: true,
-   *     headerWhitelist: ['user-agent', 'content-type']
-   *   }
-   * }
-   * ```
-   */
-  requestLoggerOptions?: RequestLoggerOptions;
 }
 
 /**

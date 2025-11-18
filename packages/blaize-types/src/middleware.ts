@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 import type { Context } from './context';
+import type { BlaizeLogger } from './logger';
 
 /**
  * Function to pass control to the next middleware
@@ -8,8 +9,23 @@ export type NextFunction = () => Promise<void> | void;
 
 /**
  * Middleware function signature
+ *
+ *  @param ctx - The Blaize context object
+ *  @param next - Function to invoke the next middleware in the chain
+ *  @param logger - Logger instance for logging within the middleware
+ *
+ *  @example
+ *  const myMiddleware: MiddlewareFunction = async (ctx, next, logger) => {
+ *    logger.info('Executing my middleware');
+ *    // Middleware logic here
+ *    await next();
+ *  };
  */
-export type MiddlewareFunction = (ctx: Context, next: NextFunction) => Promise<void> | void;
+export type MiddlewareFunction = (
+  ctx: Context,
+  next: NextFunction,
+  logger: BlaizeLogger
+) => Promise<void> | void;
 
 /**
  * Named middleware options

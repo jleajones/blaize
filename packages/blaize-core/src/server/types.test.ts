@@ -11,7 +11,7 @@ import {
   type InferServerServices,
 } from '../../src/server/types';
 
-import type { BlaizeLogger, Middleware, Plugin } from '@blaize-types/index';
+import type { Middleware, Plugin } from '@blaize-types/index';
 
 describe('Type Inference Utilities', () => {
   it('should extract context type from server', () => {
@@ -55,7 +55,7 @@ describe('Type Inference Utilities', () => {
     }>();
 
     // Runtime check - server has the middleware
-    expect(server.middleware).toHaveLength(4);
+    expect(server.middleware).toHaveLength(2);
   });
 
   it('should provide runtime type hints with inferContext', () => {
@@ -100,7 +100,7 @@ describe('Type Inference Utilities', () => {
     expectTypeOf<AppContext['state']['bar']>().toEqualTypeOf<number>();
 
     // Verify both middleware are present
-    expect(server.middleware).toHaveLength(4);
+    expect(server.middleware).toHaveLength(2);
   });
 
   it('should work with plugins contributing to types', () => {
@@ -167,7 +167,7 @@ describe('Type Inference Utilities', () => {
 
     // State and services should be empty objects
     expectTypeOf<EmptyContext['state']>().toEqualTypeOf<{}>();
-    expectTypeOf<EmptyContext['services']>().toEqualTypeOf<{ log: BlaizeLogger }>();
+    expectTypeOf<EmptyContext['services']>().toEqualTypeOf<{}>();
   });
 
   it('should work with array middleware composition', () => {
@@ -205,7 +205,7 @@ describe('Type Inference Utilities', () => {
     expectTypeOf<AppContext['state']['b']>().toEqualTypeOf<string>();
     expectTypeOf<AppContext['state']['c']>().toEqualTypeOf<string>();
 
-    expect(server.middleware).toHaveLength(5);
+    expect(server.middleware).toHaveLength(3);
   });
 
   it('should demonstrate usage pattern for routes', () => {

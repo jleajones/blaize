@@ -323,7 +323,7 @@ The context module includes built-in protection and automatic error handling:
 
 ```typescript
 export const errorHandling = createPostRoute({
-  handler: async ctx => {
+  handler: async (ctx, params, logger) => {
     // Correlation IDs are automatically added to errors
     // Check for existing correlation ID from request
     const correlationId = ctx.request.header('x-correlation-id');
@@ -335,7 +335,7 @@ export const errorHandling = createPostRoute({
     try {
       ctx.response.json({ error: true }); // ❌ Throws ResponseSentError
     } catch (error) {
-      console.log('Cannot send multiple responses');
+      logger.error('Cannot send multiple responses');
     }
 
     // Check if response was sent
