@@ -1,5 +1,16 @@
 # blaizejs
 
+## 0.7.0
+
+### Minor Changes
+
+- 20e0903: ✨ BlaizeLogger
+
+### Patch Changes
+
+- 87585c5: ✨ Made BlaizeLogger a first class citizen
+- 2279a75: 🧹 clean up directory structure
+
 ## 0.6.0
 
 ### Minor Changes

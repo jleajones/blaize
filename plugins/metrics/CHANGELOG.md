@@ -1,5 +1,19 @@
 # @blaizejs/plugin-metrics
 
+## 2.0.0
+
+### Minor Changes
+
+- 20e0903: ✨ BlaizeLogger
+
+### Patch Changes
+
+- 87585c5: ✨ Made BlaizeLogger a first class citizen
+- Updated dependencies [87585c5]
+- Updated dependencies [20e0903]
+- Updated dependencies [2279a75]
+  - blaizejs@0.7.0
+
 ## 1.0.0
 
 ### Patch Changes
