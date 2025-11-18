@@ -1,5 +1,15 @@
+/**
+ * Middleware Testing Utilities
+ *
+ * Helper functions for testing middleware with the 3-parameter signature
+ */
+
 import { createMockContext } from './context';
-import { Middleware, Context, NextFunction } from '../../../blaize-types/src/index';
+import { createMockLogger } from './logger';
+
+import type { MockLogger } from './logger';
+import type { Middleware, Context, NextFunction } from '@blaize-types/index';
+import type { BlaizeLogger } from '@blaize-types/logger';
 
 /**
  * Result from executing middleware in tests
@@ -7,6 +17,7 @@ import { Middleware, Context, NextFunction } from '../../../blaize-types/src/ind
 export interface MiddlewareTestResult {
   context: Context;
   nextCalled: boolean;
+  logger: MockLogger;
   error?: Error;
 }
 
@@ -16,9 +27,11 @@ export interface MiddlewareTestResult {
  */
 export async function executeMiddleware(
   middleware: Middleware,
-  context?: Context
+  context?: Context,
+  logger?: MockLogger
 ): Promise<MiddlewareTestResult> {
   const ctx = context || createMockContext();
+  const mockLogger = logger || createMockLogger();
   let nextCalled = false;
   let error: Error | undefined;
 
@@ -27,7 +40,7 @@ export async function executeMiddleware(
   });
 
   try {
-    await middleware.execute(ctx, next);
+    await middleware.execute(ctx, next, mockLogger);
   } catch (err) {
     error = err as Error;
   }
@@ -35,6 +48,7 @@ export async function executeMiddleware(
   const result: MiddlewareTestResult = {
     context: ctx,
     nextCalled,
+    logger: mockLogger,
   };
 
   if (error) {
@@ -50,23 +64,26 @@ export async function executeMiddleware(
  */
 export async function trackMiddlewareOrder(
   middlewares: Middleware[],
-  context?: Context
+  context?: Context,
+  logger?: MockLogger
 ): Promise<{
   context: Context;
   executionOrder: string[];
+  logger: MockLogger;
   error?: Error;
 }> {
   const ctx = context || createMockContext();
+  const mockLogger = logger || createMockLogger();
   const executionOrder: string[] = [];
   let error: Error | undefined;
 
   // Wrap middlewares to track their execution
   const trackedMiddlewares = middlewares.map(middleware => ({
     ...middleware,
-    execute: async (ctx: Context, next: NextFunction) => {
+    execute: async (ctx: Context, next: NextFunction, logger: BlaizeLogger) => {
       executionOrder.push(`${middleware.name}-before`);
       try {
-        await middleware.execute(ctx, next);
+        await middleware.execute(ctx, next, logger);
         executionOrder.push(`${middleware.name}-after`);
       } catch (err) {
         executionOrder.push(`${middleware.name}-error`);
@@ -88,11 +105,10 @@ export async function trackMiddlewareOrder(
         return;
       }
       const middleware = trackedMiddlewares[index++];
-      // Add safety check (though this should never be undefined)
       if (!middleware) {
         throw new Error('Middleware is undefined - this should not happen');
       }
-      await middleware.execute(ctx, dispatch);
+      await middleware.execute(ctx, dispatch, mockLogger);
     }
     await dispatch();
   } catch (err) {
@@ -102,6 +118,7 @@ export async function trackMiddlewareOrder(
   const result = {
     context: ctx,
     executionOrder,
+    logger: mockLogger,
   };
 
   if (error) {
@@ -117,7 +134,7 @@ export async function trackMiddlewareOrder(
 export function createMockMiddleware(
   config: {
     name?: string;
-    execute?: (ctx: Context, next: NextFunction) => Promise<void> | void;
+    execute?: (ctx: Context, next: NextFunction, logger: BlaizeLogger) => Promise<void> | void;
     behavior?: 'pass' | 'block' | 'error';
     errorMessage?: string;
     stateChanges?: Record<string, unknown>;
@@ -139,26 +156,28 @@ export function createMockMiddleware(
     name,
     skip,
     debug,
-    execute: vi.fn().mockImplementation(async (ctx: Context, next: NextFunction) => {
-      // If custom execute function provided, use that
-      if (execute) {
-        return execute(ctx, next);
-      }
+    execute: vi
+      .fn()
+      .mockImplementation(async (ctx: Context, next: NextFunction, logger: BlaizeLogger) => {
+        // If custom execute function provided, use that
+        if (execute) {
+          return execute(ctx, next, logger);
+        }
 
-      // Apply any state changes
-      Object.assign(ctx.state, stateChanges);
+        // Apply any state changes
+        Object.assign(ctx.state, stateChanges);
 
-      switch (behavior) {
-        case 'pass':
-          await next();
-          break;
-        case 'block':
-          ctx.response.status(403).json({ error: 'Blocked' });
-          // Don't call next()
-          break;
-        case 'error':
-          throw new Error(errorMessage);
-      }
-    }),
+        switch (behavior) {
+          case 'pass':
+            await next();
+            break;
+          case 'block':
+            ctx.response.status(403).json({ error: 'Blocked' });
+            // Don't call next()
+            break;
+          case 'error':
+            throw new Error(errorMessage);
+        }
+      }),
   };
 }
