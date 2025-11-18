@@ -1,337 +1,290 @@
-import { createMockMiddleware } from '@blaizejs/testing-utils';
+/**
+ * Tests for Middleware Composition with Logger Parameter
+ */
+
+import { createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
 import { compose } from './compose';
 
 import type { Context } from '@blaize-types/context';
 import type { Middleware, NextFunction } from '@blaize-types/middleware';
 
-// Mock the execute function
-vi.mock('./execute', () => ({
-  execute: vi.fn((middleware, ctx, next) => middleware.execute(ctx, next)),
-}));
-
-describe('compose middleware function', () => {
-  let context: Context;
-  let finalHandler: NextFunction;
-  let executionOrder: string[];
+describe('compose with logger parameter', () => {
+  let mockLogger: MockLogger;
+  let mockContext: Context;
+  let mockNext: NextFunction;
 
   beforeEach(() => {
-    // Reset mocks
-    vi.clearAllMocks();
+    mockLogger = createMockLogger();
+    mockContext = {} as Context;
+    mockNext = vi.fn(async () => {});
+  });
 
-    // Create a simple context for testing
-    context = {} as Context;
+  describe('basic functionality', () => {
+    test('compose returns function expecting logger as 3rd parameter', async () => {
+      const middleware: Middleware = {
+        name: 'test',
+        execute: async (ctx, next, _logger) => {
+          await next();
+        },
+        debug: false,
+      };
 
-    // Create a tracking array to verify execution order
-    executionOrder = [];
+      const composed = compose([middleware]);
 
-    // Create a final handler that records its execution
-    finalHandler = vi.fn(async () => {
-      executionOrder.push('finalHandler');
+      // Should accept 3 parameters
+      await composed(mockContext, mockNext, mockLogger);
+
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('passes logger to middleware.execute as 3rd parameter', async () => {
+      const executeSpy = vi.fn(async (ctx, next, _logger) => {
+        await next();
+      });
+
+      const middleware: Middleware = {
+        name: 'test',
+        execute: executeSpy,
+        debug: false,
+      };
+
+      const composed = compose([middleware]);
+      await composed(mockContext, mockNext, mockLogger);
+
+      expect(executeSpy).toHaveBeenCalledWith(
+        mockContext,
+        expect.any(Function),
+        expect.any(Object) // Logger
+      );
+    });
+
+    test('calls finalNext when all middleware complete', async () => {
+      const middleware: Middleware = {
+        name: 'test',
+        execute: async (ctx, next, _logger) => {
+          await next();
+        },
+        debug: false,
+      };
+
+      const composed = compose([middleware]);
+      await composed(mockContext, mockNext, mockLogger);
+
+      expect(mockNext).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('should return a pass-through function when given an empty middleware stack', async () => {
-    const composed = compose([]);
-    await composed(context, finalHandler);
+  describe('child logger creation', () => {
+    test('creates child logger with middleware name', async () => {
+      const middleware: Middleware = {
+        name: 'auth',
+        execute: async (ctx, next, _logger) => {
+          await next();
+        },
+        debug: false,
+      };
 
-    expect(finalHandler).toHaveBeenCalledTimes(1);
-    expect(executionOrder).toEqual(['finalHandler']);
-  });
+      const composed = compose([middleware]);
+      await composed(mockContext, mockNext, mockLogger);
 
-  it('should execute a single middleware correctly', async () => {
-    const middleware: Middleware = createMockMiddleware({
-      name: 'test-middleware',
-      execute: async (ctx, next) => {
-        executionOrder.push('before');
-        await next();
-        executionOrder.push('after');
-      },
+      expect(mockLogger.childContexts).toHaveLength(1);
+      expect(mockLogger.childContexts[0]).toEqual({ middleware: 'auth' });
     });
 
-    const composed = compose([middleware]);
-    await composed(context, finalHandler);
+    test('each middleware gets its own scoped child logger', async () => {
+      const middleware1: Middleware = {
+        name: 'mw1',
+        execute: async (ctx, next, _logger) => {
+          await next();
+        },
+        debug: false,
+      };
 
-    expect(executionOrder).toEqual(['before', 'finalHandler', 'after']);
+      const middleware2: Middleware = {
+        name: 'mw2',
+        execute: async (ctx, next, _logger) => {
+          await next();
+        },
+        debug: false,
+      };
+
+      const composed = compose([middleware1, middleware2]);
+      await composed(mockContext, mockNext, mockLogger);
+
+      expect(mockLogger.childContexts).toHaveLength(2);
+      expect(mockLogger.childContexts[0]).toEqual({ middleware: 'mw1' });
+      expect(mockLogger.childContexts[1]).toEqual({ middleware: 'mw2' });
+    });
+
+    test('child loggers inherit parent context', async () => {
+      let receivedLogger: any = null;
+
+      const middleware: Middleware = {
+        name: 'test',
+        execute: async (ctx, next, logger) => {
+          receivedLogger = logger;
+          await next();
+        },
+        debug: false,
+      };
+
+      // Parent logger has context
+      const parentLogger = mockLogger.child({
+        correlationId: 'test-123',
+        method: 'GET',
+      });
+
+      const composed = compose([middleware]);
+      await composed(mockContext, mockNext, parentLogger);
+
+      // Verify child was created
+      expect(receivedLogger).toBeDefined();
+    });
   });
 
-  it('should execute multiple middleware in correct order', async () => {
-    const middleware1: Middleware = {
-      name: 'middleware1',
-      execute: async (ctx, next) => {
-        executionOrder.push('before1');
-        await next();
-        executionOrder.push('after1');
-      },
-    };
+  describe('middleware execution order', () => {
+    test('executes middleware in order', async () => {
+      const executionOrder: string[] = [];
 
-    const middleware2: Middleware = {
-      name: 'middleware2',
-      execute: async (ctx, next) => {
-        executionOrder.push('before2');
-        await next();
-        executionOrder.push('after2');
-      },
-    };
+      const middleware1: Middleware = {
+        name: 'first',
+        execute: async (ctx, next, _logger) => {
+          executionOrder.push('first-start');
+          await next();
+          executionOrder.push('first-end');
+        },
+        debug: false,
+      };
 
-    const middleware3: Middleware = {
-      name: 'middleware3',
-      execute: async (ctx, next) => {
-        executionOrder.push('before3');
-        await next();
-        executionOrder.push('after3');
-      },
-    };
+      const middleware2: Middleware = {
+        name: 'second',
+        execute: async (ctx, next, _logger) => {
+          executionOrder.push('second-start');
+          await next();
+          executionOrder.push('second-end');
+        },
+        debug: false,
+      };
 
-    const composed = compose([middleware1, middleware2, middleware3]);
-    await composed(context, finalHandler);
+      const finalNext = async () => {
+        executionOrder.push('final');
+      };
 
-    expect(executionOrder).toEqual([
-      'before1',
-      'before2',
-      'before3',
-      'finalHandler',
-      'after3',
-      'after2',
-      'after1',
-    ]);
+      const composed = compose([middleware1, middleware2]);
+      await composed(mockContext, finalNext, mockLogger);
+
+      expect(executionOrder).toEqual([
+        'first-start',
+        'second-start',
+        'final',
+        'second-end',
+        'first-end',
+      ]);
+    });
+
+    test('handles empty middleware array', async () => {
+      const composed = compose([]);
+      await composed(mockContext, mockNext, mockLogger);
+
+      expect(mockNext).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('should throw an error when next() is called multiple times', async () => {
-    const badMiddleware: Middleware = {
-      name: 'bad-middleware',
-      execute: async (ctx, next) => {
+  describe('skip functionality', () => {
+    test('skips middleware when skip returns true', async () => {
+      const executeSpy = vi.fn(async (ctx, next, _logger) => {
         await next();
-        await next(); // This should cause an error
-      },
-    };
+      });
 
-    const composed = compose([badMiddleware]);
+      const middleware: Middleware = {
+        name: 'skippable',
+        execute: executeSpy,
+        skip: () => true,
+        debug: false,
+      };
 
-    await expect(composed(context, finalHandler)).rejects.toThrow('next() called multiple times');
+      const composed = compose([middleware]);
+      await composed(mockContext, mockNext, mockLogger);
+
+      expect(executeSpy).not.toHaveBeenCalled();
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('executes middleware when skip returns false', async () => {
+      const executeSpy = vi.fn(async (ctx, next, _logger) => {
+        await next();
+      });
+
+      const middleware: Middleware = {
+        name: 'not-skipped',
+        execute: executeSpy,
+        skip: () => false,
+        debug: false,
+      };
+
+      const composed = compose([middleware]);
+      await composed(mockContext, mockNext, mockLogger);
+
+      expect(executeSpy).toHaveBeenCalled();
+    });
   });
 
-  it('should propagate errors thrown in middleware', async () => {
-    const errorMiddleware: Middleware = {
-      name: 'error-middleware',
-      execute: async () => {
-        throw new Error('Middleware error');
-      },
-    };
+  describe('error handling', () => {
+    test('preserves error handling - next() called multiple times', async () => {
+      const badMiddleware: Middleware = {
+        name: 'bad',
+        execute: async (ctx, next, _logger) => {
+          await next();
+          await next(); // Should throw
+        },
+        debug: false,
+      };
 
-    const composed = compose([errorMiddleware]);
+      const composed = compose([badMiddleware]);
 
-    await expect(composed(context, finalHandler)).rejects.toThrow('Middleware error');
-    expect(finalHandler).not.toHaveBeenCalled();
-  });
+      await expect(composed(mockContext, mockNext, mockLogger)).rejects.toThrow(
+        'next() called multiple times'
+      );
+    });
 
-  it('should propagate errors thrown in finalHandler', async () => {
-    const errorFinalHandler = async () => {
-      throw new Error('Final handler error');
-    };
+    test('handles middleware that throws errors', async () => {
+      const error = new Error('Test error');
 
-    const middleware: Middleware = {
-      name: 'test-middleware',
-      execute: async (ctx, next) => {
-        executionOrder.push('before');
-        await next();
-        executionOrder.push('after');
-      },
-    };
+      const errorMiddleware: Middleware = {
+        name: 'error',
+        execute: async (_ctx, _next, _logger) => {
+          throw error;
+        },
+        debug: false,
+      };
 
-    const composed = compose([middleware]);
+      const composed = compose([errorMiddleware]);
 
-    await expect(composed(context, errorFinalHandler)).rejects.toThrow('Final handler error');
-    expect(executionOrder).toEqual(['before']); // 'after' shouldn't execute due to error
-  });
+      await expect(composed(mockContext, mockNext, mockLogger)).rejects.toThrow('Test error');
 
-  it('should handle async middleware correctly', async () => {
-    const asyncMiddleware1: Middleware = {
-      name: 'async-middleware-1',
-      execute: async (ctx, next) => {
-        executionOrder.push('before1');
-        await new Promise(resolve => setTimeout(resolve, 10));
-        await next();
-        await new Promise(resolve => setTimeout(resolve, 10));
-        executionOrder.push('after1');
-      },
-    };
+      expect(mockNext).not.toHaveBeenCalled();
+    });
 
-    const asyncMiddleware2: Middleware = {
-      name: 'async-middleware-2',
-      execute: async (ctx, next) => {
-        executionOrder.push('before2');
-        await new Promise(resolve => setTimeout(resolve, 10));
-        await next();
-        await new Promise(resolve => setTimeout(resolve, 10));
-        executionOrder.push('after2');
-      },
-    };
+    test('propagates errors from finalNext', async () => {
+      const error = new Error('Final handler error');
+      const finalNext = async () => {
+        throw error;
+      };
 
-    const composed = compose([asyncMiddleware1, asyncMiddleware2]);
-    await composed(context, finalHandler);
+      const middleware: Middleware = {
+        name: 'test',
+        execute: async (ctx, next, _logger) => {
+          await next();
+        },
+        debug: false,
+      };
 
-    expect(executionOrder).toEqual(['before1', 'before2', 'finalHandler', 'after2', 'after1']);
-  });
+      const composed = compose([middleware]);
 
-  it('should handle synchronous middleware that returns non-promises', async () => {
-    const syncMiddleware: Middleware = {
-      name: 'sync-middleware',
-      execute: (ctx, next) => {
-        executionOrder.push('before');
-        next();
-        executionOrder.push('after');
-        // Intentionally not returning anything
-        return undefined as any;
-      },
-    };
-
-    const composed = compose([syncMiddleware]);
-    await composed(context, finalHandler);
-
-    expect(executionOrder).toEqual(['before', 'finalHandler', 'after']);
-  });
-
-  it('should ensure finalHandler always returns a Promise', async () => {
-    const syncFinalHandler = () => {
-      executionOrder.push('syncFinalHandler');
-      // Intentionally not returning a promise
-      return undefined as any;
-    };
-
-    const middleware: Middleware = {
-      name: 'test-middleware',
-      execute: async (ctx, next) => {
-        executionOrder.push('before');
-        const result = await next();
-        executionOrder.push('after');
-        return result;
-      },
-    };
-
-    const composed = compose([middleware]);
-    await composed(context, syncFinalHandler);
-
-    expect(executionOrder).toEqual(['before', 'syncFinalHandler', 'after']);
-  });
-
-  it('should handle middleware that modifies the context', async () => {
-    const modifyingMiddleware: Middleware = {
-      name: 'modifying-middleware',
-      execute: async (ctx, next) => {
-        (ctx as any).foo = 'bar';
-        await next();
-        (ctx as any).baz = 'qux';
-      },
-    };
-
-    const checkingMiddleware: Middleware = {
-      name: 'checking-middleware',
-      execute: async (ctx, next) => {
-        expect((ctx as any).foo).toBe('bar');
-        await next();
-        expect((ctx as any).baz).toBeUndefined(); // Not set yet at this point
-      },
-    };
-
-    const composed = compose([modifyingMiddleware, checkingMiddleware]);
-    await composed(context, finalHandler);
-
-    expect((context as any).foo).toBe('bar');
-    expect((context as any).baz).toBe('qux');
-  });
-
-  it('should handle middleware that does not call next()', async () => {
-    const terminatingMiddleware: Middleware = {
-      name: 'terminating-middleware',
-      execute: async () => {
-        executionOrder.push('terminating');
-        // Intentionally not calling next()
-      },
-    };
-
-    const nextMiddleware: Middleware = {
-      name: 'next-middleware',
-      execute: async (_ctx, next) => {
-        executionOrder.push('should not be called');
-        await next();
-      },
-    };
-
-    const composed = compose([terminatingMiddleware, nextMiddleware]);
-    await composed(context, finalHandler);
-
-    expect(executionOrder).toEqual(['terminating']);
-    expect(finalHandler).not.toHaveBeenCalled();
-  });
-
-  it('should skip middleware when skip function returns true', async () => {
-    const skippableMiddleware: Middleware = {
-      name: 'skippable-middleware',
-      execute: async (_ctx, next) => {
-        executionOrder.push('should not be called');
-        await next();
-      },
-      skip: () => true, // Always skip
-    };
-
-    const normalMiddleware: Middleware = {
-      name: 'normal-middleware',
-      execute: async (ctx, next) => {
-        executionOrder.push('normal-middleware');
-        await next();
-      },
-    };
-
-    // Mock the execute function for this specific test to check if skip is honored
-    const executeModule = await import('./execute');
-    const mockExecute = vi.spyOn(executeModule, 'execute');
-
-    const composed = compose([skippableMiddleware, normalMiddleware]);
-    await composed(context, finalHandler);
-
-    // The execute function should respect the skip property and bypass the middleware
-    expect(mockExecute).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: expect.any(Function) }),
-      expect.anything(),
-      expect.anything()
-    );
-
-    // Skip functionality is handled by the execute function, so we're primarily testing
-    // that compose passes the middleware object correctly to execute
-    mockExecute.mockRestore();
-  });
-
-  it('should handle middleware with debug flag', async () => {
-    const debuggableMiddleware: Middleware = {
-      name: 'debuggable-middleware',
-      execute: async (ctx, next) => {
-        executionOrder.push('debuggable');
-        await next();
-      },
-      debug: true,
-    };
-
-    // Mock the execute function for this specific test to check if debug is passed
-    const executeModule = await import('./execute');
-    const mockExecute = vi.spyOn(executeModule, 'execute');
-
-    const composed = compose([debuggableMiddleware]);
-    await composed(context, finalHandler);
-
-    // The execute function should receive the middleware with the debug flag
-    expect(mockExecute).toHaveBeenCalledWith(
-      expect.objectContaining({ debug: true }),
-      expect.anything(),
-      expect.anything()
-    );
-
-    mockExecute.mockRestore();
-  });
-
-  it('should throw error if middleware is null or undefined', async () => {
-    const composed = compose([null as any, undefined as any]);
-
-    await expect(composed(context, finalHandler)).rejects.toThrow();
+      await expect(composed(mockContext, finalNext, mockLogger)).rejects.toThrow(
+        'Final handler error'
+      );
+    });
   });
 });

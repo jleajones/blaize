@@ -1,13 +1,30 @@
 import type { Context } from '@blaize-types/context';
+import type { BlaizeLogger } from '@blaize-types/logger';
 import type { Middleware, NextFunction } from '@blaize-types/middleware';
 
 /**
  * Execute a single middleware, handling both function and object forms
+ *
+ * handle undefined middleware and skip logic
+ *
+ *  @param middleware - The middleware to execute (or undefined)
+ *  @param ctx - The Blaize context object
+ *  @param next - Function to invoke the next middleware in the chain
+ *  @param logger - Logger instance for logging within the middleware
+ *
+ *  @returns A Promise that resolves when middleware execution is complete
+ *
+ *  @example
+ * ```typescript
+ * const logger = createLogger();
+ * await execute(myMiddleware, ctx, next, logger);
+ * ```
  */
 export function execute(
   middleware: Middleware | undefined,
   ctx: Context,
-  next: NextFunction
+  next: NextFunction,
+  logger: BlaizeLogger
 ): Promise<void> {
   // Handle undefined middleware (safety check)
   if (!middleware) {
@@ -21,7 +38,7 @@ export function execute(
 
   try {
     // Execute middleware
-    const result = middleware.execute(ctx, next);
+    const result = middleware.execute(ctx, next, logger);
 
     // Handle both Promise and non-Promise returns
     if (result instanceof Promise) {
