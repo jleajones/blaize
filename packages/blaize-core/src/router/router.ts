@@ -17,6 +17,7 @@ import {
 } from './utils/matching-helpers';
 
 import type { Context } from '@blaize-types/context';
+import type { BlaizeLogger } from '@blaize-types/logger';
 import type { HttpMethod, Route, RouterOptions, Router } from '@blaize-types/router';
 
 const DEFAULT_ROUTER_OPTIONS = {
@@ -309,7 +310,7 @@ export function createRouter(options: RouterOptions): Router {
     /**
      * Handle an incoming request
      */
-    async handleRequest(ctx: Context) {
+    async handleRequest(ctx: Context, logger: BlaizeLogger) {
       // Ensure router is initialized
       if (!initialized) {
         console.log('🔄 Router not initialized, initializing...');
@@ -352,7 +353,7 @@ export function createRouter(options: RouterOptions): Router {
       ctx.request.params = match.params;
 
       // Execute the route handler with middleware
-      await executeHandler(ctx, match.route!, match.params);
+      await executeHandler(ctx, match.route!, match.params, logger);
     },
 
     /**

@@ -44,6 +44,8 @@ vi.mock('./utils/matching-helpers', () => ({
   updateRouteInMatcher: vi.fn(),
 }));
 
+import { createMockLogger } from '@blaizejs/testing-utils';
+
 import { findRoutes } from './discovery';
 import { clearFileCache } from './discovery/cache';
 import { loadInitialRoutesParallel } from './discovery/parallel';
@@ -210,6 +212,7 @@ describe('Router', () => {
   });
 
   test('sets up file watcher in development mode', async () => {
+    const mockLogger = createMockLogger();
     // Arrange
     const originalNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
@@ -221,7 +224,7 @@ describe('Router', () => {
     });
 
     // Force initialization by handling a request
-    await router.handleRequest(mockContext);
+    await router.handleRequest(mockContext, mockLogger);
 
     // Assert
     expect(watchRoutes).toHaveBeenCalled();
@@ -260,6 +263,7 @@ describe('Router', () => {
   });
 
   test('handles request with matching route', async () => {
+    const mockLogger = createMockLogger();
     // Arrange
     const router = createRouter({ routesDir: './routes' });
     const matchResult = {
@@ -271,12 +275,17 @@ describe('Router', () => {
     mockMatcher.match.mockReturnValue(matchResult);
 
     // Act
-    await router.handleRequest(mockContext);
+    await router.handleRequest(mockContext, mockLogger);
 
     // Assert
     expect(mockMatcher.match).toHaveBeenCalledWith('/users', 'PUT');
     expect(mockContext.request.params).toEqual({ id: '123' });
-    expect(executeHandler).toHaveBeenCalledWith(mockContext, matchResult.route, matchResult.params);
+    expect(executeHandler).toHaveBeenCalledWith(
+      mockContext,
+      matchResult.route,
+      matchResult.params,
+      mockLogger
+    );
   });
 
   // ==========================================
@@ -284,16 +293,17 @@ describe('Router', () => {
   // ==========================================
 
   test('throws NotFoundError when no route matches (error boundary will catch)', async () => {
+    const mockLogger = createMockLogger();
     // Arrange
     const router = createRouter({ routesDir: './routes' });
     mockMatcher.match.mockReturnValue(null);
 
     // Act & Assert - Router should throw error, not handle it manually
-    await expect(router.handleRequest(mockContext)).rejects.toThrow(NotFoundError);
+    await expect(router.handleRequest(mockContext, mockLogger)).rejects.toThrow(NotFoundError);
 
     // Verify the thrown error has correct properties
     try {
-      await router.handleRequest(mockContext);
+      await router.handleRequest(mockContext, mockLogger);
     } catch (error) {
       expect(error).toBeInstanceOf(NotFoundError);
       expect((error as NotFoundError).type).toBe(ErrorType.NOT_FOUND);
@@ -308,6 +318,7 @@ describe('Router', () => {
   });
 
   test('handles 405 Method Not Allowed with manual response (TODO: should throw error)', async () => {
+    const mockLogger = createMockLogger();
     // Arrange
     const router = createRouter({ routesDir: './routes' });
     mockMatcher.match.mockReturnValue({
@@ -316,7 +327,7 @@ describe('Router', () => {
     });
 
     // Act
-    await router.handleRequest(mockContext);
+    await router.handleRequest(mockContext, mockLogger);
 
     // Assert - Current implementation uses manual response (should be changed)
     expect(mockContext.response.status).toHaveBeenCalledWith(405);
@@ -329,6 +340,7 @@ describe('Router', () => {
   });
 
   test('lets handler errors bubble up to error boundary (no try/catch)', async () => {
+    const mockLogger = createMockLogger();
     // Arrange
     const router = createRouter({ routesDir: './routes' });
     const mockError = new Error('Handler failed');
@@ -342,13 +354,19 @@ describe('Router', () => {
     (executeHandler as any).mockImplementation(() => Promise.reject(mockError));
 
     // Act & Assert - Router should let error bubble up, not catch it
-    await expect(router.handleRequest(mockContext)).rejects.toThrow('Handler failed');
+    await expect(router.handleRequest(mockContext, mockLogger)).rejects.toThrow('Handler failed');
 
     // Verify executeHandler was called
-    expect(executeHandler).toHaveBeenCalledWith(mockContext, matchResult.route, matchResult.params);
+    expect(executeHandler).toHaveBeenCalledWith(
+      mockContext,
+      matchResult.route,
+      matchResult.params,
+      mockLogger
+    );
   });
 
   test('sets request params when route matches', async () => {
+    const mockLogger = createMockLogger();
     // Arrange
     const router = createRouter({ routesDir: './routes' });
     const matchResult = {
@@ -360,14 +378,20 @@ describe('Router', () => {
     mockMatcher.match.mockReturnValue(matchResult);
 
     // Act
-    await router.handleRequest(mockContext);
+    await router.handleRequest(mockContext, mockLogger);
 
     // Assert
     expect(mockContext.request.params).toEqual({ userId: '123', orgId: '456' });
-    expect(executeHandler).toHaveBeenCalledWith(mockContext, matchResult.route, matchResult.params);
+    expect(executeHandler).toHaveBeenCalledWith(
+      mockContext,
+      matchResult.route,
+      matchResult.params,
+      mockLogger
+    );
   });
 
   test('initializes router during creation (not on first request)', async () => {
+    const mockLogger = createMockLogger();
     // Arrange - Clear any previous calls
     vi.clearAllMocks();
 
@@ -384,7 +408,7 @@ describe('Router', () => {
     expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
 
     // Additional test: handling request should work without additional initialization
-    await router.handleRequest(mockContext);
+    await router.handleRequest(mockContext, mockLogger);
 
     // Should not have called loadInitialRoutesParallel again
     expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(1);
@@ -599,11 +623,12 @@ describe('Router', () => {
     });
 
     test('router has close method for cleanup', async () => {
+      const mockLogger = createMockLogger();
       // Arrange
       const router = createRouter({ routesDir: './routes', watchMode: true });
 
       // Force initialization to set up watchers
-      await router.handleRequest(mockContext);
+      await router.handleRequest(mockContext, mockLogger);
 
       // Act & Assert
       expect(router.close).toBeInstanceOf(Function);
