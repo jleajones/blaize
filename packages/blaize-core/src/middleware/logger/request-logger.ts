@@ -10,7 +10,6 @@
 import { BlaizeError } from '@blaize-types/errors';
 
 import { create as createMiddleware } from '../../middleware/create';
-import { getCorrelationId } from '../../tracing/correlation';
 
 import type { RequestLoggerOptions, LogMetadata, BlaizeLogger } from '@blaize-types/logger';
 import type { Middleware } from '@blaize-types/middleware';
@@ -77,7 +76,6 @@ function filterHeaders(
  * include request context, even if requestLogging is false.
  *
  * @param options - Request logger options (headers, query, etc.)
- * @param requestLogging - Whether to log request lifecycle events
  * @returns Middleware function
  *
  * @example Basic Usage (with lifecycle logging)
@@ -128,29 +126,13 @@ function filterHeaders(
  * // Sensitive headers (authorization, cookie) are ALWAYS redacted
  * ```
  */
-export function requestLoggerMiddleware(
-  options?: RequestLoggerOptions,
-  requestLogging = true
-): Middleware {
+export function requestLoggerMiddleware(options?: RequestLoggerOptions): Middleware {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   return createMiddleware<{}, {}>({
     name: 'requestLogger',
-    handler: async (ctx, next) => {
-      // Get root logger from services (set by server during initialization)
-      const rootLogger = ctx.services.log as BlaizeLogger | undefined;
-
-      if (!rootLogger) {
-        // No logger configured - skip logging but continue processing
-        return next();
-      }
-
+    handler: async (ctx, next, logger: BlaizeLogger) => {
       // Start timer for duration calculation
       const startTime = Date.now();
-
-      // Extract request context
-      const correlationId = getCorrelationId();
-      const method = ctx.request.method;
-      const path = ctx.request.path;
 
       // Extract IP address from socket if available
       let ip: string | undefined;
@@ -158,16 +140,14 @@ export function requestLoggerMiddleware(
         ip = ctx.request.raw.socket?.remoteAddress;
       }
 
-      // Build child logger metadata
-      const childMeta: LogMetadata = {
-        correlationId,
-        method,
-        path,
+      // Build metadata for request start log
+      const startMeta: LogMetadata = {
+        timestamp: new Date().toISOString(),
       };
 
       // Add IP if available
       if (ip) {
-        childMeta.ip = ip;
+        startMeta.ip = ip;
       }
 
       // Add headers if requested
@@ -177,7 +157,7 @@ export function requestLoggerMiddleware(
         const safeHeaders = filterHeaders(allHeaders, whitelist);
 
         if (Object.keys(safeHeaders).length > 0) {
-          childMeta.headers = safeHeaders;
+          startMeta.headers = safeHeaders;
         }
       }
 
@@ -185,23 +165,12 @@ export function requestLoggerMiddleware(
       if (options?.includeQuery) {
         const query = ctx.request.query;
         if (query && Object.keys(query).length > 0) {
-          childMeta.query = query;
+          startMeta.query = query;
         }
       }
 
-      // Create child logger with request context
-      const childLogger = rootLogger.child(childMeta);
-
-      // Replace ctx.services.log with child logger
-      // This ensures all subsequent logs automatically include request context
-      ctx.services.log = childLogger;
-
       // Log request started (if lifecycle logging enabled)
-      if (requestLogging) {
-        childLogger.info('Request started', {
-          timestamp: new Date().toISOString(),
-        });
-      }
+      logger.info('Request started', startMeta);
 
       // Execute middleware chain and capture result/error
       let error: unknown;
@@ -211,51 +180,49 @@ export function requestLoggerMiddleware(
         error = err;
       } finally {
         // Log request completed/failed (if lifecycle logging enabled)
-        if (requestLogging) {
-          const duration = Date.now() - startTime;
+        const duration = Date.now() - startTime;
 
-          if (error) {
-            // Request failed - log error details
-            const errorMeta: LogMetadata = {
-              duration,
-              timestamp: new Date().toISOString(),
+        if (error) {
+          // Request failed - log error details
+          const errorMeta: LogMetadata = {
+            duration,
+            timestamp: new Date().toISOString(),
+          };
+
+          // Extract error details based on error type
+          if (error instanceof BlaizeError) {
+            // BlaizeError has structured error information
+            errorMeta.error = {
+              type: error.type,
+              title: error.title,
+              status: error.status,
+              message: error.message,
+              details: error.details,
+              // Include stack trace for server errors (5xx)
+              ...(error.status >= 500 && error.stack ? { stack: error.stack } : {}),
             };
-
-            // Extract error details based on error type
-            if (error instanceof BlaizeError) {
-              // BlaizeError has structured error information
-              errorMeta.error = {
-                type: error.type,
-                title: error.title,
-                status: error.status,
-                message: error.message,
-                details: error.details,
-                // Include stack trace for server errors (5xx)
-                ...(error.status >= 500 && error.stack ? { stack: error.stack } : {}),
-              };
-            } else if (error instanceof Error) {
-              // Standard Error object
-              errorMeta.error = {
-                message: error.message,
-                name: error.name,
-                stack: error.stack,
-              };
-            } else {
-              // Non-Error value thrown
-              errorMeta.error = String(error);
-            }
-
-            childLogger.error('Request failed', errorMeta);
+          } else if (error instanceof Error) {
+            // Standard Error object
+            errorMeta.error = {
+              message: error.message,
+              name: error.name,
+              stack: error.stack,
+            };
           } else {
-            // Request completed successfully
-            const statusCode = ctx.response.statusCode || 200;
-
-            childLogger.info('Request completed', {
-              statusCode,
-              duration,
-              timestamp: new Date().toISOString(),
-            });
+            // Non-Error value thrown
+            errorMeta.error = String(error);
           }
+
+          logger.error('Request failed', errorMeta);
+        } else {
+          // Request completed successfully
+          const statusCode = ctx.response.statusCode || 200;
+
+          logger.info('Request completed', {
+            statusCode,
+            duration,
+            timestamp: new Date().toISOString(),
+          });
         }
 
         // Re-throw error if one occurred
