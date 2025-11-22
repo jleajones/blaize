@@ -6,12 +6,17 @@
 
 import { z } from 'zod';
 
-import { createMockMiddleware, createSSEMockContext } from '@blaizejs/testing-utils';
+import {
+  createMockLogger,
+  createMockMiddleware,
+  createSSEMockContext,
+} from '@blaizejs/testing-utils';
 
 import { createSSERoute } from './create';
 import { SSENotAcceptableError } from '../errors/sse-not-acceptable-error';
 
 import type { State, Services } from '@blaize-types/context';
+import type { BlaizeLogger } from '@blaize-types/logger';
 
 // ============================================================================
 // Mock Setup
@@ -43,7 +48,9 @@ vi.mock('../router/create', () => ({
 // ============================================================================
 
 describe('createSSERoute', () => {
+  let mockLogger: BlaizeLogger;
   beforeEach(() => {
+    mockLogger = createMockLogger();
     vi.clearAllMocks();
   });
 
@@ -206,7 +213,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
       const params = { id: '123' };
-      route.GET.handler(ctx, params);
+      route.GET.handler(ctx, params, mockLogger);
 
       expect(createSSEStream).toHaveBeenCalledWith(ctx, undefined);
       expect(userHandler).toHaveBeenCalledWith(
@@ -215,7 +222,13 @@ describe('createSSERoute', () => {
           close: expect.any(Function),
         }),
         ctx,
-        params
+        params,
+        expect.objectContaining({
+          // ← Change this
+          info: expect.any(Function),
+          error: expect.any(Function),
+          child: expect.any(Function),
+        })
       );
     });
 
@@ -228,7 +241,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'application/json' }, // Wrong accept header
       });
 
-      await expect(route.GET.handler(ctx, {})).rejects.toThrow(SSENotAcceptableError);
+      await expect(route.GET.handler(ctx, {}, mockLogger)).rejects.toThrow(SSENotAcceptableError);
     });
 
     test('allows wildcard accept header', async () => {
@@ -240,7 +253,7 @@ describe('createSSERoute', () => {
         headers: { accept: '*/*' },
       });
 
-      await expect(route.GET.handler(ctx, {})).resolves.not.toThrow();
+      await expect(route.GET.handler(ctx, {}, mockLogger)).resolves.not.toThrow();
     });
 
     test('allows missing accept header', async () => {
@@ -252,7 +265,7 @@ describe('createSSERoute', () => {
         headers: {}, // No accept header
       });
 
-      await expect(route.GET.handler(ctx, {})).resolves.not.toThrow();
+      await expect(route.GET.handler(ctx, {}, mockLogger)).resolves.not.toThrow();
     });
 
     test('registers close handler on client disconnect', async () => {
@@ -290,7 +303,7 @@ describe('createSSERoute', () => {
         return ctx.request.raw;
       });
 
-      await route.GET.handler(ctx, {});
+      await route.GET.handler(ctx, {}, mockLogger);
 
       expect(ctx.request.raw.on).toHaveBeenCalledWith('close', expect.any(Function));
 
@@ -327,7 +340,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await expect(route.GET.handler(ctx, {})).rejects.toThrow(error);
+      await expect(route.GET.handler(ctx, {}, mockLogger)).rejects.toThrow(error);
       expect(mockStream.sendError).toHaveBeenCalledWith(error);
       expect(mockStream.close).toHaveBeenCalled();
     });
@@ -346,7 +359,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {});
+      await route.GET.handler(ctx, {}, mockLogger);
 
       expect(createSSEStream).toHaveBeenCalledWith(ctx, options);
     });
@@ -389,7 +402,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {});
+      await route.GET.handler(ctx, {}, mockLogger);
 
       // Check that handler received a stream
       expect(userHandler).toHaveBeenCalledWith(
@@ -397,7 +410,13 @@ describe('createSSERoute', () => {
           send: expect.any(Function),
         }),
         ctx,
-        {}
+        {},
+        expect.objectContaining({
+          // ← Change this
+          info: expect.any(Function),
+          error: expect.any(Function),
+          child: expect.any(Function),
+        })
       );
 
       // Get the typed stream passed to handler
@@ -443,7 +462,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {});
+      await route.GET.handler(ctx, {}, mockLogger);
 
       const stream = userHandler.mock.calls[0]![0];
       expect(stream).toBe(baseStream);
@@ -480,7 +499,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {});
+      await route.GET.handler(ctx, {}, mockLogger);
 
       const typedStream = userHandler.mock.calls[0]![0];
 
@@ -608,7 +627,7 @@ describe('createSSERoute', () => {
         },
       });
 
-      await route.GET.handler(ctx, {});
+      await route.GET.handler(ctx, {}, mockLogger);
     });
   });
 
@@ -761,7 +780,7 @@ describe('createSSERoute', () => {
         query: { since: '2024-01-01', limit: '50' },
       });
 
-      await result.GET.handler(ctx, { roomId: 'room123' });
+      await result.GET.handler(ctx, { roomId: 'room123' }, mockLogger);
 
       // Verify the typed stream was created and events were sent
       const _handler = vi.mocked(result.GET.handler);
