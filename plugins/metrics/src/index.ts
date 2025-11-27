@@ -10,6 +10,7 @@
 
 import { createMiddleware, createPlugin } from 'blaizejs';
 
+import config from '../package.json';
 import { MetricsCollectorImpl } from './collector';
 
 import type {
@@ -110,8 +111,8 @@ export const createMetricsPlugin = createPlugin<
   MetricsPluginState,
   MetricsPluginServices
 >({
-  name: '@blaizejs/plugin-metrics',
-  version: '1.0.0',
+  name: config.name,
+  version: config.version,
   defaultConfig: DEFAULT_CONFIG,
   setup: (config: MetricsPluginConfig, logger: BlaizeLogger) => {
     // 1. Declare resources in closure (singleton pattern)
