@@ -504,3 +504,135 @@ export class StorageError extends BlaizeError<StorageErrorDetails> {
     this.name = 'StorageError';
   }
 }
+
+// ============================================================================
+// Handler Already Registered Error
+// ============================================================================
+
+/**
+ * Details for handler already registered errors
+ */
+export interface HandlerAlreadyRegisteredDetails {
+  /** The job type that already has a handler */
+  jobType: string;
+  /** Queue name where handler is registered */
+  queueName: string;
+}
+
+/**
+ * Error thrown when attempting to register a duplicate handler
+ *
+ * Each job type can only have one handler registered per queue.
+ * Attempting to register a second handler throws this error.
+ *
+ * @example This error occurs when
+ * ```typescript
+ * queue.registerHandler('email:send', handler1);
+ * queue.registerHandler('email:send', handler2); // Throws!
+ * ```
+ *
+ * @example Preventing this error
+ * ```typescript
+ * // Check if handler exists before registering
+ * if (!queue.hasHandler('email:send')) {
+ *   queue.registerHandler('email:send', handler);
+ * }
+ * ```
+ */
+export class HandlerAlreadyRegisteredError extends BlaizeError<HandlerAlreadyRegisteredDetails> {
+  /**
+   * Creates a new HandlerAlreadyRegisteredError
+   *
+   * @param jobType - The job type that already has a handler
+   * @param queueName - Queue name where handler is registered
+   * @param correlationId - Optional correlation ID
+   */
+  constructor(jobType: string, queueName: string, correlationId?: string) {
+    const message = `Handler already registered for job type '${jobType}' in queue '${queueName}'`;
+
+    super(
+      ErrorType.CONFLICT,
+      message,
+      409, // Conflict
+      correlationId ?? getCorrelationId(),
+      { jobType, queueName }
+    );
+    this.name = 'HandlerAlreadyRegisteredError';
+  }
+}
+
+// ============================================================================
+// Job Validation Error
+// ============================================================================
+
+/**
+ * Details for job validation errors
+ */
+export interface JobValidationErrorDetails {
+  /** The job type being validated */
+  jobType: string;
+  /** Queue name */
+  queueName: string;
+  /** Validation errors from Zod */
+  validationErrors: Array<{
+    path: (string | number)[];
+    message: string;
+  }>;
+  /** The invalid data that was provided */
+  invalidData?: unknown;
+}
+
+/**
+ * Error thrown when job data fails schema validation
+ *
+ * Each job type has a Zod schema that validates input data.
+ * If data doesn't match the schema, this error is thrown.
+ *
+ * @example This error occurs when
+ * ```typescript
+ * // Schema expects { to: string (email) }
+ * await queue.add('email:send', { to: 'not-an-email' });
+ * // Throws: JobValidationError
+ * ```
+ *
+ * @example Handling validation errors
+ * ```typescript
+ * try {
+ *   await queue.add('email:send', data);
+ * } catch (error) {
+ *   if (error instanceof JobValidationError) {
+ *     console.error('Validation failed:', error.details.validationErrors);
+ *   }
+ * }
+ * ```
+ */
+export class JobValidationError extends BlaizeError<JobValidationErrorDetails> {
+  /**
+   * Creates a new JobValidationError
+   *
+   * @param jobType - The job type being validated
+   * @param queueName - Queue name
+   * @param validationErrors - Array of validation error details
+   * @param invalidData - Optional invalid data that was provided
+   * @param correlationId - Optional correlation ID
+   */
+  constructor(
+    jobType: string,
+    queueName: string,
+    validationErrors: JobValidationErrorDetails['validationErrors'],
+    invalidData?: unknown,
+    correlationId?: string
+  ) {
+    const errorMessages = validationErrors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    const message = `Invalid data for job type '${jobType}': ${errorMessages}`;
+
+    super(
+      ErrorType.VALIDATION_ERROR,
+      message,
+      400, // Bad Request
+      correlationId ?? getCorrelationId(),
+      { jobType, queueName, validationErrors, invalidData }
+    );
+    this.name = 'JobValidationError';
+  }
+}

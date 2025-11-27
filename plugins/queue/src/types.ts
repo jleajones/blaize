@@ -12,6 +12,7 @@
  */
 
 import type { BlaizeLogger } from 'blaizejs';
+import type { z } from 'zod';
 
 // ============================================================================
 // Job Status Types
@@ -710,19 +711,51 @@ export interface QueuePluginConfig {
 
 /**
  * Configuration for QueueInstance constructor
+ *
+ * @template TJobTypes - Job types schema for this queue
+ *
+ * @example
+ * ```typescript
+ * const config: QueueInstanceConfig<typeof myJobTypes> = {
+ *   name: 'emails',
+ *   concurrency: 5,
+ *   defaultTimeout: 30000,
+ *   defaultMaxRetries: 3,
+ *   jobTypes: myJobTypes,
+ *   storage: createInMemoryStorage(),
+ *   logger: parentLogger.child({ queue: 'emails' }),
+ * };
+ * ```
  */
-export interface QueueInstanceConfig {
+export interface QueueInstanceConfig<TJobTypes extends JobTypesSchema = JobTypesSchema> {
   /** Queue name */
   name: string;
 
   /** Maximum concurrent job executions */
-  concurrency: number;
+  concurrency?: number;
 
   /** Default timeout for jobs (ms) */
-  defaultTimeout: number;
+  defaultTimeout?: number;
 
   /** Default max retries for jobs */
-  defaultMaxRetries: number;
+  defaultMaxRetries?: number;
+
+  /**
+   * Job type definitions with schemas
+   *
+   * Each key is a job type name, value contains the Zod schema
+   * and optional default options for that type.
+   */
+  jobTypes: TJobTypes;
+
+  /** Storage adapter for job persistence */
+  storage: QueueStorageAdapter;
+
+  /** Logger instance (from plugin) */
+  logger: BlaizeLogger;
+
+  /** Default job options applied to all jobs */
+  defaultJobOptions?: Partial<JobOptions>;
 }
 
 /**
@@ -1076,3 +1109,48 @@ export interface PriorityQueue<T> {
    */
   toArray(): T[];
 }
+
+/**
+ * Schema definition for a single job type
+ *
+ * Defines the Zod schema for validation and default options.
+ *
+ * @example
+ * ```typescript
+ * const emailJobType: JobTypeDefinition<typeof emailSchema> = {
+ *   schema: z.object({ to: z.string().email(), subject: z.string() }),
+ *   priority: 5,
+ *   timeout: 60000,
+ *   maxRetries: 3
+ * };
+ * ```
+ */
+export interface JobTypeDefinition<TSchema extends z.ZodType = z.ZodType> {
+  /** Zod schema for validating job data */
+  schema: TSchema;
+  /** Default priority for this job type */
+  priority?: JobPriority;
+  /** Default timeout for this job type (ms) */
+  timeout?: number;
+  /** Default max retries for this job type */
+  maxRetries?: number;
+}
+
+/**
+ * Schema mapping job type names to their definitions
+ *
+ * @example
+ * ```typescript
+ * const jobTypes = {
+ *   'email:send': {
+ *     schema: z.object({ to: z.string().email() }),
+ *     priority: 5,
+ *   },
+ *   'report:generate': {
+ *     schema: z.object({ reportId: z.string() }),
+ *     priority: 3,
+ *     timeout: 120000,
+ *   },
+ * } satisfies JobTypesSchema;
+ */
+export type JobTypesSchema = Record<string, JobTypeDefinition>;

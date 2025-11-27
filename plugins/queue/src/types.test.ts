@@ -4,6 +4,8 @@
  * These tests verify that types compile correctly and provide
  * the expected type safety.
  */
+import { createMockLogger } from '@blaizejs/testing-utils';
+
 import type {
   Job,
   JobStatus,
@@ -21,6 +23,7 @@ import type {
   QueueEvents,
   QueueServiceConfig,
   QueueStorageAdapter,
+  JobTypesSchema,
 } from './types';
 
 describe('Core Types', () => {
@@ -315,11 +318,50 @@ describe('Configuration Types', () => {
 
   describe('QueueInstanceConfig', () => {
     it('should require all fields', () => {
-      const config: QueueInstanceConfig = {
+      const mockLogger = createMockLogger();
+
+      // Mock storage adapter
+      const mockStorage: QueueStorageAdapter = {
+        enqueue: async () => {},
+        dequeue: async () => null,
+        peek: async () => null,
+        getJob: async () => null,
+        listJobs: async () => [],
+        updateJob: async () => {},
+        removeJob: async () => false,
+        getQueueStats: async () => ({
+          total: 0,
+          queued: 0,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          cancelled: 0,
+        }),
+      };
+
+      // Mock job types with schema
+      const mockJobTypes = {
+        'test:job': {
+          schema: {
+            safeParse: (data: unknown) => ({ success: true as const, data }),
+            parse: (data: unknown) => data,
+            _type: {} as { value: string },
+            _output: {} as { value: string },
+            _input: {} as { value: string },
+            _def: { typeName: 'mock' },
+          },
+          priority: 5 as const,
+        },
+      } as unknown as JobTypesSchema;
+
+      const config: QueueInstanceConfig<typeof mockJobTypes> = {
         name: 'default',
         concurrency: 5,
         defaultTimeout: 30000,
         defaultMaxRetries: 3,
+        jobTypes: mockJobTypes,
+        storage: mockStorage,
+        logger: mockLogger,
       };
 
       expect(config.name).toBe('default');
