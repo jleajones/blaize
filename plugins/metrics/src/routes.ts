@@ -84,7 +84,7 @@ export const metricsJsonRoute = {
 
     try {
       const snapshot = collector.getSnapshot();
-      ctx.response.json(snapshot);
+      return snapshot;
     } catch (error) {
       throw new InternalServerError(
         'Error generating metrics snapshot',
