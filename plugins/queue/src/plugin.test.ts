@@ -1,0 +1,534 @@
+/**
+ * Tests for Queue Plugin
+ *
+ * Tests plugin lifecycle, middleware injection,
+ * storage adapter lifecycle, and logger integration.
+ */
+import { createMockContext } from '@blaizejs/testing-utils';
+
+import { createQueuePlugin, QueueService } from './plugin';
+import { InMemoryStorage } from './storage/in-memory';
+
+import type { QueueStorageAdapter, QueuePluginConfig } from './types';
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/**
+ * Create a mock server with `use` method for middleware registration
+ */
+function createMockServer() {
+  const middleware: unknown[] = [];
+  return {
+    middleware,
+    use: vi.fn((mw: unknown) => {
+      middleware.push(mw);
+    }),
+  };
+}
+
+/**
+ * Create a mock storage adapter with optional connect/disconnect
+ */
+function createMockStorage(options?: {
+  hasConnect?: boolean;
+  hasDisconnect?: boolean;
+  hasHealthCheck?: boolean;
+}): QueueStorageAdapter {
+  const storage: QueueStorageAdapter = new InMemoryStorage();
+
+  // Optionally add connect/disconnect
+  if (options?.hasConnect) {
+    storage.connect = vi.fn().mockResolvedValue(undefined);
+  }
+  if (options?.hasDisconnect) {
+    storage.disconnect = vi.fn().mockResolvedValue(undefined);
+  }
+  if (options?.hasHealthCheck) {
+    storage.healthCheck = vi.fn().mockResolvedValue({ healthy: true });
+  }
+
+  return storage;
+}
+
+/**
+ * Create test plugin config
+ */
+function createTestConfig(overrides?: Partial<QueuePluginConfig>): QueuePluginConfig {
+  return {
+    queues: {
+      emails: { concurrency: 5 },
+      reports: { concurrency: 2 },
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * Get lifecycle hooks from plugin object
+ *
+ * The plugin object returned by createQueuePlugin contains the lifecycle hooks
+ * that BlaizeJS calls during server startup/shutdown.
+ */
+function getPluginHooks(plugin: unknown) {
+  const hooks = plugin as {
+    register?: (server: unknown) => Promise<void>;
+    initialize?: () => Promise<void>;
+    onServerStart?: () => Promise<void>;
+    onServerStop?: () => Promise<void>;
+    terminate?: () => Promise<void>;
+  };
+  return hooks;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+describe('createQueuePlugin', () => {
+  // ==========================================================================
+  // Plugin Factory
+  // ==========================================================================
+  describe('Plugin Factory', () => {
+    it('should create a plugin', () => {
+      const plugin = createQueuePlugin({ queues: {} });
+      expect(plugin).toBeDefined();
+    });
+
+    it('should return an object with lifecycle hooks', () => {
+      const plugin = createQueuePlugin({ queues: {} });
+      const hooks = getPluginHooks(plugin);
+
+      // Plugin should have lifecycle hook methods
+      expect(typeof hooks.register).toBe('function');
+      expect(typeof hooks.initialize).toBe('function');
+      expect(typeof hooks.onServerStart).toBe('function');
+      expect(typeof hooks.onServerStop).toBe('function');
+      expect(typeof hooks.terminate).toBe('function');
+    });
+  });
+
+  // ==========================================================================
+  // Lifecycle: Register
+  // ==========================================================================
+  describe('Lifecycle: register()', () => {
+    it('should register middleware on server', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+
+      expect(server.use).toHaveBeenCalled();
+      expect(server.middleware).toHaveLength(1);
+    });
+
+    it('should register middleware with name "queue"', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+
+      const middleware = server.middleware[0] as { name: string };
+      expect(middleware.name).toBe('queue');
+    });
+  });
+
+  // ==========================================================================
+  // Lifecycle: Initialize
+  // ==========================================================================
+  describe('Lifecycle: initialize()', () => {
+    it('should initialize without error when using default storage', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+
+      // Should not throw
+      await expect(hooks.initialize?.()).resolves.toBeUndefined();
+    });
+
+    it('should call storage.connect() if available', async () => {
+      const customStorage = createMockStorage({ hasConnect: true });
+      const plugin = createQueuePlugin({
+        ...createTestConfig(),
+        storage: customStorage,
+      });
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      expect(customStorage.connect).toHaveBeenCalled();
+    });
+
+    it('should throw if storage connection fails', async () => {
+      const customStorage = createMockStorage({ hasConnect: true });
+      (customStorage.connect as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Connection failed')
+      );
+
+      const plugin = createQueuePlugin({
+        ...createTestConfig(),
+        storage: customStorage,
+      });
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+
+      await expect(hooks.initialize?.()).rejects.toThrow('Connection failed');
+    });
+  });
+
+  // ==========================================================================
+  // Lifecycle: onServerStart
+  // ==========================================================================
+  describe('Lifecycle: onServerStart()', () => {
+    it('should start all queues without error', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      // Should not throw
+      await expect(hooks.onServerStart?.()).resolves.toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // Lifecycle: onServerStop
+  // ==========================================================================
+  describe('Lifecycle: onServerStop()', () => {
+    it('should stop all queues without error', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+      await hooks.onServerStart?.();
+
+      // Should not throw
+      await expect(hooks.onServerStop?.()).resolves.toBeUndefined();
+    });
+
+    it('should call storage.disconnect() if available', async () => {
+      const customStorage = createMockStorage({
+        hasConnect: true,
+        hasDisconnect: true,
+      });
+
+      const plugin = createQueuePlugin({
+        ...createTestConfig(),
+        storage: customStorage,
+      });
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+      await hooks.onServerStart?.();
+      await hooks.onServerStop?.();
+
+      expect(customStorage.disconnect).toHaveBeenCalled();
+    });
+
+    it('should continue cleanup even if disconnect fails', async () => {
+      const customStorage = createMockStorage({
+        hasConnect: true,
+        hasDisconnect: true,
+      });
+      (customStorage.disconnect as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Disconnect failed')
+      );
+
+      const plugin = createQueuePlugin({
+        ...createTestConfig(),
+        storage: customStorage,
+      });
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+      await hooks.onServerStart?.();
+
+      // Should not throw even if disconnect fails
+      await expect(hooks.onServerStop?.()).resolves.toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // Lifecycle: terminate
+  // ==========================================================================
+  describe('Lifecycle: terminate()', () => {
+    it('should clean up without error', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+      await hooks.onServerStart?.();
+      await hooks.onServerStop?.();
+
+      // Should not throw
+      await expect(hooks.terminate?.()).resolves.toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // Middleware Injection
+  // ==========================================================================
+  describe('Middleware Injection', () => {
+    it('should inject queue service into ctx.services', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      // Get the registered middleware
+      const middleware = server.middleware[0] as {
+        name: string;
+        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      };
+
+      // Create mock context and next
+      const ctx = createMockContext();
+      const next = vi.fn().mockResolvedValue(undefined);
+
+      // Execute middleware
+      await middleware.execute(ctx, next);
+
+      // Queue service should be injected
+      expect(ctx.services.queue).toBeDefined();
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('should provide functioning queue service', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      // Get the registered middleware
+      const middleware = server.middleware[0] as {
+        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      };
+
+      const ctx = createMockContext();
+      const next = vi.fn().mockResolvedValue(undefined);
+
+      await middleware.execute(ctx, next);
+
+      // Queue service should have expected methods
+      const queueService = ctx.services.queue as QueueService;
+      expect(typeof queueService.add).toBe('function');
+      expect(typeof queueService.getJob).toBe('function');
+      expect(typeof queueService.cancelJob).toBe('function');
+      expect(typeof queueService.registerHandler).toBe('function');
+      expect(typeof queueService.listQueues).toBe('function');
+    });
+
+    it('should have configured queues', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      const middleware = server.middleware[0] as {
+        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      };
+
+      const ctx = createMockContext();
+      await middleware.execute(ctx, vi.fn());
+
+      const queueService = ctx.services.queue as QueueService;
+      const queues = queueService.listQueues();
+
+      expect(queues).toContain('emails');
+      expect(queues).toContain('reports');
+    });
+  });
+
+  // ==========================================================================
+  // Full Lifecycle Integration
+  // ==========================================================================
+  describe('Full Lifecycle Integration', () => {
+    it('should complete full lifecycle without errors', async () => {
+      const customStorage = createMockStorage({
+        hasConnect: true,
+        hasDisconnect: true,
+      });
+
+      const plugin = createQueuePlugin({
+        ...createTestConfig(),
+        storage: customStorage,
+      });
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      // Full lifecycle
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+      await hooks.onServerStart?.();
+      await hooks.onServerStop?.();
+      await hooks.terminate?.();
+
+      // Verify lifecycle order
+      expect(server.use).toHaveBeenCalled();
+      expect(customStorage.connect).toHaveBeenCalled();
+      expect(customStorage.disconnect).toHaveBeenCalled();
+    });
+
+    it('should allow job processing during server lifecycle', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+      await hooks.onServerStart?.();
+
+      // Get queue service from middleware
+      const middleware = server.middleware[0] as {
+        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      };
+
+      const ctx = createMockContext();
+      await middleware.execute(ctx, vi.fn());
+
+      const queueService = ctx.services.queue as QueueService;
+
+      // Register handler and add job
+      queueService.registerHandler('emails', 'email:send', async () => ({
+        sent: true,
+      }));
+
+      const jobId = await queueService.add('emails', 'email:send', {
+        to: 'test@example.com',
+      });
+
+      expect(jobId).toBeDefined();
+
+      // Clean up
+      await hooks.onServerStop?.();
+      await hooks.terminate?.();
+    });
+
+    it('should apply default configuration values', async () => {
+      const plugin = createQueuePlugin({
+        queues: {
+          minimal: {}, // No specific config
+        },
+        defaultConcurrency: 10,
+        defaultTimeout: 60000,
+        defaultMaxRetries: 5,
+      });
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      // Get queue service
+      const middleware = server.middleware[0] as {
+        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      };
+
+      const ctx = createMockContext();
+      await middleware.execute(ctx, vi.fn());
+
+      const queueService = ctx.services.queue as QueueService;
+      expect(queueService.listQueues()).toContain('minimal');
+
+      // Clean up
+      await hooks.onServerStop?.();
+    });
+  });
+
+  // ==========================================================================
+  // Storage Adapter Lifecycle
+  // ==========================================================================
+  describe('Storage Adapter Lifecycle', () => {
+    it('should use InMemoryStorage by default', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      // Get queue service and verify it works (which means storage is working)
+      const middleware = server.middleware[0] as {
+        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      };
+
+      const ctx = createMockContext();
+      await middleware.execute(ctx, vi.fn());
+
+      const queueService = ctx.services.queue as QueueService;
+      queueService.registerHandler('emails', 'test:job', async () => ({}));
+
+      const jobId = await queueService.add('emails', 'test:job', {});
+      const job = await queueService.getJob(jobId);
+
+      expect(job).toBeDefined();
+      expect(job?.id).toBe(jobId);
+
+      await hooks.onServerStop?.();
+    });
+
+    it('should use custom storage adapter when provided', async () => {
+      const customStorage = createMockStorage({
+        hasConnect: true,
+        hasDisconnect: true,
+      });
+
+      const plugin = createQueuePlugin({
+        ...createTestConfig(),
+        storage: customStorage,
+      });
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+
+      // Verify custom storage was used
+      expect(customStorage.connect).toHaveBeenCalled();
+
+      await hooks.onServerStart?.();
+      await hooks.onServerStop?.();
+
+      expect(customStorage.disconnect).toHaveBeenCalled();
+    });
+
+    it('should not call connect/disconnect if adapter does not support it', async () => {
+      // Default InMemoryStorage doesn't have connect/disconnect
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      // Should complete without error
+      await hooks.register?.(server);
+      await hooks.initialize?.();
+      await hooks.onServerStart?.();
+      await hooks.onServerStop?.();
+      await hooks.terminate?.();
+    });
+  });
+});
