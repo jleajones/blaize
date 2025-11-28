@@ -1114,3 +1114,30 @@ export interface JobTypeDefinition<TSchema extends z.ZodType = z.ZodType> {
  * } satisfies JobTypesSchema;
  */
 export type JobTypesSchema = Record<string, JobTypeDefinition>;
+
+/**
+ * Details for job validation errors
+ */
+export interface JobValidationErrorDetails {
+  /** The job type being validated */
+  jobType: string;
+  /** Queue name */
+  queueName: string;
+  /** Validation errors from Zod */
+  validationErrors: Array<{
+    path: (string | number)[];
+    message: string;
+  }>;
+  /** The invalid data that was provided */
+  invalidData?: unknown;
+}
+
+/**
+ * Details for handler already registered errors
+ */
+export interface HandlerAlreadyRegisteredDetails {
+  /** The job type that already has a handler */
+  jobType: string;
+  /** Queue name where handler is registered */
+  queueName: string;
+}
