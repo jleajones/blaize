@@ -640,6 +640,268 @@ describe('QueueInstance', () => {
 
       expect(jobCompleted).toBe(true);
     });
+
+    it('should timeout job that exceeds timeout limit', async () => {
+      const timeoutQueue = new QueueInstance(
+        createTestConfig({
+          name: 'timeout-queue',
+          defaultTimeout: 100, // Very short timeout
+        }),
+        storage,
+        createMockLogger()
+      );
+
+      timeoutQueue.registerHandler('slow:job', async () => {
+        // This will take longer than the 100ms timeout
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return { shouldNotReach: true };
+      });
+
+      const jobId = await timeoutQueue.add('slow:job', {});
+
+      const failedSpy = vi.fn();
+      timeoutQueue.on('job:failed', failedSpy);
+
+      await timeoutQueue.start();
+
+      await vi.waitFor(
+        () => {
+          expect(failedSpy).toHaveBeenCalled();
+        },
+        { timeout: 2000 }
+      );
+
+      await timeoutQueue.stop();
+
+      const job = await timeoutQueue.getJob(jobId);
+      expect(job?.status).toBe('failed');
+      expect(job?.error?.code).toBe('JOB_TIMEOUT');
+    });
+
+    it('should pass abort signal to handler', async () => {
+      const signalQueue = new QueueInstance(
+        createTestConfig({ name: 'signal-queue' }),
+        storage,
+        createMockLogger()
+      );
+
+      let receivedSignal: AbortSignal | undefined;
+      signalQueue.registerHandler('signal:job', async ctx => {
+        receivedSignal = ctx.signal;
+        return { signalReceived: true };
+      });
+
+      await signalQueue.add('signal:job', {});
+
+      const completedSpy = vi.fn();
+      signalQueue.on('job:completed', completedSpy);
+
+      await signalQueue.start();
+
+      await vi.waitFor(
+        () => {
+          expect(completedSpy).toHaveBeenCalled();
+        },
+        { timeout: 1000 }
+      );
+
+      await signalQueue.stop();
+
+      expect(receivedSignal).toBeDefined();
+      expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('should provide job-scoped logger with context', async () => {
+      const loggerQueue = new QueueInstance(
+        createTestConfig({ name: 'logger-queue' }),
+        storage,
+        createMockLogger()
+      );
+
+      let receivedLogger: any;
+      loggerQueue.registerHandler('logger:job', async ctx => {
+        receivedLogger = ctx.logger;
+        ctx.logger.info('Test log from handler');
+        return {};
+      });
+
+      await loggerQueue.add('logger:job', {});
+
+      const completedSpy = vi.fn();
+      loggerQueue.on('job:completed', completedSpy);
+
+      await loggerQueue.start();
+
+      await vi.waitFor(
+        () => {
+          expect(completedSpy).toHaveBeenCalled();
+        },
+        { timeout: 1000 }
+      );
+
+      await loggerQueue.stop();
+
+      expect(receivedLogger).toBeDefined();
+      // Logger should have child() method called
+      expect(typeof receivedLogger.info).toBe('function');
+    });
+
+    it('should update job progress in storage', async () => {
+      const progressQueue = new QueueInstance(
+        createTestConfig({ name: 'progress-storage-queue' }),
+        storage,
+        createMockLogger()
+      );
+
+      let jobIdCapture: string | undefined;
+      progressQueue.registerHandler('progress:job', async ctx => {
+        jobIdCapture = ctx.jobId;
+        await ctx.progress(25, 'Quarter done');
+        await ctx.progress(75, 'Three quarters');
+        return {};
+      });
+
+      const jobId = await progressQueue.add('progress:job', {});
+
+      await progressQueue.start();
+
+      await vi.waitFor(
+        async () => {
+          const job = await progressQueue.getJob(jobId);
+          return job?.status === 'completed';
+        },
+        { timeout: 1000 }
+      );
+
+      await progressQueue.stop();
+
+      const job = await progressQueue.getJob(jobId);
+      expect(job?.progress).toBe(100); // Final progress after completion
+      expect(jobIdCapture).toBe(jobId);
+    });
+
+    it('should handle cancellation during execution', async () => {
+      const cancelQueue = new QueueInstance(
+        createTestConfig({ name: 'cancel-queue', concurrency: 1 }),
+        storage,
+        createMockLogger()
+      );
+
+      let handlerStarted = false;
+      cancelQueue.registerHandler('cancel:job', async ctx => {
+        handlerStarted = true;
+        // Wait long enough for cancellation to happen
+        await new Promise(resolve => setTimeout(resolve, 500));
+        // Check if we were cancelled
+        if (ctx.signal.aborted) {
+          throw new Error('Job was cancelled');
+        }
+        return {};
+      });
+
+      const jobId = await cancelQueue.add('cancel:job', {});
+
+      await cancelQueue.start();
+
+      // Wait for job to actually start running
+      await vi.waitFor(
+        () => {
+          expect(handlerStarted).toBe(true);
+        },
+        { timeout: 1000 }
+      );
+
+      // Small delay to ensure job is fully in handler
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Cancel the job
+      const cancelled = await cancelQueue.cancelJob(jobId, 'Test cancellation');
+      expect(cancelled).toBe(true);
+
+      // Wait for handler to notice cancellation
+      await new Promise(resolve => setTimeout(resolve, 600));
+
+      await cancelQueue.stop({ graceful: false });
+
+      // The job should be cancelled, not failed
+      const job = await cancelQueue.getJob(jobId);
+      expect(job?.status).toBe('cancelled');
+    });
+  });
+
+  // ==========================================================================
+  // Job Context (T7)
+  // ==========================================================================
+  describe('JobContext', () => {
+    it('should provide all required context properties', async () => {
+      let capturedContext: any;
+
+      queue.registerHandler('context:job', async ctx => {
+        capturedContext = {
+          jobId: ctx.jobId,
+          data: ctx.data,
+          hasLogger: !!ctx.logger,
+          hasSignal: !!ctx.signal,
+          hasProgress: typeof ctx.progress === 'function',
+        };
+        return {};
+      });
+
+      const testData = { foo: 'bar', count: 42 };
+      await queue.add('context:job', testData);
+
+      const completedSpy = vi.fn();
+      queue.on('job:completed', completedSpy);
+
+      await queue.start();
+
+      await vi.waitFor(
+        () => {
+          expect(completedSpy).toHaveBeenCalled();
+        },
+        { timeout: 1000 }
+      );
+
+      await queue.stop();
+
+      expect(capturedContext.jobId).toBeDefined();
+      expect(capturedContext.data).toEqual(testData);
+      expect(capturedContext.hasLogger).toBe(true);
+      expect(capturedContext.hasSignal).toBe(true);
+      expect(capturedContext.hasProgress).toBe(true);
+    });
+
+    it('should provide logger with job context', async () => {
+      const mockLogger = createMockLogger();
+      const contextQueue = new QueueInstance(
+        createTestConfig({ name: 'context-logger-queue' }),
+        storage,
+        mockLogger
+      );
+
+      let loggerUsed = false;
+      contextQueue.registerHandler('log:job', async ctx => {
+        ctx.logger.info('Handler logging test');
+        loggerUsed = true;
+        return {};
+      });
+
+      await contextQueue.add('log:job', {});
+
+      await contextQueue.start();
+
+      await vi.waitFor(
+        () => {
+          expect(loggerUsed).toBe(true);
+        },
+        { timeout: 1000 }
+      );
+
+      await contextQueue.stop();
+
+      // The child logger should have been created with job context
+      expect(mockLogger.child).toHaveBeenCalled();
+    });
   });
 
   // ==========================================================================

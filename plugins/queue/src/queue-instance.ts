@@ -17,17 +17,18 @@ import { HandlerAlreadyRegisteredError } from './errors';
 
 import type {
   QueueStorageAdapter,
+  QueueConfig,
   Job,
+  JobContext,
   JobHandler,
   JobOptions,
   JobStatus,
   JobError,
   QueueStats,
   JobPriority,
-  QueueConfig,
-  StopOptions,
 } from './types';
 import type { BlaizeLogger } from 'blaizejs';
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -52,6 +53,34 @@ const POLL_INTERVAL_MS = 100;
 
 /** Default graceful shutdown timeout */
 const DEFAULT_SHUTDOWN_TIMEOUT = 30000;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Options for stopping the queue
+ */
+export interface StopOptions {
+  /** Whether to wait for running jobs to complete */
+  graceful?: boolean;
+
+  /** Maximum time to wait for graceful shutdown (ms) */
+  timeout?: number;
+}
+
+/**
+ * Event signatures for QueueInstance
+ */
+export interface QueueInstanceEvents {
+  'job:queued': (job: Job) => void;
+  'job:started': (job: Job) => void;
+  'job:progress': (jobId: string, percent: number, message?: string) => void;
+  'job:completed': (job: Job, result: unknown) => void;
+  'job:failed': (job: Job, error: JobError) => void;
+  'job:cancelled': (job: Job, reason?: string) => void;
+  'job:retry': (job: Job, attempt: number) => void;
+}
 
 // ============================================================================
 // QueueInstance Class
@@ -581,7 +610,7 @@ export class QueueInstance extends EventEmitter {
   // ==========================================================================
 
   /**
-   * Main processing loop
+   * Main processing loop (processQueue)
    *
    * Continuously dequeues jobs from storage and executes them
    * while respecting the concurrency limit. Runs until `isShuttingDown`
@@ -636,11 +665,15 @@ export class QueueInstance extends EventEmitter {
     this.logger.debug('Processing loop stopped', { queue: this.name });
   }
 
+  // ==========================================================================
+  // Job Execution
+  // ==========================================================================
+
   /**
    * Execute a single job
    *
-   * Creates the job context, runs the handler, and updates job status.
-   * Handles timeouts, cancellation, and emits appropriate events.
+   * Creates the job context with scoped logger, runs the handler with
+   * timeout enforcement, and updates job status on completion or failure.
    *
    * @param jobId - ID of the job to execute
    *
@@ -661,32 +694,12 @@ export class QueueInstance extends EventEmitter {
     // Get handler for job type
     const handler = this.handlers.get(job.type);
     if (!handler) {
-      this.logger.error('No handler registered for job type', {
-        jobId,
-        jobType: job.type,
-        queue: this.name,
-        registeredHandlers: Array.from(this.handlers.keys()),
-      });
-
-      // Mark job as failed - no handler
-      const errorObj: JobError = {
-        message: `No handler registered for job type '${job.type}'`,
-        code: 'HANDLER_NOT_FOUND',
-      };
-
-      await this.storage.updateJob(jobId, {
-        status: 'failed',
-        completedAt: Date.now(),
-        error: errorObj,
-      });
-
-      const failedJob = await this.storage.getJob(jobId, this.name);
-      if (failedJob) {
-        this.emit('job:failed', failedJob, errorObj);
-      }
-      this.runningJobs.delete(jobId);
+      await this.handleNoHandler(job);
       return;
     }
+
+    // Create job-scoped child logger with context
+    const jobLogger = this.createJobLogger(job);
 
     // Create AbortController for this job
     const controller = new AbortController();
@@ -704,79 +717,277 @@ export class QueueInstance extends EventEmitter {
         this.emit('job:started', runningJob);
       }
 
-      this.logger.debug('Job started', {
-        jobId,
-        jobType: job.type,
-        queue: this.name,
+      jobLogger.info('Job started', {
+        timeout: job.timeout,
+        maxRetries: job.maxRetries,
+        attempt: job.retries + 1,
       });
 
       // Create JobContext for handler execution
-      const ctx = {
-        jobId: job.id,
-        data: job.data,
-        logger: this.logger.child({ jobId: job.id, jobType: job.type }),
-        signal: controller.signal,
-        progress: async (percent: number, message?: string) => {
-          await this.storage.updateJob(jobId, {
-            progress: percent,
-            progressMessage: message,
-          });
-          this.emit('job:progress', jobId, percent, message);
-        },
-      };
+      const ctx = this.createJobContext(job, jobLogger, controller.signal);
 
-      // Execute the handler
-      const result = await handler(ctx);
+      // Execute the handler with timeout
+      const result = await this.executeWithTimeout(handler, ctx, job.timeout, controller);
 
-      // Update job as completed
-      await this.storage.updateJob(jobId, {
-        status: 'completed',
-        completedAt: Date.now(),
-        progress: 100,
-        result,
-      });
-
-      const completedJob = await this.storage.getJob(jobId, this.name);
-      if (completedJob) {
-        this.emit('job:completed', completedJob, result);
-      }
-
-      this.logger.debug('Job completed', {
-        jobId,
-        jobType: job.type,
-        queue: this.name,
-      });
+      // Handle successful completion
+      await this.handleJobCompletion(job, result, jobLogger);
     } catch (err) {
       // Handle job failure
-      const errorObj: JobError = {
-        message: err instanceof Error ? err.message : String(err),
-        code: 'EXECUTION_ERROR',
-        stack: err instanceof Error ? err.stack : undefined,
-      };
-
-      this.logger.error('Job failed', {
-        jobId,
-        jobType: job.type,
-        queue: this.name,
-        error: errorObj.message,
-      });
-
-      await this.storage.updateJob(jobId, {
-        status: 'failed',
-        completedAt: Date.now(),
-        error: errorObj,
-      });
-
-      const failedJob = await this.storage.getJob(jobId, this.name);
-      if (failedJob) {
-        this.emit('job:failed', failedJob, errorObj);
-      }
+      await this.handleJobFailure(job, err, jobLogger);
     } finally {
       // Clean up
       this.abortControllers.delete(jobId);
       this.runningJobs.delete(jobId);
     }
   }
+
+  /**
+   * Create a job-scoped child logger
+   *
+   * Includes jobId, jobType, queueName, and attempt number.
+   *
+   * @param job - Job to create logger for
+   * @returns Child logger with job context
+   *
+   * @internal
+   */
+  private createJobLogger(job: Job): BlaizeLogger {
+    return this.logger.child({
+      jobId: job.id,
+      jobType: job.type,
+      queueName: this.name,
+      attempt: job.retries + 1,
+    });
+  }
+
+  /**
+   * Create the JobContext passed to handlers
+   *
+   * @param job - Job being executed
+   * @param logger - Job-scoped logger
+   * @param signal - AbortSignal for cancellation
+   * @returns JobContext object
+   *
+   * @internal
+   */
+  private createJobContext(
+    job: Job,
+    logger: BlaizeLogger,
+    signal: AbortSignal
+  ): JobContext<unknown> {
+    const jobId = job.id;
+
+    return {
+      jobId: job.id,
+      data: job.data,
+      logger,
+      signal,
+      progress: async (percent: number, message?: string): Promise<void> => {
+        // Update storage
+        await this.storage.updateJob(jobId, {
+          progress: percent,
+          progressMessage: message,
+        });
+
+        // Emit event
+        this.emit('job:progress', jobId, percent, message);
+
+        // Log progress
+        logger.debug('Job progress updated', { percent, message });
+      },
+    };
+  }
+
+  /**
+   * Execute handler with timeout enforcement
+   *
+   * Races the handler against a timeout. If the timeout fires first,
+   * the abort signal is triggered and the handler should stop.
+   *
+   * @param handler - Job handler to execute
+   * @param ctx - Job context
+   * @param timeout - Timeout in milliseconds
+   * @param controller - AbortController for manual cancellation
+   * @returns Handler result
+   * @throws TimeoutError if job exceeds timeout
+   * @throws Error if job is cancelled or handler fails
+   *
+   * @internal
+   */
+  private async executeWithTimeout(
+    handler: JobHandler<unknown, unknown>,
+    ctx: JobContext<unknown>,
+    timeout: number,
+    controller: AbortController
+  ): Promise<unknown> {
+    // Create a combined controller for both timeout and manual cancellation
+    const combinedController = new AbortController();
+
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      combinedController.abort(new Error('Job timed out'));
+    }, timeout);
+
+    // Listen for manual cancellation
+    const onCancel = () => {
+      combinedController.abort(new Error('Job cancelled'));
+    };
+    controller.signal.addEventListener('abort', onCancel);
+
+    // Update context with combined signal
+    const ctxWithCombinedSignal: JobContext<unknown> = {
+      ...ctx,
+      signal: combinedController.signal,
+    };
+
+    // Create timeout promise that rejects
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      combinedController.signal.addEventListener('abort', () => {
+        reject(combinedController.signal.reason ?? new Error('Job aborted'));
+      });
+    });
+
+    try {
+      // Race handler against abort signal
+      const result = await Promise.race([handler(ctxWithCombinedSignal), timeoutPromise]);
+      return result;
+    } finally {
+      // Clean up
+      clearTimeout(timeoutId);
+      controller.signal.removeEventListener('abort', onCancel);
+    }
+  }
+
+  /**
+   * Handle case when no handler is registered for job type
+   *
+   * @param job - Job that has no handler
+   *
+   * @internal
+   */
+  private async handleNoHandler(job: Job): Promise<void> {
+    this.logger.error('No handler registered for job type', {
+      jobId: job.id,
+      jobType: job.type,
+      queue: this.name,
+      registeredHandlers: Array.from(this.handlers.keys()),
+    });
+
+    const errorObj: JobError = {
+      message: `No handler registered for job type '${job.type}'`,
+      code: 'HANDLER_NOT_FOUND',
+    };
+
+    await this.storage.updateJob(job.id, {
+      status: 'failed',
+      completedAt: Date.now(),
+      error: errorObj,
+    });
+
+    const failedJob = await this.storage.getJob(job.id, this.name);
+    if (failedJob) {
+      this.emit('job:failed', failedJob, errorObj);
+    }
+
+    this.runningJobs.delete(job.id);
+  }
+
+  /**
+   * Handle successful job completion
+   *
+   * Updates job state to completed, stores result, and emits event.
+   *
+   * @param job - Completed job
+   * @param result - Handler result
+   * @param logger - Job-scoped logger
+   *
+   * @internal
+   */
+  private async handleJobCompletion(
+    job: Job,
+    result: unknown,
+    logger: BlaizeLogger
+  ): Promise<void> {
+    await this.storage.updateJob(job.id, {
+      status: 'completed',
+      completedAt: Date.now(),
+      progress: 100,
+      result,
+    });
+
+    const completedJob = await this.storage.getJob(job.id, this.name);
+    if (completedJob) {
+      this.emit('job:completed', completedJob, result);
+    }
+
+    logger.info('Job completed', {
+      duration: completedJob?.completedAt
+        ? completedJob.completedAt - (completedJob.startedAt ?? completedJob.queuedAt)
+        : undefined,
+    });
+  }
+
+  /**
+   * Handle job failure
+   *
+   * Determines error code, updates job state, and emits event.
+   * Distinguishes between timeouts, cancellations, and execution errors.
+   * Does not overwrite status if job was already cancelled.
+   *
+   * @param job - Failed job
+   * @param err - Error that caused failure
+   * @param logger - Job-scoped logger
+   *
+   * @internal
+   */
+  private async handleJobFailure(job: Job, err: unknown, logger: BlaizeLogger): Promise<void> {
+    // Check current job status - don't overwrite if already cancelled
+    const currentJob = await this.storage.getJob(job.id, this.name);
+    if (currentJob?.status === 'cancelled') {
+      logger.debug('Job was cancelled, skipping failure handling', {
+        jobId: job.id,
+      });
+      return;
+    }
+
+    // Determine error code based on error type
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    let errorCode = 'EXECUTION_ERROR';
+
+    if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
+      errorCode = 'JOB_TIMEOUT';
+    } else if (errorMessage.includes('cancelled') || errorMessage.includes('aborted')) {
+      // If cancelled but status wasn't updated yet, treat as cancelled
+      errorCode = 'JOB_CANCELLED';
+    }
+
+    const errorObj: JobError = {
+      message: errorMessage,
+      code: errorCode,
+      stack: err instanceof Error ? err.stack : undefined,
+    };
+
+    logger.error('Job failed', {
+      error: errorMessage,
+      code: errorCode,
+      duration: Date.now() - (job.startedAt ?? job.queuedAt),
+    });
+
+    await this.storage.updateJob(job.id, {
+      status: 'failed',
+      completedAt: Date.now(),
+      error: errorObj,
+    });
+
+    const failedJob = await this.storage.getJob(job.id, this.name);
+    if (failedJob) {
+      this.emit('job:failed', failedJob, errorObj);
+    }
+  }
+
+  // ==========================================================================
+  // Utility Methods
+  // ==========================================================================
 
   /**
    * Delay execution for a specified time
