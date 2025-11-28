@@ -11,6 +11,8 @@
  * @since 0.4.0
  */
 
+import { QueueService } from './queue-service';
+
 import type { BlaizeLogger } from 'blaizejs';
 import type { z } from 'zod';
 
@@ -1140,4 +1142,18 @@ export interface HandlerAlreadyRegisteredDetails {
   jobType: string;
   /** Queue name where handler is registered */
   queueName: string;
+}
+
+// ============================================================================
+// Plugin Services Interface
+// ============================================================================
+
+/**
+ * Services exposed by the queue plugin via middleware
+ *
+ * These are accessible via `ctx.services.queue` in route handlers.
+ */
+export interface QueuePluginServices {
+  /** Queue service instance for job operations */
+  queue: QueueService;
 }

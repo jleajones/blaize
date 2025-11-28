@@ -407,12 +407,270 @@ export type PluginConfigSchema = z.infer<typeof pluginConfigSchema>;
 export type PluginConfigInput = z.input<typeof pluginConfigSchema>;
 
 // ============================================================================
+// SSE Event Schemas (T12)
+// ============================================================================
+
+/**
+ * Job progress event schema
+ *
+ * Sent when a job reports progress during execution.
+ * The handler calls `ctx.progress(percent, message)` to emit this event.
+ *
+ * @example Event payload
+ * ```json
+ * {
+ *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
+ *   "percent": 50,
+ *   "message": "Processing batch 5 of 10",
+ *   "timestamp": 1699123456789
+ * }
+ * ```
+ */
+export const jobProgressEventSchema = z.object({
+  /** Unique job identifier */
+  jobId: z.string().uuid('jobId must be a valid UUID'),
+
+  /** Progress percentage (0-100) */
+  percent: z
+    .number({
+      required_error: 'percent is required',
+      invalid_type_error: 'percent must be a number',
+    })
+    .min(0, 'percent must be at least 0')
+    .max(100, 'percent must be at most 100'),
+
+  /** Optional progress message */
+  message: z.string().optional(),
+
+  /** Unix timestamp in milliseconds when progress was reported */
+  timestamp: z.number({
+    required_error: 'timestamp is required',
+    invalid_type_error: 'timestamp must be a number',
+  }),
+});
+
+/**
+ * Job completed event schema
+ *
+ * Sent when a job completes successfully.
+ * Contains the result returned by the job handler.
+ *
+ * @example Event payload
+ * ```json
+ * {
+ *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
+ *   "result": { "emailsSent": 150, "success": true },
+ *   "completedAt": 1699123456789
+ * }
+ * ```
+ */
+export const jobCompletedEventSchema = z.object({
+  /** Unique job identifier */
+  jobId: z.string().uuid('jobId must be a valid UUID'),
+
+  /** Result returned by the job handler (can be any JSON value) */
+  result: z.unknown(),
+
+  /** Unix timestamp in milliseconds when job completed */
+  completedAt: z.number({
+    required_error: 'completedAt is required',
+    invalid_type_error: 'completedAt must be a number',
+  }),
+});
+
+/**
+ * Job failed event schema
+ *
+ * Sent when a job fails after exhausting all retry attempts.
+ * Contains error information for debugging.
+ *
+ * @example Event payload
+ * ```json
+ * {
+ *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
+ *   "error": {
+ *     "message": "Connection timeout",
+ *     "code": "ETIMEDOUT"
+ *   },
+ *   "failedAt": 1699123456789
+ * }
+ * ```
+ */
+export const jobFailedEventSchema = z.object({
+  /** Unique job identifier */
+  jobId: z.string().uuid('jobId must be a valid UUID'),
+
+  /** Error information */
+  error: z.object({
+    /** Error message */
+    message: z.string({
+      required_error: 'error.message is required',
+      invalid_type_error: 'error.message must be a string',
+    }),
+
+    /** Optional error code (e.g., 'ETIMEDOUT', 'JOB_TIMEOUT') */
+    code: z.string().optional(),
+  }),
+
+  /** Unix timestamp in milliseconds when job failed */
+  failedAt: z.number({
+    required_error: 'failedAt is required',
+    invalid_type_error: 'failedAt must be a number',
+  }),
+});
+
+/**
+ * Job cancelled event schema
+ *
+ * Sent when a job is cancelled, either manually or due to shutdown.
+ * The reason field indicates why the job was cancelled.
+ *
+ * @example Event payload
+ * ```json
+ * {
+ *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
+ *   "reason": "User requested cancellation",
+ *   "cancelledAt": 1699123456789
+ * }
+ * ```
+ */
+export const jobCancelledEventSchema = z.object({
+  /** Unique job identifier */
+  jobId: z.string().uuid('jobId must be a valid UUID'),
+
+  /** Optional reason for cancellation */
+  reason: z.string().optional(),
+
+  /** Unix timestamp in milliseconds when job was cancelled */
+  cancelledAt: z.number({
+    required_error: 'cancelledAt is required',
+    invalid_type_error: 'cancelledAt must be a number',
+  }),
+});
+
+/**
+ * Combined SSE events schema object
+ *
+ * Contains all job-related SSE event schemas keyed by event name.
+ * Used with BlaizeJS SSE routes for type-safe event sending.
+ *
+ * @example Usage with SSE route
+ * ```typescript
+ * import { createSSERoute } from 'blaizejs';
+ * import { jobEventsSchema } from '@blaizejs/queue';
+ *
+ * export default createSSERoute()({
+ *   schema: {
+ *     events: jobEventsSchema,
+ *   },
+ *   handler: async (stream, ctx, params, logger) => {
+ *     // stream.send('job.progress', { ... }) is type-safe
+ *   },
+ * });
+ * ```
+ */
+export const jobEventsSchema = {
+  /**
+   * Progress update event
+   * Sent when handler calls ctx.progress()
+   */
+  'job.progress': jobProgressEventSchema,
+
+  /**
+   * Completion event
+   * Sent when job handler returns successfully
+   */
+  'job.completed': jobCompletedEventSchema,
+
+  /**
+   * Failure event
+   * Sent when job fails after all retries exhausted
+   */
+  'job.failed': jobFailedEventSchema,
+
+  /**
+   * Cancellation event
+   * Sent when job is cancelled manually or due to shutdown
+   */
+  'job.cancelled': jobCancelledEventSchema,
+} as const;
+
+// ============================================================================
+// SSE Event Types (Inferred from Schemas)
+// ============================================================================
+
+/**
+ * Job progress event payload type
+ *
+ * @example
+ * ```typescript
+ * const progressEvent: JobProgressEvent = {
+ *   jobId: '550e8400-e29b-41d4-a716-446655440000',
+ *   percent: 50,
+ *   message: 'Halfway done',
+ *   timestamp: Date.now(),
+ * };
+ * ```
+ */
+export type JobProgressEvent = z.infer<typeof jobProgressEventSchema>;
+
+/**
+ * Job completed event payload type
+ *
+ * @example
+ * ```typescript
+ * const completedEvent: JobCompletedEvent = {
+ *   jobId: '550e8400-e29b-41d4-a716-446655440000',
+ *   result: { success: true },
+ *   completedAt: Date.now(),
+ * };
+ * ```
+ */
+export type JobCompletedEvent = z.infer<typeof jobCompletedEventSchema>;
+
+/**
+ * Job failed event payload type
+ *
+ * @example
+ * ```typescript
+ * const failedEvent: JobFailedEvent = {
+ *   jobId: '550e8400-e29b-41d4-a716-446655440000',
+ *   error: { message: 'Connection failed', code: 'ECONNREFUSED' },
+ *   failedAt: Date.now(),
+ * };
+ * ```
+ */
+export type JobFailedEvent = z.infer<typeof jobFailedEventSchema>;
+
+/**
+ * Job cancelled event payload type
+ *
+ * @example
+ * ```typescript
+ * const cancelledEvent: JobCancelledEvent = {
+ *   jobId: '550e8400-e29b-41d4-a716-446655440000',
+ *   reason: 'User requested',
+ *   cancelledAt: Date.now(),
+ * };
+ * ```
+ */
+export type JobCancelledEvent = z.infer<typeof jobCancelledEventSchema>;
+
+/**
+ * Union type of all job event payloads
+ */
+export type JobEvent = JobProgressEvent | JobCompletedEvent | JobFailedEvent | JobCancelledEvent;
+
+/**
+ * Job event names
+ */
+export type JobEventName = keyof typeof jobEventsSchema;
+
+// ============================================================================
 // Route Schemas (Placeholders for future tasks)
 // ============================================================================
- 
-// TODO: Implement route schemas in T12, T19
-// - jobStreamQuerySchema (T12)
-// - jobEventsSchema (T12)
+
+// TODO: Implement route schemas in T19
 // - queueStatusQuerySchema (T19)
 // - queueStatusResponseSchema (T19)
 // - queueDashboardQuerySchema (T19)

@@ -13,8 +13,7 @@ import config from '../package.json';
 // ============================================================================
 // Plugin Factory
 // ============================================================================
-// TODO: Implement in plugin.ts
-// export { createQueuePlugin } from './plugin';
+export { createQueuePlugin } from './plugin';
 
 // ============================================================================
 // Core Types
@@ -96,6 +95,11 @@ export {
   queueConfigSchema,
   queueConfigWithoutNameSchema,
   pluginConfigSchema,
+  jobProgressEventSchema,
+  jobCompletedEventSchema,
+  jobFailedEventSchema,
+  jobCancelledEventSchema,
+  jobEventsSchema,
 } from './schema';
 
 // Configuration types (inferred from schemas)
@@ -108,6 +112,12 @@ export type {
   QueueConfigInput,
   PluginConfigSchema,
   PluginConfigInput,
+  JobProgressEvent,
+  JobCompletedEvent,
+  JobFailedEvent,
+  JobCancelledEvent,
+  JobEvent,
+  JobEventName,
 } from './schema';
 
 // TODO: Route schemas (T12, T19)
