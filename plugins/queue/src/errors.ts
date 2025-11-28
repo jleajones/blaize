@@ -12,10 +12,12 @@
 import { BlaizeError, ErrorType, getCorrelationId } from 'blaizejs';
 
 import type {
+  HandlerAlreadyRegisteredDetails,
   HandlerNotFoundDetails,
   JobCancelledDetails,
   JobNotFoundDetails,
   JobTimeoutDetails,
+  JobValidationErrorDetails,
   QueueConfigErrorDetails,
   QueueErrorDetails,
   QueueNotFoundDetails,
@@ -508,17 +510,6 @@ export class StorageError extends BlaizeError<StorageErrorDetails> {
 // ============================================================================
 // Handler Already Registered Error
 // ============================================================================
-
-/**
- * Details for handler already registered errors
- */
-export interface HandlerAlreadyRegisteredDetails {
-  /** The job type that already has a handler */
-  jobType: string;
-  /** Queue name where handler is registered */
-  queueName: string;
-}
-
 /**
  * Error thrown when attempting to register a duplicate handler
  *
@@ -564,24 +555,6 @@ export class HandlerAlreadyRegisteredError extends BlaizeError<HandlerAlreadyReg
 // ============================================================================
 // Job Validation Error
 // ============================================================================
-
-/**
- * Details for job validation errors
- */
-export interface JobValidationErrorDetails {
-  /** The job type being validated */
-  jobType: string;
-  /** Queue name */
-  queueName: string;
-  /** Validation errors from Zod */
-  validationErrors: Array<{
-    path: (string | number)[];
-    message: string;
-  }>;
-  /** The invalid data that was provided */
-  invalidData?: unknown;
-}
-
 /**
  * Error thrown when job data fails schema validation
  *

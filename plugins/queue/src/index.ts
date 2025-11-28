@@ -1,4 +1,3 @@
-import config from '../package.json';
 /**
  * @blaizejs/queue - Background Job Processing Plugin
  *
@@ -6,7 +5,10 @@ import config from '../package.json';
  * and real-time SSE monitoring for BlaizeJS applications.
  *
  * @module @blaizejs/queue
+ * @version 0.4.0
  */
+
+import config from '../package.json';
 
 // ============================================================================
 // Plugin Factory
@@ -18,27 +20,56 @@ import config from '../package.json';
 // Core Types
 // ============================================================================
 export type {
+  // Job types
   Job,
   JobStatus,
-  JobHandler,
-  JobContext,
+  JobPriority,
+  JobError,
   JobOptions,
+  JobContext,
+  JobHandler,
+  JobFilters,
+  JobSubscription,
+  // Job type schema (for advanced usage with Zod validation)
+  JobTypeDefinition,
+  JobTypesSchema,
+  // Queue types
+  QueueStats,
   QueueConfig,
   QueuePluginConfig,
-  // QueueService,
-  QueueInstanceConfig,
+  QueueServiceConfig,
+  StopOptions,
+  QueueInstanceEvents,
+  // Storage adapter
   QueueStorageAdapter,
+  QueueErrorDetails,
+  JobNotFoundDetails,
+  JobTimeoutDetails,
+  JobCancelledDetails,
+  HandlerNotFoundDetails,
+  QueueNotFoundDetails,
+  QueueConfigErrorDetails,
+  StorageErrorDetails,
+  HandlerAlreadyRegisteredDetails,
+  JobValidationErrorDetails,
+  PriorityQueue,
+  PriorityQueueItem,
 } from './types';
 
 // ============================================================================
 // Error Classes
 // ============================================================================
 export {
-  QueueConfigError,
+  QueueError,
   JobNotFoundError,
   JobTimeoutError,
   JobCancelledError,
   HandlerNotFoundError,
+  QueueNotFoundError,
+  QueueConfigError,
+  StorageError,
+  HandlerAlreadyRegisteredError,
+  JobValidationError,
 } from './errors';
 
 // ============================================================================
@@ -57,7 +88,29 @@ export {
 // ============================================================================
 // Schemas (for validation)
 // ============================================================================
-// TODO: Implement in schemas.ts
+// Configuration schemas
+export {
+  jobPrioritySchema,
+  jobOptionsSchema,
+  jobTypeDefinitionSchema,
+  queueConfigSchema,
+  queueConfigWithoutNameSchema,
+  pluginConfigSchema,
+} from './schema';
+
+// Configuration types (inferred from schemas)
+export type {
+  JobPriorityConfig,
+  JobOptionsConfig,
+  JobOptionsInput,
+  JobTypeDefinitionConfig,
+  QueueConfigSchema,
+  QueueConfigInput,
+  PluginConfigSchema,
+  PluginConfigInput,
+} from './schema';
+
+// TODO: Route schemas (T12, T19)
 // export {
 //   jobStreamQuerySchema,
 //   jobEventsSchema,
@@ -71,11 +124,25 @@ export {
 // ============================================================================
 // Storage Adapters
 // ============================================================================
-export { createInMemoryStorage } from './storage';
+// QueueStorageAdapter type is exported above in Core Types
+export { createInMemoryStorage, InMemoryStorage } from './storage';
+
+// ============================================================================
+// Queue Instance
+// ============================================================================
+export { QueueInstance } from './queue-instance';
+
+// ============================================================================
+// Queue Service (Multi-queue Manager)
+// ============================================================================
+export { QueueService } from './queue-service';
 
 // ============================================================================
 // Utilities
 // ============================================================================
+// Priority Queue (used internally, exported for custom adapters)
+export { createPriorityQueue } from './priority-queue';
+
 // TODO: Implement dashboard renderer
 // export { renderDashboard } from './dashboard';
 
