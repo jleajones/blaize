@@ -26,6 +26,7 @@ import type {
   JobError,
   QueueStats,
   JobPriority,
+  StopOptions,
 } from './types';
 import type { BlaizeLogger } from 'blaizejs';
 
@@ -54,33 +55,14 @@ const POLL_INTERVAL_MS = 100;
 /** Default graceful shutdown timeout */
 const DEFAULT_SHUTDOWN_TIMEOUT = 30000;
 
-// ============================================================================
-// Types
-// ============================================================================
+/** Default base delay for exponential backoff (ms) */
+const DEFAULT_BASE_DELAY_MS = 1000;
 
-/**
- * Options for stopping the queue
- */
-export interface StopOptions {
-  /** Whether to wait for running jobs to complete */
-  graceful?: boolean;
+/** Default maximum delay for exponential backoff (ms) */
+const DEFAULT_MAX_DELAY_MS = 30000;
 
-  /** Maximum time to wait for graceful shutdown (ms) */
-  timeout?: number;
-}
-
-/**
- * Event signatures for QueueInstance
- */
-export interface QueueInstanceEvents {
-  'job:queued': (job: Job) => void;
-  'job:started': (job: Job) => void;
-  'job:progress': (jobId: string, percent: number, message?: string) => void;
-  'job:completed': (job: Job, result: unknown) => void;
-  'job:failed': (job: Job, error: JobError) => void;
-  'job:cancelled': (job: Job, reason?: string) => void;
-  'job:retry': (job: Job, attempt: number) => void;
-}
+/** Default multiplier for exponential backoff */
+const DEFAULT_BACKOFF_MULTIPLIER = 2;
 
 // ============================================================================
 // QueueInstance Class
@@ -155,6 +137,15 @@ export class QueueInstance extends EventEmitter {
   /** Default maximum retry attempts */
   private readonly defaultMaxRetries: number;
 
+  /** Base delay for exponential backoff (ms) */
+  private readonly retryBaseDelayMs: number;
+
+  /** Maximum delay for exponential backoff (ms) */
+  private readonly retryMaxDelayMs: number;
+
+  /** Multiplier for exponential backoff */
+  private readonly retryMultiplier: number;
+
   /** Logger instance (child logger with queue context) */
   private readonly logger: BlaizeLogger;
 
@@ -173,6 +164,9 @@ export class QueueInstance extends EventEmitter {
 
   /** AbortControllers for running jobs (for cancellation) */
   private readonly abortControllers: Map<string, AbortController>;
+
+  /** Pending retry timers (for cleanup on stop) */
+  private readonly pendingRetryTimers: Map<string, ReturnType<typeof setTimeout>>;
 
   /** Whether the queue is actively processing */
   private isRunning: boolean;
@@ -217,6 +211,11 @@ export class QueueInstance extends EventEmitter {
     this.defaultTimeout = config.defaultTimeout ?? DEFAULT_TIMEOUT;
     this.defaultMaxRetries = config.defaultMaxRetries ?? DEFAULT_MAX_RETRIES;
 
+    // Retry configuration (using defaults, can be extended in QueueConfig if needed)
+    this.retryBaseDelayMs = DEFAULT_BASE_DELAY_MS;
+    this.retryMaxDelayMs = DEFAULT_MAX_DELAY_MS;
+    this.retryMultiplier = DEFAULT_BACKOFF_MULTIPLIER;
+
     // Injected dependencies
     this.storage = storage;
 
@@ -227,6 +226,7 @@ export class QueueInstance extends EventEmitter {
     this.handlers = new Map();
     this.runningJobs = new Set();
     this.abortControllers = new Map();
+    this.pendingRetryTimers = new Map();
     this.isRunning = false;
     this.isShuttingDown = false;
 
@@ -444,40 +444,126 @@ export class QueueInstance extends EventEmitter {
    * await queue.stop({ graceful: true, timeout: 60000 });
    * ```
    */
+  /**
+   * Stop the queue processing
+   *
+   * Graceful shutdown (default):
+   * - Stops accepting new jobs immediately
+   * - Waits for running jobs to complete (up to timeout)
+   * - If timeout reached, logs warning but doesn't cancel jobs
+   *
+   * Forceful shutdown:
+   * - Stops accepting new jobs immediately
+   * - Cancels all running jobs immediately
+   * - Returns once all jobs are cancelled
+   *
+   * @param options - Stop options
+   * @param options.graceful - Whether to wait for running jobs (default: true)
+   * @param options.timeout - Maximum wait time in ms (default: 30000)
+   *
+   * @example Graceful shutdown (wait for jobs)
+   * ```typescript
+   * await queue.stop(); // Waits up to 30s for jobs to finish
+   * await queue.stop({ graceful: true, timeout: 60000 }); // Wait up to 60s
+   * ```
+   *
+   * @example Forceful shutdown (cancel jobs)
+   * ```typescript
+   * await queue.stop({ graceful: false }); // Cancel all running jobs
+   * ```
+   */
   async stop(options?: StopOptions): Promise<void> {
     if (this.isShuttingDown) {
       this.logger.debug('Queue already shutting down', { queue: this.name });
       return;
     }
 
+    const startTime = Date.now();
     const graceful = options?.graceful ?? true;
     const timeout = options?.timeout ?? DEFAULT_SHUTDOWN_TIMEOUT;
 
+    // Set flags immediately to prevent new jobs from starting
     this.isShuttingDown = true;
+    this.isRunning = false;
+
+    // Get queued jobs count for logging
+    const stats = await this.storage.getQueueStats(this.name);
+    const queuedJobs = stats.queued;
 
     this.logger.info('Queue stopping', {
       queue: this.name,
       graceful,
+      timeout,
       runningJobs: this.runningJobs.size,
+      queuedJobs,
+      pendingRetries: this.pendingRetryTimers.size,
     });
 
-    if (graceful && this.runningJobs.size > 0) {
-      // Wait for running jobs to complete (with timeout)
-      const startTime = Date.now();
-      while (this.runningJobs.size > 0) {
-        if (Date.now() - startTime > timeout) {
-          this.logger.warn('Stop timeout reached, force stopping', {
-            queue: this.name,
-            remainingJobs: this.runningJobs.size,
-          });
-          break;
+    // Clear all pending retry timers
+    for (const [jobId, timerId] of this.pendingRetryTimers) {
+      clearTimeout(timerId);
+      this.logger.debug('Cleared pending retry timer', { jobId, queue: this.name });
+    }
+    this.pendingRetryTimers.clear();
+
+    if (graceful) {
+      // Graceful: Wait for running jobs to complete (with timeout)
+      if (this.runningJobs.size > 0) {
+        this.logger.debug('Waiting for running jobs to complete', {
+          queue: this.name,
+          runningJobs: this.runningJobs.size,
+          timeout,
+        });
+
+        const waitStartTime = Date.now();
+        while (this.runningJobs.size > 0) {
+          if (Date.now() - waitStartTime > timeout) {
+            this.logger.warn('Graceful shutdown timeout reached', {
+              queue: this.name,
+              remainingJobs: this.runningJobs.size,
+              timeout,
+            });
+            break;
+          }
+          await this.delay(100);
         }
-        await this.delay(100);
+      }
+    } else {
+      // Forceful: Cancel all running jobs immediately
+      if (this.runningJobs.size > 0) {
+        this.logger.info('Force cancelling running jobs', {
+          queue: this.name,
+          jobCount: this.runningJobs.size,
+        });
+
+        const cancelPromises: Promise<boolean>[] = [];
+        for (const jobId of this.runningJobs) {
+          cancelPromises.push(
+            this.cancelJob(jobId, 'Queue shutdown (forced)').catch(err => {
+              this.logger.warn('Failed to cancel job during forced shutdown', {
+                jobId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              return false;
+            })
+          );
+        }
+
+        // Wait for all cancellations to complete
+        await Promise.all(cancelPromises);
+
+        // Give a brief moment for abort signals to propagate
+        await this.delay(50);
       }
     }
 
-    this.isRunning = false;
-    this.logger.info('Queue stopped', { queue: this.name });
+    const duration = Date.now() - startTime;
+    this.logger.info('Queue stopped', {
+      queue: this.name,
+      duration,
+      graceful,
+      remainingJobs: this.runningJobs.size,
+    });
   }
 
   // ==========================================================================
@@ -908,6 +994,12 @@ export class QueueInstance extends EventEmitter {
     result: unknown,
     logger: BlaizeLogger
   ): Promise<void> {
+    const currentJob = await this.storage.getJob(job.id, this.name);
+    if (currentJob?.status === 'cancelled') {
+      logger.debug('Job was cancelled, ignoring late completion');
+      return;
+    }
+
     await this.storage.updateJob(job.id, {
       status: 'completed',
       completedAt: Date.now(),
@@ -930,9 +1022,9 @@ export class QueueInstance extends EventEmitter {
   /**
    * Handle job failure
    *
-   * Determines error code, updates job state, and emits event.
-   * Distinguishes between timeouts, cancellations, and execution errors.
-   * Does not overwrite status if job was already cancelled.
+   * If retries remain, schedules job for retry with exponential backoff.
+   * Otherwise, marks job as failed and emits event.
+   * Does not retry cancelled jobs.
    *
    * @param job - Failed job
    * @param err - Error that caused failure
@@ -957,8 +1049,21 @@ export class QueueInstance extends EventEmitter {
     if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
       errorCode = 'JOB_TIMEOUT';
     } else if (errorMessage.includes('cancelled') || errorMessage.includes('aborted')) {
-      // If cancelled but status wasn't updated yet, treat as cancelled
+      // If cancelled but status wasn't updated yet, don't retry
       errorCode = 'JOB_CANCELLED';
+      logger.debug('Job was cancelled during execution, skipping retry', {
+        jobId: job.id,
+      });
+      // Update to cancelled status rather than failed
+      await this.storage.updateJob(job.id, {
+        status: 'cancelled',
+        completedAt: Date.now(),
+      });
+      const cancelledJob = await this.storage.getJob(job.id, this.name);
+      if (cancelledJob) {
+        this.emit('job:cancelled', cancelledJob, errorMessage);
+      }
+      return;
     }
 
     const errorObj: JobError = {
@@ -967,9 +1072,23 @@ export class QueueInstance extends EventEmitter {
       stack: err instanceof Error ? err.stack : undefined,
     };
 
-    logger.error('Job failed', {
+    // Check if we should retry
+    const currentRetries = currentJob?.retries ?? job.retries;
+    const maxRetries = job.maxRetries;
+    const nextAttempt = currentRetries + 1;
+
+    if (currentRetries < maxRetries) {
+      // Schedule retry
+      await this.scheduleRetry(job, nextAttempt, errorObj, logger);
+      return;
+    }
+
+    // Exhausted retries - mark as failed
+    logger.error('Job failed (exhausted retries)', {
       error: errorMessage,
       code: errorCode,
+      attempt: nextAttempt,
+      maxRetries,
       duration: Date.now() - (job.startedAt ?? job.queuedAt),
     });
 
@@ -983,6 +1102,102 @@ export class QueueInstance extends EventEmitter {
     if (failedJob) {
       this.emit('job:failed', failedJob, errorObj);
     }
+  }
+
+  /**
+   * Calculate exponential backoff delay
+   *
+   * Uses the formula: min(baseDelay * multiplier^attempt, maxDelay)
+   * with jitter to prevent thundering herd.
+   *
+   * @param attempt - Current attempt number (1-based)
+   * @returns Delay in milliseconds
+   *
+   * @internal
+   */
+  private calculateBackoff(attempt: number): number {
+    // Exponential backoff: baseDelay * multiplier^(attempt-1)
+    const exponentialDelay = this.retryBaseDelayMs * Math.pow(this.retryMultiplier, attempt - 1);
+
+    // Cap at max delay
+    const cappedDelay = Math.min(exponentialDelay, this.retryMaxDelayMs);
+
+    // Add jitter (±10%) to prevent thundering herd
+    const jitter = cappedDelay * 0.1 * (Math.random() * 2 - 1);
+
+    return Math.floor(cappedDelay + jitter);
+  }
+
+  /**
+   * Schedule a job for retry after backoff delay
+   *
+   * Updates job retry count, calculates backoff, and schedules
+   * re-enqueue after the delay.
+   *
+   * @param job - Job to retry
+   * @param attempt - Next attempt number
+   * @param error - Error from previous attempt
+   * @param logger - Job-scoped logger
+   *
+   * @internal
+   */
+  private async scheduleRetry(
+    job: Job,
+    attempt: number,
+    error: JobError,
+    logger: BlaizeLogger
+  ): Promise<void> {
+    const backoffMs = this.calculateBackoff(attempt);
+
+    logger.warn('Job failed, scheduling retry', {
+      jobId: job.id,
+      attempt,
+      maxRetries: job.maxRetries,
+      backoffMs,
+      error: error.message,
+    });
+
+    // Update job with incremented retry count and last error
+    await this.storage.updateJob(job.id, {
+      status: 'queued', // Back to queued for retry
+      retries: attempt,
+      error, // Store last error for reference
+      // Clear startedAt for fresh attempt timing
+      startedAt: undefined,
+    });
+
+    // Get updated job for event
+    const updatedJob = await this.storage.getJob(job.id, this.name);
+    if (updatedJob) {
+      this.emit('job:retry', updatedJob, attempt);
+    }
+
+    // Schedule re-enqueue after backoff
+    const timerId = setTimeout(async () => {
+      // Clean up timer reference
+      this.pendingRetryTimers.delete(job.id);
+
+      // Don't re-enqueue if shutting down
+      if (this.isShuttingDown) {
+        logger.debug('Queue shutting down, skipping retry re-enqueue', {
+          jobId: job.id,
+        });
+        return;
+      }
+
+      // Re-enqueue the job (storage.enqueue adds it back to the priority queue)
+      const jobToRetry = await this.storage.getJob(job.id, this.name);
+      if (jobToRetry && jobToRetry.status === 'queued') {
+        await this.storage.enqueue(this.name, jobToRetry);
+        logger.debug('Job re-enqueued for retry', {
+          jobId: job.id,
+          attempt,
+        });
+      }
+    }, backoffMs);
+
+    // Track timer for cleanup on stop
+    this.pendingRetryTimers.set(job.id, timerId);
   }
 
   // ==========================================================================
