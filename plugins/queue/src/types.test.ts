@@ -19,11 +19,9 @@ import type {
   QueueStats,
   QueueConfig,
   QueuePluginConfig,
-  QueueInstanceConfig,
-  QueueEvents,
-  QueueServiceConfig,
   QueueStorageAdapter,
   JobTypesSchema,
+  QueueInstanceEvents,
 } from './types';
 
 describe('Core Types', () => {
@@ -354,14 +352,11 @@ describe('Configuration Types', () => {
         },
       } as unknown as JobTypesSchema;
 
-      const config: QueueInstanceConfig<typeof mockJobTypes> = {
+      const config: QueueConfig = {
         name: 'default',
         concurrency: 5,
         defaultTimeout: 30000,
         defaultMaxRetries: 3,
-        jobTypes: mockJobTypes,
-        storage: mockStorage,
-        logger: mockLogger,
       };
 
       expect(config.name).toBe('default');
@@ -467,13 +462,13 @@ describe('QueueStorageAdapter Interface', () => {
 describe('QueueEvents Interface', () => {
   it('should define all event types', () => {
     // Verify event callback signatures exist
-    type QueuedEvent = QueueEvents['job:queued'];
-    type StartedEvent = QueueEvents['job:started'];
-    type ProgressEvent = QueueEvents['job:progress'];
-    type CompletedEvent = QueueEvents['job:completed'];
-    type FailedEvent = QueueEvents['job:failed'];
-    type CancelledEvent = QueueEvents['job:cancelled'];
-    type RetryEvent = QueueEvents['job:retry'];
+    type QueuedEvent = QueueInstanceEvents['job:queued'];
+    type StartedEvent = QueueInstanceEvents['job:started'];
+    type ProgressEvent = QueueInstanceEvents['job:progress'];
+    type CompletedEvent = QueueInstanceEvents['job:completed'];
+    type FailedEvent = QueueInstanceEvents['job:failed'];
+    type CancelledEvent = QueueInstanceEvents['job:cancelled'];
+    type RetryEvent = QueueInstanceEvents['job:retry'];
 
     // All should be function types
     expectTypeOf<QueuedEvent>().toBeFunction();

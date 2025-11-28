@@ -2,8 +2,9 @@
  * Queue Instance Implementation
  *
  * QueueInstance is the core class that manages jobs for a single named queue.
- * It handles job submission, handler registration, event emission, and
- * lifecycle management.
+ * It extends EventEmitter for job lifecycle events, delegates storage operations
+ * to the injected QueueStorageAdapter, tracks running jobs, and coordinates
+ * with handlers.
  *
  * @module @blaizejs/queue/queue-instance
  * @since 0.4.0
@@ -12,28 +13,21 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-import {
-  HandlerNotFoundError,
-  HandlerAlreadyRegisteredError,
-  JobValidationError,
-  JobNotFoundError,
-} from './errors';
+import { HandlerAlreadyRegisteredError } from './errors';
 
 import type {
   QueueStorageAdapter,
-  QueueInstanceConfig,
-  JobTypesSchema,
   Job,
   JobHandler,
   JobOptions,
-  JobFilters,
+  JobStatus,
+  JobError,
   QueueStats,
-  JobSubscription,
   JobPriority,
+  QueueConfig,
+  StopOptions,
 } from './types';
 import type { BlaizeLogger } from 'blaizejs';
-import type { z } from 'zod';
-
 // ============================================================================
 // Constants
 // ============================================================================
@@ -53,6 +47,12 @@ const DEFAULT_PRIORITY: JobPriority = 5;
 /** Maximum event listeners for SSE subscriptions */
 const MAX_EVENT_LISTENERS = 1000;
 
+/** Poll interval when queue is empty or at concurrency limit (ms) */
+const POLL_INTERVAL_MS = 100;
+
+/** Default graceful shutdown timeout */
+const DEFAULT_SHUTDOWN_TIMEOUT = 30000;
+
 // ============================================================================
 // QueueInstance Class
 // ============================================================================
@@ -61,77 +61,51 @@ const MAX_EVENT_LISTENERS = 1000;
  * Manages jobs for a single named queue
  *
  * QueueInstance provides:
- * - Type-safe job submission with Zod validation
+ * - Type-safe job submission
  * - Handler registration for job types
  * - Event emission for SSE streaming
  * - Job cancellation with AbortController
  * - Statistics via storage adapter
- *
- * @template TJobTypes - Job types schema defining available job types
+ * - Concurrency-limited processing loop
  *
  * @example Basic usage
  * ```typescript
- * import { z } from 'zod';
  * import { QueueInstance, createInMemoryStorage } from '@blaizejs/queue';
  *
- * const jobTypes = {
- *   'email:send': {
- *     schema: z.object({ to: z.string().email(), subject: z.string() }),
- *     priority: 5,
- *   },
- *   'report:generate': {
- *     schema: z.object({ reportId: z.string() }),
- *     priority: 3,
- *     timeout: 120000,
- *   },
- * };
+ * const storage = createInMemoryStorage();
+ * const logger = parentLogger.child({ component: 'queue' });
  *
- * const queue = new QueueInstance({
- *   name: 'emails',
- *   concurrency: 5,
- *   jobTypes,
- *   storage: createInMemoryStorage(),
- *   logger: parentLogger.child({ queue: 'emails' }),
- * });
+ * const queue = new QueueInstance(
+ *   { name: 'emails', concurrency: 5, defaultTimeout: 30000, defaultMaxRetries: 3 },
+ *   storage,
+ *   logger
+ * );
  *
- * // Register handlers
+ * // Register handler
  * queue.registerHandler('email:send', async (ctx) => {
- *   await sendEmail(ctx.data.to, ctx.data.subject);
- *   ctx.progress(100, 'Sent!');
- *   return { success: true };
+ *   await sendEmail(ctx.data);
+ *   return { sent: true };
  * });
  *
- * // Add jobs
- * const jobId = await queue.add('email:send', {
- *   to: 'user@example.com',
- *   subject: 'Welcome!'
- * });
+ * // Add job
+ * const jobId = await queue.add('email:send', { to: 'user@example.com' });
  *
  * // Start processing
  * await queue.start();
  * ```
  *
- * @example Subscribing to job events (for SSE)
+ * @example Event handling for SSE
  * ```typescript
- * const unsubscribe = queue.subscribe(jobId, {
- *   onProgress: (percent, message) => {
- *     stream.send('progress', { percent, message });
- *   },
- *   onCompleted: (result) => {
- *     stream.send('completed', { result });
- *     stream.close();
- *   },
- *   onFailed: (error) => {
- *     stream.send('failed', { error });
- *     stream.close();
- *   },
+ * queue.on('job:progress', (jobId, percent, message) => {
+ *   stream.send({ event: 'progress', data: { jobId, percent, message } });
  * });
  *
- * // Clean up on stream close
- * stream.onClose(() => unsubscribe());
+ * queue.on('job:completed', (job, result) => {
+ *   stream.send({ event: 'completed', data: { jobId: job.id, result } });
+ * });
  * ```
  */
-export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> extends EventEmitter {
+export class QueueInstance extends EventEmitter {
   // ==========================================================================
   // Public Properties
   // ==========================================================================
@@ -146,13 +120,13 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
   /** Maximum concurrent job executions */
   private readonly concurrency: number;
 
-  /** Job type definitions with schemas */
-  private readonly jobTypes: TJobTypes;
+  /** Default job timeout in milliseconds */
+  private readonly defaultTimeout: number;
 
-  /** Default options for all jobs */
-  private readonly defaultJobOptions: Partial<JobOptions>;
+  /** Default maximum retry attempts */
+  private readonly defaultMaxRetries: number;
 
-  /** Logger instance (from plugin) */
+  /** Logger instance (child logger with queue context) */
   private readonly logger: BlaizeLogger;
 
   /** Storage adapter for job persistence */
@@ -172,7 +146,7 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
   private readonly abortControllers: Map<string, AbortController>;
 
   /** Whether the queue is actively processing */
-  private isProcessing: boolean;
+  private isRunning: boolean;
 
   /** Whether the queue is shutting down */
   private isShuttingDown: boolean;
@@ -184,25 +158,25 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
   /**
    * Create a new QueueInstance
    *
-   * @param config - Queue configuration
+   * @param config - Queue configuration (name, concurrency, defaults)
+   * @param storage - Storage adapter for job persistence (injected)
+   * @param logger - Logger instance (child logger will be created)
    *
    * @example
    * ```typescript
-   * const queue = new QueueInstance({
-   *   name: 'emails',
-   *   concurrency: 5,
-   *   jobTypes: {
-   *     'welcome': {
-   *       schema: z.object({ to: z.string().email() }),
-   *       priority: 5,
-   *     },
+   * const queue = new QueueInstance(
+   *   {
+   *     name: 'emails',
+   *     concurrency: 5,
+   *     defaultTimeout: 30000,
+   *     defaultMaxRetries: 3,
    *   },
-   *   storage: createInMemoryStorage(),
-   *   logger: parentLogger.child({ queue: 'emails' }),
-   * });
+   *   storage,
+   *   logger
+   * );
    * ```
    */
-  constructor(config: QueueInstanceConfig<TJobTypes>) {
+  constructor(config: QueueConfig, storage: QueueStorageAdapter, logger: BlaizeLogger) {
     super();
 
     // Support many SSE subscriptions
@@ -211,22 +185,27 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
     // Configuration
     this.name = config.name;
     this.concurrency = config.concurrency ?? DEFAULT_CONCURRENCY;
-    this.jobTypes = config.jobTypes;
-    this.defaultJobOptions = config.defaultJobOptions ?? {};
-    this.logger = config.logger;
-    this.storage = config.storage;
+    this.defaultTimeout = config.defaultTimeout ?? DEFAULT_TIMEOUT;
+    this.defaultMaxRetries = config.defaultMaxRetries ?? DEFAULT_MAX_RETRIES;
+
+    // Injected dependencies
+    this.storage = storage;
+
+    // Create child logger with queue context
+    this.logger = logger.child({ queue: this.name });
 
     // Runtime state
     this.handlers = new Map();
     this.runningJobs = new Set();
     this.abortControllers = new Map();
-    this.isProcessing = false;
+    this.isRunning = false;
     this.isShuttingDown = false;
 
     this.logger.debug('QueueInstance created', {
       queue: this.name,
       concurrency: this.concurrency,
-      jobTypes: Object.keys(this.jobTypes),
+      defaultTimeout: this.defaultTimeout,
+      defaultMaxRetries: this.defaultMaxRetries,
     });
   }
 
@@ -237,16 +216,14 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
   /**
    * Add a job to the queue
    *
-   * Validates job data against the Zod schema for the job type,
-   * creates a job record, enqueues it in storage, and emits
-   * a 'job.queued' event.
+   * Creates a job record, enqueues it in storage, and emits
+   * a 'job:queued' event.
    *
-   * @param jobType - Type of job (must be defined in jobTypes)
-   * @param data - Job data (validated against schema)
+   * @typeParam TData - Type of job data
+   * @param jobType - Type of job (must have a registered handler)
+   * @param data - Job data payload
    * @param options - Optional job-specific options
    * @returns Job ID (UUID)
-   *
-   * @throws {JobValidationError} If data doesn't match schema
    *
    * @example Basic usage
    * ```typescript
@@ -263,67 +240,27 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    *   reportId: 'rpt_123'
    * }, {
    *   priority: 10,
-   *   timeout: 300000, // 5 minutes
+   *   timeout: 300000,
    *   metadata: { requestedBy: 'admin' }
    * });
    * ```
    */
-  async add<K extends keyof TJobTypes & string>(
-    jobType: K,
-    data: z.infer<TJobTypes[K]['schema']>,
-    options?: JobOptions
-  ): Promise<string> {
-    // Validate job type exists
-    const jobTypeConfig = this.jobTypes[jobType];
-    if (!jobTypeConfig) {
-      throw new HandlerNotFoundError(jobType, this.name, Object.keys(this.jobTypes));
-    }
-
-    // Validate data against schema
-    const parseResult = jobTypeConfig.schema.safeParse(data);
-    if (!parseResult.success) {
-      const validationErrors = parseResult.error.issues.map(
-        (issue: { path: (string | number)[]; message: string }) => ({
-          path: issue.path,
-          message: issue.message,
-        })
-      );
-      throw new JobValidationError(jobType, this.name, validationErrors, data);
-    }
-
+  async add<TData>(jobType: string, data: TData, options?: JobOptions): Promise<string> {
     // Generate job ID
     const jobId = randomUUID();
 
-    // Merge options: defaults < job type config < explicit options
-    const priority =
-      options?.priority ??
-      jobTypeConfig.priority ??
-      this.defaultJobOptions.priority ??
-      DEFAULT_PRIORITY;
-
-    const timeout =
-      options?.timeout ??
-      jobTypeConfig.timeout ??
-      this.defaultJobOptions.timeout ??
-      DEFAULT_TIMEOUT;
-
-    const maxRetries =
-      options?.maxRetries ??
-      jobTypeConfig.maxRetries ??
-      this.defaultJobOptions.maxRetries ??
-      DEFAULT_MAX_RETRIES;
-
-    const metadata = {
-      ...this.defaultJobOptions.metadata,
-      ...options?.metadata,
-    };
+    // Merge options with defaults
+    const priority = options?.priority ?? DEFAULT_PRIORITY;
+    const timeout = options?.timeout ?? this.defaultTimeout;
+    const maxRetries = options?.maxRetries ?? this.defaultMaxRetries;
+    const metadata = options?.metadata ?? {};
 
     // Create job record
     const job: Job = {
       id: jobId,
       type: jobType,
       queueName: this.name,
-      data: parseResult.data,
+      data,
       status: 'queued',
       priority,
       progress: 0,
@@ -338,7 +275,7 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
     await this.storage.enqueue(this.name, job);
 
     // Emit event
-    this.emit('job.queued', job);
+    this.emit('job:queued', job);
 
     this.logger.debug('Job added to queue', {
       jobId,
@@ -360,6 +297,8 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    * Each job type can only have one handler. Attempting to register
    * a second handler for the same type throws an error.
    *
+   * @typeParam TData - Type of job data the handler receives
+   * @typeParam TResult - Type of result the handler returns
    * @param jobType - Type of job to handle
    * @param handler - Async function to process the job
    *
@@ -367,7 +306,7 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    *
    * @example
    * ```typescript
-   * queue.registerHandler('email:send', async (ctx) => {
+   * queue.registerHandler<EmailData, EmailResult>('email:send', async (ctx) => {
    *   ctx.logger.info('Sending email', { to: ctx.data.to });
    *
    *   // Check for cancellation
@@ -383,10 +322,7 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    * });
    * ```
    */
-  registerHandler<K extends keyof TJobTypes & string>(
-    jobType: K,
-    handler: JobHandler<z.infer<TJobTypes[K]['schema']>, unknown>
-  ): void {
+  registerHandler<TData, TResult>(jobType: string, handler: JobHandler<TData, TResult>): void {
     // Check for duplicate registration
     if (this.handlers.has(jobType)) {
       throw new HandlerAlreadyRegisteredError(jobType, this.name);
@@ -418,16 +354,101 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
     return this.handlers.has(jobType);
   }
 
+  // ==========================================================================
+  // Lifecycle Methods
+  // ==========================================================================
+
   /**
-   * Get the handler for a job type
+   * Start processing jobs
    *
-   * @param jobType - Type of job
-   * @returns The handler if registered, undefined otherwise
+   * Begins the job processing loop. Jobs are dequeued from storage
+   * and executed by registered handlers up to the concurrency limit.
    *
-   * @internal Used by processing loop
+   * The processing loop runs asynchronously (fire and forget) and
+   * continues until `stop()` is called.
+   *
+   * @example
+   * ```typescript
+   * await queue.start();
+   * console.log('Queue is now processing jobs');
+   * ```
    */
-  getHandler(jobType: string): JobHandler<unknown, unknown> | undefined {
-    return this.handlers.get(jobType);
+  async start(): Promise<void> {
+    if (this.isRunning) {
+      this.logger.debug('Queue already running', { queue: this.name });
+      return;
+    }
+
+    this.isRunning = true;
+    this.isShuttingDown = false;
+
+    this.logger.info('Queue started', { queue: this.name });
+
+    // Fire and forget - processing loop runs in background
+    this.processJobs().catch(error => {
+      this.logger.error('Processing loop error', {
+        queue: this.name,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  /**
+   * Stop processing jobs
+   *
+   * Gracefully stops the processing loop. If graceful=true (default),
+   * waits for running jobs to complete up to the timeout.
+   *
+   * @param options - Stop options
+   * @param options.graceful - Whether to wait for running jobs (default: true)
+   * @param options.timeout - Maximum wait time in ms (default: 30000)
+   *
+   * @example
+   * ```typescript
+   * // Graceful shutdown (default)
+   * await queue.stop();
+   *
+   * // Force stop immediately
+   * await queue.stop({ graceful: false });
+   *
+   * // Custom timeout
+   * await queue.stop({ graceful: true, timeout: 60000 });
+   * ```
+   */
+  async stop(options?: StopOptions): Promise<void> {
+    if (this.isShuttingDown) {
+      this.logger.debug('Queue already shutting down', { queue: this.name });
+      return;
+    }
+
+    const graceful = options?.graceful ?? true;
+    const timeout = options?.timeout ?? DEFAULT_SHUTDOWN_TIMEOUT;
+
+    this.isShuttingDown = true;
+
+    this.logger.info('Queue stopping', {
+      queue: this.name,
+      graceful,
+      runningJobs: this.runningJobs.size,
+    });
+
+    if (graceful && this.runningJobs.size > 0) {
+      // Wait for running jobs to complete (with timeout)
+      const startTime = Date.now();
+      while (this.runningJobs.size > 0) {
+        if (Date.now() - startTime > timeout) {
+          this.logger.warn('Stop timeout reached, force stopping', {
+            queue: this.name,
+            remainingJobs: this.runningJobs.size,
+          });
+          break;
+        }
+        await this.delay(100);
+      }
+    }
+
+    this.isRunning = false;
+    this.logger.info('Queue stopped', { queue: this.name });
   }
 
   // ==========================================================================
@@ -438,7 +459,7 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    * Get a specific job by ID
    *
    * @param jobId - Unique job identifier
-   * @returns The job if found, or null
+   * @returns The job if found, or undefined
    *
    * @example
    * ```typescript
@@ -448,14 +469,17 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    * }
    * ```
    */
-  async getJob(jobId: string): Promise<Job | null> {
-    return this.storage.getJob(jobId, this.name);
+  async getJob(jobId: string): Promise<Job | undefined> {
+    const job = await this.storage.getJob(jobId, this.name);
+    return job ?? undefined;
   }
 
   /**
    * List jobs matching filters
    *
-   * @param filters - Optional filter criteria
+   * @param options - Filter options
+   * @param options.status - Filter by job status
+   * @param options.limit - Maximum number of jobs to return
    * @returns Array of matching jobs
    *
    * @example
@@ -467,13 +491,70 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    * const completed = await queue.listJobs({
    *   status: 'completed',
    *   limit: 10,
-   *   sortBy: 'queuedAt',
-   *   sortOrder: 'desc'
    * });
    * ```
    */
-  async listJobs(filters?: JobFilters): Promise<Job[]> {
-    return this.storage.listJobs(this.name, filters);
+  async listJobs(options?: { status?: JobStatus; limit?: number }): Promise<Job[]> {
+    return this.storage.listJobs(this.name, {
+      status: options?.status,
+      limit: options?.limit,
+    });
+  }
+
+  // ==========================================================================
+  // Job Cancellation
+  // ==========================================================================
+
+  /**
+   * Cancel a job
+   *
+   * If the job is running, triggers its AbortController to signal cancellation.
+   * Updates job status to 'cancelled' and emits 'job:cancelled' event.
+   *
+   * @param jobId - Job ID to cancel
+   * @param reason - Optional cancellation reason
+   * @returns true if job was cancelled, false if not found
+   *
+   * @example
+   * ```typescript
+   * const cancelled = await queue.cancelJob(jobId, 'User requested');
+   * if (cancelled) {
+   *   console.log('Job cancelled successfully');
+   * }
+   * ```
+   */
+  async cancelJob(jobId: string, reason?: string): Promise<boolean> {
+    const job = await this.storage.getJob(jobId, this.name);
+    if (!job) {
+      return false;
+    }
+
+    // If job is running, abort it
+    const controller = this.abortControllers.get(jobId);
+    if (controller) {
+      controller.abort(reason ?? 'Job cancelled');
+    }
+
+    // Update status
+    await this.storage.updateJob(jobId, {
+      status: 'cancelled',
+      completedAt: Date.now(),
+    });
+
+    // Get updated job for event
+    const updatedJob = await this.storage.getJob(jobId, this.name);
+    if (updatedJob) {
+      this.emit('job:cancelled', updatedJob, reason);
+    }
+
+    this.logger.info('Job cancelled', {
+      jobId,
+      queue: this.name,
+      reason,
+      wasRunning: !!controller,
+    });
+
+    return true;
   }
 
   // ==========================================================================
@@ -496,217 +577,230 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
   }
 
   // ==========================================================================
-  // Event Subscription
+  // Processing Loop
   // ==========================================================================
 
   /**
-   * Subscribe to events for a specific job
+   * Main processing loop
    *
-   * Used for SSE streaming to track job progress in real-time.
-   * Returns an unsubscribe function to clean up listeners.
+   * Continuously dequeues jobs from storage and executes them
+   * while respecting the concurrency limit. Runs until `isShuttingDown`
+   * is set to true.
    *
-   * @param jobId - Job ID to subscribe to
-   * @param callbacks - Event callbacks
-   * @returns Unsubscribe function
-   *
-   * @example
-   * ```typescript
-   * const unsubscribe = queue.subscribe(jobId, {
-   *   onProgress: (percent, message) => {
-   *     console.log(`Progress: ${percent}% - ${message}`);
-   *   },
-   *   onCompleted: (result) => {
-   *     console.log('Job completed:', result);
-   *   },
-   *   onFailed: (error) => {
-   *     console.error('Job failed:', error);
-   *   },
-   *   onCancelled: (reason) => {
-   *     console.log('Job cancelled:', reason);
-   *   },
-   * });
-   *
-   * // Later: clean up
-   * unsubscribe();
-   * ```
+   * @internal
    */
-  subscribe(jobId: string, callbacks: JobSubscription): () => void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const listeners: Array<{ event: string; listener: (...args: any[]) => void }> = [];
+  private async processJobs(): Promise<void> {
+    this.logger.debug('Processing loop started', { queue: this.name });
 
-    // Progress listener
-    if (callbacks.onProgress) {
-      const progressListener = (job: Job, percent: number, message?: string) => {
-        if (job.id === jobId) {
-          callbacks.onProgress!(percent, message);
-        }
-      };
-      this.on('job.progress', progressListener);
-      listeners.push({ event: 'job.progress', listener: progressListener });
-    }
-
-    // Completed listener
-    if (callbacks.onCompleted) {
-      const completedListener = (job: Job) => {
-        if (job.id === jobId) {
-          callbacks.onCompleted!(job.result);
-        }
-      };
-      this.on('job.completed', completedListener);
-      listeners.push({ event: 'job.completed', listener: completedListener });
-    }
-
-    // Failed listener
-    if (callbacks.onFailed) {
-      const failedListener = (job: Job) => {
-        if (job.id === jobId) {
-          callbacks.onFailed!(job.error!);
-        }
-      };
-      this.on('job.failed', failedListener);
-      listeners.push({ event: 'job.failed', listener: failedListener });
-    }
-
-    // Cancelled listener
-    if (callbacks.onCancelled) {
-      const cancelledListener = (job: Job, reason?: string) => {
-        if (job.id === jobId) {
-          callbacks.onCancelled!(reason);
-        }
-      };
-      this.on('job.cancelled', cancelledListener);
-      listeners.push({ event: 'job.cancelled', listener: cancelledListener });
-    }
-
-    // Return unsubscribe function
-    return () => {
-      for (const { event, listener } of listeners) {
-        this.off(event, listener);
+    while (!this.isShuttingDown) {
+      // At concurrency limit? Wait and retry
+      if (this.runningJobs.size >= this.concurrency) {
+        this.logger.debug('At concurrency limit, waiting', {
+          queue: this.name,
+          running: this.runningJobs.size,
+          concurrency: this.concurrency,
+        });
+        await this.delay(POLL_INTERVAL_MS);
+        continue;
       }
-    };
+
+      // Dequeue next job from storage
+      const job = await this.storage.dequeue(this.name);
+      if (!job) {
+        // Queue empty, wait before polling again
+        await this.delay(POLL_INTERVAL_MS);
+        continue;
+      }
+
+      this.logger.debug('Job dequeued for processing', {
+        jobId: job.id,
+        jobType: job.type,
+        queue: this.name,
+      });
+
+      // Track as running BEFORE async execution starts (critical for concurrency control)
+      this.runningJobs.add(job.id);
+
+      // Execute job (non-blocking - fire and forget)
+      this.executeJob(job.id).catch(err => {
+        this.logger.error('Job execution error', {
+          jobId: job.id,
+          queue: this.name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Ensure cleanup if executeJob fails early
+        this.runningJobs.delete(job.id);
+      });
+    }
+
+    this.logger.debug('Processing loop stopped', { queue: this.name });
   }
 
-  // ==========================================================================
-  // Job Cancellation
-  // ==========================================================================
-
   /**
-   * Cancel a job
+   * Execute a single job
    *
-   * If the job is running, triggers its AbortController to signal cancellation.
-   * Updates job status to 'cancelled' and emits 'job.cancelled' event.
+   * Creates the job context, runs the handler, and updates job status.
+   * Handles timeouts, cancellation, and emits appropriate events.
    *
-   * @param jobId - Job ID to cancel
-   * @param reason - Optional cancellation reason
+   * @param jobId - ID of the job to execute
    *
-   * @throws {JobNotFoundError} If job doesn't exist
-   *
-   * @example
-   * ```typescript
-   * await queue.cancel(jobId, 'User requested cancellation');
-   * ```
+   * @internal
    */
-  async cancel(jobId: string, reason?: string): Promise<void> {
+  private async executeJob(jobId: string): Promise<void> {
+    // Get job from storage
     const job = await this.storage.getJob(jobId, this.name);
     if (!job) {
-      throw new JobNotFoundError(jobId, this.name);
-    }
-
-    // If job is running, abort it
-    const controller = this.abortControllers.get(jobId);
-    if (controller) {
-      controller.abort(reason ?? 'Job cancelled');
-    }
-
-    // Update status
-    await this.storage.updateJob(jobId, {
-      status: 'cancelled',
-      completedAt: Date.now(),
-    });
-
-    // Get updated job for event
-    const updatedJob = await this.storage.getJob(jobId, this.name);
-    if (updatedJob) {
-      this.emit('job.cancelled', updatedJob, reason);
-    }
-
-    this.logger.info('Job cancelled', {
-      jobId,
-      queue: this.name,
-      reason,
-      wasRunning: !!controller,
-    });
-  }
-
-  // ==========================================================================
-  // Lifecycle Methods (Stubs - Full implementation in T6)
-  // ==========================================================================
-
-  /**
-   * Start processing jobs
-   *
-   * Begins the job processing loop. Jobs are dequeued from storage
-   * and executed by registered handlers up to the concurrency limit.
-   *
-   * @example
-   * ```typescript
-   * await queue.start();
-   * console.log('Queue is now processing jobs');
-   * ```
-   */
-  async start(): Promise<void> {
-    if (this.isProcessing) {
-      this.logger.debug('Queue already processing', { queue: this.name });
+      this.logger.warn('Job not found for execution', {
+        jobId,
+        queue: this.name,
+      });
+      this.runningJobs.delete(jobId);
       return;
     }
 
-    this.isProcessing = true;
-    this.isShuttingDown = false;
+    // Get handler for job type
+    const handler = this.handlers.get(job.type);
+    if (!handler) {
+      this.logger.error('No handler registered for job type', {
+        jobId,
+        jobType: job.type,
+        queue: this.name,
+        registeredHandlers: Array.from(this.handlers.keys()),
+      });
 
-    this.logger.info('Queue started', { queue: this.name });
+      // Mark job as failed - no handler
+      const errorObj: JobError = {
+        message: `No handler registered for job type '${job.type}'`,
+        code: 'HANDLER_NOT_FOUND',
+      };
 
-    // TODO: T6 - implement processJobs() loop
-  }
+      await this.storage.updateJob(jobId, {
+        status: 'failed',
+        completedAt: Date.now(),
+        error: errorObj,
+      });
 
-  /**
-   * Stop processing jobs
-   *
-   * Gracefully stops the processing loop. Waits for running jobs
-   * to complete (up to a timeout) before returning.
-   *
-   * @example
-   * ```typescript
-   * await queue.stop();
-   * console.log('Queue stopped');
-   * ```
-   */
-  async stop(): Promise<void> {
-    if (this.isShuttingDown) {
-      this.logger.debug('Queue already shutting down', { queue: this.name });
+      const failedJob = await this.storage.getJob(jobId, this.name);
+      if (failedJob) {
+        this.emit('job:failed', failedJob, errorObj);
+      }
+      this.runningJobs.delete(jobId);
       return;
     }
 
-    this.isShuttingDown = true;
+    // Create AbortController for this job
+    const controller = new AbortController();
+    this.abortControllers.set(jobId, controller);
 
-    this.logger.info('Queue stopping', {
-      queue: this.name,
-      runningJobs: this.runningJobs.size,
-    });
+    try {
+      // Update job status to running
+      await this.storage.updateJob(jobId, {
+        status: 'running',
+        startedAt: Date.now(),
+      });
 
-    // TODO: T6 - wait for running jobs, cleanup
+      const runningJob = await this.storage.getJob(jobId, this.name);
+      if (runningJob) {
+        this.emit('job:started', runningJob);
+      }
+
+      this.logger.debug('Job started', {
+        jobId,
+        jobType: job.type,
+        queue: this.name,
+      });
+
+      // Create JobContext for handler execution
+      const ctx = {
+        jobId: job.id,
+        data: job.data,
+        logger: this.logger.child({ jobId: job.id, jobType: job.type }),
+        signal: controller.signal,
+        progress: async (percent: number, message?: string) => {
+          await this.storage.updateJob(jobId, {
+            progress: percent,
+            progressMessage: message,
+          });
+          this.emit('job:progress', jobId, percent, message);
+        },
+      };
+
+      // Execute the handler
+      const result = await handler(ctx);
+
+      // Update job as completed
+      await this.storage.updateJob(jobId, {
+        status: 'completed',
+        completedAt: Date.now(),
+        progress: 100,
+        result,
+      });
+
+      const completedJob = await this.storage.getJob(jobId, this.name);
+      if (completedJob) {
+        this.emit('job:completed', completedJob, result);
+      }
+
+      this.logger.debug('Job completed', {
+        jobId,
+        jobType: job.type,
+        queue: this.name,
+      });
+    } catch (err) {
+      // Handle job failure
+      const errorObj: JobError = {
+        message: err instanceof Error ? err.message : String(err),
+        code: 'EXECUTION_ERROR',
+        stack: err instanceof Error ? err.stack : undefined,
+      };
+
+      this.logger.error('Job failed', {
+        jobId,
+        jobType: job.type,
+        queue: this.name,
+        error: errorObj.message,
+      });
+
+      await this.storage.updateJob(jobId, {
+        status: 'failed',
+        completedAt: Date.now(),
+        error: errorObj,
+      });
+
+      const failedJob = await this.storage.getJob(jobId, this.name);
+      if (failedJob) {
+        this.emit('job:failed', failedJob, errorObj);
+      }
+    } finally {
+      // Clean up
+      this.abortControllers.delete(jobId);
+      this.runningJobs.delete(jobId);
+    }
+  }
+
+  /**
+   * Delay execution for a specified time
+   *
+   * @param ms - Milliseconds to delay
+   * @returns Promise that resolves after the delay
+   *
+   * @internal
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // ==========================================================================
-  // Internal Helpers
+  // Internal Helpers (Exposed for Testing)
   // ==========================================================================
 
   /**
-   * Check if queue is currently processing
+   * Check if queue is currently running
    *
    * @returns true if processing is active
    */
-  get processing(): boolean {
-    return this.isProcessing;
+  get running(): boolean {
+    return this.isRunning;
   }
 
   /**
@@ -725,42 +819,5 @@ export class QueueInstance<TJobTypes extends JobTypesSchema = JobTypesSchema> ex
    */
   get runningJobCount(): number {
     return this.runningJobs.size;
-  }
-
-  /**
-   * Get the AbortController for a running job
-   *
-   * @param jobId - Job ID
-   * @returns AbortController if job is running, undefined otherwise
-   *
-   * @internal Used by processing loop
-   */
-  getAbortController(jobId: string): AbortController | undefined {
-    return this.abortControllers.get(jobId);
-  }
-
-  /**
-   * Register an AbortController for a job
-   *
-   * @param jobId - Job ID
-   * @param controller - AbortController
-   *
-   * @internal Used by processing loop
-   */
-  setAbortController(jobId: string, controller: AbortController): void {
-    this.abortControllers.set(jobId, controller);
-    this.runningJobs.add(jobId);
-  }
-
-  /**
-   * Remove an AbortController for a job
-   *
-   * @param jobId - Job ID
-   *
-   * @internal Used by processing loop
-   */
-  removeAbortController(jobId: string): void {
-    this.abortControllers.delete(jobId);
-    this.runningJobs.delete(jobId);
   }
 }

@@ -710,60 +710,20 @@ export interface QueuePluginConfig {
 // ============================================================================
 
 /**
- * Configuration for QueueInstance constructor
- *
- * @template TJobTypes - Job types schema for this queue
- *
- * @example
- * ```typescript
- * const config: QueueInstanceConfig<typeof myJobTypes> = {
- *   name: 'emails',
- *   concurrency: 5,
- *   defaultTimeout: 30000,
- *   defaultMaxRetries: 3,
- *   jobTypes: myJobTypes,
- *   storage: createInMemoryStorage(),
- *   logger: parentLogger.child({ queue: 'emails' }),
- * };
- * ```
+ * Options for stopping the queue
  */
-export interface QueueInstanceConfig<TJobTypes extends JobTypesSchema = JobTypesSchema> {
-  /** Queue name */
-  name: string;
+export interface StopOptions {
+  /** Whether to wait for running jobs to complete */
+  graceful?: boolean;
 
-  /** Maximum concurrent job executions */
-  concurrency?: number;
-
-  /** Default timeout for jobs (ms) */
-  defaultTimeout?: number;
-
-  /** Default max retries for jobs */
-  defaultMaxRetries?: number;
-
-  /**
-   * Job type definitions with schemas
-   *
-   * Each key is a job type name, value contains the Zod schema
-   * and optional default options for that type.
-   */
-  jobTypes: TJobTypes;
-
-  /** Storage adapter for job persistence */
-  storage: QueueStorageAdapter;
-
-  /** Logger instance (from plugin) */
-  logger: BlaizeLogger;
-
-  /** Default job options applied to all jobs */
-  defaultJobOptions?: Partial<JobOptions>;
+  /** Maximum time to wait for graceful shutdown (ms) */
+  timeout?: number;
 }
 
 /**
- * Queue lifecycle events
- *
- * Used for SSE streaming and monitoring.
+ * Event signatures for QueueInstance
  */
-export interface QueueEvents {
+export interface QueueInstanceEvents {
   'job:queued': (job: Job) => void;
   'job:started': (job: Job) => void;
   'job:progress': (jobId: string, percent: number, message?: string) => void;
@@ -816,7 +776,7 @@ export interface JobSubscription {
  */
 export interface QueueServiceConfig {
   /** Queue configurations keyed by name */
-  queues: Record<string, Omit<QueueInstanceConfig, 'name'>>;
+  queues: Record<string, Omit<QueueConfig, 'name'>>;
 
   /** Shared storage adapter for all queues */
   storage: QueueStorageAdapter;
