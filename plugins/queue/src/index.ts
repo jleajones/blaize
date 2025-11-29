@@ -92,6 +92,8 @@ export {
   jobStreamQuerySchema,
   queueStatusQuerySchema,
   queueDashboardQuerySchema,
+  createJobBodySchema,
+  cancelJobBodySchema,
 } from './routes';
 
 // ============================================================================
