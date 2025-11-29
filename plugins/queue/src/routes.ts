@@ -62,8 +62,10 @@
 import { ServiceNotAvailableError, NotFoundError, getCorrelationId } from 'blaizejs';
 import { z } from 'zod';
 
+import { gatherDashboardData, renderDashboard } from './dashboard';
+
 import type { QueueService } from './queue-service';
-import type { Job, JobOptions, JobStatus, QueueStats } from './types';
+import type { Job, JobStatus, QueueStats, JobOptions } from './types';
 import type { SSEStream, Context, BlaizeLogger } from 'blaizejs';
 
 // ============================================================================
@@ -542,9 +544,9 @@ interface FormattedJob {
     code?: string;
   };
   progress?: number;
-  attemptsMade: number;
+  retries: number;
   maxRetries: number;
-  createdAt: number;
+  queuedAt: number;
   startedAt?: number;
   completedAt?: number;
 }
@@ -572,9 +574,9 @@ function formatJob(job: Job): FormattedJob {
         }
       : undefined,
     progress: job.progress,
-    attemptsMade: job.retries,
+    retries: job.retries,
     maxRetries: job.maxRetries,
-    createdAt: job.queuedAt,
+    queuedAt: job.queuedAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,
   };
@@ -712,287 +714,6 @@ export const queuePrometheusHandler = async (
 };
 
 /**
- * Dashboard data gathered from queue service
- */
-export interface DashboardData {
-  queues: Array<{
-    name: string;
-    stats: QueueStats;
-    jobs: Job[];
-  }>;
-  timestamp: number;
-}
-
-/**
- * Dashboard rendering options
- */
-export interface DashboardOptions {
-  /** Auto-refresh interval in seconds */
-  refreshInterval?: number;
-}
-
-/**
- * Gather dashboard data from queue service
- *
- * @param queueService - Queue service instance
- * @param queueNames - Queue names to include
- * @returns Dashboard data
- * @internal
- */
-async function gatherDashboardData(
-  queueService: QueueService,
-  queueNames: string[]
-): Promise<DashboardData> {
-  const queues = await Promise.all(
-    queueNames.map(async name => {
-      const stats = await queueService.getQueueStats(name);
-      const jobs = await queueService.listJobs(name, { limit: 50 });
-      return { name, stats, jobs };
-    })
-  );
-
-  return {
-    queues,
-    timestamp: Date.now(),
-  };
-}
-
-/**
- * Escape HTML special characters
- *
- * @param str - String to escape
- * @returns Escaped string
- * @internal
- */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-/**
- * Format timestamp for display
- *
- * @param ts - Timestamp in milliseconds
- * @returns Formatted date string
- * @internal
- */
-function formatTimestamp(ts: number): string {
-  return new Date(ts).toLocaleString();
-}
-
-/**
- * Get status badge class
- *
- * @param status - Job status
- * @returns CSS class name
- * @internal
- */
-function getStatusBadgeClass(status: JobStatus): string {
-  switch (status) {
-    case 'completed':
-      return 'badge-success';
-    case 'failed':
-      return 'badge-error';
-    case 'running':
-      return 'badge-info';
-    case 'cancelled':
-      return 'badge-warning';
-    case 'queued':
-    default:
-      return 'badge-default';
-  }
-}
-
-/**
- * Render HTML dashboard
- *
- * Generates a standalone HTML dashboard with inline CSS.
- * Matches BlaizeJS metrics plugin styling.
- *
- * @param data - Dashboard data
- * @param options - Rendering options
- * @returns HTML string
- * @internal
- */
-function renderDashboard(data: DashboardData, options: DashboardOptions = {}): string {
-  const timestamp = formatTimestamp(data.timestamp);
-  const refreshMeta = options.refreshInterval
-    ? `<meta http-equiv="refresh" content="${options.refreshInterval}">`
-    : '';
-
-  const queueCards = data.queues
-    .map(
-      q => `
-      <div class="card">
-        <h3 class="card-title">${escapeHtml(q.name)}</h3>
-        <div class="stats-grid">
-          <div class="stat">
-            <div class="stat-value">${q.stats.total}</div>
-            <div class="stat-label">Total</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">${q.stats.queued}</div>
-            <div class="stat-label">Queued</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">${q.stats.running}</div>
-            <div class="stat-label">Running</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">${q.stats.completed}</div>
-            <div class="stat-label">Completed</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">${q.stats.failed}</div>
-            <div class="stat-label">Failed</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">${q.stats.cancelled}</div>
-            <div class="stat-label">Cancelled</div>
-          </div>
-        </div>
-      </div>
-    `
-    )
-    .join('');
-
-  const jobRows = data.queues
-    .flatMap(q =>
-      q.jobs.slice(0, 20).map(
-        job => `
-        <tr>
-          <td><code>${escapeHtml(job.id.slice(0, 8))}...</code></td>
-          <td>${escapeHtml(job.queueName)}</td>
-          <td>${escapeHtml(job.type)}</td>
-          <td><span class="badge ${getStatusBadgeClass(job.status)}">${job.status}</span></td>
-          <td>${job.priority}</td>
-          <td>${job.progress ?? '-'}${job.progress !== undefined ? '%' : ''}</td>
-          <td>${formatTimestamp(job.queuedAt)}</td>
-        </tr>
-      `
-      )
-    )
-    .join('');
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="BlaizeJS Queue Dashboard">
-  ${refreshMeta}
-  <title>BlaizeJS Queue Dashboard</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      color: #e4e4e7;
-      min-height: 100vh;
-      line-height: 1.6;
-    }
-    .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
-    .header {
-      background: linear-gradient(135deg, #7b2ff7 0%, #f107a3 100%);
-      padding: 24px 0;
-      margin-bottom: 32px;
-    }
-    .header .title { font-size: 1.75rem; font-weight: 700; color: white; }
-    .header .subtitle { color: rgba(255,255,255,0.8); font-size: 0.875rem; margin-top: 4px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 32px; }
-    .card {
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
-      padding: 20px;
-    }
-    .card-title { font-size: 1.125rem; font-weight: 600; margin-bottom: 16px; color: #a78bfa; }
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .stat { text-align: center; }
-    .stat-value { font-size: 1.5rem; font-weight: 700; color: #f0f0f0; }
-    .stat-label { font-size: 0.75rem; color: #a1a1aa; text-transform: uppercase; }
-    .section { margin-bottom: 32px; }
-    .section-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 16px; color: #e4e4e7; }
-    .table-container { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; background: rgba(255,255,255,0.02); border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
-    th { background: rgba(255,255,255,0.05); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; color: #a1a1aa; }
-    td { font-size: 0.875rem; }
-    tr:hover { background: rgba(255,255,255,0.02); }
-    code { font-family: 'SF Mono', Monaco, 'Courier New', monospace; font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; text-transform: uppercase; }
-    .badge-success { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
-    .badge-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
-    .badge-warning { background: rgba(234, 179, 8, 0.2); color: #eab308; }
-    .badge-info { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
-    .badge-default { background: rgba(161, 161, 170, 0.2); color: #a1a1aa; }
-    .footer {
-      text-align: center;
-      padding: 24px 0;
-      color: #71717a;
-      font-size: 0.875rem;
-      border-top: 1px solid rgba(255,255,255,0.05);
-      margin-top: 32px;
-    }
-    .footer a { color: #a78bfa; text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
-    .empty { text-align: center; padding: 40px; color: #71717a; }
-    @media (max-width: 768px) {
-      .stats-grid { grid-template-columns: repeat(2, 1fr); }
-      .header .title { font-size: 1.5rem; }
-    }
-  </style>
-</head>
-<body>
-  <header class="header">
-    <div class="container">
-      <h1 class="title">🔥 BlaizeJS Queue</h1>
-      <p class="subtitle">Last updated: ${timestamp}</p>
-    </div>
-  </header>
-
-  <main class="container">
-    <section class="cards">
-      ${queueCards || '<div class="empty">No queues configured</div>'}
-    </section>
-
-    <section class="section">
-      <h2 class="section-title">Recent Jobs</h2>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Queue</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Priority</th>
-              <th>Progress</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${jobRows || '<tr><td colspan="7" class="empty">No jobs found</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-
-  <footer class="footer">
-    <div class="container">
-      <p>Powered by <strong>BlaizeJS</strong> • <a href="/queue/metrics">Prometheus Metrics</a></p>
-    </div>
-  </footer>
-</body>
-</html>`;
-}
-
-/**
  * HTML dashboard handler
  *
  * Renders a visual dashboard showing queue status and recent jobs.
@@ -1100,6 +821,7 @@ export const createJobHandler = async (
     jobType: body.jobType,
   });
 
+  // Cast options - schema validates priority is 1-10 but TypeScript needs explicit cast
   const jobId = await queue.add(
     body.queueName,
     body.jobType,

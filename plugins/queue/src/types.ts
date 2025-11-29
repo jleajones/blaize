@@ -1157,3 +1157,30 @@ export interface QueuePluginServices {
   /** Queue service instance for job operations */
   queue: QueueService;
 }
+
+// ============================================================================
+// Dashboard Types
+// ============================================================================
+/**
+ * Dashboard data structure
+ *
+ * Contains all queue information needed to render the dashboard.
+ */
+export interface DashboardData {
+  /** Queue data with stats and jobs */
+  queues: Array<{
+    name: string;
+    stats: QueueStats;
+    jobs: Job[];
+  }>;
+  /** Timestamp when data was gathered */
+  timestamp: number;
+}
+
+/**
+ * Dashboard rendering options
+ */
+export interface DashboardOptions {
+  /** Auto-refresh interval in seconds (adds meta refresh tag) */
+  refreshInterval?: number;
+}
