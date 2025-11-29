@@ -924,31 +924,3 @@ export const cancelJobHandler = async (
     cancelledAt: Date.now(),
   };
 };
-
-// ============================================================================
-// Type Exports for Handler Signatures
-// ============================================================================
-
-/**
- * SSE handler function type (4-param signature)
- *
- * Used for type-safe handler definitions.
- */
-export type SSEHandler = (
-  stream: SSEStream,
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-) => Promise<void>;
-
-/**
- * HTTP handler function type (3-param signature)
- *
- * Used for type-safe handler definitions.
- * Will be used by T17 handlers.
- */
-export type HTTPHandler<TResult = unknown> = (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-) => Promise<TResult>;
