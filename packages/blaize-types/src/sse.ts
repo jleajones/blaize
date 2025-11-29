@@ -6,6 +6,7 @@ import { z } from 'zod';
  */
 
 import type { Context, QueryParams, Services, State } from './context';
+import type { BlaizeLogger } from './logger';
 import type { Middleware } from './middleware';
 import type { Infer } from './router';
 
@@ -388,7 +389,8 @@ export type SSERouteHandler<
 > = (
   stream: TStream,
   ctx: Context<TState, TServices, never, TQuery>, // SSE never has body
-  params: TParams
+  params: TParams,
+  logger: BlaizeLogger
 ) => Promise<void> | void;
 
 /**
@@ -420,7 +422,7 @@ export type CreateSSERoute = <
   options?: Record<string, unknown>;
 }) => {
   GET: {
-    handler: (ctx: any, params: any) => Promise<void>; // Wrapped handler with standard signature
+    handler: (ctx: any, params: any, logger: BlaizeLogger) => Promise<void>; // Wrapped handler with standard signature
     schema?: {
       params?: P extends never ? undefined : P;
       query?: Q extends never ? undefined : Q;
