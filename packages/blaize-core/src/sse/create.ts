@@ -10,6 +10,7 @@ import { SSENotAcceptableError } from '../errors/sse-not-acceptable-error';
 import { getRoutePath } from '../router/create';
 
 import type { State, Services, Context } from '@blaize-types/context';
+import type { BlaizeLogger } from '@blaize-types/logger';
 import type { CreateSSERoute, SSEStreamExtended, TypedSSEStream } from '@blaize-types/sse';
 
 /**
@@ -147,7 +148,7 @@ export const createSSERoute: CreateSSERoute = <
     const path = getRoutePath();
 
     // Create a wrapped handler that manages the SSE stream lifecycle
-    const wrappedHandler = async (ctx: Context, params: any) => {
+    const wrappedHandler = async (ctx: Context, params: any, logger: BlaizeLogger) => {
       // Validate SSE accept header
       const accept = ctx.request.header('accept');
       if (accept && !accept.includes('text/event-stream') && !accept.includes('*/*')) {
@@ -168,15 +169,18 @@ export const createSSERoute: CreateSSERoute = <
           }
         } catch (validationError) {
           // Validation failed BEFORE SSE started - safe to throw
-          console.error('[SSE] Validation error:', validationError);
+          logger.error('[SSE] Validation error:', { error: validationError });
           throw validationError;
         }
       }
 
       // Create the SSE stream
-      // CRITICAL FIX: Mark the response as sent immediately
-      // This prevents the framework from trying to send any additional response
       const baseStream = createSSEStream(ctx, config.options);
+      const sseLogger = logger.child({
+        streamId: baseStream.id,
+        streamState: 'connected',
+        eventStream: true,
+      });
 
       // Create typed stream if event schemas provided
       const stream =
@@ -191,10 +195,12 @@ export const createSSERoute: CreateSSERoute = <
 
       try {
         // Execute the original handler with (stream, ctx, params) signature
-        await config.handler(stream, ctx, params);
+        await config.handler(stream, ctx, params, sseLogger);
       } catch (error) {
-        console.error('[SSE] Handler error - THIS IS THE REAL ERROR:', error);
-        console.error('[SSE] Stack trace:', error instanceof Error ? error.stack : 'No stack');
+        sseLogger.error('[SSE] Handler error - THIS IS THE REAL ERROR:', { error });
+        sseLogger.error('[SSE] Stack trace:', {
+          stack: error instanceof Error ? error.stack : 'No stack',
+        });
         // Send error to stream if still writable
         if (stream.isWritable) {
           stream.sendError(error instanceof Error ? error : new Error(String(error)));
