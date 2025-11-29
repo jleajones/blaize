@@ -20,11 +20,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    },
-    "./routes": {
-      "types": "./dist/routes.d.ts",
-      "import": "./dist/routes.js",
-      "require": "./dist/routes.cjs"
     }
   },
   "files": [
