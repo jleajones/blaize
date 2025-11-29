@@ -1,277 +1,156 @@
-# @blaizejs/queue
+# 📋 @blaizejs/queue
 
-Background job processing plugin for BlaizeJS with priority scheduling, retry logic, and real-time SSE monitoring.
+> **Type-safe background job processing** for BlaizeJS applications - Priority scheduling, automatic retries, and real-time SSE monitoring built for AI/ML workloads
 
-## Features
+[![npm version](https://badge.fury.io/js/%40blaizejs%2Fqueue.svg)](https://badge.fury.io/js/%40blaizejs%2Fqueue)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-- 🎯 **Type-Safe Job Processing** - Full TypeScript support with generics
-- 📊 **Priority Scheduling** - Process high-priority jobs first
-- 🔄 **Automatic Retry Logic** - Exponential backoff with configurable limits
-- 📡 **Real-Time Monitoring** - Server-Sent Events (SSE) for live job updates
-- 🔌 **Storage Adapter Pattern** - Swappable backends (in-memory default, Redis/Postgres future)
-- 📈 **Prometheus Metrics** - Built-in metrics endpoint
-- 🎨 **Dashboard UI** - HTML dashboard for queue visualization
-- 🧩 **Route Building Blocks** - Export handlers + schemas separately for flexible routing
+## 🎯 Why Queue?
 
-## Installation
+Long-running operations like AI inference, image processing, or email campaigns block your API. BlaizeJS Queue handles these jobs in the background with **native SSE streaming** for real-time progress updates - perfect for AI/ML applications that need to show progress to users.
+
+## 📦 Installation
 
 ```bash
 pnpm add @blaizejs/queue
 ```
 
-## Quick Start
-
-### 1. Register the Plugin
+## 🚀 Quick Start
 
 ```typescript
 import { createServer } from 'blaizejs';
 import { createQueuePlugin } from '@blaizejs/queue';
+import type { JobContext } from '@blaizejs/queue';
 
+// 1. Define your job handlers
+interface ImageData {
+  prompt: string;
+}
+
+const generateImageHandler = async (ctx: JobContext<ImageData>) => {
+  const { prompt } = ctx.data;
+  
+  ctx.progress(10, 'Starting AI model...');
+  const model = await loadModel();
+  
+  ctx.progress(50, 'Generating image...');
+  const image = await model.generate(prompt);
+  
+  ctx.progress(90, 'Saving result...');
+  const url = await saveToStorage(image);
+  
+  return { url, generatedAt: Date.now() };
+};
+
+// 2. Register plugin with handlers
 const server = createServer({
+  port: 3000,
   plugins: [
     createQueuePlugin({
       queues: {
-        default: {
-          concurrency: 5,
-          retryLimit: 3,
-          retryDelay: 1000,
-        },
-        emails: {
-          concurrency: 10,
-          retryLimit: 5,
-          retryDelay: 2000,
+        default: { concurrency: 5 },
+        ai: { concurrency: 2, defaultTimeout: 120000 },
+      },
+      handlers: {
+        ai: {
+          'generate-image': generateImageHandler,
         },
       },
     }),
   ],
 });
-```
 
-### 2. Register Job Handlers
-
-```typescript
-import type { QueueService } from '@blaizejs/queue';
-
-// Get queue service from context
-const queue: QueueService = ctx.services.queue;
-
-// Register a job handler
-queue.registerHandler('send-email', async (job, ctx) => {
-  const { to, subject, body } = job.data;
-  
-  // Send email logic
-  await sendEmail(to, subject, body);
-  
-  // Update progress
-  ctx.updateProgress(50, 'Email sent');
-  
-  // Return result
-  return { emailId: '123', sentAt: new Date() };
-});
-```
-
-### 3. Enqueue Jobs
-
-```typescript
-// Enqueue a job
-const job = await queue.enqueue('send-email', {
-  to: 'user@example.com',
-  subject: 'Welcome!',
-  body: 'Thanks for signing up',
-}, {
-  queueName: 'emails',
-  priority: 5,
-  maxRetries: 3,
-  timeout: 30000,
+// 3. Enqueue jobs from routes
+// routes/images/generate.ts
+export default createPostRoute()({
+  handler: async (ctx) => {
+    const jobId = await ctx.services.queue.add('ai', 'generate-image', {
+      prompt: ctx.body.prompt,
+    }, {
+      priority: 8,
+    });
+    
+    return { jobId, status: 'queued' };
+  },
 });
 
-console.log(`Job enqueued: ${job.id}`);
-```
-
-### 4. Mount Route Handlers
-
-> ⚠️ Example should use route factory
-
-Import handlers and schemas separately, then mount them in your routes:
-
-```typescript
-// routes/queue/status.ts
-import { createGetRoute } from 'blaizejs';
-import { queueStatusHandler, queueStatusQuerySchema } from '@blaizejs/queue';
-
-export default createGetRoute()({
-  schema: { query: queueStatusQuerySchema },
-  handler: queueStatusHandler,
-});
-```
-
-```typescript
-// routes/queue/stream.ts
-import { createSSERoute } from 'blaizejs';
+// 4. Stream progress via SSE
+// routes/jobs/stream.ts
 import { jobStreamHandler, jobStreamQuerySchema, jobEventsSchema } from '@blaizejs/queue';
 
 export default createSSERoute()({
-  schema: { 
+  schema: {
     query: jobStreamQuerySchema,
     events: jobEventsSchema,
   },
   handler: jobStreamHandler,
 });
+
+// Client receives: job.progress → job.completed
 ```
 
-## Storage Adapters
+## ✨ Features
 
-The queue plugin uses a storage adapter pattern for flexibility:
+- 🎯 **Type-Safe Job Processing** - Full TypeScript generics for job data, results, and handlers
+- ⚡ **Native SSE Streaming** - Real-time progress updates using BlaizeJS's built-in Server-Sent Events
+- 📊 **Priority Scheduling** - Critical jobs run first with 1-10 priority levels and configurable concurrency
+- 🔄 **Automatic Retry Logic** - Exponential backoff with configurable limits and timeout via AbortSignal
+- 🔌 **Storage Adapter Pattern** - In-memory default, swappable backends for Redis/PostgreSQL
+- 📈 **Built-in Observability** - Prometheus metrics, HTML dashboard, and structured logging
 
-```typescript
-import { createQueuePlugin, createInMemoryStorage } from '@blaizejs/queue';
-
-// Use default in-memory storage (zero config)
-const plugin = createQueuePlugin({
-  // storage defaults to in-memory if not provided
-});
-
-// Or explicitly provide in-memory storage
-const plugin = createQueuePlugin({
-  storage: createInMemoryStorage(),
-});
-
-// Future: Redis adapter (separate package)
-// import { createRedisStorage } from '@blaizejs/queue-redis';
-// storage: createRedisStorage({ url: 'redis://localhost:6379' })
-```
-
-## Available Route Handlers
-
-All handlers are exported separately from their schemas:
-
-- **`jobStreamHandler`** (SSE) - Real-time job progress updates
-- **`queueStatusHandler`** (JSON) - Queue statistics and job list
-- **`queuePrometheusHandler`** (Text) - Prometheus metrics
-- **`queueDashboardHandler`** (HTML) - Dashboard UI
-- **`createJobHandler`** (JSON) - Enqueue jobs via API
-- **`cancelJobHandler`** (JSON) - Cancel running/queued jobs
-
-## Configuration
+## 📖 Main Exports
 
 ```typescript
-interface QueuePluginConfig {
-  // Queue configurations
-  queues?: Record<string, QueueConfig>;
-  
-  // Storage adapter (defaults to in-memory)
-  storage?: QueueStorageAdapter;
-  
-  // Global retry settings
-  retryLimit?: number;
-  retryDelay?: number;
-  
-  // Enable/disable features
-  enableMetrics?: boolean;
-  enableDashboard?: boolean;
-}
-```
+// Plugin Factory
+createQueuePlugin(config: QueuePluginConfig): Plugin
 
-## Job Options
+// Route Handlers (import separately from schemas)
+jobStreamHandler        // SSE: Real-time job progress
+queueStatusHandler      // JSON: Queue stats and job list  
+queuePrometheusHandler  // Text: Prometheus metrics
+queueDashboardHandler   // HTML: Dashboard UI
 
-```typescript
-interface JobOptions {
-  // Queue name (default: 'default')
-  queueName?: string;
-  
-  // Priority (0-10, higher = more urgent)
-  priority?: number;
-  
-  // Max retry attempts
-  maxRetries?: number;
-  
-  // Timeout in milliseconds
-  timeout?: number;
-  
-  // Schedule for future execution
-  scheduledFor?: Date;
-  
-  // Job metadata
-  metadata?: Record<string, unknown>;
-}
-```
+// Context API (via ctx.services.queue)
+add(queueName, jobType, data, options?): Promise<string>
+getJob(jobId, queueName?): Promise<Job | null>
+cancelJob(jobId, queueName?, reason?): Promise<boolean>
+listJobs(queueName, filters?): Promise<Job[]>
+subscribe(jobId, callbacks): () => void
 
-## Job Context
-
-Job handlers receive a `JobContext` with utilities:
-
-```typescript
-interface JobContext {
-  // Update job progress (0-100)
-  updateProgress: (percent: number, message?: string) => Promise<void>;
-  
-  // Check if job is cancelled
-  isCancelled: () => boolean;
-  
-  // Abort signal for cancellation
-  signal: AbortSignal;
-  
-  // Logger with job context
+// Key Types
+interface JobContext<TData> {
+  jobId: string;
+  data: TData;
   logger: BlaizeLogger;
+  signal: AbortSignal;
+  progress(percent: number, message?: string): Promise<void>;
 }
 ```
 
-## SSE Events
+## 📚 Documentation
 
-The job stream handler emits these events:
+- 📘 **[Complete Queue Guide](../../docs/guides/queue-plugin.md)** - Full usage and patterns
+- 🎯 **[SSE Streaming Tutorial](../../docs/guides/sse-streaming.md)** - Real-time job progress
+- 🏗️ **[Storage Adapters](../../docs/reference/queue-storage.md)** - Redis, PostgreSQL setup
+- 📊 **[Monitoring Guide](../../docs/guides/queue-monitoring.md)** - Metrics and observability
+- 💡 **[AI/ML Job Patterns](../../docs/examples/ai-job-queue.md)** - LLM inference, image generation
 
-- `job.progress` - Progress updates (0-100%)
-- `job.completed` - Job finished successfully
-- `job.failed` - Job failed after retries
-- `job.cancelled` - Job was cancelled
+## 🔗 Related Packages
 
-## Development
+- [`blaizejs`](../blaize-core) - Core framework with SSE and plugin support
+- [`@blaizejs/plugin-metrics`](../metrics) - Production metrics and observability
 
-```bash
-# Install dependencies
-pnpm install
+## 🤝 Contributing
 
-# Run tests
-pnpm test
+We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
 
-# Run tests in watch mode
-pnpm test:watch
+## 📄 License
 
-# Generate coverage report
-pnpm test:coverage
+MIT © BlaizeJS Team
 
-# Build the package
-pnpm build
+---
 
-# Type check
-pnpm type-check
+**Built with ❤️ by the BlaizeJS team**
 
-# Lint
-pnpm lint
-```
-
-## Architecture
-
-```
-plugins/queue/
-├── src/
-│   ├── index.ts              # Main exports
-│   ├── plugin.ts             # Plugin factory
-│   ├── types.ts              # TypeScript types
-│   ├── errors.ts             # Error classes
-│   ├── schemas.ts            # Zod schemas
-│   ├── routes.ts             # Route handlers (exported separately)
-│   ├── dashboard.ts          # HTML dashboard
-│   ├── queue-instance.ts     # Single queue implementation
-│   ├── queue-service.ts      # Multi-queue service
-│   ├── priority-queue.ts     # Priority queue wrapper
-│   ├── job-context.ts        # Job execution context
-│   └── storage/
-│       ├── index.ts          # Storage exports
-│       └── in-memory.ts      # Default in-memory adapter
-└── ...
-```
-
-## License
-
-MIT © BlaizeJS Contributors
+_Background jobs that scale - from simple email queues to complex AI pipelines with real-time progress tracking._
