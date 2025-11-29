@@ -62,6 +62,9 @@ importers:
       '@blaizejs/plugin-metrics':
         specifier: workspace:*
         version: link:../../plugins/metrics
+      '@blaizejs/plugin-queue':
+        specifier: workspace:*
+        version: link:../../plugins/queue
       blaizejs:
         specifier: workspace:*
         version: link:../../packages/blaize-core

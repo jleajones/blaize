@@ -5,12 +5,25 @@ import { Blaize } from 'blaizejs';
 
 import { createSecurityMiddleware } from '@blaizejs/middleware-security';
 import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
+import { createQueuePlugin } from '@blaizejs/plugin-queue';
+
+import {
+  dataSyncHandler,
+  generateReportHandler,
+  processImageHandler,
+  sendEmailHandler,
+  sendNotificationHandler,
+  unreliableTaskHandler,
+  verifyEmailHandler,
+} from './handlers';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create the metrics plugin
+// ===========================================================================
+// Metrics Plugin
+// ===========================================================================
 const metricsPlugin = createMetricsPlugin({
   enabled: true,
   excludePaths: ['/health', '/favicon.ico'], // Don't track health checks
@@ -22,6 +35,75 @@ const metricsPlugin = createMetricsPlugin({
     service: 'playground-app',
     environment: process.env.NODE_ENV || 'development',
   },
+});
+
+// ============================================================================
+// Queue Plugin
+// ============================================================================
+const queuePlugin = createQueuePlugin({
+  // Define queues with different configurations
+  queues: {
+    // Email queue - medium concurrency, fast jobs
+    emails: {
+      concurrency: 5,
+      defaultTimeout: 30000, // 30 seconds
+      defaultMaxRetries: 3,
+    },
+
+    // Reports queue - low concurrency, long-running jobs
+    reports: {
+      concurrency: 2,
+      defaultTimeout: 120000, // 2 minutes
+      defaultMaxRetries: 1, // Don't retry expensive operations
+    },
+
+    // Processing queue - medium concurrency, variable duration
+    processing: {
+      concurrency: 3,
+      defaultTimeout: 60000, // 1 minute
+      defaultMaxRetries: 2,
+    },
+
+    // Notifications queue - high concurrency, quick jobs
+    notifications: {
+      concurrency: 10,
+      defaultTimeout: 10000, // 10 seconds
+      defaultMaxRetries: 5,
+    },
+
+    // Testing queue - for unreliable tasks
+    testing: {
+      concurrency: 2,
+      defaultTimeout: 30000,
+      defaultMaxRetries: 3,
+    },
+  },
+
+  // Register handlers declaratively
+  handlers: {
+    emails: {
+      send: sendEmailHandler,
+      verify: verifyEmailHandler,
+    },
+    reports: {
+      generate: generateReportHandler,
+    },
+    processing: {
+      image: processImageHandler,
+      'data-sync': dataSyncHandler,
+    },
+    notifications: {
+      send: sendNotificationHandler,
+    },
+    testing: {
+      unreliable: unreliableTaskHandler,
+    },
+  },
+
+  // Global defaults
+  defaultConcurrency: 5,
+  defaultTimeout: 30000,
+  defaultMaxRetries: 3,
 });
 
 const securityMiddleware = createSecurityMiddleware();
@@ -39,7 +121,7 @@ export const server = Blaize.createServer({
       headerWhitelist: ['content-type', 'authorization', 'cookie'],
     }),
   ],
-  plugins: [metricsPlugin],
+  plugins: [metricsPlugin, queuePlugin],
 });
 
 try {
