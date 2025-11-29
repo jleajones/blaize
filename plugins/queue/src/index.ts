@@ -39,8 +39,9 @@ export type {
   QueueServiceConfig,
   StopOptions,
   QueueInstanceEvents,
-  // Storage adapter
+  // Storage adapter type
   QueueStorageAdapter,
+  // Error detail types
   QueueErrorDetails,
   JobNotFoundDetails,
   JobTimeoutDetails,
@@ -51,8 +52,12 @@ export type {
   StorageErrorDetails,
   HandlerAlreadyRegisteredDetails,
   JobValidationErrorDetails,
+  // Priority Queue types
   PriorityQueue,
   PriorityQueueItem,
+  // Dashboard types
+  DashboardData,
+  DashboardOptions,
 } from './types';
 
 // ============================================================================
@@ -74,36 +79,63 @@ export {
 // ============================================================================
 // Route Handlers (exported separately from schemas)
 // ============================================================================
-// TODO: Implement in routes.ts
-// export {
-//   jobStreamHandler,
-//   queueStatusHandler,
-//   queuePrometheusHandler,
-//   queueDashboardHandler,
-//   createJobHandler,
-//   cancelJobHandler,
-// } from './routes';
+export {
+  // SSE Handler
+  jobStreamHandler,
+  // HTTP Handlers
+  queueStatusHandler,
+  queuePrometheusHandler,
+  queueDashboardHandler,
+  createJobHandler,
+  cancelJobHandler,
+  // Query schemas for route validation
+  jobStreamQuerySchema,
+  queueStatusQuerySchema,
+  queueDashboardQuerySchema,
+} from './routes';
+
+// ============================================================================
+// Dashboard Rendering Utilities
+// ============================================================================
+export {
+  gatherDashboardData,
+  renderDashboard,
+  formatBytes,
+  formatUptime,
+  formatTimestamp,
+} from './dashboard';
 
 // ============================================================================
 // Schemas (for validation)
 // ============================================================================
-// Configuration schemas
 export {
+  // Configuration schemas
   jobPrioritySchema,
   jobOptionsSchema,
   jobTypeDefinitionSchema,
   queueConfigSchema,
   queueConfigWithoutNameSchema,
   pluginConfigSchema,
+  // SSE Event Schemas
   jobProgressEventSchema,
   jobCompletedEventSchema,
   jobFailedEventSchema,
   jobCancelledEventSchema,
   jobEventsSchema,
+  // Response Schemas
+  jobStatusEnumSchema,
+  jobErrorSchema,
+  jobSchema,
+  queueStatsSchema,
+  queueWithJobsSchema,
+  queueStatusResponseSchema,
+  jobDetailsResponseSchema,
+  createJobResponseSchema,
+  cancelJobResponseSchema,
 } from './schema';
 
-// Configuration types (inferred from schemas)
 export type {
+  // Configuration types (inferred from schemas)
   JobPriorityConfig,
   JobOptionsConfig,
   JobOptionsInput,
@@ -112,29 +144,28 @@ export type {
   QueueConfigInput,
   PluginConfigSchema,
   PluginConfigInput,
+  // SSE Event Types (inferred from schemas)
   JobProgressEvent,
   JobCompletedEvent,
   JobFailedEvent,
   JobCancelledEvent,
   JobEvent,
   JobEventName,
+  // Response Types (inferred from schemas)
+  JobStatusEnum,
+  JobErrorResponse,
+  JobResponse,
+  QueueStatsResponse,
+  QueueWithJobsResponse,
+  QueueStatusResponse,
+  JobDetailsResponse,
+  CreateJobResponse,
+  CancelJobResponse,
 } from './schema';
-
-// TODO: Route schemas (T12, T19)
-// export {
-//   jobStreamQuerySchema,
-//   jobEventsSchema,
-//   queueStatusQuerySchema,
-//   queueStatusResponseSchema,
-//   queueDashboardQuerySchema,
-//   createJobBodySchema,
-//   cancelJobBodySchema,
-// } from './schemas';
 
 // ============================================================================
 // Storage Adapters
 // ============================================================================
-// QueueStorageAdapter type is exported above in Core Types
 export { createInMemoryStorage, InMemoryStorage } from './storage';
 
 // ============================================================================
@@ -152,9 +183,6 @@ export { QueueService } from './queue-service';
 // ============================================================================
 // Priority Queue (used internally, exported for custom adapters)
 export { createPriorityQueue } from './priority-queue';
-
-// TODO: Implement dashboard renderer
-// export { renderDashboard } from './dashboard';
 
 /**
  * Package version
