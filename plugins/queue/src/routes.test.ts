@@ -12,7 +12,19 @@
  */
 
 import { QueueService } from './queue-service';
-import { jobStreamHandler, jobStreamQuerySchema } from './routes';
+import {
+  jobStreamHandler,
+  jobStreamQuerySchema,
+  queueStatusHandler,
+  queueStatusQuerySchema,
+  queuePrometheusHandler,
+  queueDashboardHandler,
+  queueDashboardQuerySchema,
+  createJobHandler,
+  createJobBodySchema,
+  cancelJobHandler,
+  cancelJobBodySchema,
+} from './routes';
 import { InMemoryStorage } from './storage';
 
 import type { SSEStream, BlaizeLogger, Context } from 'blaizejs';
@@ -88,7 +100,51 @@ function createMockLogger(): BlaizeLogger & {
 /**
  * Create a mock context with queue service
  */
-function createMockContext(query: Record<string, unknown>, queueService?: QueueService): Context {
+function createMockContext(
+  query: Record<string, unknown>,
+  queueService?: QueueService,
+  body?: unknown
+): Context & { _getResponse(): { contentType?: string; content?: string; statusCode: number } } {
+  let contentType: string | undefined;
+  let content: string | undefined;
+  let statusCode = 200;
+
+  const response = {
+    statusCode,
+    sent: false,
+    raw: {} as any,
+    status(code: number) {
+      statusCode = code;
+      return response;
+    },
+    header: () => undefined,
+    headers: () => ({}),
+    type(ct: string) {
+      contentType = ct;
+      return response;
+    },
+    json(data: unknown, status?: number) {
+      if (status !== undefined) statusCode = status;
+      content = JSON.stringify(data);
+      contentType = contentType || 'application/json';
+      response.sent = true;
+    },
+    text(data: string, status?: number) {
+      if (status !== undefined) statusCode = status;
+      content = data;
+      response.sent = true;
+    },
+    html(data: string, status?: number) {
+      if (status !== undefined) statusCode = status;
+      content = data;
+      response.sent = true;
+    },
+    redirect(location: string, status?: number) {
+      if (status !== undefined) statusCode = status;
+      response.sent = true;
+    },
+  };
+
   return {
     request: {
       method: 'GET',
@@ -96,21 +152,20 @@ function createMockContext(query: Record<string, unknown>, queueService?: QueueS
       url: null,
       query,
       params: {},
-      body: null,
+      body: body ?? null,
       protocol: 'http',
       isHttp2: false,
       header: () => undefined,
       headers: () => ({}),
       raw: {} as any,
     },
-    response: {
-      raw: {} as any,
-      statusCode: 200,
-      sent: false,
-    } as any,
+    response,
     state: {},
     services: {
       queue: queueService,
+    },
+    _getResponse() {
+      return { contentType, content, statusCode };
     },
   } as any;
 }
@@ -990,5 +1045,514 @@ describe('jobStreamHandler edge cases', () => {
     expect(completedEvent).toBeDefined();
 
     await multiQueueService.stopAll({ graceful: false, timeout: 100 });
+  });
+});
+
+// ============================================================================
+// HTTP Query Schema Tests
+// ============================================================================
+
+describe('queueStatusQuerySchema', () => {
+  it('should accept empty query (all defaults)', () => {
+    const result = queueStatusQuerySchema.parse({});
+    expect(result.limit).toBe(20);
+    expect(result.queueName).toBeUndefined();
+    expect(result.status).toBeUndefined();
+  });
+
+  it('should accept valid queueName', () => {
+    const result = queueStatusQuerySchema.parse({ queueName: 'emails' });
+    expect(result.queueName).toBe('emails');
+  });
+
+  it('should accept valid status', () => {
+    const result = queueStatusQuerySchema.parse({ status: 'failed' });
+    expect(result.status).toBe('failed');
+  });
+
+  it('should coerce limit to number', () => {
+    const result = queueStatusQuerySchema.parse({ limit: '50' });
+    expect(result.limit).toBe(50);
+  });
+
+  it('should reject invalid status', () => {
+    expect(() => queueStatusQuerySchema.parse({ status: 'invalid' })).toThrow();
+  });
+
+  it('should reject limit below 1', () => {
+    expect(() => queueStatusQuerySchema.parse({ limit: 0 })).toThrow();
+  });
+
+  it('should reject limit above 100', () => {
+    expect(() => queueStatusQuerySchema.parse({ limit: 101 })).toThrow();
+  });
+});
+
+describe('queueDashboardQuerySchema', () => {
+  it('should accept empty query', () => {
+    const result = queueDashboardQuerySchema.parse({});
+    expect(result.queueName).toBeUndefined();
+    expect(result.refresh).toBeUndefined();
+  });
+
+  it('should accept valid refresh interval', () => {
+    const result = queueDashboardQuerySchema.parse({ refresh: '30' });
+    expect(result.refresh).toBe(30);
+  });
+
+  it('should reject refresh below 5', () => {
+    expect(() => queueDashboardQuerySchema.parse({ refresh: 4 })).toThrow();
+  });
+
+  it('should reject refresh above 300', () => {
+    expect(() => queueDashboardQuerySchema.parse({ refresh: 301 })).toThrow();
+  });
+});
+
+// ============================================================================
+// HTTP Body Schema Tests
+// ============================================================================
+
+describe('createJobBodySchema', () => {
+  it('should accept valid body with required fields', () => {
+    const result = createJobBodySchema.parse({
+      queueName: 'emails',
+      jobType: 'send-welcome',
+    });
+    expect(result.queueName).toBe('emails');
+    expect(result.jobType).toBe('send-welcome');
+  });
+
+  it('should accept body with data and options', () => {
+    const result = createJobBodySchema.parse({
+      queueName: 'emails',
+      jobType: 'send-welcome',
+      data: { userId: '123' },
+      options: { priority: 8, maxRetries: 5 },
+    });
+    expect(result.data).toEqual({ userId: '123' });
+    expect(result.options?.priority).toBe(8);
+  });
+
+  it('should reject missing queueName', () => {
+    expect(() => createJobBodySchema.parse({ jobType: 'send-welcome' })).toThrow(
+      'queueName is required'
+    );
+  });
+
+  it('should reject missing jobType', () => {
+    expect(() => createJobBodySchema.parse({ queueName: 'emails' })).toThrow('jobType is required');
+  });
+
+  it('should reject empty queueName', () => {
+    expect(() => createJobBodySchema.parse({ queueName: '', jobType: 'test' })).toThrow();
+  });
+});
+
+describe('cancelJobBodySchema', () => {
+  it('should accept valid UUID jobId', () => {
+    const result = cancelJobBodySchema.parse({
+      jobId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+    expect(result.jobId).toBe('550e8400-e29b-41d4-a716-446655440000');
+  });
+
+  it('should accept optional queueName and reason', () => {
+    const result = cancelJobBodySchema.parse({
+      jobId: '550e8400-e29b-41d4-a716-446655440000',
+      queueName: 'emails',
+      reason: 'User requested',
+    });
+    expect(result.queueName).toBe('emails');
+    expect(result.reason).toBe('User requested');
+  });
+
+  it('should reject invalid UUID', () => {
+    expect(() => cancelJobBodySchema.parse({ jobId: 'not-a-uuid' })).toThrow('uuid');
+  });
+
+  it('should reject missing jobId', () => {
+    expect(() => cancelJobBodySchema.parse({})).toThrow('jobId is required');
+  });
+});
+
+// ============================================================================
+// HTTP Handler Tests
+// ============================================================================
+
+describe('queueStatusHandler', () => {
+  it('should have 3-param signature', () => {
+    expect(queueStatusHandler.length).toBe(3);
+  });
+
+  it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
+    const ctx = createMockContext({});
+    const logger = createMockLogger();
+
+    await expect(queueStatusHandler(ctx, {}, logger)).rejects.toThrow('Queue service unavailable');
+  });
+
+  it('should return queue status for all queues', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { default: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    queueService.registerHandler('default', 'test', async () => 'done');
+    await queueService.add('default', 'test', { foo: 'bar' });
+
+    const ctx = createMockContext({ limit: '20' }, queueService);
+    const logger = createMockLogger();
+
+    const result = await queueStatusHandler(ctx, {}, logger);
+
+    expect(result.queues).toHaveLength(1);
+    expect(result.queues[0]!.name).toBe('default');
+    expect(result.queues[0]!.stats.total).toBe(1);
+    expect(result.queues[0]!.jobs).toHaveLength(1);
+    expect(result.timestamp).toBeDefined();
+  });
+
+  it('should filter by queue name', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: {
+        emails: { concurrency: 1 },
+        reports: { concurrency: 1 },
+      },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    queueService.registerHandler('emails', 'send', async () => 'sent');
+    await queueService.add('emails', 'send', {});
+
+    const ctx = createMockContext({ queueName: 'emails', limit: '20' }, queueService);
+    const logger = createMockLogger();
+
+    const result = await queueStatusHandler(ctx, {}, logger);
+
+    expect(result.queues).toHaveLength(1);
+    expect(result.queues[0]!.name).toBe('emails');
+  });
+
+  it('should log debug message', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { default: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    const ctx = createMockContext({ limit: '20' }, queueService);
+    const logger = createMockLogger();
+
+    await queueStatusHandler(ctx, {}, logger);
+
+    expect(logger.debug).toHaveBeenCalledWith('Fetching queue status', expect.any(Object));
+  });
+});
+
+describe('queuePrometheusHandler', () => {
+  it('should have 3-param signature', () => {
+    expect(queuePrometheusHandler.length).toBe(3);
+  });
+
+  it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
+    const ctx = createMockContext({});
+    const logger = createMockLogger();
+
+    await expect(queuePrometheusHandler(ctx, {}, logger)).rejects.toThrow(
+      'Queue service unavailable'
+    );
+  });
+
+  it('should return Prometheus format metrics', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { emails: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    queueService.registerHandler('emails', 'send', async () => 'sent');
+    await queueService.add('emails', 'send', {});
+
+    const ctx = createMockContext({}, queueService);
+    const logger = createMockLogger();
+
+    await queuePrometheusHandler(ctx, {}, logger);
+
+    const response = ctx._getResponse();
+    expect(response.contentType).toBe('text/plain; version=0.0.4; charset=utf-8');
+    expect(response.content).toContain('# HELP blaize_queue_jobs_total');
+    expect(response.content).toContain('# TYPE blaize_queue_jobs_total gauge');
+    expect(response.content).toContain('blaize_queue_jobs_total{queue="emails",status="queued"} 1');
+  });
+
+  it('should include all status types', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { default: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    const ctx = createMockContext({}, queueService);
+    const logger = createMockLogger();
+
+    await queuePrometheusHandler(ctx, {}, logger);
+
+    const response = ctx._getResponse();
+    expect(response.content).toContain('status="queued"');
+    expect(response.content).toContain('status="running"');
+    expect(response.content).toContain('status="completed"');
+    expect(response.content).toContain('status="failed"');
+    expect(response.content).toContain('status="cancelled"');
+  });
+});
+
+describe('queueDashboardHandler', () => {
+  it('should have 3-param signature', () => {
+    expect(queueDashboardHandler.length).toBe(3);
+  });
+
+  it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
+    const ctx = createMockContext({});
+    const logger = createMockLogger();
+
+    await expect(queueDashboardHandler(ctx, {}, logger)).rejects.toThrow(
+      'Queue service unavailable'
+    );
+  });
+
+  it('should return HTML dashboard', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { emails: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    const ctx = createMockContext({}, queueService);
+    const logger = createMockLogger();
+
+    await queueDashboardHandler(ctx, {}, logger);
+
+    const response = ctx._getResponse();
+    expect(response.contentType).toBe('text/html; charset=utf-8');
+    expect(response.content).toContain('<!DOCTYPE html>');
+    expect(response.content).toContain('BlaizeJS Queue');
+    expect(response.content).toContain('emails');
+  });
+
+  it('should include refresh meta tag when specified', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { default: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    const ctx = createMockContext({ refresh: '30' }, queueService);
+    const logger = createMockLogger();
+
+    await queueDashboardHandler(ctx, {}, logger);
+
+    const response = ctx._getResponse();
+    expect(response.content).toContain('http-equiv="refresh"');
+    expect(response.content).toContain('content="30"');
+  });
+
+  it('should include BlaizeJS branding', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { default: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    const ctx = createMockContext({}, queueService);
+    const logger = createMockLogger();
+
+    await queueDashboardHandler(ctx, {}, logger);
+
+    const response = ctx._getResponse();
+    expect(response.content).toContain('🔥');
+    expect(response.content).toContain('BlaizeJS');
+  });
+});
+
+describe('createJobHandler', () => {
+  it('should have 3-param signature', () => {
+    expect(createJobHandler.length).toBe(3);
+  });
+
+  it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
+    const ctx = createMockContext({}, undefined, {
+      queueName: 'emails',
+      jobType: 'send',
+    });
+    const logger = createMockLogger();
+
+    await expect(createJobHandler(ctx, {}, logger)).rejects.toThrow('Queue service unavailable');
+  });
+
+  it('should create job and return response', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { emails: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    queueService.registerHandler('emails', 'send-welcome', async () => 'sent');
+
+    const ctx = createMockContext({}, queueService, {
+      queueName: 'emails',
+      jobType: 'send-welcome',
+      data: { userId: '123' },
+    });
+    const logger = createMockLogger();
+
+    const result = await createJobHandler(ctx, {}, logger);
+
+    expect(result.jobId).toBeDefined();
+    expect(result.queueName).toBe('emails');
+    expect(result.jobType).toBe('send-welcome');
+    expect(result.createdAt).toBeDefined();
+  });
+
+  it('should log info messages', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { emails: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    queueService.registerHandler('emails', 'send', async () => 'sent');
+
+    const ctx = createMockContext({}, queueService, {
+      queueName: 'emails',
+      jobType: 'send',
+    });
+    const logger = createMockLogger();
+
+    await createJobHandler(ctx, {}, logger);
+
+    expect(logger.info).toHaveBeenCalledWith('Creating job', expect.any(Object));
+    expect(logger.info).toHaveBeenCalledWith('Job created', expect.any(Object));
+  });
+});
+
+describe('cancelJobHandler', () => {
+  it('should have 3-param signature', () => {
+    expect(cancelJobHandler.length).toBe(3);
+  });
+
+  it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
+    const ctx = createMockContext({}, undefined, {
+      jobId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+    const logger = createMockLogger();
+
+    await expect(cancelJobHandler(ctx, {}, logger)).rejects.toThrow('Queue service unavailable');
+  });
+
+  it('should cancel queued job and return response', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { emails: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    queueService.registerHandler('emails', 'send', async () => 'sent');
+    const jobId = await queueService.add('emails', 'send', {});
+
+    const ctx = createMockContext({}, queueService, {
+      jobId,
+      queueName: 'emails',
+      reason: 'User requested',
+    });
+    const logger = createMockLogger();
+
+    const result = await cancelJobHandler(ctx, {}, logger);
+
+    expect(result.jobId).toBe(jobId);
+    expect(result.cancelled).toBe(true);
+    expect(result.reason).toBe('User requested');
+    expect(result.cancelledAt).toBeDefined();
+  });
+
+  it('should throw NotFoundError when job not found', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { emails: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    const ctx = createMockContext({}, queueService, {
+      jobId: '550e8400-e29b-41d4-a716-446655440000',
+      queueName: 'emails',
+    });
+    const logger = createMockLogger();
+
+    await expect(cancelJobHandler(ctx, {}, logger)).rejects.toThrow(
+      'not found or already completed'
+    );
+  });
+
+  it('should log info messages', async () => {
+    const storage = new InMemoryStorage();
+    await storage.connect?.();
+
+    const queueService = new QueueService({
+      queues: { emails: { concurrency: 1 } },
+      storage,
+      logger: createMockLogger() as any,
+    });
+
+    queueService.registerHandler('emails', 'send', async () => 'sent');
+    const jobId = await queueService.add('emails', 'send', {});
+
+    const ctx = createMockContext({}, queueService, {
+      jobId,
+      queueName: 'emails',
+    });
+    const logger = createMockLogger();
+
+    await cancelJobHandler(ctx, {}, logger);
+
+    expect(logger.info).toHaveBeenCalledWith('Cancelling job', expect.any(Object));
+    expect(logger.info).toHaveBeenCalledWith('Job cancelled', expect.any(Object));
   });
 });
