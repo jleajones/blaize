@@ -499,11 +499,9 @@ describe('Route integration', () => {
 
 describe('TypeScript type compatibility', () => {
   test('all handlers are compatible with BlaizeJS routes', () => {
-    type Handler = (ctx: Context) => Promise<void>;
-
-    const h1: Handler = metricsJsonRoute.handler;
-    const h2: Handler = metricsPrometheusRoute.handler;
-    const h3: Handler = metricsDashboardRoute.handler;
+    const h1 = metricsJsonRoute.handler;
+    const h2 = metricsPrometheusRoute.handler;
+    const h3 = metricsDashboardRoute.handler;
 
     expect(h1).toBeDefined();
     expect(h2).toBeDefined();
