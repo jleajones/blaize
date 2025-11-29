@@ -14,6 +14,15 @@ import {
   queueConfigSchema,
   queueConfigWithoutNameSchema,
   pluginConfigSchema,
+  jobStatusEnumSchema,
+  jobErrorSchema,
+  jobSchema,
+  queueStatsSchema,
+  queueWithJobsSchema,
+  queueStatusResponseSchema,
+  jobDetailsResponseSchema,
+  createJobResponseSchema,
+  cancelJobResponseSchema,
 } from './schema';
 
 import type { QueueStorageAdapter } from './types';
@@ -547,5 +556,381 @@ describe('Error Messages', () => {
     if (!result.success) {
       expect(result.error.issues[0]!.message).toContain('QueueStorageAdapter');
     }
+  });
+});
+
+// ============================================================================
+// Response Schema Tests (T19)
+// ============================================================================
+
+describe('Response Schemas (T19)', () => {
+  describe('jobStatusEnumSchema', () => {
+    it('should accept valid status values', () => {
+      expect(jobStatusEnumSchema.parse('queued')).toBe('queued');
+      expect(jobStatusEnumSchema.parse('running')).toBe('running');
+      expect(jobStatusEnumSchema.parse('completed')).toBe('completed');
+      expect(jobStatusEnumSchema.parse('failed')).toBe('failed');
+      expect(jobStatusEnumSchema.parse('cancelled')).toBe('cancelled');
+    });
+
+    it('should reject invalid status values', () => {
+      const result = jobStatusEnumSchema.safeParse('pending');
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject non-string values', () => {
+      const result = jobStatusEnumSchema.safeParse(123);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('jobErrorSchema', () => {
+    it('should accept valid error with message only', () => {
+      const result = jobErrorSchema.parse({ message: 'Something went wrong' });
+      expect(result.message).toBe('Something went wrong');
+      expect(result.code).toBeUndefined();
+    });
+
+    it('should accept error with message and code', () => {
+      const result = jobErrorSchema.parse({
+        message: 'Connection failed',
+        code: 'ECONNREFUSED',
+      });
+      expect(result.message).toBe('Connection failed');
+      expect(result.code).toBe('ECONNREFUSED');
+    });
+
+    it('should accept error with stack trace', () => {
+      const result = jobErrorSchema.parse({
+        message: 'Error',
+        stack: 'Error\n  at foo.js:1',
+      });
+      expect(result.stack).toBe('Error\n  at foo.js:1');
+    });
+
+    it('should reject missing message', () => {
+      const result = jobErrorSchema.safeParse({});
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('jobSchema', () => {
+    const validJob = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      type: 'send-email',
+      queueName: 'emails',
+      status: 'completed',
+      priority: 5,
+      data: { to: 'user@example.com' },
+      progress: 100,
+      retries: 0,
+      maxRetries: 3,
+      queuedAt: 1699123456789,
+    };
+
+    it('should accept valid job', () => {
+      const result = jobSchema.parse(validJob);
+      expect(result.id).toBe(validJob.id);
+      expect(result.type).toBe(validJob.type);
+      expect(result.status).toBe('completed');
+    });
+
+    it('should accept job with optional fields', () => {
+      const result = jobSchema.parse({
+        ...validJob,
+        result: { sent: true },
+        error: { message: 'Failed attempt 1', code: 'TEMP_ERROR' },
+        progressMessage: 'Processing...',
+        startedAt: 1699123456800,
+        completedAt: 1699123457000,
+      });
+      expect(result.result).toEqual({ sent: true });
+      expect(result.error?.message).toBe('Failed attempt 1');
+    });
+
+    it('should reject invalid UUID for id', () => {
+      const result = jobSchema.safeParse({ ...validJob, id: 'not-a-uuid' });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject invalid status', () => {
+      const result = jobSchema.safeParse({ ...validJob, status: 'pending' });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject priority outside range', () => {
+      const result1 = jobSchema.safeParse({ ...validJob, priority: 0 });
+      expect(result1.success).toBe(false);
+
+      const result2 = jobSchema.safeParse({ ...validJob, priority: 11 });
+      expect(result2.success).toBe(false);
+    });
+
+    it('should reject progress outside range', () => {
+      const result1 = jobSchema.safeParse({ ...validJob, progress: -1 });
+      expect(result1.success).toBe(false);
+
+      const result2 = jobSchema.safeParse({ ...validJob, progress: 101 });
+      expect(result2.success).toBe(false);
+    });
+  });
+
+  describe('queueStatsSchema', () => {
+    const validStats = {
+      total: 100,
+      queued: 10,
+      running: 5,
+      completed: 80,
+      failed: 3,
+      cancelled: 2,
+    };
+
+    it('should accept valid stats', () => {
+      const result = queueStatsSchema.parse(validStats);
+      expect(result).toEqual(validStats);
+    });
+
+    it('should accept stats with zero values', () => {
+      const result = queueStatsSchema.parse({
+        total: 0,
+        queued: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 0,
+      });
+      expect(result.total).toBe(0);
+    });
+
+    it('should reject missing required fields', () => {
+      const result = queueStatsSchema.safeParse({ total: 100 });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject non-number values', () => {
+      const result = queueStatsSchema.safeParse({ ...validStats, total: '100' });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('queueWithJobsSchema', () => {
+    it('should accept valid queue with jobs', () => {
+      const result = queueWithJobsSchema.parse({
+        name: 'emails',
+        stats: {
+          total: 100,
+          queued: 10,
+          running: 5,
+          completed: 80,
+          failed: 3,
+          cancelled: 2,
+        },
+        jobs: [
+          {
+            id: '550e8400-e29b-41d4-a716-446655440000',
+            type: 'send-email',
+            queueName: 'emails',
+            status: 'completed',
+            priority: 5,
+            data: {},
+            retries: 0,
+            maxRetries: 3,
+            queuedAt: 1699123456789,
+          },
+        ],
+      });
+      expect(result.name).toBe('emails');
+      expect(result.jobs).toHaveLength(1);
+    });
+
+    it('should accept queue with empty jobs array', () => {
+      const result = queueWithJobsSchema.parse({
+        name: 'empty',
+        stats: {
+          total: 0,
+          queued: 0,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          cancelled: 0,
+        },
+        jobs: [],
+      });
+      expect(result.jobs).toHaveLength(0);
+    });
+  });
+
+  describe('queueStatusResponseSchema', () => {
+    it('should accept valid response', () => {
+      const result = queueStatusResponseSchema.parse({
+        queues: [
+          {
+            name: 'emails',
+            stats: {
+              total: 100,
+              queued: 10,
+              running: 5,
+              completed: 80,
+              failed: 3,
+              cancelled: 2,
+            },
+            jobs: [],
+          },
+        ],
+        timestamp: 1699123456789,
+      });
+      expect(result.queues).toHaveLength(1);
+      expect(result.timestamp).toBe(1699123456789);
+    });
+
+    it('should accept response with empty queues', () => {
+      const result = queueStatusResponseSchema.parse({
+        queues: [],
+        timestamp: Date.now(),
+      });
+      expect(result.queues).toHaveLength(0);
+    });
+
+    it('should reject missing timestamp', () => {
+      const result = queueStatusResponseSchema.safeParse({
+        queues: [],
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('jobDetailsResponseSchema', () => {
+    const validDetails = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      type: 'send-email',
+      queueName: 'emails',
+      status: 'completed',
+      progress: 100,
+      data: { to: 'user@example.com' },
+      metadata: { userId: '123' },
+      priority: 5,
+      queuedAt: 1699123456789,
+      retries: 0,
+      maxRetries: 3,
+      timeout: 30000,
+    };
+
+    it('should accept valid job details', () => {
+      const result = jobDetailsResponseSchema.parse(validDetails);
+      expect(result.id).toBe(validDetails.id);
+      expect(result.metadata).toEqual({ userId: '123' });
+      expect(result.timeout).toBe(30000);
+    });
+
+    it('should accept details with optional fields', () => {
+      const result = jobDetailsResponseSchema.parse({
+        ...validDetails,
+        progressMessage: 'All done!',
+        result: { messageId: 'abc123' },
+        startedAt: 1699123456800,
+        completedAt: 1699123457000,
+      });
+      expect(result.progressMessage).toBe('All done!');
+      expect(result.result).toEqual({ messageId: 'abc123' });
+    });
+
+    it('should accept details with error', () => {
+      const result = jobDetailsResponseSchema.parse({
+        ...validDetails,
+        status: 'failed',
+        error: { message: 'Connection refused', code: 'ECONNREFUSED' },
+      });
+      expect(result.error?.message).toBe('Connection refused');
+    });
+
+    it('should reject missing required fields', () => {
+      const result = jobDetailsResponseSchema.safeParse({
+        id: validDetails.id,
+        type: validDetails.type,
+        // missing other required fields
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('createJobResponseSchema', () => {
+    it('should accept valid response', () => {
+      const result = createJobResponseSchema.parse({
+        jobId: '550e8400-e29b-41d4-a716-446655440000',
+        queueName: 'emails',
+        jobType: 'send-welcome',
+        createdAt: 1699123456789,
+      });
+      expect(result.jobId).toBe('550e8400-e29b-41d4-a716-446655440000');
+      expect(result.queueName).toBe('emails');
+    });
+
+    it('should reject invalid UUID for jobId', () => {
+      const result = createJobResponseSchema.safeParse({
+        jobId: 'not-a-uuid',
+        queueName: 'emails',
+        jobType: 'send-welcome',
+        createdAt: Date.now(),
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject missing queueName', () => {
+      const result = createJobResponseSchema.safeParse({
+        jobId: '550e8400-e29b-41d4-a716-446655440000',
+        jobType: 'send-welcome',
+        createdAt: Date.now(),
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('cancelJobResponseSchema', () => {
+    it('should accept valid response with reason', () => {
+      const result = cancelJobResponseSchema.parse({
+        jobId: '550e8400-e29b-41d4-a716-446655440000',
+        cancelled: true,
+        reason: 'User requested cancellation',
+        cancelledAt: 1699123456789,
+      });
+      expect(result.cancelled).toBe(true);
+      expect(result.reason).toBe('User requested cancellation');
+    });
+
+    it('should accept valid response without reason', () => {
+      const result = cancelJobResponseSchema.parse({
+        jobId: '550e8400-e29b-41d4-a716-446655440000',
+        cancelled: true,
+        cancelledAt: 1699123456789,
+      });
+      expect(result.reason).toBeUndefined();
+    });
+
+    it('should accept cancelled: false', () => {
+      const result = cancelJobResponseSchema.parse({
+        jobId: '550e8400-e29b-41d4-a716-446655440000',
+        cancelled: false,
+        cancelledAt: 1699123456789,
+      });
+      expect(result.cancelled).toBe(false);
+    });
+
+    it('should reject invalid UUID for jobId', () => {
+      const result = cancelJobResponseSchema.safeParse({
+        jobId: 'not-a-uuid',
+        cancelled: true,
+        cancelledAt: Date.now(),
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject non-boolean cancelled', () => {
+      const result = cancelJobResponseSchema.safeParse({
+        jobId: '550e8400-e29b-41d4-a716-446655440000',
+        cancelled: 'true',
+        cancelledAt: Date.now(),
+      });
+      expect(result.success).toBe(false);
+    });
   });
 });
