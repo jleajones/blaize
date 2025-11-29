@@ -705,6 +705,36 @@ export interface QueuePluginConfig {
    * @default 3
    */
   defaultMaxRetries?: number;
+
+  /**
+   * Job handlers keyed by queue name and job type
+   *
+   * Register handlers declaratively in config. Handlers are registered
+   * during plugin initialization, before queues start processing.
+   *
+   * @example
+   * ```typescript
+   * import { sendEmailHandler, verifyEmailHandler } from './handlers/email';
+   * import { generateReportHandler } from './handlers/reports';
+   *
+   * createQueuePlugin({
+   *   queues: {
+   *     emails: { concurrency: 5 },
+   *     reports: { concurrency: 2 },
+   *   },
+   *   handlers: {
+   *     emails: {
+   *       'send': sendEmailHandler,
+   *       'verify': verifyEmailHandler,
+   *     },
+   *     reports: {
+   *       'generate': generateReportHandler,
+   *     },
+   *   },
+   * });
+   * ```
+   */
+  handlers?: Record<string, Record<string, JobHandler<unknown, unknown>>>;
 }
 
 // ============================================================================

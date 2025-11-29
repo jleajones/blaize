@@ -532,3 +532,200 @@ describe('createQueuePlugin', () => {
     });
   });
 });
+
+// ==========================================================================
+// Handler Registration via Config
+// ==========================================================================
+describe('Handler Registration via Config', () => {
+  it('should register handlers from config during initialize', async () => {
+    const emailHandler = vi.fn().mockResolvedValue({ sent: true });
+    const reportHandler = vi.fn().mockResolvedValue({ generated: true });
+
+    const plugin = createQueuePlugin({
+      queues: {
+        emails: { concurrency: 5 },
+        reports: { concurrency: 2 },
+      },
+      handlers: {
+        emails: {
+          send: emailHandler,
+        },
+        reports: {
+          generate: reportHandler,
+        },
+      },
+    });
+
+    const hooks = getPluginHooks(plugin);
+    const server = createMockServer();
+
+    await hooks.register?.(server);
+    await hooks.initialize?.();
+    await hooks.onServerStart?.();
+
+    // Get queue service
+    const ctx = createMockContext();
+    // Get queue service and verify it works (which means storage is working)
+    const middleware = server.middleware[0] as {
+      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+    };
+    middleware.execute(ctx, vi.fn());
+    const queueService = ctx.services.queue as QueueService;
+
+    // Add jobs - handlers should already be registered
+    const emailJobId = await queueService.add('emails', 'send', {
+      to: 'test@example.com',
+    });
+    const reportJobId = await queueService.add('reports', 'generate', {
+      type: 'monthly',
+    });
+
+    expect(emailJobId).toBeDefined();
+    expect(reportJobId).toBeDefined();
+
+    // Wait briefly for job processing
+    await vi.waitFor(
+      () => {
+        expect(emailHandler).toHaveBeenCalled();
+        expect(reportHandler).toHaveBeenCalled();
+      },
+      { timeout: 1000 }
+    );
+
+    await hooks.onServerStop?.();
+    await hooks.terminate?.();
+  });
+
+  it('should register multiple handlers for same queue', async () => {
+    const sendHandler = vi.fn().mockResolvedValue({ sent: true });
+    const verifyHandler = vi.fn().mockResolvedValue({ verified: true });
+
+    const plugin = createQueuePlugin({
+      queues: {
+        emails: { concurrency: 5 },
+      },
+      handlers: {
+        emails: {
+          send: sendHandler,
+          verify: verifyHandler,
+        },
+      },
+    });
+
+    const hooks = getPluginHooks(plugin);
+    const server = createMockServer();
+
+    await hooks.register?.(server);
+    await hooks.initialize?.();
+    await hooks.onServerStart?.();
+
+    const ctx = createMockContext();
+    // Get queue service and verify it works (which means storage is working)
+    const middleware = server.middleware[0] as {
+      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+    };
+    middleware.execute(ctx, vi.fn());
+    const queueService = ctx.services.queue as QueueService;
+
+    await queueService.add('emails', 'send', { to: 'a@test.com' });
+    await queueService.add('emails', 'verify', { email: 'b@test.com' });
+
+    await vi.waitFor(
+      () => {
+        expect(sendHandler).toHaveBeenCalled();
+        expect(verifyHandler).toHaveBeenCalled();
+      },
+      { timeout: 1000 }
+    );
+
+    await hooks.onServerStop?.();
+    await hooks.terminate?.();
+  });
+
+  it('should work without handlers config', async () => {
+    const plugin = createQueuePlugin({
+      queues: {
+        emails: { concurrency: 5 },
+      },
+      // No handlers - should work fine
+    });
+
+    const hooks = getPluginHooks(plugin);
+    const server = createMockServer();
+
+    await hooks.register?.(server);
+    await hooks.initialize?.();
+    await hooks.onServerStart?.();
+
+    const ctx = createMockContext();
+    // Get queue service and verify it works (which means storage is working)
+    const middleware = server.middleware[0] as {
+      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+    };
+    middleware.execute(ctx, vi.fn());
+    const queueService = ctx.services.queue as QueueService;
+
+    // Can still register handlers manually
+    queueService.registerHandler('emails', 'send', async () => ({ sent: true }));
+
+    const jobId = await queueService.add('emails', 'send', {});
+    expect(jobId).toBeDefined();
+
+    await hooks.onServerStop?.();
+    await hooks.terminate?.();
+  });
+
+  it('should pass job context to config handlers', async () => {
+    let receivedContext: unknown;
+
+    const handler = vi.fn().mockImplementation(ctx => {
+      receivedContext = ctx;
+      return Promise.resolve({ done: true });
+    });
+
+    const plugin = createQueuePlugin({
+      queues: {
+        test: { concurrency: 1 },
+      },
+      handlers: {
+        test: {
+          process: handler,
+        },
+      },
+    });
+
+    const hooks = getPluginHooks(plugin);
+    const server = createMockServer();
+
+    await hooks.register?.(server);
+    await hooks.initialize?.();
+    await hooks.onServerStart?.();
+
+    const ctx = createMockContext();
+    // Get queue service and verify it works (which means storage is working)
+    const middleware = server.middleware[0] as {
+      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+    };
+    middleware.execute(ctx, vi.fn());
+    const queueService = ctx.services.queue as QueueService;
+
+    await queueService.add('test', 'process', { value: 42 });
+
+    await vi.waitFor(
+      () => {
+        // Verify handler received proper JobContext
+        expect(handler).toHaveBeenCalled();
+        expect(receivedContext).toBeDefined();
+        expect(receivedContext).toHaveProperty('jobId');
+        expect(receivedContext).toHaveProperty('data', { value: 42 });
+        expect(receivedContext).toHaveProperty('logger');
+        expect(receivedContext).toHaveProperty('signal');
+        expect(receivedContext).toHaveProperty('progress');
+      },
+      { timeout: 1000 }
+    );
+
+    await hooks.onServerStop?.();
+    await hooks.terminate?.();
+  });
+});

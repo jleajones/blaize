@@ -7,9 +7,9 @@
  *
  * @packageDocumentation
  */
-
 import { createPlugin, createMiddleware } from 'blaizejs';
 
+import config from '../package.json';
 import { QueueService } from './queue-service';
 import { createInMemoryStorage } from './storage';
 
@@ -20,10 +20,10 @@ import type { QueuePluginConfig, QueuePluginServices, QueueStorageAdapter } from
 // ============================================================================
 
 /** Plugin name */
-const PLUGIN_NAME = '@blaizejs/queue';
+const PLUGIN_NAME = config.name;
 
 /** Plugin version */
-const PLUGIN_VERSION = '0.4.0';
+const PLUGIN_VERSION = config.version;
 
 /** Default configuration values */
 const DEFAULT_CONFIG = {
@@ -217,6 +217,27 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig>({
           storage,
           logger: pluginLogger,
         });
+
+        // Register handlers from config
+        if (config.handlers) {
+          let handlerCount = 0;
+
+          for (const [queueName, jobTypes] of Object.entries(config.handlers)) {
+            for (const [jobType, handler] of Object.entries(jobTypes)) {
+              queueService.registerHandler(queueName, jobType, handler);
+              handlerCount++;
+              pluginLogger.debug('Handler registered from config', {
+                queueName,
+                jobType,
+              });
+            }
+          }
+
+          pluginLogger.info('Handlers registered from config', {
+            handlerCount,
+            queues: Object.keys(config.handlers),
+          });
+        }
 
         pluginLogger.info('Queue plugin initialized', {
           queues: Object.keys(config.queues),
