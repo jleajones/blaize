@@ -6,6 +6,7 @@
  *
  * @package blaizejs
  */
+import config from '../package.json';
 // Logging
 import {
   logger,
@@ -103,7 +104,7 @@ export {
 };
 
 // Version information
-export const VERSION = '0.1.0';
+export const VERSION = config.version;
 
 // Namespaced exports with different names to avoid conflicts
 export const ServerAPI = { createServer, inferContext };

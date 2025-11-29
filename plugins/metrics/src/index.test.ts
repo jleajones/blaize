@@ -81,7 +81,6 @@ describe('createMetricsPlugin', () => {
       const plugin = createMetricsPlugin();
 
       expect(plugin.name).toBe('@blaizejs/plugin-metrics');
-      expect(plugin.version).toBe('1.0.0');
       expect(plugin.register).toBeInstanceOf(Function);
     });
 

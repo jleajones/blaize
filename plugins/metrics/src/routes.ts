@@ -84,6 +84,7 @@ export const metricsJsonRoute = {
 
     try {
       const snapshot = collector.getSnapshot();
+      // TODO: Return snapshot directly insteand of using json()
       ctx.response.json(snapshot);
     } catch (error) {
       throw new InternalServerError(

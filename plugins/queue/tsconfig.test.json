@@ -1,0 +1,16 @@
+{
+  "extends": "@blaizejs/tsconfig/test.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "../../",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "exactOptionalPropertyTypes": false,
+    "baseUrl": ".",
+    "paths": {
+      "@blaize-types/*": ["../blaize-types/src/*"]
+    }
+  },
+  "include": ["src/**/*", "../blaize-types/src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "examples"]
+}
