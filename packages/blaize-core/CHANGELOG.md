@@ -1,5 +1,12 @@
 # blaizejs
 
+## 0.7.1
+
+### Patch Changes
+
+- 7ad7571: 🚀 queue plugin
+- 15684e4: ✨ Add logger to SSE routes
+
 ## 0.7.0
 
 ### Minor Changes
