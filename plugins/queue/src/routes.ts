@@ -60,235 +60,19 @@
  */
 
 import { ServiceNotAvailableError, NotFoundError, getCorrelationId } from 'blaizejs';
-import { z } from 'zod';
 
 import { gatherDashboardData, renderDashboard } from './dashboard';
 
 import type { QueueService } from './queue-service';
+import type {
+  CancelJobBody,
+  CreateJobBody,
+  JobStreamQuery,
+  QueueDashboardQuery,
+  QueueStatusQuery,
+} from './schema';
 import type { Job, JobStatus, QueueStats, JobOptions } from './types';
 import type { SSEStream, Context, BlaizeLogger } from 'blaizejs';
-
-// ============================================================================
-// Query Schemas
-// ============================================================================
-
-/**
- * Query schema for job stream SSE endpoint
- *
- * Validates the query parameters for the job monitoring stream.
- *
- * @example Valid query strings
- * ```
- * ?jobId=550e8400-e29b-41d4-a716-446655440000
- * ?jobId=550e8400-e29b-41d4-a716-446655440000&queueName=emails
- * ```
- */
-export const jobStreamQuerySchema = z.object({
-  /**
-   * Job ID to monitor (required)
-   * Must be a valid UUID
-   */
-  jobId: z
-    .string({
-      required_error: 'jobId is required',
-      invalid_type_error: 'jobId must be a string',
-    })
-    .uuid('jobId must be a valid UUID'),
-
-  /**
-   * Queue name (optional)
-   * If not provided, searches all queues for the job
-   */
-  queueName: z.string().optional(),
-});
-
-/**
- * Inferred type for job stream query parameters
- */
-export type JobStreamQuery = z.infer<typeof jobStreamQuerySchema>;
-
-// ============================================================================
-// HTTP Query Schemas
-// ============================================================================
-
-/**
- * Query schema for queue status endpoint
- *
- * Validates query parameters for filtering queue/job status.
- *
- * @example Valid query strings
- * ```
- * ?queueName=emails
- * ?status=failed&limit=50
- * ?queueName=reports&status=running&limit=10
- * ```
- */
-export const queueStatusQuerySchema = z.object({
-  /**
-   * Filter to specific queue (optional)
-   * If not provided, returns status for all queues
-   */
-  queueName: z.string().optional(),
-
-  /**
-   * Filter jobs by status (optional)
-   */
-  status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']).optional(),
-
-  /**
-   * Maximum number of jobs to return per queue
-   * @default 20
-   */
-  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
-});
-
-/**
- * Inferred type for queue status query parameters
- */
-export type QueueStatusQuery = z.infer<typeof queueStatusQuerySchema>;
-
-/**
- * Query schema for queue dashboard endpoint
- *
- * Validates query parameters for dashboard rendering.
- *
- * @example Valid query strings
- * ```
- * ?queueName=emails
- * ?refresh=30
- * ?queueName=reports&refresh=60
- * ```
- */
-export const queueDashboardQuerySchema = z.object({
-  /**
-   * Filter to specific queue (optional)
-   * If not provided, shows all queues
-   */
-  queueName: z.string().optional(),
-
-  /**
-   * Auto-refresh interval in seconds (optional)
-   * Adds meta refresh tag to HTML
-   * @minimum 5
-   * @maximum 300
-   */
-  refresh: z.coerce.number().int().min(5).max(300).optional(),
-});
-
-/**
- * Inferred type for queue dashboard query parameters
- */
-export type QueueDashboardQuery = z.infer<typeof queueDashboardQuerySchema>;
-
-// ============================================================================
-// HTTP Body Schemas
-// ============================================================================
-
-/**
- * Body schema for job creation endpoint
- *
- * Validates POST body for creating a new job.
- *
- * @example Valid body
- * ```json
- * {
- *   "queueName": "emails",
- *   "jobType": "send-welcome",
- *   "data": { "userId": "123", "template": "welcome" },
- *   "options": { "priority": 8, "maxRetries": 5 }
- * }
- * ```
- */
-export const createJobBodySchema = z.object({
-  /**
-   * Queue to add the job to (required)
-   */
-  queueName: z
-    .string({
-      required_error: 'queueName is required',
-      invalid_type_error: 'queueName must be a string',
-    })
-    .min(1, 'queueName cannot be empty'),
-
-  /**
-   * Job type identifier (required)
-   * Must match a registered job handler
-   */
-  jobType: z
-    .string({
-      required_error: 'jobType is required',
-      invalid_type_error: 'jobType must be a string',
-    })
-    .min(1, 'jobType cannot be empty'),
-
-  /**
-   * Job data payload (optional)
-   * Passed to the job handler
-   */
-  data: z.unknown().optional(),
-
-  /**
-   * Job options (optional)
-   * Priority, retries, timeout, metadata
-   */
-  options: z
-    .object({
-      priority: z.number().int().min(1).max(10).optional(),
-      maxRetries: z.number().int().min(0).max(100).optional(),
-      timeout: z.number().int().min(0).optional(),
-      metadata: z.record(z.unknown()).optional(),
-    })
-    .optional(),
-});
-
-/**
- * Inferred type for create job body
- */
-export type CreateJobBody = z.infer<typeof createJobBodySchema>;
-
-/**
- * Body schema for job cancellation endpoint
- *
- * Validates POST body for cancelling a job.
- *
- * @example Valid body
- * ```json
- * {
- *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
- *   "queueName": "emails",
- *   "reason": "User requested cancellation"
- * }
- * ```
- */
-export const cancelJobBodySchema = z.object({
-  /**
-   * Job ID to cancel (required)
-   * Must be a valid UUID
-   */
-  jobId: z
-    .string({
-      required_error: 'jobId is required',
-      invalid_type_error: 'jobId must be a string',
-    })
-    .uuid('jobId must be a valid UUID'),
-
-  /**
-   * Queue name (optional)
-   * If not provided, searches all queues
-   */
-  queueName: z.string().optional(),
-
-  /**
-   * Cancellation reason (optional)
-   * Included in job cancelled event
-   */
-  reason: z.string().optional(),
-});
-
-/**
- * Inferred type for cancel job body
- */
-export type CancelJobBody = z.infer<typeof cancelJobBodySchema>;
 
 // ============================================================================
 // Helper Functions
@@ -637,7 +421,8 @@ export const queueStatusHandler = async (
   const queue = getQueueServiceOrThrow(ctx);
   const { queueName, status, limit } = ctx.request.query as unknown as QueueStatusQuery;
 
-  logger.debug('Fetching queue status', { queueName, status, limit });
+  const limitNum = parseInt(limit || '20', 10);
+  logger.debug('Fetching queue status', { queueName, status, limitNum });
 
   const queueNames = queueName ? [queueName] : queue.listQueues();
 
@@ -646,7 +431,7 @@ export const queueStatusHandler = async (
       const stats = await queue.getQueueStats(name);
       const jobs = await queue.listJobs(name, {
         status: status as JobStatus | undefined,
-        limit: Number(limit),
+        limit: limitNum,
       });
       return {
         name,
@@ -742,14 +527,15 @@ export const queueDashboardHandler = async (
 ): Promise<void> => {
   const queue = getQueueServiceOrThrow(ctx);
   const { queueName, refresh } = ctx.request.query as unknown as QueueDashboardQuery;
+  const refreshInterval = refresh ? parseInt(refresh, 10) : undefined;
 
-  logger.debug('Rendering queue dashboard', { queueName, refresh });
+  logger.debug('Rendering queue dashboard', { queueName, refreshInterval });
 
   const queueNames = queueName ? [queueName] : queue.listQueues();
   const data = await gatherDashboardData(queue, queueNames);
 
   const html = renderDashboard(data, {
-    refreshInterval: refresh ? Number(refresh) : undefined,
+    refreshInterval,
   });
 
   ctx.response.type('text/html; charset=utf-8').html(html);

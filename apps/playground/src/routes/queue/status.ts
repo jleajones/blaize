@@ -9,11 +9,15 @@
  * - status: Filter by job status
  * - limit: Number of jobs to return (default: 20)
  */
-import { queueStatusHandler, queueStatusQuerySchema } from '@blaizejs/plugin-queue';
+import {
+  queueStatusHandler,
+  queueStatusQuerySchema,
+  queueStatusResponseSchema,
+} from '@blaizejs/plugin-queue';
 
 import { appRouter } from '../../app-router';
 
 export const GET = appRouter.get({
-  schema: { query: queueStatusQuerySchema },
+  schema: { query: queueStatusQuerySchema, response: queueStatusResponseSchema },
   handler: queueStatusHandler,
 });
