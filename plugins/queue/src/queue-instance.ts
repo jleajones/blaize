@@ -1005,6 +1005,7 @@ export class QueueInstance extends EventEmitter {
       completedAt: Date.now(),
       progress: 100,
       result,
+      error: undefined,
     });
 
     const completedJob = await this.storage.getJob(job.id, this.name);

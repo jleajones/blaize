@@ -36,6 +36,7 @@ export type {
   QueueStats,
   QueueConfig,
   QueuePluginConfig,
+  QueuePluginServices,
   QueueServiceConfig,
   StopOptions,
   QueueInstanceEvents,

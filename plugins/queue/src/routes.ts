@@ -67,12 +67,13 @@ import type { QueueService } from './queue-service';
 import type {
   CancelJobBody,
   CreateJobBody,
+  jobEventsSchema,
   JobStreamQuery,
   QueueDashboardQuery,
   QueueStatusQuery,
 } from './schema';
 import type { Job, JobStatus, QueueStats, JobOptions } from './types';
-import type { SSEStream, Context, BlaizeLogger } from 'blaizejs';
+import type { TypedSSEStream, Context, BlaizeLogger } from 'blaizejs';
 
 // ============================================================================
 // Helper Functions
@@ -110,6 +111,9 @@ function getQueueServiceOrThrow(ctx: Context): QueueService {
 // ============================================================================
 // SSE Handlers (4-param signature)
 // ============================================================================
+
+// Create a type alias for your specific stream type
+type JobSSEStream = TypedSSEStream<typeof jobEventsSchema>;
 
 /**
  * SSE job monitoring handler
@@ -175,7 +179,7 @@ function getQueueServiceOrThrow(ctx: Context): QueueService {
  * @param logger - BlaizeJS logger instance
  */
 export const jobStreamHandler = async (
-  stream: SSEStream,
+  stream: JobSSEStream,
   ctx: Context,
   params: Record<string, string>,
   logger: BlaizeLogger

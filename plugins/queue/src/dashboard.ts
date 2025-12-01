@@ -1040,7 +1040,7 @@ export function renderDashboard(data: DashboardData, options: DashboardOptions =
 
   <footer class="footer">
     <div class="container">
-      <p>Powered by <strong>BlaizeJS</strong> • <a href="/queue/metrics">Prometheus Metrics</a></p>
+      <p>Powered by <strong>BlaizeJS</strong> • <a href="/queue/prometheus">Prometheus Metrics</a></p>
     </div>
   </footer>
 

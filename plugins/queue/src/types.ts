@@ -734,7 +734,7 @@ export interface QueuePluginConfig {
    * });
    * ```
    */
-  handlers?: Record<string, Record<string, JobHandler<unknown, unknown>>>;
+  handlers?: Record<string, Record<string, JobHandler<any, any>>>;
 }
 
 // ============================================================================
