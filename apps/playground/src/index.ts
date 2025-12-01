@@ -15,6 +15,9 @@ import {
   sendNotificationHandler,
   unreliableTaskHandler,
   verifyEmailHandler,
+  dataMigrationHandler,
+  generateLongReportHandler,
+  processVideoHandler,
 } from './handlers';
 
 // Get the directory name of the current module
@@ -77,6 +80,11 @@ const queuePlugin = createQueuePlugin({
       defaultTimeout: 30000,
       defaultMaxRetries: 3,
     },
+    longRunning: {
+      concurrency: 2,
+      defaultTimeout: 60000,
+      defaultMaxRetries: 1,
+    },
   },
 
   // Register handlers declaratively
@@ -97,6 +105,11 @@ const queuePlugin = createQueuePlugin({
     },
     testing: {
       unreliable: unreliableTaskHandler,
+    },
+    longRunning: {
+      'long-report': generateLongReportHandler,
+      video: processVideoHandler,
+      migration: dataMigrationHandler,
     },
   },
 
