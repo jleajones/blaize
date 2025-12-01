@@ -16,11 +16,15 @@
  * - queueName: Queue the job was added to
  * - status: Initial status ('queued')
  */
-import { createJobHandler, createJobBodySchema } from '@blaizejs/plugin-queue';
+import {
+  createJobHandler,
+  createJobBodySchema,
+  createJobResponseSchema,
+} from '@blaizejs/plugin-queue';
 
 import { appRouter } from '../../../app-router';
 
 export const POST = appRouter.post({
-  schema: { body: createJobBodySchema },
+  schema: { body: createJobBodySchema, response: createJobResponseSchema },
   handler: createJobHandler,
 });

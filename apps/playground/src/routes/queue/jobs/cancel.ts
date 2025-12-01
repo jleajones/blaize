@@ -15,11 +15,15 @@
  * - cancelled: Whether cancellation was successful
  * - status: Final job status
  */
-import { cancelJobHandler, cancelJobBodySchema } from '@blaizejs/plugin-queue';
+import {
+  cancelJobHandler,
+  cancelJobBodySchema,
+  cancelJobResponseSchema,
+} from '@blaizejs/plugin-queue';
 
 import { appRouter } from '../../../app-router';
 
 export const POST = appRouter.post({
-  schema: { body: cancelJobBodySchema },
+  schema: { body: cancelJobBodySchema, response: cancelJobResponseSchema },
   handler: cancelJobHandler,
 });

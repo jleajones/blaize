@@ -1,16 +1,14 @@
 /**
- * Queue Demo Route
+ * Queue Demo Route (Updated)
  *
- * GET /queue/demo
- * POST /queue/demo
+ * GET /queue/demo - Create sample jobs
+ * POST /queue/demo - Create custom batch
  *
- * Creates sample jobs across all queues for testing.
- * GET creates a single batch, POST allows specifying count.
- *
- * This is useful for:
- * - Testing the dashboard
- * - Testing SSE monitoring
- * - Demonstrating different job types and durations
+ * Improvements:
+ * - Added long-running handlers for better SSE testing
+ * - Made unreliable tasks optional (query param)
+ * - Lower failure rate by default (20% instead of 50%)
+ * - Better descriptions
  */
 import { z } from 'zod';
 
@@ -21,11 +19,22 @@ import { appRouter } from '../../app-router';
 /**
  * Create sample jobs for demonstration
  */
-async function createDemoJobs(queue: QueueService, count: number = 1) {
+async function createDemoJobs(
+  queue: QueueService,
+  options: {
+    count?: number;
+    includeUnreliable?: boolean;
+    includeLongRunning?: boolean;
+  } = {}
+) {
+  const { count = 1, includeUnreliable = false, includeLongRunning = true } = options;
+
   const jobs: Array<{ jobId: string; queue: string; type: string; description: string }> = [];
 
   for (let i = 0; i < count; i++) {
-    // Email jobs (fast)
+    // ========================================================================
+    // Email jobs (fast, 0.5-3 seconds)
+    // ========================================================================
     const sendEmailId = await queue.add(
       'emails',
       'send',
@@ -40,7 +49,7 @@ async function createDemoJobs(queue: QueueService, count: number = 1) {
       jobId: sendEmailId,
       queue: 'emails',
       type: 'send',
-      description: 'Send welcome email (2-3 seconds)',
+      description: 'Send welcome email (2-3 seconds) ✉️',
     });
 
     const verifyEmailId = await queue.add(
@@ -53,10 +62,12 @@ async function createDemoJobs(queue: QueueService, count: number = 1) {
       jobId: verifyEmailId,
       queue: 'emails',
       type: 'verify',
-      description: 'Verify email address (0.5-1 second)',
+      description: 'Verify email address (0.5-1 second) ✓',
     });
 
-    // Report job (slow)
+    // ========================================================================
+    // Report job (medium, 5-8 seconds)
+    // ========================================================================
     const reportId = await queue.add(
       'reports',
       'generate',
@@ -71,10 +82,12 @@ async function createDemoJobs(queue: QueueService, count: number = 1) {
       jobId: reportId,
       queue: 'reports',
       type: 'generate',
-      description: 'Generate monthly report (5-8 seconds)',
+      description: 'Generate monthly report (5-8 seconds) 📊',
     });
 
-    // Image processing job (medium)
+    // ========================================================================
+    // Image processing job (medium, 2-5 seconds)
+    // ========================================================================
     const imageId = await queue.add(
       'processing',
       'image',
@@ -88,12 +101,14 @@ async function createDemoJobs(queue: QueueService, count: number = 1) {
       jobId: imageId,
       queue: 'processing',
       type: 'image',
-      description: 'Process image (2-5 seconds)',
+      description: 'Process image (2-5 seconds) 🖼️',
     });
 
-    // Data sync job (very slow)
+    // ========================================================================
+    // Data sync job (slow, 8-12 seconds)
+    // ========================================================================
     if (i === 0) {
-      // Only create one sync job (it's expensive)
+      // Only create one sync job per batch (it's expensive)
       const syncId = await queue.add(
         'processing',
         'data-sync',
@@ -108,11 +123,13 @@ async function createDemoJobs(queue: QueueService, count: number = 1) {
         jobId: syncId,
         queue: 'processing',
         type: 'data-sync',
-        description: 'Sync 1000 records (8-12 seconds)',
+        description: 'Sync 1000 records (8-12 seconds) 🔄',
       });
     }
 
-    // Notification jobs (fast)
+    // ========================================================================
+    // Notification jobs (fast, 0.5-1 second)
+    // ========================================================================
     const notifId = await queue.add(
       'notifications',
       'send',
@@ -127,25 +144,67 @@ async function createDemoJobs(queue: QueueService, count: number = 1) {
       jobId: notifId,
       queue: 'notifications',
       type: 'send',
-      description: 'Send push notification (0.5-1 second)',
+      description: 'Send push notification (0.5-1 second) 🔔',
     });
 
-    // Unreliable job for testing retries
-    if (i === 0) {
+    // ========================================================================
+    // Long-running jobs (20-30 seconds) - GREAT FOR SSE TESTING!
+    // ========================================================================
+    if (includeLongRunning && i === 0) {
+      // Only create one per batch (they're long)
+
+      const longReportId = await queue.add(
+        'longRunning',
+        'long-report',
+        {
+          reportType: 'annual',
+          includeCharts: true,
+        },
+        { priority: 6 }
+      );
+      jobs.push({
+        jobId: longReportId,
+        queue: 'longRunning',
+        type: 'long-report',
+        description: '📈 Generate detailed report (20 seconds) - PERFECT FOR SSE!',
+      });
+
+      const videoId = await queue.add(
+        'longRunning',
+        'video',
+        {
+          videoId: `video-${Date.now()}`,
+          resolution: '1080p',
+          duration: 120,
+        },
+        { priority: 5 }
+      );
+      jobs.push({
+        jobId: videoId,
+        queue: 'longRunning',
+        type: 'video',
+        description: '🎥 Process video in 1080p (30 seconds) - BEST FOR SSE!',
+      });
+    }
+
+    // ========================================================================
+    // Unreliable job (optional, for testing retries)
+    // ========================================================================
+    if (includeUnreliable && i === 0) {
       const unreliableId = await queue.add(
         'testing',
         'unreliable',
         {
           taskId: `task-${Date.now()}`,
-          failureRate: 0.5, // 50% failure rate
+          failureRate: 0.2, // ← Lowered to 20% (was 50%)
         },
-        { priority: 3, maxRetries: 3 }
+        { priority: 3, maxRetries: 2 } // ← Reduced retries to 2 (was 3)
       );
       jobs.push({
         jobId: unreliableId,
         queue: 'testing',
         type: 'unreliable',
-        description: 'Unreliable task (50% failure rate, for testing retries)',
+        description: '⚠️ Unreliable task (20% failure rate, tests retries)',
       });
     }
   }
@@ -158,6 +217,16 @@ async function createDemoJobs(queue: QueueService, count: number = 1) {
  */
 export const GET = appRouter.get({
   schema: {
+    query: z.object({
+      includeUnreliable: z
+        .string()
+        .optional()
+        .transform(val => val === 'true'),
+      includeLongRunning: z
+        .string()
+        .optional()
+        .transform(val => val !== 'false'), // Default true
+    }),
     response: z.object({
       message: z.string(),
       jobCount: z.number(),
@@ -172,31 +241,46 @@ export const GET = appRouter.get({
       links: z.object({
         dashboard: z.string(),
         status: z.string(),
-        stream: z.string(),
+        sseExample: z.string().optional(),
       }),
+      tips: z.array(z.string()),
     }),
   },
   handler: async (ctx, _params, logger) => {
     const queue = ctx.services.queue as QueueService;
+    const { includeUnreliable, includeLongRunning } = ctx.request.query as any;
 
-    logger.info('Creating demo jobs');
+    logger.info('Creating demo jobs', { includeUnreliable, includeLongRunning });
 
-    const jobs = await createDemoJobs(queue, 1);
+    const jobs = await createDemoJobs(queue, {
+      count: 1,
+      includeUnreliable,
+      includeLongRunning,
+    });
 
     logger.info('Demo jobs created', { count: jobs.length });
 
-    // Get the first report job for the stream link (it's the longest running)
-    const reportJob = jobs.find(j => j.queue === 'reports');
+    // Get a long-running job for the SSE link
+    const longJob = jobs.find(j => j.queue === 'longRunning');
 
     return {
-      message: 'Demo jobs created! Watch them process in real-time.',
+      message: '🚀 Demo jobs created! Watch them process in real-time.',
       jobCount: jobs.length,
       jobs,
       links: {
         dashboard: '/queue/dashboard?refresh=5',
         status: '/queue/status',
-        stream: reportJob ? `/queue/stream?jobId=${reportJob.jobId}` : '/queue/stream',
+        sseExample: longJob ? `/queue/stream?jobId=${longJob.jobId}` : undefined,
       },
+      tips: [
+        '💡 Visit /queue/dashboard to see all jobs',
+        '📊 The long-running jobs (20-30s) are perfect for testing SSE',
+        longJob ? `🔥 Try: curl -N http://localhost:7485/queue/stream?jobId=${longJob.jobId}` : '',
+        '⚡ Fast jobs (<3s) complete quickly - use long jobs for demos',
+        includeUnreliable
+          ? '⚠️ Unreliable jobs may retry 2-3 times before completing'
+          : '➕ Add ?includeUnreliable=true to test retry logic',
+      ].filter(Boolean),
     };
   },
 });
@@ -208,6 +292,8 @@ export const POST = appRouter.post({
   schema: {
     body: z.object({
       count: z.number().int().min(1).max(10).default(1),
+      includeUnreliable: z.boolean().default(false),
+      includeLongRunning: z.boolean().default(true),
     }),
     response: z.object({
       message: z.string(),
@@ -220,22 +306,41 @@ export const POST = appRouter.post({
           description: z.string(),
         })
       ),
+      summary: z.object({
+        emails: z.number(),
+        reports: z.number(),
+        processing: z.number(),
+        notifications: z.number(),
+        longRunning: z.number(),
+        testing: z.number(),
+      }),
     }),
   },
   handler: async (ctx, _params, logger) => {
     const queue = ctx.services.queue as QueueService;
-    const { count } = ctx.request.body;
+    const { count, includeUnreliable, includeLongRunning } = ctx.request.body;
 
-    logger.info('Creating demo jobs', { batches: count });
+    logger.info('Creating demo jobs', { batches: count, includeUnreliable, includeLongRunning });
 
-    const jobs = await createDemoJobs(queue, count);
+    const jobs = await createDemoJobs(queue, { count, includeUnreliable, includeLongRunning });
 
     logger.info('Demo jobs created', { count: jobs.length });
 
+    // Count jobs by queue
+    const summary = {
+      emails: jobs.filter(j => j.queue === 'emails').length,
+      reports: jobs.filter(j => j.queue === 'reports').length,
+      processing: jobs.filter(j => j.queue === 'processing').length,
+      notifications: jobs.filter(j => j.queue === 'notifications').length,
+      longRunning: jobs.filter(j => j.queue === 'longRunning').length,
+      testing: jobs.filter(j => j.queue === 'testing').length,
+    };
+
     return {
-      message: `Created ${jobs.length} demo jobs across ${count} batch(es)`,
+      message: `✨ Created ${jobs.length} demo jobs across ${count} batch(es)`,
       jobCount: jobs.length,
       jobs,
+      summary,
     };
   },
 });
