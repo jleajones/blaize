@@ -11,7 +11,15 @@ export async function testClient() {
     const _helloResponse = await client.$get.getHello();
     const _helloPostResponse = await client.$post.postHello({ body: { name: 'World' } });
 
-    // const notifications = await client.$sse.getNotification();
+    const queueStream = await client.$sse.getQueueStream({
+      query: { jobId: 'emailQueue' },
+    });
+    queueStream.on('job.cancelled', data => {
+      console.log('Job Cancelled Event:', data);
+    });
+    const _notifications = await client.$sse.getNotifications({
+      params: { userId: 'user123' },
+    });
     // notifications.on('message', data => {
     //   console.log('SSE Message:', data);
     // });

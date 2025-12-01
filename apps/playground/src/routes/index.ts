@@ -9,6 +9,7 @@ export const getHello = appRouter.get({
     }),
   },
   handler: async (ctx, params, logger) => {
+    ctx.services.queue.add('emailQueue', 'sendGreetingEmail', { email: 'testing@test.com' });
     logger.info('Handling hello route');
     return {
       name: 'Hi, it is Blaize and Bella!',

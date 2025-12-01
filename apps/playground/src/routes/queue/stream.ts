@@ -18,7 +18,7 @@ import { jobStreamHandler, jobStreamQuerySchema, jobEventsSchema } from '@blaize
 
 import { appRouter } from '../../app-router';
 
-export const GET = appRouter.sse({
+export const getQueueStream = appRouter.sse({
   schema: {
     query: jobStreamQuerySchema,
     events: jobEventsSchema,
