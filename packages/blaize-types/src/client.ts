@@ -129,10 +129,15 @@ export type HasSSEMethod<TRoute> = TRoute extends { SSE: any } ? true : false;
 /**
  * Extract SSE event types from route schema
  */
-export type ExtractSSEEvents<TRoute> = TRoute extends { SSE: { events?: infer E } }
+/**
+ * Extract SSE event types from route schema
+ */
+export type ExtractSSEEvents<TRoute> = TRoute extends { SSE: { schema?: { events?: infer E } } }
   ? E extends z.ZodType
     ? z.infer<E>
-    : Record<string, unknown>
+    : E extends Record<string, z.ZodType>
+      ? { [K in keyof E]: z.infer<E[K]> }
+      : Record<string, unknown>
   : Record<string, unknown>;
 
 /**
@@ -141,7 +146,7 @@ export type ExtractSSEEvents<TRoute> = TRoute extends { SSE: { events?: infer E 
 export type ExtractSSEQuery<TRoute> = TRoute extends { SSE: { schema?: { query?: infer Q } } }
   ? Q extends z.ZodType
     ? z.infer<Q>
-    : Record<string, unknown>
+    : never
   : never;
 
 /**
@@ -150,24 +155,41 @@ export type ExtractSSEQuery<TRoute> = TRoute extends { SSE: { schema?: { query?:
 export type ExtractSSEParams<TRoute> = TRoute extends { SSE: { schema?: { params?: infer P } } }
   ? P extends z.ZodType
     ? z.infer<P>
-    : Record<string, string>
+    : never
   : never;
 
 /**
- * Build SSE method arguments
+ * Check if an object type has any required keys
+ */
+type HasRequiredKeys<T> = {
+  [K in keyof T]-?: {} extends Pick<T, K> ? never : K;
+}[keyof T] extends never
+  ? false
+  : true;
+
+/**
+ * Build SSE method arguments with proper optionality
  */
 export type BuildSSEArgs<TRoute> =
   ExtractSSEParams<TRoute> extends never
     ? ExtractSSEQuery<TRoute> extends never
       ? { options?: SSEClientOptions }
-      : { query: ExtractSSEQuery<TRoute>; options?: SSEClientOptions }
+      : HasRequiredKeys<ExtractSSEQuery<TRoute>> extends true
+        ? { query: ExtractSSEQuery<TRoute>; options?: SSEClientOptions }
+        : { query?: ExtractSSEQuery<TRoute>; options?: SSEClientOptions }
     : ExtractSSEQuery<TRoute> extends never
       ? { params: ExtractSSEParams<TRoute>; options?: SSEClientOptions }
-      : {
-          params: ExtractSSEParams<TRoute>;
-          query: ExtractSSEQuery<TRoute>;
-          options?: SSEClientOptions;
-        };
+      : HasRequiredKeys<ExtractSSEQuery<TRoute>> extends true
+        ? {
+            params: ExtractSSEParams<TRoute>;
+            query: ExtractSSEQuery<TRoute>;
+            options?: SSEClientOptions;
+          }
+        : {
+            params: ExtractSSEParams<TRoute>;
+            query?: ExtractSSEQuery<TRoute>;
+            options?: SSEClientOptions;
+          };
 
 /**
  * Create SSE client method

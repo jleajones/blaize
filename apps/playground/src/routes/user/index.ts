@@ -38,7 +38,9 @@ export const postUser = appRouter.post({
     }),
   },
   // TODO: Add to docs handler return type also has runtime validation for Object types
-  handler: async () => {
+  handler: async (ctx, params, logger) => {
+    logger.info('Handling user POST route', params);
+    ctx.services.queue.add('emailQueue', 'sendWelcomeEmail', { email: ctx.request.body.name });
     return {
       message: 'Hello from Blaize and Bella on the user route!!',
     };

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 /**
  * Queue Plugin Factory
  *
@@ -94,7 +95,7 @@ const DEFAULT_CONFIG = {
  * });
  * ```
  */
-export const createQueuePlugin = createPlugin<QueuePluginConfig>({
+export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePluginServices>({
   name: PLUGIN_NAME,
   version: PLUGIN_VERSION,
 

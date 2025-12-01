@@ -225,7 +225,14 @@ export const createSSERoute: CreateSSERoute = <
         middleware: config.middleware,
         options: config.options,
       },
+      SSE: {
+        schema: {
+          params: config.schema?.params,
+          query: config.schema?.query,
+          events: config.schema?.events,
+        },
+      },
       path,
-    };
+    } as const;
   };
 };

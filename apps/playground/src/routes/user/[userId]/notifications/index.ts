@@ -40,8 +40,8 @@ export const getNotifications = appRouter.sse({
       heartbeat: z.object({ timestamp: z.string() }),
     },
   },
-  handler: async (stream, ctx, params) => {
-    console.log(`[SSE] Client connected to notifications. UserId: ${params.userId || 'anonymous'}`);
+  handler: async (stream, ctx, params, logger) => {
+    logger.info(`[SSE] Client connected to notifications. UserId: ${params.userId || 'anonymous'}`);
 
     // Send initial connection confirmation
     stream.send('notification', {

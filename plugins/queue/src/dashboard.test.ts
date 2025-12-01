@@ -458,7 +458,7 @@ describe('renderDashboard', () => {
       const data = createTestDashboardData();
       const html = renderDashboard(data);
 
-      expect(html).toContain('/queue/metrics');
+      expect(html).toContain('/queue/prometheus');
       expect(html).toContain('Prometheus Metrics');
     });
   });

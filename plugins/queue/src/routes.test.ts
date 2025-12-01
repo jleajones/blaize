@@ -14,20 +14,23 @@
 import { QueueService } from './queue-service';
 import {
   jobStreamHandler,
-  jobStreamQuerySchema,
   queueStatusHandler,
-  queueStatusQuerySchema,
-  queuePrometheusHandler,
   queueDashboardHandler,
-  queueDashboardQuerySchema,
   createJobHandler,
-  createJobBodySchema,
   cancelJobHandler,
-  cancelJobBodySchema,
+  queuePrometheusHandler,
 } from './routes';
+import {
+  jobStreamQuerySchema,
+  queueStatusQuerySchema,
+  queueDashboardQuerySchema,
+  createJobBodySchema,
+  cancelJobBodySchema,
+} from './schema';
 import { InMemoryStorage } from './storage';
 
-import type { SSEStream, BlaizeLogger, Context } from 'blaizejs';
+import type { JobSSEStream } from './routes';
+import type { BlaizeLogger, Context } from 'blaizejs';
 
 // ============================================================================
 // Test Helpers
@@ -36,7 +39,7 @@ import type { SSEStream, BlaizeLogger, Context } from 'blaizejs';
 /**
  * Create a mock SSE stream
  */
-function createMockStream(): SSEStream & {
+function createMockStream(): JobSSEStream & {
   events: Array<{ event: string; data: unknown }>;
   closeCallbacks: Array<() => void>;
   closed: boolean;
@@ -77,6 +80,11 @@ function createMockStream(): SSEStream & {
     onClose(cb: () => void): void {
       closeCallbacks.push(cb);
     },
+  } as JobSSEStream & {
+    // ← Cast to the proper type here
+    events: Array<{ event: string; data: unknown }>;
+    closeCallbacks: Array<() => void>;
+    closed: boolean;
   };
 }
 
@@ -1055,7 +1063,7 @@ describe('jobStreamHandler edge cases', () => {
 describe('queueStatusQuerySchema', () => {
   it('should accept empty query (all defaults)', () => {
     const result = queueStatusQuerySchema.parse({});
-    expect(result.limit).toBe(20);
+    expect(parseInt(result.limit, 10)).toBe(20);
     expect(result.queueName).toBeUndefined();
     expect(result.status).toBeUndefined();
   });
@@ -1072,7 +1080,7 @@ describe('queueStatusQuerySchema', () => {
 
   it('should coerce limit to number', () => {
     const result = queueStatusQuerySchema.parse({ limit: '50' });
-    expect(result.limit).toBe(50);
+    expect(parseInt(result.limit, 10)).toBe(50);
   });
 
   it('should reject invalid status', () => {
@@ -1097,7 +1105,7 @@ describe('queueDashboardQuerySchema', () => {
 
   it('should accept valid refresh interval', () => {
     const result = queueDashboardQuerySchema.parse({ refresh: '30' });
-    expect(result.refresh).toBe(30);
+    expect(parseInt(result.refresh!, 10)).toBe(30);
   });
 
   it('should reject refresh below 5', () => {

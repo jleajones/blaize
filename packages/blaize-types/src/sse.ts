@@ -430,6 +430,13 @@ export type CreateSSERoute = <
     middleware?: Middleware[];
     options?: Record<string, unknown>;
   };
+  SSE: {
+    schema: {
+      params?: P extends never ? undefined : P;
+      query?: Q extends never ? undefined : Q;
+      events?: E extends never ? undefined : E;
+    };
+  };
   path: string;
 };
 

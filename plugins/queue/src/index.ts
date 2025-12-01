@@ -36,6 +36,7 @@ export type {
   QueueStats,
   QueueConfig,
   QueuePluginConfig,
+  QueuePluginServices,
   QueueServiceConfig,
   StopOptions,
   QueueInstanceEvents,
@@ -88,12 +89,6 @@ export {
   queueDashboardHandler,
   createJobHandler,
   cancelJobHandler,
-  // Query schemas for route validation
-  jobStreamQuerySchema,
-  queueStatusQuerySchema,
-  queueDashboardQuerySchema,
-  createJobBodySchema,
-  cancelJobBodySchema,
 } from './routes';
 
 // ============================================================================
@@ -124,6 +119,12 @@ export {
   jobFailedEventSchema,
   jobCancelledEventSchema,
   jobEventsSchema,
+  // Query schemas for route validation
+  jobStreamQuerySchema,
+  queueStatusQuerySchema,
+  queueDashboardQuerySchema,
+  createJobBodySchema,
+  cancelJobBodySchema,
   // Response Schemas
   jobStatusEnumSchema,
   jobErrorSchema,
