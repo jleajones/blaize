@@ -113,7 +113,7 @@ function getQueueServiceOrThrow(ctx: Context): QueueService {
 // ============================================================================
 
 // Create a type alias for your specific stream type
-type JobSSEStream = TypedSSEStream<typeof jobEventsSchema>;
+export type JobSSEStream = TypedSSEStream<typeof jobEventsSchema>;
 
 /**
  * SSE job monitoring handler
