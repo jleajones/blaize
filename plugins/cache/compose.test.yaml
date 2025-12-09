@@ -1,0 +1,52 @@
+# Docker Compose Test Infrastructure for Cache Plugin
+#
+# This configuration provides an isolated Redis instance for integration testing.
+# The cache plugin tests run against this Redis instance to validate adapter behavior.
+#
+# Usage:
+#   Start services:  docker-compose -f compose.test.yml up -d
+#   Stop services:   docker-compose -f compose.test.yml down
+#   Full cleanup:    docker-compose -f compose.test.yml down -v
+#
+# Connection Details:
+#   Redis: redis://localhost:6379
+#   Database: 0 (default)
+#   Password: None (development only)
+
+services:
+  # ==========================================================================
+  # Redis Cache Service
+  # ==========================================================================
+  redis:
+    image: redis:8-alpine
+    container_name: blaize-cache-redis-test
+
+    ports:
+      - '6379:6379'
+
+    # Health check ensures Redis is ready before tests run
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+    # Memory limit for testing environment
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+    # Restart policy for CI environments
+    restart: unless-stopped
+
+    networks: [blaize-cache-test]
+
+# ==========================================================================
+# Isolated Test Network
+# ==========================================================================
+# Prevents port conflicts with other plugin test environments
+networks:
+  blaize-cache-test:
+    driver: bridge
