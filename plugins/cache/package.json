@@ -61,16 +61,13 @@
   "keywords": [
     "blaizejs",
     "plugin",
-    "queue",
-    "jobs",
-    "background-jobs",
-    "task-queue",
-    "priority-queue",
-    "job-processing",
+    "cache",
+    "redis",
     "sse",
     "server-sent-events",
-    "retry",
-    "typescript"
+    "event-driven",
+    "typescript",
+    "multi-server"
   ],
   "license": "MIT"
 }
