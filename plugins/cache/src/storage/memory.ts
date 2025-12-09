@@ -4,18 +4,7 @@
  * @packageDocumentation
  */
 
-import type { CacheAdapter, CacheStats, MemoryAdapterConfig } from '../types';
-
-/**
- * Cache entry with value and metadata
- */
-interface CacheEntry {
-  value: string;
-  /** Expiration timestamp in milliseconds (0 = no expiration) */
-  expiresAt: number;
-  /** Approximate size in bytes */
-  size: number;
-}
+import type { CacheAdapter, CacheEntry, CacheStats, MemoryAdapterConfig } from '../types';
 
 /**
  * In-memory cache adapter with LRU eviction

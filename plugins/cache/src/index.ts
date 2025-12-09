@@ -8,8 +8,23 @@
  */
 import config from '../package.json';
 
-export type { CacheAdapter, CacheStats, MemoryAdapterConfig } from './types';
+export type {
+  CacheAdapter,
+  CacheStats,
+  MemoryAdapterConfig,
+  CacheChangeEvent,
+  CacheWatchHandler,
+  
+} from './types';
 
+/**
+ * Cache service with automatic event emission
+ */
+export { CacheService } from './cache-service';
+
+/**
+ * Memory cache adapter with LRU eviction and TTL support
+ */
 export { MemoryAdapter } from './storage';
 
 // Placeholder exports - will be implemented in subsequent tasks

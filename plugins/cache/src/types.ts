@@ -143,3 +143,40 @@ export interface MemoryAdapterConfig {
    */
   defaultTtl?: number;
 }
+
+/**
+ * Cache entry with value and metadata
+ */
+export interface CacheEntry {
+  value: string;
+  /** Expiration timestamp in milliseconds (0 = no expiration) */
+  expiresAt: number;
+  /** Approximate size in bytes */
+  size: number;
+}
+
+
+/**
+ * Cache change event
+ */
+export interface CacheChangeEvent {
+  /** Event type */
+  type: 'set' | 'delete';
+  
+  /** Cache key */
+  key: string;
+  
+  /** Value (for 'set' events) */
+  value?: string;
+  
+  /** Event timestamp in milliseconds */
+  timestamp: number;
+  
+  /** Server ID for multi-server coordination (optional) */
+  serverId?: string;
+}
+
+/**
+ * Cache watch handler function
+ */
+export type CacheWatchHandler = (event: CacheChangeEvent) => void | Promise<void>;
