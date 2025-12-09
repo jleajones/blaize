@@ -1,0 +1,65 @@
+# Docker Compose for BlaizeJS Playground Development
+#
+# Provides all data services needed for testing the three data plugins:
+# - Redis (cache plugin)
+# - PostgreSQL + MySQL (database plugin)
+# - MinIO (storage plugin)
+#
+# Usage:
+#   Start:    pnpm run dev:services
+#   Stop:     pnpm run dev:down
+#   Clean:    pnpm run dev:clean
+
+services:
+  redis:
+    image: redis:8-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+    networks: [blaize-playground]
+    
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: playground
+      POSTGRES_DB: playgrounddb
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+    networks: [blaize-playground]
+    
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: playground
+      MYSQL_DATABASE: playgrounddb
+    ports: ["3306:3306"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+    networks: [blaize-playground]
+    
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    networks: [blaize-playground]
+
+volumes:
+  postgres-data:
+  mysql-data:
+  minio-data:
+
+networks:
+  blaize-playground:
+    driver: bridge
