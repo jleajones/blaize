@@ -7,7 +7,7 @@
 import { createMockContext } from '@blaizejs/testing-utils';
 
 import { createQueuePlugin, QueueService } from './plugin';
-import { InMemoryStorage } from './storage/in-memory';
+import { InMemoryStorage } from './storage/memory';
 
 import type { QueueStorageAdapter, QueuePluginConfig } from './types';
 

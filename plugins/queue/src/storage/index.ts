@@ -20,4 +20,4 @@
 // TODO: Import from ../types.ts when implemented
 export type { QueueStorageAdapter } from '../types';
 
-export { createInMemoryStorage, InMemoryStorage } from './in-memory';
+export { createInMemoryStorage, InMemoryStorage } from './memory';
