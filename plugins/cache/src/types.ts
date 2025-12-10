@@ -4,6 +4,8 @@
  * @packageDocumentation
  */
 
+import { CacheService } from './cache-service';
+
 /**
  * Cache adapter statistics
  */
@@ -155,23 +157,22 @@ export interface CacheEntry {
   size: number;
 }
 
-
 /**
  * Cache change event
  */
 export interface CacheChangeEvent {
   /** Event type */
   type: 'set' | 'delete';
-  
+
   /** Cache key */
   key: string;
-  
+
   /** Value (for 'set' events) */
   value?: string;
-  
+
   /** Event timestamp in milliseconds */
   timestamp: number;
-  
+
   /** Server ID for multi-server coordination (optional) */
   serverId?: string;
 }
@@ -180,3 +181,28 @@ export interface CacheChangeEvent {
  * Cache watch handler function
  */
 export type CacheWatchHandler = (event: CacheChangeEvent) => void | Promise<void>;
+
+/**
+ * Cache plugin configuration
+ */
+export interface CachePluginConfig {
+  /** Cache adapter implementation (defaults to MemoryAdapter) */
+  adapter?: CacheAdapter;
+
+  /** Maximum number of entries (only for MemoryAdapter) */
+  maxEntries?: number;
+
+  /** Default TTL in seconds (only for MemoryAdapter) */
+  defaultTtl?: number;
+
+  /** Server ID for multi-server coordination (optional) */
+  serverId?: string;
+}
+
+/**
+ * Services provided by cache plugin
+ */
+export interface CachePluginServices {
+  /** Cache service instance */
+  cache: CacheService;
+}

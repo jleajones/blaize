@@ -14,8 +14,14 @@ export type {
   MemoryAdapterConfig,
   CacheChangeEvent,
   CacheWatchHandler,
-  
+  CachePluginConfig,
+  CachePluginServices,
 } from './types';
+
+/**
+ * Create cache plugin for BlaizeJS
+ */
+export { createCachePlugin } from './plugin';
 
 /**
  * Cache service with automatic event emission
