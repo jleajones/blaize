@@ -286,3 +286,224 @@ export interface CacheValidationErrorDetails extends CacheErrorDetails {
   /** Value that failed validation */
   value?: unknown;
 }
+
+/**
+ * Redis adapter configuration
+ *
+ * Configuration options for connecting to Redis server.
+ *
+ * @example Basic configuration
+ * ```typescript
+ * const config: RedisAdapterConfig = {
+ *   host: 'localhost',
+ *   port: 6379
+ * };
+ * ```
+ *
+ * @example Production with auth
+ * ```typescript
+ * const config: RedisAdapterConfig = {
+ *   host: process.env.REDIS_HOST,
+ *   port: 6379,
+ *   password: process.env.REDIS_PASSWORD,
+ *   db: 1,
+ *   retryStrategy: (times) => Math.min(times * 100, 3000)
+ * };
+ * ```
+ */
+export interface RedisAdapterConfig {
+  /** Redis server hostname */
+  host: string;
+
+  /** Redis server port */
+  port: number;
+
+  /** Optional password for authentication */
+  password?: string;
+
+  /** Redis database number (0-15) */
+  db?: number;
+
+  /**
+   * Retry strategy for connection failures
+   *
+   * Function that returns delay in milliseconds based on attempt number.
+   * Return null to stop retrying.
+   *
+   * @param times - Number of connection attempts
+   * @returns Delay in milliseconds, or null to stop
+   *
+   * @default Exponential backoff: min(times * 50, 2000)
+   */
+  retryStrategy?: (times: number) => number | null;
+
+  /**
+   * Connection timeout in milliseconds
+   *
+   * @default 10000 (10 seconds)
+   */
+  connectTimeout?: number;
+
+  /**
+   * Command timeout in milliseconds
+   *
+   * @default 5000 (5 seconds)
+   */
+  commandTimeout?: number;
+
+  /**
+   * Maximum number of retry attempts
+   *
+   * @default 10
+   */
+  maxRetriesPerRequest?: number;
+
+  /**
+   * Enable offline queue
+   *
+   * When true, commands are queued while disconnected.
+   *
+   * @default true
+   */
+  enableOfflineQueue?: boolean;
+}
+
+/**
+ * Redis Pub/Sub interface for cross-server event propagation
+ *
+ * Enables cache invalidation events to propagate across multiple servers
+ * connected to the same Redis instance.
+ *
+ * **Pattern Subscriptions:**
+ * - Uses Redis PSUBSCRIBE for pattern matching
+ * - Patterns like "cache:*" match all cache events
+ * - Each subscriber creates a separate Redis connection
+ *
+ * **Event Flow:**
+ * 1. Server A: `cache.set('user:123', data)` → publishes event
+ * 2. Redis: Broadcasts event to all subscribers
+ * 3. Server B: Receives event → invalidates local cache
+ *
+ * @example Basic pub/sub
+ * ```typescript
+ * const pubsub = adapter.createPubSub('server-a');
+ * await pubsub.connect();
+ *
+ * // Subscribe to all cache events
+ * const unsubscribe = pubsub.subscribe('cache:*', (event) => {
+ *   console.log('Cache change:', event.key);
+ * });
+ *
+ * // Publish an event
+ * await pubsub.publish('cache:*', {
+ *   type: 'set',
+ *   key: 'user:123',
+ *   value: 'data',
+ *   timestamp: Date.now(),
+ *   serverId: 'server-a'
+ * });
+ *
+ * // Cleanup
+ * unsubscribe();
+ * await pubsub.disconnect();
+ * ```
+ *
+ * @example Multi-server coordination
+ * ```typescript
+ * // Server A
+ * const pubsubA = adapterA.createPubSub('server-a');
+ * await pubsubA.connect();
+ * pubsubA.subscribe('cache:*', (event) => {
+ *   if (event.serverId !== 'server-a') {
+ *     // Event from another server - invalidate local cache
+ *     localCache.delete(event.key);
+ *   }
+ * });
+ *
+ * // Server B
+ * const pubsubB = adapterB.createPubSub('server-b');
+ * await pubsubB.connect();
+ * pubsubB.subscribe('cache:*', (event) => {
+ *   if (event.serverId !== 'server-b') {
+ *     localCache.delete(event.key);
+ *   }
+ * });
+ * ```
+ */
+export interface RedisPubSub {
+  /**
+   * Publish event to pattern
+   *
+   * Broadcasts event to all servers subscribed to the pattern.
+   * Event is serialized to JSON before publishing.
+   *
+   * @param pattern - Redis pattern (e.g., "cache:*")
+   * @param event - Cache change event
+   *
+   * @throws {CacheOperationError} If publish fails
+   *
+   * @example
+   * ```typescript
+   * await pubsub.publish('cache:*', {
+   *   type: 'set',
+   *   key: 'user:123',
+   *   value: '{"name":"Alice"}',
+   *   timestamp: Date.now(),
+   *   serverId: 'server-a'
+   * });
+   * ```
+   */
+  publish(pattern: string, event: CacheChangeEvent): Promise<void>;
+
+  /**
+   * Subscribe to pattern
+   *
+   * Receives events from all servers publishing to the pattern.
+   * Uses Redis PSUBSCRIBE for pattern matching.
+   *
+   * **Important:** Subscriptions are maintained across reconnections.
+   *
+   * @param pattern - Redis pattern (e.g., "cache:*")
+   * @param handler - Event handler function
+   * @returns Cleanup function to unsubscribe
+   *
+   * @example
+   * ```typescript
+   * const unsubscribe = pubsub.subscribe('cache:user:*', (event) => {
+   *   console.log(`User ${event.key} changed:`, event.type);
+   * });
+   *
+   * // Later: cleanup
+   * unsubscribe();
+   * ```
+   */
+  subscribe(pattern: string, handler: (event: CacheChangeEvent) => void): Promise<() => void>;
+
+  /**
+   * Connect to Redis pub/sub
+   *
+   * Creates a separate Redis connection for pub/sub.
+   * **Note:** This is separate from the main adapter connection.
+   *
+   * @throws {CacheConnectionError} If connection fails
+   *
+   * @example
+   * ```typescript
+   * const pubsub = adapter.createPubSub('server-a');
+   * await pubsub.connect();
+   * ```
+   */
+  connect(): Promise<void>;
+
+  /**
+   * Disconnect from Redis pub/sub
+   *
+   * Closes the pub/sub connection and cleans up subscriptions.
+   *
+   * @example
+   * ```typescript
+   * await pubsub.disconnect();
+   * ```
+   */
+  disconnect(): Promise<void>;
+}

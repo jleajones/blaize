@@ -32,6 +32,7 @@ export { CacheService } from './cache-service';
  * Memory cache adapter with LRU eviction and TTL support
  */
 export { MemoryAdapter } from './storage';
+export { RedisAdapter } from './storage';
 
 // Placeholder exports - will be implemented in subsequent tasks
 export const version = config.version;
