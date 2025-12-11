@@ -206,3 +206,83 @@ export interface CachePluginServices {
   /** Cache service instance */
   cache: CacheService;
 }
+
+// ============================================================================
+// Error Details Interfaces
+// ============================================================================
+
+/**
+ * Base cache error details
+ *
+ * Common fields included in all cache error details.
+ */
+export interface CacheErrorDetails {
+  /** Operation that failed (e.g., 'get', 'set') */
+  operation?: string;
+
+  /** Cache key involved in the error */
+  key?: string;
+
+  /** Adapter name (e.g., 'MemoryAdapter', 'RedisAdapter') */
+  adapter?: string;
+}
+
+/**
+ * Connection error details
+ *
+ * Details specific to cache adapter connection failures.
+ */
+export interface CacheConnectionErrorDetails extends CacheErrorDetails {
+  /** Host address of the cache server */
+  host?: string;
+
+  /** Port number of the cache server */
+  port?: number;
+
+  /** Reason for connection failure */
+  reason?: string;
+
+  /** Original error message from underlying driver */
+  originalError?: string;
+}
+
+/**
+ * Operation error details
+ *
+ * Details specific to cache operation failures.
+ */
+export interface CacheOperationErrorDetails extends CacheErrorDetails {
+  /** Cache method that failed */
+  method?: 'get' | 'set' | 'delete' | 'mget' | 'mset';
+
+  /** TTL value if applicable */
+  ttl?: number;
+
+  /** Value involved (truncated for large values) */
+  value?: unknown;
+
+  /** Original error message from underlying driver */
+  originalError?: string;
+}
+
+/**
+ * Validation error details
+ *
+ * Details specific to cache validation failures.
+ */
+export interface CacheValidationErrorDetails extends CacheErrorDetails {
+  /** Field that failed validation */
+  field?: string;
+
+  /** Expected type or constraint */
+  expectedType?: string;
+
+  /** Type that was actually received */
+  receivedType?: string;
+
+  /** Validation constraint that failed */
+  constraint?: string;
+
+  /** Value that failed validation */
+  value?: unknown;
+}
