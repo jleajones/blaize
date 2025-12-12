@@ -10,10 +10,10 @@
 import { createPlugin, createMiddleware } from 'blaizejs';
 
 import { CacheService } from './cache-service';
-import { MemoryAdapter } from './storage';
+import { MemoryAdapter, RedisAdapter } from './storage';
 import pkg from '../package.json';
 
-import type { CacheAdapter, CachePluginConfig, CachePluginServices } from './types';
+import type { CacheAdapter, CachePluginConfig, CachePluginServices, RedisPubSub } from './types';
 import type { BlaizeLogger } from 'blaizejs';
 
 /**
@@ -81,6 +81,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
     // ========================================================================
 
     let adapter: CacheAdapter;
+    let pubsub: RedisPubSub | undefined;
     let cacheService: CacheService;
 
     // ========================================================================
@@ -136,9 +137,6 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
             defaultTtl: config.defaultTtl,
           });
 
-        // Create cache service
-        cacheService = new CacheService(adapter, config.serverId);
-
         // Connect to adapter if it supports connections
         if (adapter.connect) {
           pluginLogger.debug('Connecting to cache adapter');
@@ -147,6 +145,23 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
             adapter: adapter.constructor.name,
           });
         }
+
+        if (config.serverId && adapter instanceof RedisAdapter) {
+          pubsub = adapter.createPubSub(config.serverId);
+          await pubsub.connect();
+
+          pluginLogger.info('Redis pub/sub connected', {
+            serverId: config.serverId,
+          });
+        }
+
+        // Create cache service
+        cacheService = new CacheService({
+          adapter,
+          pubsub,
+          serverId: config.serverId,
+          logger: pluginLogger,
+        });
 
         pluginLogger.info('Cache plugin initialized', {
           adapter: adapter.constructor.name,

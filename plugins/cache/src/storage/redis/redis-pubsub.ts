@@ -203,6 +203,14 @@ export class RedisPubSubImpl implements RedisPubSub {
         await this.subscriber.punsubscribe(...Array.from(this.activePatterns));
       }
 
+      // CRITICAL: Remove event listeners BEFORE closing connections
+      // This prevents memory leaks and ensures clean test isolation
+      this.subscriber.removeAllListeners('pmessage');
+      this.subscriber.removeAllListeners('ready');
+      this.subscriber.removeAllListeners('error');
+      this.subscriber.removeAllListeners('close');
+      this.publisher.removeAllListeners('error');
+
       // Close connections
       await Promise.all([this.publisher.quit(), this.subscriber.quit()]);
 
@@ -211,7 +219,9 @@ export class RedisPubSubImpl implements RedisPubSub {
       this.activePatterns.clear();
       this.isConnected = false;
     } catch (error) {
-      // Force disconnect on error
+      // Force disconnect on error - remove all listeners first
+      this.subscriber.removeAllListeners();
+      this.publisher.removeAllListeners();
       await Promise.all([this.publisher.disconnect(), this.subscriber.disconnect()]);
 
       this.subscriptions.clear();
@@ -304,9 +314,16 @@ export class RedisPubSubImpl implements RedisPubSub {
 
       // Subscribe to pattern in Redis
       if (this.isConnected) {
-        this.subscriber.psubscribe(pattern).catch(error => {
-          console.error(`Failed to subscribe to pattern ${pattern}:`, error);
-        });
+        try {
+          await this.subscriber.psubscribe(pattern);
+        } catch (error) {
+          throw new CacheOperationError('Redis PSUBSCRIBE operation failed', {
+            operation: 'subscribe',
+            adapter: 'RedisPubSub',
+            value: pattern,
+            originalError: (error as Error).message,
+          });
+        }
       }
 
       this.activePatterns.add(pattern);

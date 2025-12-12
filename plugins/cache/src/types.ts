@@ -3,8 +3,8 @@
  *
  * @packageDocumentation
  */
-
-import { CacheService } from './cache-service';
+import type { CacheService } from './cache-service';
+import type { BlaizeLogger } from 'blaizejs';
 
 /**
  * Cache adapter statistics
@@ -175,12 +175,32 @@ export interface CacheChangeEvent {
 
   /** Server ID for multi-server coordination (optional) */
   serverId?: string;
+
+  /** Sequence number for event ordering (optional) */
+  sequence?: number;
 }
 
 /**
  * Cache watch handler function
  */
 export type CacheWatchHandler = (event: CacheChangeEvent) => void | Promise<void>;
+
+/**
+ * Cache service options
+ */
+export interface CacheServiceOptions {
+  /** Cache adapter implementation */
+  adapter: CacheAdapter;
+
+  /** Redis pub/sub for multi-server coordination (optional) */
+  pubsub?: RedisPubSub;
+
+  /** Server ID for multi-server coordination (optional) */
+  serverId?: string;
+
+  /** Logger instance for structured logging */
+  logger: BlaizeLogger;
+}
 
 /**
  * Cache plugin configuration

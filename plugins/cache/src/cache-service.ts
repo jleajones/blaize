@@ -6,7 +6,15 @@
 
 import { EventEmitter } from 'node:events';
 
-import type { CacheAdapter, CacheChangeEvent, CacheStats, CacheWatchHandler } from './types';
+import type {
+  CacheAdapter,
+  CacheStats,
+  RedisPubSub,
+  CacheChangeEvent,
+  CacheWatchHandler,
+  CacheServiceOptions,
+} from './types';
+import type { BlaizeLogger } from 'blaizejs';
 
 /**
  * Cache service with automatic event emission
@@ -14,43 +22,127 @@ import type { CacheAdapter, CacheChangeEvent, CacheStats, CacheWatchHandler } fr
  * Extends EventEmitter to provide:
  * - Automatic event emission on all mutations (set, delete, mset)
  * - Pattern-based watching (exact string or regex)
- * - Multi-server coordination support
+ * - Multi-server coordination via Redis pub/sub
  * - SSE integration
  *
- * @example
+ * **Multi-Server Coordination:**
+ * When pubsub is provided, cache changes are propagated to all servers.
+ * Each server filters its own events by serverId to prevent echoes.
+ *
+ * **IMPORTANT:** Call `init()` after construction to set up pub/sub subscriptions.
+ *
+ * @example Local mode (single server)
  * ```typescript
  * const adapter = new MemoryAdapter();
- * const service = new CacheService(adapter);
+ * const service = new CacheService({ adapter, logger });
+ * await service.init();
  *
  * // Watch for changes
- * const unsubscribe = service.watch('user:*', (event) => {
- *   console.log('Cache changed:', event.key, event.type);
+ * service.watch('user:*', (event) => {
+ *   console.log('Cache changed:', event.key);
  * });
+ * ```
  *
- * // Automatic event emission
- * await service.set('user:123', 'data'); // Emits 'cache:change' event
+ * @example Multi-server mode
+ * ```typescript
+ * const adapter = new RedisAdapter({ host: 'localhost' });
+ * const pubsub = adapter.createPubSub('server-a');
+ * await pubsub.connect();
  *
- * // Cleanup
- * unsubscribe();
+ * const service = new CacheService({
+ *   adapter,
+ *   pubsub,
+ *   serverId: 'server-a',
+ *   logger
+ * });
+ * await service.init();
+ *
+ * // Changes propagate to all servers
+ * await service.set('user:123', 'data');
  * ```
  */
 export class CacheService extends EventEmitter {
   private adapter: CacheAdapter;
+  private pubsub?: RedisPubSub;
   private serverId?: string;
+  private logger: BlaizeLogger;
+  private sequence: number = 0;
+  private pubsubCleanup?: () => void;
 
   /**
    * Create a new CacheService
    *
-   * @param adapter - Cache adapter implementation
-   * @param serverId - Optional server ID for multi-server coordination
+   * **IMPORTANT:** Call `init()` after construction.
+   *
+   * @param options - Service configuration options
+   *
+   * @example Local mode
+   * ```typescript
+   * const service = new CacheService({
+   *   adapter: new MemoryAdapter(),
+   *   logger
+   * });
+   * await service.init();
+   * ```
+   *
+   * @example Multi-server mode
+   * ```typescript
+   * const adapter = new RedisAdapter({ host: 'localhost' });
+   * const pubsub = adapter.createPubSub('server-a');
+   * await pubsub.connect();
+   *
+   * const service = new CacheService({
+   *   adapter,
+   *   pubsub,
+   *   serverId: 'server-a',
+   *   logger
+   * });
+   * await service.init();
+   * ```
    */
-  constructor(adapter: CacheAdapter, serverId?: string) {
+  constructor(options: CacheServiceOptions) {
     super();
-    this.adapter = adapter;
-    this.serverId = serverId;
+    this.adapter = options.adapter;
+    this.pubsub = options.pubsub;
+    this.serverId = options.serverId;
+    this.logger = options.logger.child({
+      service: 'CacheService',
+      serverId: options.serverId,
+    });
 
     // Increase listener limit for SSE subscriptions
     this.setMaxListeners(1000);
+  }
+
+  /**
+   * Initialize the cache service
+   *
+   * Sets up pub/sub subscriptions if configured.
+   * Must be called after construction before using the service.
+   *
+   * @throws {Error} If pub/sub setup fails
+   *
+   * @example
+   * ```typescript
+   * const service = new CacheService({ adapter, pubsub, serverId, logger });
+   * await service.init();  // ← Call this before using
+   * await service.set('key', 'value');
+   * ```
+   */
+  async init(): Promise<void> {
+    this.logger.debug('Initializing cache service', {
+      hasPubSub: !!this.pubsub,
+      serverId: this.serverId,
+    });
+
+    // Subscribe to pub/sub events if available
+    if (this.pubsub) {
+      await this.setupPubSub();
+    }
+
+    this.logger.info('Cache service initialized', {
+      multiServer: !!this.pubsub,
+    });
   }
 
   /**
@@ -69,6 +161,7 @@ export class CacheService extends EventEmitter {
    * Set value with optional TTL
    *
    * Automatically emits 'cache:change' event after successful write.
+   * In multi-server mode, event propagates to all connected servers.
    *
    * @param key - Cache key
    * @param value - Value to store
@@ -84,6 +177,7 @@ export class CacheService extends EventEmitter {
       value,
       timestamp: Date.now(),
       serverId: this.serverId,
+      sequence: ++this.sequence,
     });
   }
 
@@ -91,6 +185,7 @@ export class CacheService extends EventEmitter {
    * Delete key from cache
    *
    * Automatically emits 'cache:change' event if key existed.
+   * In multi-server mode, event propagates to all connected servers.
    *
    * @param key - Cache key
    * @returns true if key existed and was deleted, false otherwise
@@ -105,6 +200,7 @@ export class CacheService extends EventEmitter {
         key,
         timestamp: Date.now(),
         serverId: this.serverId,
+        sequence: ++this.sequence,
       });
     }
 
@@ -127,6 +223,7 @@ export class CacheService extends EventEmitter {
    * Set multiple keys
    *
    * Automatically emits 'cache:change' event for each key.
+   * In multi-server mode, events propagate to all connected servers.
    *
    * @param entries - Array of [key, value, ttl?] tuples
    */
@@ -142,6 +239,7 @@ export class CacheService extends EventEmitter {
         value,
         timestamp,
         serverId: this.serverId,
+        sequence: ++this.sequence,
       });
     }
   }
@@ -151,6 +249,8 @@ export class CacheService extends EventEmitter {
    *
    * Supports both exact string matching and regex patterns.
    * Returns cleanup function for unsubscribing.
+   *
+   * Handler errors are logged but do not crash the service.
    *
    * @param pattern - Exact key string or regex pattern
    * @param handler - Function to call when matching change occurs
@@ -187,14 +287,28 @@ export class CacheService extends EventEmitter {
           // Handle async errors
           if (result instanceof Promise) {
             result.catch(error => {
-              // Emit error event instead of crashing
-              this.emit('error', error);
+              this.logger.error('Async watch handler error', {
+                error: {
+                  message: error.message,
+                  stack: error.stack,
+                  name: error.name,
+                },
+                pattern: pattern.toString(),
+                event,
+              });
             });
           }
         }
       } catch (error) {
-        // Emit error event instead of crashing
-        this.emit('error', error);
+        this.logger.error('Watch handler error', {
+          error: {
+            message: (error as Error).message,
+            stack: (error as Error).stack,
+            name: (error as Error).name,
+          },
+          pattern: pattern.toString(),
+          event,
+        });
       }
     };
 
@@ -251,15 +365,53 @@ export class CacheService extends EventEmitter {
    * Disconnect from adapter
    *
    * Calls adapter's disconnect method if available.
-   * Also removes all event listeners.
+   * Also removes all event listeners and cleans up pub/sub.
+   *
+   * Errors during disconnect are logged but do not throw.
    */
   async disconnect(): Promise<void> {
+    this.logger.debug('Disconnecting cache service');
+
+    // Cleanup pub/sub subscription
+    if (this.pubsubCleanup) {
+      this.pubsubCleanup();
+      this.pubsubCleanup = undefined;
+    }
+
+    // Disconnect pub/sub
+    if (this.pubsub) {
+      try {
+        await this.pubsub.disconnect();
+      } catch (error) {
+        this.logger.error('Error disconnecting pub/sub', {
+          error: {
+            message: (error as Error).message,
+            stack: (error as Error).stack,
+            name: (error as Error).name,
+          },
+        });
+      }
+    }
+
+    // Disconnect adapter
     if (this.adapter.disconnect) {
-      await this.adapter.disconnect();
+      try {
+        await this.adapter.disconnect();
+      } catch (error) {
+        this.logger.error('Error disconnecting adapter', {
+          error: {
+            message: (error as Error).message,
+            stack: (error as Error).stack,
+            name: (error as Error).name,
+          },
+        });
+      }
     }
 
     // Remove all listeners
     this.removeAllListeners();
+
+    this.logger.info('Cache service disconnected');
   }
 
   // ========================================================================
@@ -267,18 +419,89 @@ export class CacheService extends EventEmitter {
   // ========================================================================
 
   /**
+   * Set up Redis pub/sub subscription
+   *
+   * Subscribes to cache events from other servers and emits them locally.
+   * Filters out own events by serverId to prevent echoes.
+   *
+   * @throws {Error} If pub/sub subscription fails
+   * @private
+   */
+  private async setupPubSub(): Promise<void> {
+    if (!this.pubsub) return;
+
+    this.logger.debug('Setting up pub/sub subscription', {
+      pattern: 'cache:*',
+    });
+
+    // Subscribe to all cache events
+    this.pubsubCleanup = await this.pubsub.subscribe('cache:*', event => {
+      // Filter out own events to prevent echoes
+      if (event.serverId === this.serverId) {
+        return;
+      }
+
+      this.logger.debug('Received pub/sub event from other server', {
+        serverId: event.serverId,
+        type: event.type,
+        key: event.key,
+      });
+
+      // Emit event locally for watchers
+      // This allows other servers' changes to trigger local watches
+      try {
+        this.emit('cache:change', event);
+      } catch (error) {
+        this.logger.error('Error emitting pub/sub event locally', {
+          error: {
+            message: (error as Error).message,
+            stack: (error as Error).stack,
+            name: (error as Error).name,
+          },
+          event,
+        });
+      }
+    });
+
+    this.logger.info('Pub/sub subscription established');
+  }
+
+  /**
    * Emit cache change event
    *
-   * Error handling prevents listener crashes from breaking service.
+   * Emits event locally and publishes to other servers if pubsub is available.
+   * Errors are logged but do not throw (non-critical operation).
    *
    * @param event - Cache change event
+   * @private
    */
   private emitChange(event: CacheChangeEvent): void {
+    // Emit locally first
     try {
       this.emit('cache:change', event);
     } catch (error) {
-      // Emit error event instead of crashing service
-      this.emit('error', error);
+      this.logger.error('Error emitting change event locally', {
+        error: {
+          message: (error as Error).message,
+          stack: (error as Error).stack,
+          name: (error as Error).name,
+        },
+        event,
+      });
+    }
+
+    // Publish to other servers if pubsub available
+    if (this.pubsub) {
+      this.pubsub.publish('cache:*', event).catch(error => {
+        this.logger.error('Error publishing event to pub/sub', {
+          error: {
+            message: (error as Error).message,
+            stack: (error as Error).stack,
+            name: (error as Error).name,
+          },
+          event,
+        });
+      });
     }
   }
 }

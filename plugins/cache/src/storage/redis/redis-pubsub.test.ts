@@ -21,7 +21,7 @@ const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 const TEST_CONFIG: RedisAdapterConfig = {
   host: REDIS_HOST,
   port: REDIS_PORT,
-  db: 15, // Use db 15 for tests
+  db: 14, // Use db 14 for tests
 };
 
 // ============================================================================
@@ -51,6 +51,16 @@ describe('Redis Pub/Sub Integration Tests', () => {
   let pubsubA: RedisPubSub;
   let pubsubB: RedisPubSub;
 
+  beforeAll(async () => {
+    // Flush database before starting tests
+    const cleanupAdapter = new RedisAdapter(TEST_CONFIG);
+    await cleanupAdapter.connect();
+    const client = (cleanupAdapter as any).client;
+    await client.flushdb();
+    await cleanupAdapter.disconnect();
+    await wait(200);
+  });
+
   beforeEach(async () => {
     adapter = createTestAdapter();
     await adapter.connect();
@@ -67,6 +77,13 @@ describe('Redis Pub/Sub Integration Tests', () => {
     if (pubsubA) await pubsubA.disconnect();
     if (pubsubB) await pubsubB.disconnect();
     if (adapter) await adapter.disconnect();
+
+    await wait(1000);
+  });
+
+  afterAll(async () => {
+    // Ensure complete cleanup after all tests
+    await wait(500);
   });
 
   // ==========================================================================
@@ -144,7 +161,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       const eventsReceived: CacheChangeEvent[] = [];
 
       // Subscribe on Server A
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe('cache:*', event => {
         eventsReceived.push(event);
       });
 
@@ -175,7 +192,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       const eventsOnB: CacheChangeEvent[] = [];
 
       // Subscribe on Server B
-      pubsubB.subscribe('cache:*', event => {
+      await pubsubB.subscribe('cache:*', event => {
         eventsOnB.push(event);
       });
 
@@ -201,11 +218,11 @@ describe('Redis Pub/Sub Integration Tests', () => {
       const eventsOnB: CacheChangeEvent[] = [];
 
       // Subscribe both servers
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe('cache:*', event => {
         eventsOnA.push(event);
       });
 
-      pubsubB.subscribe('cache:*', event => {
+      await pubsubB.subscribe('cache:*', event => {
         eventsOnB.push(event);
       });
 
@@ -249,9 +266,9 @@ describe('Redis Pub/Sub Integration Tests', () => {
       const eventsOnC: CacheChangeEvent[] = [];
 
       // Subscribe all three servers
-      pubsubA.subscribe('cache:*', event => eventsOnA.push(event));
-      pubsubB.subscribe('cache:*', event => eventsOnB.push(event));
-      pubsubC.subscribe('cache:*', event => eventsOnC.push(event));
+      await pubsubA.subscribe('cache:*', event => eventsOnA.push(event));
+      await pubsubB.subscribe('cache:*', event => eventsOnB.push(event));
+      await pubsubC.subscribe('cache:*', event => eventsOnC.push(event));
 
       // Publish from Server A
       await pubsubA.publish('cache:*', {
@@ -281,7 +298,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     test('can filter own events by serverId', async () => {
       const eventsFromOthers: CacheChangeEvent[] = [];
 
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe('cache:*', event => {
         // Filter out own events
         if (event.serverId !== 'server-a') {
           eventsFromOthers.push(event);
@@ -318,14 +335,14 @@ describe('Redis Pub/Sub Integration Tests', () => {
       const eventsForB: CacheChangeEvent[] = [];
 
       // Server A filters its own events
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe('cache:*', event => {
         if (event.serverId !== 'server-a') {
           eventsForA.push(event);
         }
       });
 
       // Server B filters its own events
-      pubsubB.subscribe('cache:*', event => {
+      await pubsubB.subscribe('cache:*', event => {
         if (event.serverId !== 'server-b') {
           eventsForB.push(event);
         }
@@ -371,9 +388,9 @@ describe('Redis Pub/Sub Integration Tests', () => {
       const handler3Events: CacheChangeEvent[] = [];
 
       // Subscribe with multiple handlers
-      pubsubA.subscribe('cache:*', event => handler1Events.push(event));
-      pubsubA.subscribe('cache:*', event => handler2Events.push(event));
-      pubsubA.subscribe('cache:*', event => handler3Events.push(event));
+      await pubsubA.subscribe('cache:*', event => handler1Events.push(event));
+      await pubsubA.subscribe('cache:*', event => handler2Events.push(event));
+      await pubsubA.subscribe('cache:*', event => handler3Events.push(event));
 
       await pubsubA.publish('cache:*', {
         type: 'set',
@@ -450,7 +467,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     test('handles set events', async () => {
       const eventsReceived: CacheChangeEvent[] = [];
 
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe('cache:*', event => {
         eventsReceived.push(event);
       });
 
@@ -472,7 +489,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     test('handles delete events', async () => {
       const eventsReceived: CacheChangeEvent[] = [];
 
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe('cache:*', event => {
         eventsReceived.push(event);
       });
 
@@ -493,7 +510,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     test('handles events without serverId', async () => {
       const eventsReceived: CacheChangeEvent[] = [];
 
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe('cache:*', event => {
         eventsReceived.push(event);
       });
 
@@ -560,7 +577,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     test('handles rapid event publishing', async () => {
       const eventsReceived: CacheChangeEvent[] = [];
 
-      pubsubB.subscribe('cache:*', event => {
+      await pubsubB.subscribe('cache:*', event => {
         eventsReceived.push(event);
       });
 
@@ -591,7 +608,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       // Create 20 subscribers
       for (let i = 0; i < 20; i++) {
         let count = 0;
-        pubsubA.subscribe('cache:*', () => {
+        await pubsubA.subscribe('cache:*', () => {
           count++;
         });
         eventCounts.push(count);

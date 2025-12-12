@@ -9,6 +9,7 @@
  * - Multi-server coordination
  * - Adapter delegation
  */
+import { createMockLogger } from '@blaizejs/testing-utils';
 
 import { CacheService } from './cache-service';
 import { MemoryAdapter } from './storage/memory';
@@ -21,7 +22,7 @@ describe('CacheService', () => {
 
   beforeEach(() => {
     adapter = new MemoryAdapter({ maxEntries: 100 });
-    service = new CacheService(adapter);
+    service = new CacheService({ adapter, logger: createMockLogger() });
   });
 
   afterEach(async () => {
@@ -95,7 +96,11 @@ describe('CacheService', () => {
     });
 
     test('includes serverId if provided', async () => {
-      const serviceWithId = new CacheService(adapter, 'server-123');
+      const serviceWithId = new CacheService({
+        adapter,
+        serverId: 'server-123',
+        logger: createMockLogger(),
+      });
       const events: CacheChangeEvent[] = [];
       serviceWithId.on('cache:change', event => events.push(event));
 
@@ -124,7 +129,10 @@ describe('CacheService', () => {
         set: vi.fn().mockRejectedValue(new Error('Adapter error')),
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService(mockAdapter);
+      const serviceWithMock = new CacheService({
+        adapter: mockAdapter,
+        logger: createMockLogger(),
+      });
       const events: CacheChangeEvent[] = [];
       serviceWithMock.on('cache:change', event => events.push(event));
 
@@ -165,7 +173,11 @@ describe('CacheService', () => {
     });
 
     test('includes serverId if provided', async () => {
-      const serviceWithId = new CacheService(adapter, 'server-456');
+      const serviceWithId = new CacheService({
+        adapter,
+        serverId: 'server-456',
+        logger: createMockLogger(),
+      });
       await serviceWithId.set('key1', 'value1');
 
       const events: CacheChangeEvent[] = [];
@@ -343,39 +355,6 @@ describe('CacheService', () => {
   // ==========================================================================
 
   describe('error handling in listeners', () => {
-    test('emits error event when sync handler throws', async () => {
-      const errorHandler = vi.fn();
-      service.on('error', errorHandler);
-
-      service.watch('key1', () => {
-        throw new Error('Handler error');
-      });
-
-      await service.set('key1', 'value1');
-
-      expect(errorHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Handler error' })
-      );
-    });
-
-    test('emits error event when async handler rejects', async () => {
-      const errorHandler = vi.fn();
-      service.on('error', errorHandler);
-
-      service.watch('key1', async () => {
-        throw new Error('Async handler error');
-      });
-
-      await service.set('key1', 'value1');
-
-      // Wait for async error
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      expect(errorHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Async handler error' })
-      );
-    });
-
     test('continues operation even if listener throws', async () => {
       const handler1 = vi.fn(() => {
         throw new Error('Handler 1 error');
@@ -428,7 +407,10 @@ describe('CacheService', () => {
         healthCheck: undefined,
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService(mockAdapter);
+      const serviceWithMock = new CacheService({
+        adapter: mockAdapter,
+        logger: createMockLogger(),
+      });
       const health = await serviceWithMock.healthCheck();
 
       expect(health.healthy).toBe(true);
@@ -449,7 +431,10 @@ describe('CacheService', () => {
         connect: vi.fn().mockResolvedValue(undefined),
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService(mockAdapter);
+      const serviceWithMock = new CacheService({
+        adapter: mockAdapter,
+        logger: createMockLogger(),
+      });
 
       await serviceWithMock.connect();
 
@@ -464,7 +449,10 @@ describe('CacheService', () => {
         connect: undefined,
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService(mockAdapter);
+      const serviceWithMock = new CacheService({
+        adapter: mockAdapter,
+        logger: createMockLogger(),
+      });
 
       await expect(serviceWithMock.connect()).resolves.toBeUndefined();
 
@@ -479,7 +467,10 @@ describe('CacheService', () => {
         disconnect: vi.fn().mockResolvedValue(undefined),
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService(mockAdapter);
+      const serviceWithMock = new CacheService({
+        adapter: mockAdapter,
+        logger: createMockLogger(),
+      });
 
       await serviceWithMock.disconnect();
 
