@@ -527,3 +527,24 @@ export interface RedisPubSub {
    */
   disconnect(): Promise<void>;
 }
+
+/**
+ * Dashboard data structure
+ */
+export interface DashboardData {
+  /** Cache statistics */
+  stats: CacheStats;
+
+  /** Calculated hit rate (0-1) */
+  hitRate: number;
+
+  /** Recent cache keys (last 50) */
+  recentKeys: Array<{
+    key: string;
+    size: number;
+    ttl: number | null;
+  }>;
+
+  /** Current timestamp */
+  timestamp: number;
+}
