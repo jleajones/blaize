@@ -11,6 +11,13 @@ export async function testClient() {
     const _helloResponse = await client.$get.getHello();
     const _helloPostResponse = await client.$post.postHello({ body: { name: 'World' } });
 
+    const cacheEvents = await client.$sse.getCacheEvents({
+      query: { pattern: 'user:*' },
+    });
+    cacheEvents.on('cache.set', data => {
+      console.log('Cache Set Event:', data);
+    });
+
     const queueStream = await client.$sse.getQueueStream({
       query: { jobId: 'emailQueue' },
     });

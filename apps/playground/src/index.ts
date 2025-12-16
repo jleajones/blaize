@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Blaize } from 'blaizejs';
 
 import { createSecurityMiddleware } from '@blaizejs/middleware-security';
+import { createCachePlugin } from '@blaizejs/plugin-cache';
 import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
 import { createQueuePlugin } from '@blaizejs/plugin-queue';
 
@@ -119,6 +120,14 @@ const queuePlugin = createQueuePlugin({
   defaultMaxRetries: 3,
 });
 
+// ============================================================================
+// Cache Plugin
+// ============================================================================
+const cachePlugin = createCachePlugin({});
+
+// ============================================================================
+// Security Middleware
+// ============================================================================
 const securityMiddleware = createSecurityMiddleware();
 
 export const server = Blaize.createServer({
@@ -134,7 +143,7 @@ export const server = Blaize.createServer({
       headerWhitelist: ['content-type', 'authorization', 'cookie'],
     }),
   ],
-  plugins: [metricsPlugin, queuePlugin],
+  plugins: [metricsPlugin, queuePlugin, cachePlugin],
 });
 
 try {

@@ -16,6 +16,7 @@
     "blaizejs": "workspace:*",
     "@blaizejs/client": "workspace:*",
     "@blaizejs/middleware-security": "workspace:*",
+    "@blaizejs/plugin-cache": "workspace:*",
     "@blaizejs/plugin-metrics": "workspace:*",
     "@blaizejs/plugin-queue": "workspace:*",
     "zod": "^3.24.4"
