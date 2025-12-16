@@ -4,8 +4,12 @@
   "version": "0.1.17",
   "description": "Development playground for BlaizeJS",
   "scripts": {
-    "dev": "NODE_ENV=development tsx --watch src/index.ts ",
     "build": "tsc",
+    "dev": "NODE_ENV=development tsx --watch src/index.ts ",
+    "dev:all": "docker-compose up -d && pnpm run dev",
+    "dev:clean": "docker-compose down -v",
+    "dev:down": "docker-compose down",
+    "dev:services": "docker-compose up -d",
     "start": "node dist/index.js"
   },
   "dependencies": {

@@ -4,7 +4,7 @@
  * Tests verify all CRUD operations, filtering, statistics,
  * and edge cases.
  */
-import { InMemoryStorage, createInMemoryStorage } from './in-memory';
+import { InMemoryStorage, createInMemoryStorage } from './memory';
 
 import type { Job, JobPriority } from '../types';
 

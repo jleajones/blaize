@@ -18,7 +18,7 @@ import {
   jobFailedEventSchema,
   jobCancelledEventSchema,
 } from './schema';
-import { InMemoryStorage } from './storage/in-memory';
+import { InMemoryStorage } from './storage/memory';
 
 import type { QueueStorageAdapter, JobError } from './types';
 

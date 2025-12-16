@@ -8,7 +8,7 @@ import { createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
 import { QueueNotFoundError } from './errors';
 import { QueueService } from './queue-service';
-import { InMemoryStorage } from './storage/in-memory';
+import { InMemoryStorage } from './storage/memory';
 
 import type { JobSubscription } from './types';
 

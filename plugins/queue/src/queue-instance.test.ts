@@ -17,7 +17,7 @@ import { createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
 import { HandlerAlreadyRegisteredError } from './errors';
 import { QueueInstance } from './queue-instance';
-import { InMemoryStorage } from './storage/in-memory';
+import { InMemoryStorage } from './storage/memory';
 
 import type { JobHandler, QueueStorageAdapter, QueueConfig } from './types';
 
