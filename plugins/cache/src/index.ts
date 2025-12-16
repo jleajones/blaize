@@ -34,5 +34,28 @@ export { CacheService } from './cache-service';
 export { MemoryAdapter } from './storage';
 export { RedisAdapter } from './storage';
 
+/**
+ * Route schema for cache management
+ */
+export {
+  cacheStatsResponseSchema,
+  cacheDashboardQuerySchema,
+  cacheDeleteEventSchema,
+  cacheEventsQuerySchema,
+  cacheEventsSchema,
+  cacheEvictionEventSchema,
+  cacheSetEventSchema,
+} from './schema';
+
+/**
+ * Routes and handlers for cache management
+ */
+export {
+  cacheStatsHandler,
+  cacheDashboardHandler,
+  cacheEventsHandler,
+  cachePrometheusHandler,
+} from './routes';
+
 // Placeholder exports - will be implemented in subsequent tasks
 export const version = config.version;
