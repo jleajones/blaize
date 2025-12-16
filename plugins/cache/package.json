@@ -1,5 +1,5 @@
 {
-  "name": "@blaizejs/plugin-queue",
+  "name": "@blaizejs/plugin-cache",
   "version": "0.0.0",
   "description": "Event-driven cache plugin for BlaizeJS with Redis support and multi-server coordination",
   "author": "BlaizeJS Contributors",
