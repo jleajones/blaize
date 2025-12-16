@@ -1,5 +1,13 @@
 # blaizejs
 
+## 0.7.1
+
+### Patch Changes
+
+- 82cc912: 🚀 update queue plugin to work with blaizejs applications
+- 7ad7571: 🚀 queue plugin
+- 15684e4: ✨ Add logger to SSE routes
+
 ## 0.7.0
 
 ### Minor Changes

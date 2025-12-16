@@ -1,7 +1,7 @@
 ---
 'blaizejs': patch
-'@blaizejs/plugin-metrics': patch
+'@blaizejs/plugin-cache': patch
 '@blaizejs/plugin-queue': patch
 ---
 
-🚀 queue plugin
+✨ cache plugin! yay
