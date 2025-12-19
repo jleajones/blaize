@@ -111,7 +111,7 @@ export const cacheSetEventSchema = z.object({
   type: z.literal('set'),
   key: z.string(),
   value: z.string().optional(),
-  timestamp: z.number().int().positive(),
+  timestamp: z.string(),
   serverId: z.string().optional(),
   sequence: z.number().int().optional(),
 });
@@ -122,7 +122,7 @@ export const cacheSetEventSchema = z.object({
 export const cacheDeleteEventSchema = z.object({
   type: z.literal('delete'),
   key: z.string(),
-  timestamp: z.number().int().positive(),
+  timestamp: z.string(),
   serverId: z.string().optional(),
   sequence: z.number().int().optional(),
 });
@@ -134,7 +134,7 @@ export const cacheEvictionEventSchema = z.object({
   type: z.literal('eviction'),
   key: z.string(),
   reason: z.enum(['lru', 'ttl']).optional(),
-  timestamp: z.number().int().positive(),
+  timestamp: z.string(),
   serverId: z.string().optional(),
   sequence: z.number().int().optional(),
 });

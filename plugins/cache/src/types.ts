@@ -170,8 +170,8 @@ export interface CacheChangeEvent {
   /** Value (for 'set' events) */
   value?: string;
 
-  /** Event timestamp in milliseconds */
-  timestamp: number;
+  /** Event timestamp in ISO 8601 format */
+  timestamp: string;
 
   /** Server ID for multi-server coordination (optional) */
   serverId?: string;
