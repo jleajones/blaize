@@ -19,12 +19,11 @@
  * - Session pattern: curl -N http://localhost:7485/cache/events?pattern=session:*
  * - Manifest pattern: curl -N http://localhost:7485/cache/events?pattern=manifest:*
  */
-import { z } from 'zod';
 
 import {
   cacheEventsHandler,
   cacheEventsQuerySchema,
-  // cacheEventsSchema,
+  cacheEventsSchema,
 } from '@blaizejs/plugin-cache';
 
 import { appRouter } from '../../app-router';
@@ -32,11 +31,7 @@ import { appRouter } from '../../app-router';
 export const getCacheEvents = appRouter.sse({
   schema: {
     query: cacheEventsQuerySchema,
-    events: {
-      test: z.object({
-        value: z.string(),
-      }),
-    },
+    events: cacheEventsSchema,
   },
   handler: cacheEventsHandler,
 });
