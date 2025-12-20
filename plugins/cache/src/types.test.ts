@@ -219,7 +219,7 @@ describe('CacheChangeEvent', () => {
       type: 'set',
       key: 'user:123',
       value: '{"name":"Alice"}',
-      timestamp: Date.now(),
+      timestamp: new Date().toISOString(),
       serverId: 'server-1',
     };
 
@@ -239,7 +239,7 @@ describe('CacheChangeEvent', () => {
   });
 
   test('timestamp is number', () => {
-    expectTypeOf<CacheChangeEvent['timestamp']>().toBeNumber();
+    expectTypeOf<CacheChangeEvent['timestamp']>().toBeString();
   });
 
   test('serverId is optional string', () => {
@@ -251,7 +251,7 @@ describe('CacheChangeEvent', () => {
       type: 'set',
       key: 'test',
       value: 'data',
-      timestamp: 123,
+      timestamp: new Date().toISOString(),
     };
 
     expect(event.type).toBe('set');
@@ -262,7 +262,7 @@ describe('CacheChangeEvent', () => {
     const event: CacheChangeEvent = {
       type: 'delete',
       key: 'test',
-      timestamp: 123,
+      timestamp: new Date().toISOString(),
     };
 
     expect(event.type).toBe('delete');
@@ -483,7 +483,7 @@ describe('Documentation examples compile', () => {
       type: 'set',
       key: 'user:123',
       value: '{"name":"Alice"}',
-      timestamp: Date.now(),
+      timestamp: new Date().toISOString(),
       serverId: 'server-1',
     };
 
