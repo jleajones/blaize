@@ -68,13 +68,13 @@
       "cache": false
     },
     "test:watch": {
-      "dependsOn": ["@blaizejs/testing-utils#build"],
+      "dependsOn": ["^build", "@blaizejs/testing-utils#build"],
       "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx"],
       "cache": false,
       "persistent": true
     },
     "test:coverage": {
-      "dependsOn": ["@blaizejs/testing-utils#build"],
+      "dependsOn": ["^build", "@blaizejs/testing-utils#build"],
       "outputs": ["coverage/**"],
       "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx", "vitest.config.ts"],
       "cache": true
