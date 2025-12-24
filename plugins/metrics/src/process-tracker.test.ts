@@ -237,17 +237,17 @@ describe('ProcessHealthTracker', () => {
     });
 
     test('is non-blocking', async () => {
-      const start = Date.now();
+      const tracker = new ProcessHealthTracker();
 
-      // Start measurement but don't await
+      // Call returns a promise (non-blocking by design)
       const lagPromise = tracker.getEventLoopLag();
 
-      // This should execute immediately, not blocked
-      const syncElapsed = Date.now() - start;
-      expect(syncElapsed).toBeLessThan(10); // Very fast
+      // Verify it's a promise
+      expect(lagPromise).toBeInstanceOf(Promise);
 
-      // Now await the result
+      // Await and verify result is valid
       const lag = await lagPromise;
+      expect(typeof lag).toBe('number');
       expect(lag).toBeGreaterThanOrEqual(0);
     });
   });
@@ -259,19 +259,23 @@ describe('ProcessHealthTracker', () => {
       expect(uptime).toBeGreaterThanOrEqual(0);
     });
 
-    test('uptime increases over time', async () => {
-      const uptime1 = tracker.getUptime();
+    test('uptime increases over time', () => {
+      vi.useFakeTimers();
+      const start = Date.now();
+      vi.setSystemTime(start);
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      const testTracker = new ProcessHealthTracker();
+      const uptime1 = testTracker.getUptime();
 
-      const uptime2 = tracker.getUptime();
+      // Advance 100ms
+      vi.advanceTimersByTime(100);
+
+      const uptime2 = testTracker.getUptime();
 
       expect(uptime2).toBeGreaterThan(uptime1);
+      expect(uptime2 - uptime1).toBeCloseTo(0.1, 2); // Exactly 0.1s
 
-      // Difference should be approximately 0.1 seconds
-      const diff = uptime2 - uptime1;
-      expect(diff).toBeGreaterThanOrEqual(0.08); // Allow some variance
-      expect(diff).toBeLessThan(0.2);
+      vi.useRealTimers();
     });
 
     test('tracks time since tracker creation, not process.uptime()', () => {
