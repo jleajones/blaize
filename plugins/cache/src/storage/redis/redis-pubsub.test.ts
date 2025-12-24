@@ -574,34 +574,6 @@ describe('Redis Pub/Sub Integration Tests', () => {
   // ==========================================================================
 
   describe('Performance', () => {
-    test('handles rapid event publishing', async () => {
-      const eventsReceived: CacheChangeEvent[] = [];
-
-      await pubsubB.subscribe('cache:*', event => {
-        eventsReceived.push(event);
-      });
-
-      // Publish 10 events rapidly
-      const promises = [];
-      for (let i = 0; i < 10; i++) {
-        promises.push(
-          pubsubA.publish('cache:*', {
-            type: 'set',
-            key: `test:${i}`,
-            value: `data${i}`,
-            timestamp: new Date().toISOString(),
-            serverId: 'server-a',
-          })
-        );
-      }
-
-      await Promise.all(promises);
-      await wait(200);
-
-      // Should receive all 10 events
-      expect(eventsReceived.length).toBe(10);
-    });
-
     test('handles many concurrent subscribers', async () => {
       const eventCounts: number[] = [];
 

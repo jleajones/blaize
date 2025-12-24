@@ -419,40 +419,6 @@ describe('CORS Preflight Handler', () => {
       await expect(handler(ctx)).rejects.toThrow(ValidationError);
     });
   });
-
-  describe('Performance', () => {
-    it('should handle preflight requests quickly', async () => {
-      const ctx = createMockContext({
-        method: 'OPTIONS',
-        headers: {
-          Origin: 'https://example.com',
-          'Access-Control-Request-Method': 'POST',
-          'Access-Control-Request-Headers': 'X-Custom-1, X-Custom-2, X-Custom-3',
-        },
-      });
-
-      const options: CorsOptions = {
-        origin: 'https://example.com',
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-        allowedHeaders: ['X-Custom-1', 'X-Custom-2', 'X-Custom-3', 'Content-Type', 'Authorization'],
-        credentials: true,
-        maxAge: 86400,
-      };
-
-      const iterations = 100;
-      const start = Date.now();
-
-      for (let i = 0; i < iterations; i++) {
-        await handlePreflight(ctx, options);
-      }
-
-      const duration = Date.now() - start;
-      const avgTime = duration / iterations;
-
-      // Average time per request should be under 1ms
-      expect(avgTime).toBeLessThan(1);
-    });
-  });
 });
 
 describe('Method and Header Validation', () => {

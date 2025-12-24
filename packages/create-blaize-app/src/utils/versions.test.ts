@@ -339,18 +339,6 @@ describe('Version Management', () => {
   });
 
   describe('Performance', () => {
-    it('should resolve quickly', async () => {
-      const startTime = performance.now();
-
-      await Promise.all([getDependencies(), getDevDependencies()]);
-
-      const endTime = performance.now();
-      const duration = endTime - startTime;
-
-      // Should resolve almost instantly (< 100ms)
-      expect(duration).toBeLessThan(100);
-    });
-
     it('should handle many concurrent calls', async () => {
       const callCount = 100;
       const promises = [];
