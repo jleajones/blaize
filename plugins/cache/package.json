@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/plugin-cache",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Event-driven cache plugin for BlaizeJS with Redis support and multi-server coordination",
   "author": "BlaizeJS Contributors",
   "repository": {
@@ -43,7 +43,7 @@
     "zod": "^3.23.0"
   },
   "peerDependencies": {
-    "blaizejs": "^0.7.1"
+    "blaizejs": "^0.8.0"
   },
   "devDependencies": {
     "@blaizejs/eslint-config": "workspace:*",
