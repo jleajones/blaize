@@ -42,6 +42,13 @@ function createTestAdapter(): RedisAdapter {
   return new RedisAdapter(TEST_CONFIG);
 }
 
+/**
+ * Generate unique channel name for test isolation
+ */
+function uniqueChannel(testName: string): string {
+  return `test:${testName}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // ============================================================================
 // Test Suite
 // ============================================================================
@@ -78,7 +85,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     if (pubsubB) await pubsubB.disconnect();
     if (adapter) await adapter.disconnect();
 
-    await wait(1000);
+    await wait(100);
   });
 
   afterAll(async () => {
@@ -134,9 +141,10 @@ describe('Redis Pub/Sub Integration Tests', () => {
 
   describe('Basic Publish/Subscribe', () => {
     test('subscribes to pattern', async () => {
+      const channel = uniqueChannel('subscribes-to-pattern');
       const eventsReceived: CacheChangeEvent[] = [];
 
-      const unsubscribe = await pubsubA.subscribe('cache:*', event => {
+      const unsubscribe = await pubsubA.subscribe(channel, event => {
         eventsReceived.push(event);
       });
 
@@ -146,6 +154,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('publishes event', async () => {
+      const channel = uniqueChannel('publishes-event');
       const event: CacheChangeEvent = {
         type: 'set',
         key: 'test:key',
@@ -154,19 +163,20 @@ describe('Redis Pub/Sub Integration Tests', () => {
         serverId: 'server-a',
       };
 
-      await expect(pubsubA.publish('cache:*', event)).resolves.toBeUndefined();
+      await expect(pubsubA.publish(channel, event)).resolves.toBeUndefined();
     });
 
     test('receives published events', async () => {
+      const channel = uniqueChannel('receives-published');
       const eventsReceived: CacheChangeEvent[] = [];
 
       // Subscribe on Server A
-      await pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         eventsReceived.push(event);
       });
 
       // Publish on Server A
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test:key',
         value: 'test:value',
@@ -189,15 +199,16 @@ describe('Redis Pub/Sub Integration Tests', () => {
 
   describe('Cross-Server Events', () => {
     test('events propagate from server A to server B', async () => {
+      const channel = uniqueChannel('a-to-b');
       const eventsOnB: CacheChangeEvent[] = [];
 
       // Subscribe on Server B
-      await pubsubB.subscribe('cache:*', event => {
+      await pubsubB.subscribe(channel, event => {
         eventsOnB.push(event);
       });
 
       // Publish on Server A
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'user:123',
         value: 'data',
@@ -214,20 +225,21 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('events propagate bidirectionally', async () => {
+      const channel = uniqueChannel('bidirectional');
       const eventsOnA: CacheChangeEvent[] = [];
       const eventsOnB: CacheChangeEvent[] = [];
 
       // Subscribe both servers
-      await pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         eventsOnA.push(event);
       });
 
-      await pubsubB.subscribe('cache:*', event => {
+      await pubsubB.subscribe(channel, event => {
         eventsOnB.push(event);
       });
 
       // Publish from A
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'from-a',
         value: 'data-a',
@@ -236,7 +248,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       });
 
       // Publish from B
-      await pubsubB.publish('cache:*', {
+      await pubsubB.publish(channel, {
         type: 'delete',
         key: 'from-b',
         timestamp: new Date().toISOString(),
@@ -258,6 +270,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('multiple servers receive same event', async () => {
+      const channel = uniqueChannel('multi-server');
       const pubsubC = adapter.createPubSub('server-c');
       await pubsubC.connect();
 
@@ -266,12 +279,12 @@ describe('Redis Pub/Sub Integration Tests', () => {
       const eventsOnC: CacheChangeEvent[] = [];
 
       // Subscribe all three servers
-      await pubsubA.subscribe('cache:*', event => eventsOnA.push(event));
-      await pubsubB.subscribe('cache:*', event => eventsOnB.push(event));
-      await pubsubC.subscribe('cache:*', event => eventsOnC.push(event));
+      await pubsubA.subscribe(channel, event => eventsOnA.push(event));
+      await pubsubB.subscribe(channel, event => eventsOnB.push(event));
+      await pubsubC.subscribe(channel, event => eventsOnC.push(event));
 
       // Publish from Server A
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'shared:key',
         value: 'shared:value',
@@ -296,9 +309,10 @@ describe('Redis Pub/Sub Integration Tests', () => {
 
   describe('Event Filtering by ServerId', () => {
     test('can filter own events by serverId', async () => {
+      const channel = uniqueChannel('filter-own');
       const eventsFromOthers: CacheChangeEvent[] = [];
 
-      await pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         // Filter out own events
         if (event.serverId !== 'server-a') {
           eventsFromOthers.push(event);
@@ -306,7 +320,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       });
 
       // Publish from Server A (should be filtered)
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test1',
         value: 'data1',
@@ -315,7 +329,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       });
 
       // Publish from Server B (should NOT be filtered)
-      await pubsubB.publish('cache:*', {
+      await pubsubB.publish(channel, {
         type: 'set',
         key: 'test2',
         value: 'data2',
@@ -331,25 +345,26 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('multiple subscribers can filter independently', async () => {
+      const channel = uniqueChannel('filter-independent');
       const eventsForA: CacheChangeEvent[] = [];
       const eventsForB: CacheChangeEvent[] = [];
 
       // Server A filters its own events
-      await pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         if (event.serverId !== 'server-a') {
           eventsForA.push(event);
         }
       });
 
       // Server B filters its own events
-      await pubsubB.subscribe('cache:*', event => {
+      await pubsubB.subscribe(channel, event => {
         if (event.serverId !== 'server-b') {
           eventsForB.push(event);
         }
       });
 
       // Publish from both
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'from-a',
         value: 'data-a',
@@ -357,7 +372,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         serverId: 'server-a',
       });
 
-      await pubsubB.publish('cache:*', {
+      await pubsubB.publish(channel, {
         type: 'set',
         key: 'from-b',
         value: 'data-b',
@@ -383,16 +398,17 @@ describe('Redis Pub/Sub Integration Tests', () => {
 
   describe('Multiple Subscriptions', () => {
     test('multiple handlers receive same event', async () => {
+      const channel = uniqueChannel('multi-handlers');
       const handler1Events: CacheChangeEvent[] = [];
       const handler2Events: CacheChangeEvent[] = [];
       const handler3Events: CacheChangeEvent[] = [];
 
       // Subscribe with multiple handlers
-      await pubsubA.subscribe('cache:*', event => handler1Events.push(event));
-      await pubsubA.subscribe('cache:*', event => handler2Events.push(event));
-      await pubsubA.subscribe('cache:*', event => handler3Events.push(event));
+      await pubsubA.subscribe(channel, event => handler1Events.push(event));
+      await pubsubA.subscribe(channel, event => handler2Events.push(event));
+      await pubsubA.subscribe(channel, event => handler3Events.push(event));
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test',
         value: 'data',
@@ -409,16 +425,17 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('unsubscribe only removes specific handler', async () => {
+      const channel = uniqueChannel('unsub-specific');
       const handler1Events: CacheChangeEvent[] = [];
       const handler2Events: CacheChangeEvent[] = [];
 
-      await pubsubA.subscribe('cache:*', event => handler1Events.push(event));
-      const unsub2 = await pubsubA.subscribe('cache:*', event => handler2Events.push(event));
+      await pubsubA.subscribe(channel, event => handler1Events.push(event));
+      const unsub2 = await pubsubA.subscribe(channel, event => handler2Events.push(event));
 
       // Unsubscribe handler 2
       unsub2();
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test',
         value: 'data',
@@ -434,16 +451,17 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('all handlers unsubscribe independently', async () => {
+      const channel = uniqueChannel('unsub-all');
       const handler1Events: CacheChangeEvent[] = [];
       const handler2Events: CacheChangeEvent[] = [];
 
-      const unsub1 = await pubsubA.subscribe('cache:*', event => handler1Events.push(event));
-      const unsub2 = await pubsubA.subscribe('cache:*', event => handler2Events.push(event));
+      const unsub1 = await pubsubA.subscribe(channel, event => handler1Events.push(event));
+      const unsub2 = await pubsubA.subscribe(channel, event => handler2Events.push(event));
 
       unsub1();
       unsub2();
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test',
         value: 'data',
@@ -465,13 +483,14 @@ describe('Redis Pub/Sub Integration Tests', () => {
 
   describe('Event Types', () => {
     test('handles set events', async () => {
+      const channel = uniqueChannel('event-set');
       const eventsReceived: CacheChangeEvent[] = [];
 
-      await pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         eventsReceived.push(event);
       });
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'user:123',
         value: '{"name":"Alice"}',
@@ -487,13 +506,14 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('handles delete events', async () => {
+      const channel = uniqueChannel('event-delete');
       const eventsReceived: CacheChangeEvent[] = [];
 
-      await pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         eventsReceived.push(event);
       });
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'delete',
         key: 'user:456',
         timestamp: new Date().toISOString(),
@@ -508,13 +528,14 @@ describe('Redis Pub/Sub Integration Tests', () => {
     });
 
     test('handles events without serverId', async () => {
+      const channel = uniqueChannel('event-no-serverid');
       const eventsReceived: CacheChangeEvent[] = [];
 
-      await pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         eventsReceived.push(event);
       });
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test',
         value: 'data',
@@ -535,19 +556,20 @@ describe('Redis Pub/Sub Integration Tests', () => {
 
   describe('Error Handling', () => {
     test('handler errors do not crash pub/sub', async () => {
+      const channel = uniqueChannel('error-handling');
       const eventsReceived: CacheChangeEvent[] = [];
 
       // Handler 1 throws error
-      pubsubA.subscribe('cache:*', () => {
+      await pubsubA.subscribe(channel, () => {
         throw new Error('Handler error');
       });
 
       // Handler 2 should still receive
-      pubsubA.subscribe('cache:*', event => {
+      await pubsubA.subscribe(channel, event => {
         eventsReceived.push(event);
       });
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test',
         value: 'data',
@@ -575,18 +597,19 @@ describe('Redis Pub/Sub Integration Tests', () => {
 
   describe('Performance', () => {
     test('handles many concurrent subscribers', async () => {
+      const channel = uniqueChannel('concurrent-subs');
       const eventCounts: number[] = [];
 
       // Create 20 subscribers
       for (let i = 0; i < 20; i++) {
         let count = 0;
-        await pubsubA.subscribe('cache:*', () => {
+        await pubsubA.subscribe(channel, () => {
           count++;
         });
         eventCounts.push(count);
       }
 
-      await pubsubA.publish('cache:*', {
+      await pubsubA.publish(channel, {
         type: 'set',
         key: 'test',
         value: 'data',
