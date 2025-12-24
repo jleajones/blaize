@@ -1,5 +1,13 @@
 # @blaizejs/plugin-metrics
 
+## 3.0.0
+
+### Patch Changes
+
+- Updated dependencies [6516254]
+- Updated dependencies [4f74774]
+  - blaizejs@0.8.0
+
 ## 2.0.1
 
 ### Patch Changes

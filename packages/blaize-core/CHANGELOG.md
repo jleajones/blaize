@@ -1,5 +1,15 @@
 # blaizejs
 
+## 0.8.0
+
+### Minor Changes
+
+- 6516254: 🔨 fixed buffer size for sse events; 🛝 fixed playgroud example
+
+### Patch Changes
+
+- 4f74774: ✨ cache plugin! yay
+
 ## 0.7.1
 
 ### Patch Changes
