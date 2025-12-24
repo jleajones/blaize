@@ -109,23 +109,25 @@ describe('requestLoggerMiddleware', () => {
     });
 
     test('calculates duration correctly', async () => {
+      vi.useFakeTimers();
+
+      const mockLogger = createMockLogger();
       const middleware = requestLoggerMiddleware();
 
-      const before = Date.now();
-      await middleware.execute(
-        ctx,
-        async () => {
-          await new Promise(resolve => setTimeout(resolve, 50));
-        },
-        mockLogger
-      );
-      const after = Date.now();
+      const ctx = createMockContext();
+
+      const next = async () => {
+        vi.advanceTimersByTime(50); // Deterministic 50ms
+      };
+
+      await middleware.execute(ctx, next, mockLogger);
 
       const completedLog = mockLogger.logs.find(l => l.message === 'Request completed');
       const duration = completedLog?.meta?.duration as number;
 
-      expect(duration).toBeGreaterThanOrEqual(50);
-      expect(duration).toBeLessThan(after - before + 10);
+      expect(duration).toBe(50); // Exact match now possible
+
+      vi.useRealTimers();
     });
 
     test('includes IP address when available', async () => {
