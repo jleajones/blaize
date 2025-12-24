@@ -112,7 +112,7 @@ describe('Multi-Server Cache Coordination', () => {
     test('set event propagates from server A to server B', async () => {
       const eventsOnB: CacheChangeEvent[] = [];
 
-      serviceB.watch(/.*/, event => {
+      serviceB.watch(/^user:/, event => {
         eventsOnB.push(event);
       });
 
@@ -263,7 +263,7 @@ describe('Multi-Server Cache Coordination', () => {
     test('concurrent writes include sequence numbers', async () => {
       const eventsOnB: CacheChangeEvent[] = [];
 
-      serviceB.watch(/.*/, event => {
+      serviceB.watch(/^counter:/, event => {
         eventsOnB.push(event);
       });
 
@@ -297,7 +297,7 @@ describe('Multi-Server Cache Coordination', () => {
     test('mset emits events for each key', async () => {
       const eventsOnB: CacheChangeEvent[] = [];
 
-      serviceB.watch(/.*/, event => {
+      serviceB.watch(/^batch:/, event => {
         eventsOnB.push(event);
       });
 
@@ -322,7 +322,7 @@ describe('Multi-Server Cache Coordination', () => {
     test('batch events have same timestamp', async () => {
       const eventsOnB: CacheChangeEvent[] = [];
 
-      serviceB.watch(/.*/, event => {
+      serviceB.watch(/^time:/, event => {
         eventsOnB.push(event);
       });
 
