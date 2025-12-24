@@ -463,13 +463,17 @@ describe('MemoryAdapter', () => {
 
     test('tracks uptime', async () => {
       vi.useFakeTimers();
+      vi.setSystemTime(Date.now());
 
-      const stats1 = await adapter.getStats();
+      // Create adapter AFTER fake timers are set up
+      const timedAdapter = new MemoryAdapter();
+
+      const stats1 = await timedAdapter.getStats();
       expect(stats1.uptime).toBe(0);
 
       vi.advanceTimersByTime(5000);
 
-      const stats2 = await adapter.getStats();
+      const stats2 = await timedAdapter.getStats();
       expect(stats2.uptime).toBe(5000);
 
       vi.useRealTimers();
