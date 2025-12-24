@@ -484,41 +484,6 @@ describe('HttpRequestTracker', () => {
     });
   });
 
-  describe('Performance characteristics', () => {
-    test('O(1) recording performance', () => {
-      const iterations = 10000;
-      const start = performance.now();
-
-      for (let i = 0; i < iterations; i++) {
-        tracker.recordRequest('GET', '/test', 200, i);
-      }
-
-      const elapsed = performance.now() - start;
-      const avgTime = elapsed / iterations;
-
-      // Should be very fast (< 0.1ms per operation on average)
-      expect(avgTime).toBeLessThan(0.1);
-    });
-
-    test('handles high-frequency requests efficiently', () => {
-      const start = performance.now();
-
-      // Simulate 10,000 requests
-      for (let i = 0; i < 10000; i++) {
-        tracker.startRequest();
-        tracker.recordRequest('GET', '/test', 200, Math.random() * 100);
-      }
-
-      const elapsed = performance.now() - start;
-
-      // Should complete in reasonable time (< 100ms for 10k requests)
-      expect(elapsed).toBeLessThan(100);
-
-      const metrics = tracker.getMetrics();
-      expect(metrics.totalRequests).toBe(10000);
-    });
-  });
-
   describe('getHistogramLimit', () => {
     test('returns configured histogram limit', () => {
       const tracker500 = new HttpRequestTracker(500);

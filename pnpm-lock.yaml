@@ -59,6 +59,9 @@ importers:
       '@blaizejs/middleware-security':
         specifier: workspace:*
         version: link:../../middleware/security
+      '@blaizejs/plugin-cache':
+        specifier: workspace:*
+        version: link:../../plugins/cache
       '@blaizejs/plugin-metrics':
         specifier: workspace:*
         version: link:../../plugins/metrics

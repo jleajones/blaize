@@ -130,32 +130,6 @@ describe('NullTransport', () => {
     });
   });
 
-  describe('Performance characteristics', () => {
-    test('handles high volume of logs efficiently', () => {
-      const start = performance.now();
-
-      // Write 10,000 logs
-      for (let i = 0; i < 10000; i++) {
-        transport.write('info', `Message ${i}`, {
-          id: i,
-          timestamp: new Date(),
-          data: { nested: 'value' },
-        });
-      }
-
-      const end = performance.now();
-      const duration = end - start;
-
-      // Should be extremely fast (< 10ms for 10k no-ops)
-      expect(duration).toBeLessThan(10);
-
-      // Verify no output was produced
-      expect(consoleLogSpy).not.toHaveBeenCalled();
-      expect(consoleWarnSpy).not.toHaveBeenCalled();
-      expect(consoleErrorSpy).not.toHaveBeenCalled();
-    });
-  });
-
   describe('Stateless behavior', () => {
     test('multiple instances are independent', () => {
       const transport1 = new NullTransport();

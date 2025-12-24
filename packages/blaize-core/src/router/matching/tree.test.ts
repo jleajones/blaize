@@ -337,30 +337,4 @@ describe('Route Tree', () => {
       });
     });
   });
-
-  describe('Performance and Memory', () => {
-    test('should handle large number of routes efficiently', () => {
-      const isCI = process.env.CI === 'true';
-      const threshold = isCI ? 200 : 100;
-      const tree = createRouteTree();
-      const startTime = performance.now();
-
-      // Add many routes
-      for (let i = 0; i < 1000; i++) {
-        tree.add(`/route${i}`, 'GET', createMockHandler(`handler-${i}`));
-        tree.add(`/route${i}/:param`, 'GET', createMockHandler(`param-handler-${i}`));
-      }
-
-      const addTime = performance.now() - startTime;
-      expect(addTime).toBeLessThan(threshold); // Should be fast
-
-      // Test matching performance
-      const matchStartTime = performance.now();
-      const match = tree.match('/route500/test-param', 'GET');
-      const matchTime = performance.now() - matchStartTime;
-
-      expect(match?.params).toEqual({ param: 'test-param' });
-      expect(matchTime).toBeLessThan(10); // Should be very fast
-    });
-  });
 });

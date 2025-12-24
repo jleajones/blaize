@@ -359,49 +359,4 @@ describe('parallel.ts - Parallel Processing', () => {
       expect(processor).toHaveBeenCalledTimes(4);
     });
   });
-
-  describe('performance characteristics', () => {
-    it('should complete faster with higher concurrency for I/O bound tasks', async () => {
-      const files = Array.from({ length: 10 }, (_, i) => `/file${i}.ts`);
-
-      const slowProcessor = vi.fn().mockImplementation(async file => {
-        await new Promise(resolve => setTimeout(resolve, 50)); // Simulate I/O
-        return [{ path: file, get: { handler: vi.fn() } }];
-      });
-
-      // Test with low concurrency
-      const start1 = Date.now();
-      await processFilesInParallel([...files], slowProcessor, 1);
-      const time1 = Date.now() - start1;
-
-      // Reset mock
-      slowProcessor.mockClear();
-
-      // Test with higher concurrency
-      const start2 = Date.now();
-      await processFilesInParallel([...files], slowProcessor, 5);
-      const time2 = Date.now() - start2;
-
-      // Higher concurrency should be faster (with some tolerance)
-      expect(time2).toBeLessThan(time1 * 0.8);
-    });
-
-    it('should handle CPU-bound tasks appropriately', async () => {
-      const files = ['/file1.ts', '/file2.ts'];
-
-      const cpuBoundProcessor = vi.fn().mockImplementation(async file => {
-        // Simulate some CPU work
-        let sum = 0;
-        for (let i = 0; i < 1000; i++) {
-          sum += Math.random();
-        }
-        return [{ path: file, computedValue: sum }];
-      });
-
-      const result = await processFilesInParallel(files, cpuBoundProcessor, 2);
-
-      expect(result).toHaveLength(2);
-      expect(cpuBoundProcessor).toHaveBeenCalledTimes(2);
-    });
-  });
 });

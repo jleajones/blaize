@@ -12,7 +12,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
-    "test:coverage": "turbo run test:coverage --filter=blaizejs",
+    "test:coverage": "turbo run test:coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "changeset publish"

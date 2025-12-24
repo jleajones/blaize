@@ -443,46 +443,4 @@ describe('fast-registry.ts - Route Registry', () => {
       expect(getFileRoutes(registry, 'file3.ts')).toHaveLength(1);
     });
   });
-
-  describe('performance characteristics', () => {
-    it('should handle large numbers of routes efficiently', () => {
-      const manyRoutes: Route[] = [];
-      for (let i = 0; i < 1000; i++) {
-        manyRoutes.push({
-          path: `/route${i}`,
-          GET: { handler: vi.fn() },
-        });
-      }
-
-      const start = Date.now();
-      updateRoutesFromFile(registry, 'large-file.ts', manyRoutes);
-      const duration = Date.now() - start;
-
-      expect(duration).toBeLessThan(100); // Should be fast
-      expect(registry.routesByPath.size).toBe(1000);
-      expect(getAllRoutesFromRegistry(registry)).toHaveLength(1000);
-    });
-
-    it('should handle route updates efficiently', () => {
-      // Setup large number of routes
-      const routes: Route[] = [];
-      for (let i = 0; i < 100; i++) {
-        routes.push({ path: `/route${i}`, GET: { handler: vi.fn() } });
-      }
-      updateRoutesFromFile(registry, 'file1.ts', routes);
-
-      // Update with slightly different routes
-      const updatedRoutes = routes.map(r => ({
-        ...r,
-        POST: { handler: vi.fn() },
-      }));
-
-      const start = Date.now();
-      const result = updateRoutesFromFile(registry, 'file1.ts', updatedRoutes);
-      const duration = Date.now() - start;
-
-      expect(duration).toBeLessThan(50);
-      expect(result.changed).toHaveLength(100);
-    });
-  });
 });

@@ -92,7 +92,7 @@ describe('CacheService', () => {
         key: 'key1',
         value: 'value1',
       });
-      expect(events[0]!.timestamp).toBeGreaterThan(0);
+      expect(events[0]!.timestamp).toBeDefined();
     });
 
     test('includes serverId if provided', async () => {

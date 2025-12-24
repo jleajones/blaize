@@ -70,7 +70,17 @@ function formatSSEEvent(event: string, data: unknown, id?: string, retry?: numbe
   }
 
   lines.push(''); // Empty line to terminate event
-  return lines.join('\n') + '\n';
+  let formatted = lines.join('\n') + '\n';
+
+  // Pad small events to exceed Node.js buffer threshold
+  const MIN_EVENT_SIZE = 4096;
+  const currentSize = Buffer.byteLength(formatted, 'utf8');
+
+  if (currentSize < MIN_EVENT_SIZE) {
+    const paddingNeeded = MIN_EVENT_SIZE - currentSize;
+    formatted += `: ${'·'.repeat(paddingNeeded)}\n`;
+  }
+  return formatted;
 }
 
 /**

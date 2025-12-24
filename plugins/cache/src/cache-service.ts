@@ -175,7 +175,7 @@ export class CacheService extends EventEmitter {
       type: 'set',
       key,
       value,
-      timestamp: Date.now(),
+      timestamp: new Date().toISOString(),
       serverId: this.serverId,
       sequence: ++this.sequence,
     });
@@ -198,7 +198,7 @@ export class CacheService extends EventEmitter {
       this.emitChange({
         type: 'delete',
         key,
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: this.serverId,
         sequence: ++this.sequence,
       });
@@ -231,7 +231,7 @@ export class CacheService extends EventEmitter {
     await this.adapter.mset(entries);
 
     // Emit event for each entry
-    const timestamp = Date.now();
+    const timestamp = new Date().toISOString();
     for (const [key, value] of entries) {
       this.emitChange({
         type: 'set',

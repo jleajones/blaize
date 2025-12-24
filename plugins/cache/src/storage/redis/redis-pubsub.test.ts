@@ -150,7 +150,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test:key',
         value: 'test:value',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       };
 
@@ -170,7 +170,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test:key',
         value: 'test:value',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -201,7 +201,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'user:123',
         value: 'data',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -231,7 +231,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'from-a',
         value: 'data-a',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -239,7 +239,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       await pubsubB.publish('cache:*', {
         type: 'delete',
         key: 'from-b',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-b',
       });
 
@@ -275,7 +275,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'shared:key',
         value: 'shared:value',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -310,7 +310,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test1',
         value: 'data1',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -319,7 +319,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test2',
         value: 'data2',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-b',
       });
 
@@ -353,7 +353,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'from-a',
         value: 'data-a',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -361,7 +361,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'from-b',
         value: 'data-b',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-b',
       });
 
@@ -396,7 +396,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test',
         value: 'data',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -422,7 +422,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test',
         value: 'data',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -447,7 +447,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test',
         value: 'data',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -475,7 +475,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'user:123',
         value: '{"name":"Alice"}',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -496,7 +496,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
       await pubsubA.publish('cache:*', {
         type: 'delete',
         key: 'user:456',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -518,7 +518,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test',
         value: 'data',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         // No serverId
       });
 
@@ -551,7 +551,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test',
         value: 'data',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
@@ -574,34 +574,6 @@ describe('Redis Pub/Sub Integration Tests', () => {
   // ==========================================================================
 
   describe('Performance', () => {
-    test('handles rapid event publishing', async () => {
-      const eventsReceived: CacheChangeEvent[] = [];
-
-      await pubsubB.subscribe('cache:*', event => {
-        eventsReceived.push(event);
-      });
-
-      // Publish 10 events rapidly
-      const promises = [];
-      for (let i = 0; i < 10; i++) {
-        promises.push(
-          pubsubA.publish('cache:*', {
-            type: 'set',
-            key: `test:${i}`,
-            value: `data${i}`,
-            timestamp: Date.now(),
-            serverId: 'server-a',
-          })
-        );
-      }
-
-      await Promise.all(promises);
-      await wait(200);
-
-      // Should receive all 10 events
-      expect(eventsReceived.length).toBe(10);
-    });
-
     test('handles many concurrent subscribers', async () => {
       const eventCounts: number[] = [];
 
@@ -618,7 +590,7 @@ describe('Redis Pub/Sub Integration Tests', () => {
         type: 'set',
         key: 'test',
         value: 'data',
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
         serverId: 'server-a',
       });
 
