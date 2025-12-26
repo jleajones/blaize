@@ -1,0 +1,1134 @@
+# 🏛️ BlaizeJS Architecture
+
+> Understanding how BlaizeJS works under the hood
+
+This document explains the internal architecture of BlaizeJS for contributors, senior developers evaluating the framework, and anyone curious about how the "magic" works. You'll learn about the request lifecycle, type system design, plugin architecture, and the reasoning behind key design decisions.
+
+---
+
+## 📋 Table of Contents
+
+- [System Overview](#-system-overview)
+- [Request Lifecycle](#-request-lifecycle)
+- [Type System Architecture](#-type-system-architecture)
+- [Plugin System](#-plugin-system)
+- [File-Based Router](#-file-based-router)
+- [Error System](#-error-system)
+- [Real-Time (SSE) Architecture](#-real-time-sse-architecture)
+- [Background Jobs Architecture](#-background-jobs-architecture)
+- [Package Dependencies](#-package-dependencies)
+- [Design Decisions](#-design-decisions)
+- [Future Architecture Considerations](#-future-architecture-considerations)
+
+---
+
+## 🌐 System Overview
+
+BlaizeJS is built as a layered architecture where each layer has a single responsibility and clear boundaries:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          HTTP/2 Server                                  │
+│                    (with HTTP/1.1 fallback)                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                         Plugin System                                   │
+│         (lifecycle: register → initialize → start → stop)               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                      Middleware Pipeline                                │
+│              (composable, typed, onion-style execution)                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                       File-Based Router                                 │
+│            (auto-discovery, dynamic parameters, exports)                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                    Context (AsyncLocalStorage)                          │
+│         (request, response, state, services, correlation ID)            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                        Error Boundary                                   │
+│          (catches all errors, formats responses, adds IDs)              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Layer Responsibilities:**
+
+| Layer | Responsibility | Key Files |
+|-------|----------------|-----------|
+| **HTTP Server** | Accept connections, TLS, protocol negotiation | `server/http2-server.ts` |
+| **Plugin System** | Lifecycle management, service injection | `plugins/plugin-manager.ts` |
+| **Middleware** | Request/response transformation, cross-cutting concerns | `middleware/pipeline.ts` |
+| **Router** | URL → Handler mapping, parameter extraction | `router/file-router.ts` |
+| **Context** | Request-scoped state, async propagation | `context/context.ts` |
+| **Error Boundary** | Exception handling, response formatting | `errors/boundary.ts` |
+
+---
+
+## 🔄 Request Lifecycle
+
+Every HTTP request flows through these phases:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           REQUEST LIFECYCLE                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────┐    ┌─────────────┐    ┌────────────┐    ┌───────────────┐   │
+│  │ Request │───▶│   Context   │───▶│   Global   │───▶│    Route      │   │
+│  │ Arrives │    │  Creation   │    │ Middleware │    │   Matching    │   │
+│  └─────────┘    └─────────────┘    └────────────┘    └───────────────┘   │
+│                                                              │           │
+│                                                              ▼           │
+│  ┌─────────┐    ┌─────────────┐    ┌────────────┐    ┌───────────────┐   │
+│  │Response │◀───│   Error     │◀───│  Handler   │◀───│    Route      │   │
+│  │  Sent   │    │  Boundary   │    │ Execution  │    │  Middleware   │   │
+│  └─────────┘    └─────────────┘    └────────────┘    └───────────────┘   │
+│                                           │                              │
+│                                           ▼                              │
+│                                    ┌────────────┐                        │
+│                                    │   Schema   │                        │
+│                                    │ Validation │                        │
+│                                    └────────────┘                        │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Phase 1: Context Creation
+
+When a request arrives, BlaizeJS immediately creates a `Context` object and stores it in `AsyncLocalStorage`:
+
+```typescript
+// Simplified internal flow
+const context = {
+  request: parseRequest(req),      // Parse headers, body, params
+  response: createResponse(res),   // Response helpers
+  state: {},                       // Request-scoped data
+  services: {},                    // Plugin-injected services
+  correlationId: generateId(),     // Unique request ID
+};
+
+asyncLocalStorage.run(context, async () => {
+  await processRequest(context);
+});
+```
+
+**Key points:**
+- Correlation ID is generated immediately for tracing
+- Body parsing is deferred until first access (lazy)
+- AsyncLocalStorage enables context access anywhere without prop drilling
+
+### Phase 2: Middleware Execution
+
+Middleware executes in an "onion" pattern — each middleware wraps the next:
+
+```
+Request ──▶ Middleware A ──▶ Middleware B ──▶ Middleware C ──▶ Handler
+                │                 │                 │              │
+                │                 │                 │              │
+Response ◀── Middleware A ◀── Middleware B ◀── Middleware C ◀──────┘
+```
+
+```typescript
+// Middleware implementation pattern
+const loggingMiddleware = createMiddleware({
+  name: 'logger',
+  handler: async (ctx, next) => {
+    const start = Date.now();
+    console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
+    
+    await next();  // Call next middleware or handler
+    
+    const duration = Date.now() - start;
+    console.log(`← ${ctx.response.statusCode} (${duration}ms)`);
+  },
+});
+```
+
+**Execution order:**
+1. Global middleware (server-level, in registration order)
+2. Route middleware (route-level, in array order)
+3. Route handler
+4. Middleware post-processing (reverse order)
+
+### Phase 3: Route Resolution
+
+The file-based router maps URL paths to handler files:
+
+```typescript
+// Internal route resolution
+const match = router.match('GET', '/users/123/posts');
+// Returns:
+// {
+//   handler: getUserPosts,
+//   params: { userId: '123' },
+//   middleware: [authMiddleware],
+// }
+```
+
+### Phase 4: Schema Validation
+
+Before handler execution, Zod schemas validate the request:
+
+```typescript
+// Validation sequence
+const validatedParams = paramsSchema.parse(match.params);
+const validatedQuery = querySchema.parse(ctx.request.query);
+const validatedBody = bodySchema.parse(ctx.request.body);
+```
+
+Validation failures throw `ValidationError` with detailed field information.
+
+### Phase 5: Handler Execution
+
+The handler receives the validated, typed context:
+
+```typescript
+// Handler signature
+handler: async (ctx, params, logger) => {
+  // ctx.request.body is already validated and typed
+  // params are validated and typed
+  // logger is bound to this request's correlation ID
+  return responseData;
+}
+```
+
+### Phase 6: Error Handling
+
+The error boundary catches all exceptions and formats them:
+
+```typescript
+// Error boundary wraps the entire request
+try {
+  await executeMiddlewarePipeline(ctx);
+} catch (error) {
+  if (error instanceof BlaizeError) {
+    // Semantic error — format with correlation ID
+    ctx.response.status(error.status).json({
+      type: error.type,
+      title: error.message,
+      status: error.status,
+      correlationId: ctx.correlationId,
+      timestamp: new Date().toISOString(),
+      details: error.details,
+    });
+  } else {
+    // Unknown error — wrap in InternalServerError
+    ctx.response.status(500).json({
+      type: 'INTERNAL_SERVER_ERROR',
+      title: 'An unexpected error occurred',
+      status: 500,
+      correlationId: ctx.correlationId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+```
+
+---
+
+## 🎯 Type System Architecture
+
+The type system is the core differentiator of BlaizeJS. This section explains how types flow from server to client without code generation.
+
+### The Problem: Traditional API Development
+
+In typical Express applications, types exist in isolation:
+
+```typescript
+// ❌ Traditional approach — types don't connect
+
+// Server (Express)
+app.get('/users/:id', async (req, res) => {
+  const user = await db.users.findById(req.params.id);
+  res.json(user);  // What shape is this? 🤷
+});
+
+// Client (separate codebase)
+interface User {
+  id: string;
+  name: string;
+  email: string;  // Did the server add createdAt? Who knows!
+}
+
+const response = await fetch('/users/123');
+const user: User = await response.json();  // Hope these match! 🤞
+```
+
+**Problems:**
+- Types are manually synchronized
+- No compile-time safety when APIs change
+- Documentation drifts from implementation
+- Runtime errors discovered in production
+
+### The BlaizeJS Solution: Inferred Types
+
+BlaizeJS uses TypeScript's type inference to connect server and client:
+
+```typescript
+// ✅ BlaizeJS approach — types flow automatically
+
+// src/app.ts: Create server and typed route factory
+import { Blaize, type InferContext } from 'blaizejs';
+
+const app = Blaize.createServer({
+  port: 3000,
+  routesDir: './src/routes',
+});
+
+type AppContext = InferContext<typeof app>;
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],
+  AppContext['services']
+>();
+
+// src/routes/users/[id].ts: Define schema once with NAMED export
+export const getUserById = route.get({
+  schema: {
+    params: z.object({ id: z.string().uuid() }),
+    response: z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string().email(),
+      createdAt: z.date(),  // Add a field here...
+    }),
+  },
+  handler: async (ctx, params) => {
+    return await db.users.findById(params.id);
+  },
+});
+
+// src/app-type.ts: Export routes registry for the client
+import { getUserById } from './routes/users/[id]';
+export const routes = { getUserById } as const;
+
+// Client: Create with URL + routes registry
+import bc from '@blaizejs/client';
+import { routes } from './app-type';
+
+const client = bc.create('https://api.example.com', routes);
+
+// Call using the EXPORT NAME — not the path!
+const user = await client.$get.getUserById({ params: { id: '123' } });
+// TypeScript knows: user is { id: string; name: string; email: string; createdAt: Date }
+// Add createdAt on server → client immediately knows about it ✅
+```
+
+### Under the Hood: Type Inference Chain
+
+The magic happens through a chain of generic type parameters:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Zod Schema    │────▶│  Route Factory  │────▶│   Route Type    │
+│   (Runtime)     │     │  route.get()    │     │   (Compile)     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                       │                       │
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ z.infer<Schema> │     │ InferContext<>  │     │  typeof routes  │
+│  (Type-level)   │     │ State/Services  │     │    (Export)     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                       │
+                                                       │
+                                                       ▼
+                                               ┌─────────────────┐
+                                               │  Client Proxy   │
+                                               │ (Type Params)   │
+                                               └─────────────────┘
+                                                       │
+                                                       │
+                                                       ▼
+                                               ┌─────────────────┐
+                                               │  Autocomplete   │
+                                               │   & Checking    │
+                                               └─────────────────┘
+```
+
+**Step-by-step:**
+
+1. **Server Creation with Middleware/Plugins**
+   ```typescript
+   const app = Blaize.createServer({
+     middleware: [authMiddleware],  // Adds { user: User } to state
+     plugins: [dbPlugin()],         // Adds { db: Database } to services
+   });
+   ```
+
+2. **Context Type Inference**
+   ```typescript
+   type AppContext = InferContext<typeof app>;
+   // AppContext['state'] = { user: User }
+   // AppContext['services'] = { db: Database }
+   ```
+
+3. **Route Factory with Inherited Types**
+   ```typescript
+   export const route = Blaize.Router.createRouteFactory<
+     AppContext['state'],
+     AppContext['services']
+   >();
+   // route.get(), route.post(), etc. now know about state and services
+   ```
+
+4. **Zod Schema Captures Response Types**
+   ```typescript
+   const responseSchema = z.object({ id: z.string(), name: z.string() });
+   // TypeScript infers: z.ZodObject<{ id: z.ZodString, name: z.ZodString }>
+   ```
+
+5. **Route Definition with Named Export**
+   ```typescript
+   export const getUser = route.get({
+     schema: { response: responseSchema },
+     handler: async (ctx, params) => {
+       ctx.state.user;      // ✅ Typed as User
+       ctx.services.db;     // ✅ Typed as Database
+       return { id: '1', name: 'John' };  // ✅ Must match responseSchema
+     },
+   });
+   ```
+
+6. **Routes Registry Exported for Client**
+   ```typescript
+   // app-type.ts
+   import { getUser } from './routes/users/[id]';
+   export const routes = { getUser } as const;
+   ```
+
+7. **Client Created with URL + Routes**
+   ```typescript
+   import bc from '@blaizejs/client';
+   import { routes } from './app-type';
+   
+   const client = bc.create('https://api.example.com', routes);
+   // TypeScript now knows every route, every method, every shape
+   
+   const user = await client.$get.getUser({ params: { id: '123' } });
+   // Method name matches the EXPORT NAME, not the path!
+   ```
+
+### Type Composition in Middleware
+
+Middleware types compose through the route factory:
+
+```typescript
+// Middleware A adds user to state
+const authMiddleware = createMiddleware<
+  { user: User },
+  { auth: AuthService }
+>({ ... });
+
+// Middleware B adds timing to state
+const timingMiddleware = createMiddleware<
+  { requestStart: number },
+  {}
+>({ ... });
+
+// Server composes all middleware types
+const app = Blaize.createServer({
+  middleware: [authMiddleware, timingMiddleware],
+  plugins: [databasePlugin()],
+});
+
+// Route factory inherits composed types
+type AppContext = InferContext<typeof app>;
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],    // { user: User; requestStart: number }
+  AppContext['services']  // { auth: AuthService; db: Database }
+>();
+
+// Handler receives everything automatically
+export const GET = route.get({
+  handler: async (ctx, params) => {
+    ctx.state.user;         // ✅ User (from authMiddleware)
+    ctx.state.requestStart; // ✅ number (from timingMiddleware)
+    ctx.services.auth;      // ✅ AuthService (from authMiddleware)
+    ctx.services.db;        // ✅ Database (from databasePlugin)
+  },
+});
+```
+
+### Generic Constraints
+
+The route factory methods use generic constraints to ensure type safety:
+
+```typescript
+// The route factory is created with state and services types
+const route = Blaize.Router.createRouteFactory<TState, TServices>();
+
+// Each method (get, post, etc.) accepts schema generics
+route.get<TParams, TQuery, TResponse>({
+  schema: { params, query, response },
+  handler: async (ctx, params) => { ... }
+});
+
+// This ensures:
+// - Params are always string values (URL parameters)
+// - Query can be any serializable type
+// - Response can be any serializable type
+// - ctx.state is typed as TState
+// - ctx.services is typed as TServices
+```
+
+---
+
+## 🔌 Plugin System
+
+Plugins extend BlaizeJS with additional functionality through a managed lifecycle.
+
+### Lifecycle Diagram
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          PLUGIN LIFECYCLE                                │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   createServer()                  server.listen()                        │
+│        │                               │                                 │
+│        ▼                               ▼                                 │
+│   ┌─────────┐                    ┌────────────┐       ┌──────────────┐   │
+│   │register │───────────────────▶│ initialize │──────▶│onServerStart │   │
+│   └─────────┘                    └────────────┘       └──────────────┘   │
+│        │                               │                     │           │
+│        │ Add middleware                │ Connect to          │ Start     │
+│        │ Register routes               │ databases,          │ background│
+│        │                               │ Redis, etc.         │ tasks     │
+│                                                              │           │
+│                              ┌───────────────────────────────┘           │
+│                              │                                           │
+│                              ▼                                           │
+│                        ┌──────────┐                                      │
+│                        │ RUNNING  │                                      │
+│                        └──────────┘                                      │
+│                              │                                           │
+│                              │ server.close()                            │
+│                              ▼                                           │
+│   ┌───────────┐       ┌────────────┐       ┌─────────────────┐           │
+│   │ terminate │◀──────│onServerStop│◀──────│ Stop accepting  │           │
+│   └───────────┘       └────────────┘       │ new requests    │           │
+│        │                                   └─────────────────┘           │
+│        │ Disconnect                                                      │
+│        │ resources                                                       │
+│        ▼                                                                 │
+│   ┌──────────┐                                                           │
+│   │  STOPPED │                                                           │
+│   └──────────┘                                                           │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Hook Purposes
+
+| Hook | When Called | Typical Use |
+|------|-------------|-------------|
+| `register` | During `createServer()` | Add global middleware, register routes |
+| `initialize` | Before `server.listen()` | Connect to databases, warm caches |
+| `onServerStart` | After server is listening | Start background workers, log ready |
+| `onServerStop` | Before `server.close()` completes | Stop accepting work, drain queues |
+| `terminate` | During shutdown | Disconnect from external resources |
+
+### Service Injection Pattern
+
+Plugins inject services into the context for route handlers to use:
+
+```typescript
+// Plugin definition
+const databasePlugin = createPlugin<{ connectionString: string }>(
+  'database',
+  '1.0.0',
+  (server, options) => {
+    let db: Database;
+
+    // Add middleware that injects the service
+    server.use(createMiddleware<{}, { db: Database }>({
+      name: 'database-injection',
+      handler: async (ctx, next) => {
+        ctx.services.db = db;
+        await next();
+      },
+    }));
+
+    return {
+      initialize: async () => {
+        db = await Database.connect(options.connectionString);
+      },
+      terminate: async () => {
+        await db.disconnect();
+      },
+    };
+  }
+);
+
+// Usage in routes (via route factory)
+export const GET = route.get({
+  handler: async (ctx) => {
+    // ctx.services.db is typed from the plugin!
+    const users = await ctx.services.db.query('SELECT * FROM users');
+    return users;
+  },
+});
+```
+
+### Plugin Creation API
+
+```typescript
+const plugin = createPlugin<TOptions>(
+  name: string,           // Unique identifier
+  version: string,        // SemVer version
+  setup: (config: TOptions, logger: BlaizeLogger) => PluginHooks,
+  defaultOptions?: Partial<TOptions>
+);
+
+// Usage
+const app = Blaize.createServer({
+  plugins: [
+    myDatabasePlugin({ connectionString: 'postgres://...' }),
+    myCachePlugin({ ttl: 3600 }),
+    myCustomPlugin({ enabled: true }),
+  ],
+  routesDir: './src/routes',
+});
+```
+
+### Plugin Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Encapsulation** | Resources are managed within the plugin lifecycle |
+| **Type Safety** | Services injected into context are fully typed |
+| **Composability** | Multiple plugins can work together via shared services |
+| **Testability** | Plugins can be mocked or swapped for testing |
+| **Reusability** | Plugins can be published and shared across projects |
+
+---
+
+## 📂 File-Based Router
+
+BlaizeJS uses the file system as the routing configuration, similar to Next.js or Remix.
+
+### Route Discovery Algorithm
+
+On server start, the router:
+
+1. **Scans** the `routesDir` recursively for `.ts` files
+2. **Parses** file paths into URL patterns
+3. **Imports** each file and extracts HTTP method exports
+4. **Registers** routes in a radix tree for fast matching
+
+```typescript
+// Simplified discovery logic
+async function discoverRoutes(routesDir: string): Promise<Route[]> {
+  const files = await glob('**/*.ts', { cwd: routesDir });
+  
+  for (const file of files) {
+    const urlPath = filePathToUrlPath(file);
+    const module = await import(path.join(routesDir, file));
+    
+    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      if (module[method]) {
+        routes.push({
+          method,
+          path: urlPath,
+          handler: module[method],
+        });
+      }
+    }
+  }
+  
+  return routes;
+}
+```
+
+### Path Mapping Rules
+
+| File Path | URL Path | Parameters |
+|-----------|----------|------------|
+| `routes/index.ts` | `/` | — |
+| `routes/users.ts` | `/users` | — |
+| `routes/users/index.ts` | `/users` | — |
+| `routes/users/[userId].ts` | `/users/:userId` | `userId` |
+| `routes/users/[userId]/index.ts` | `/users/:userId` | `userId` |
+| `routes/users/[userId]/posts.ts` | `/users/:userId/posts` | `userId` |
+| `routes/users/[userId]/posts/[postId].ts` | `/users/:userId/posts/:postId` | `userId`, `postId` |
+| `routes/api/v1/health.ts` | `/api/v1/health` | — |
+
+### Export Conventions
+
+Each route file exports handlers using **named exports**. The export name becomes the client method name:
+
+```typescript
+// routes/users.ts
+import { route } from '../app';
+
+// Named exports — these become client method names
+export const listUsers = route.get({ ... });  // client.$get.listUsers()
+export const createUser = route.post({ ... }); // client.$post.createUser()
+```
+
+```typescript
+// routes/users/[userId].ts
+import { route } from '../../app';
+
+export const getUser = route.get({ ... });     // client.$get.getUser()
+export const updateUser = route.put({ ... });   // client.$put.updateUser()
+export const patchUser = route.patch({ ... });  // client.$patch.patchUser()
+export const deleteUser = route.delete({ ... }); // client.$delete.deleteUser()
+```
+
+```typescript
+// app-type.ts — Export routes registry for the client
+import { listUsers, createUser } from './routes/users';
+import { getUser, updateUser, patchUser, deleteUser } from './routes/users/[userId]';
+
+export const routes = {
+  listUsers,
+  createUser,
+  getUser,
+  updateUser,
+  patchUser,
+  deleteUser,
+} as const;
+```
+
+### Route Matching Priority
+
+When multiple routes could match, BlaizeJS uses this priority:
+
+1. **Static segments** beat dynamic: `/users/profile` > `/users/[id]`
+2. **Deeper paths** beat shallow: `/users/[id]/posts` > `/users/[id]`
+3. **Earlier registration** wins ties (alphabetical file order)
+
+---
+
+## 🛡️ Error System
+
+BlaizeJS provides 12 semantic error classes that automatically format to HTTP responses.
+
+### Error Class Hierarchy
+
+```
+BlaizeError (abstract base)
+├── ValidationError        (400 Bad Request)
+├── UnauthorizedError      (401 Unauthorized)
+├── ForbiddenError         (403 Forbidden)
+├── NotFoundError          (404 Not Found)
+├── ConflictError          (409 Conflict)
+├── PayloadTooLargeError   (413 Payload Too Large)
+├── UnsupportedMediaTypeError (415 Unsupported Media Type)
+├── UnprocessableEntityError  (422 Unprocessable Entity)
+├── RateLimitError         (429 Too Many Requests)
+├── RequestTimeoutError    (408 Request Timeout)
+├── InternalServerError    (500 Internal Server Error)
+└── ServiceNotAvailableError (503 Service Unavailable)
+```
+
+### Automatic Response Formatting
+
+When an error is thrown, the error boundary formats it consistently:
+
+```typescript
+// Throwing an error
+throw new NotFoundError('User not found', {
+  resourceType: 'user',
+  resourceId: userId,
+});
+
+// Automatic HTTP response
+{
+  "type": "NOT_FOUND",
+  "title": "User not found",
+  "status": 404,
+  "correlationId": "req_k3x2m1_9z8y7w6v",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "details": {
+    "resourceType": "user",
+    "resourceId": "123"
+  }
+}
+```
+
+### Correlation ID Flow
+
+Correlation IDs are generated at request start and flow through:
+
+```
+Request arrives
+     │
+     ▼
+Generate correlationId: "req_k3x2m1_9z8y7w6v"
+     │
+     ├──▶ Stored in Context (AsyncLocalStorage)
+     │
+     ├──▶ Available via getCorrelationId() anywhere
+     │
+     ├──▶ Added to all log entries
+     │
+     ├──▶ Included in error responses
+     │
+     └──▶ Passed to downstream services (via headers)
+```
+
+This enables distributed tracing across services.
+
+---
+
+## 📡 Real-Time (SSE) Architecture
+
+Server-Sent Events provide typed, unidirectional streaming.
+
+### SSE Route Handling
+
+SSE routes use the `route.sse()` method with a different handler signature that includes a stream object:
+
+```typescript
+export const GET = route.sse({
+  schema: {
+    query: z.object({ jobId: z.string() }),
+    events: {
+      progress: z.object({ percent: z.number() }),
+      complete: z.object({ result: z.unknown() }),
+    },
+  },
+  handler: async (stream, ctx, params, logger) => {
+    //             ^^^^^^
+    //        TypedSSEStream — send typed events
+    
+    stream.send('progress', { percent: 50 });
+    stream.send('complete', { result: { success: true } });
+  },
+});
+```
+
+### Event Schema Validation
+
+Events are validated at send time:
+
+```typescript
+// stream.send validates against the event schema
+stream.send('progress', { percent: 50 });      // ✅ Valid
+stream.send('progress', { percent: 'half' });  // ❌ TypeScript error
+stream.send('unknown', { data: true });        // ❌ TypeScript error
+```
+
+### Connection Lifecycle
+
+```
+Client connects (EventSource)
+     │
+     ▼
+Server sends headers (text/event-stream)
+     │
+     ▼
+Handler starts executing
+     │
+     ├──▶ stream.send('event', data) ──▶ Client receives
+     │
+     ├──▶ Keepalive ping every 30s (configurable)
+     │
+     └──▶ On client disconnect: cleanup callback
+```
+
+```typescript
+// Handling client disconnect
+handler: async (stream, ctx) => {
+  const interval = setInterval(() => {
+    stream.send('heartbeat', { time: Date.now() });
+  }, 30000);
+  
+  stream.onClose(() => {
+    clearInterval(interval);
+    // Clean up subscriptions, etc.
+  });
+}
+```
+
+---
+
+## 📡 Event-Driven Architecture
+
+BlaizeJS supports event-driven patterns where data sources can publish events that other parts of the system subscribe to.
+
+### Pub/Sub Pattern
+
+Plugins and services can implement publish/subscribe patterns for real-time coordination:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         EVENT-DRIVEN FLOW                                │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   Data Source                    Event Bus                               │
+│        │                              │                                  │
+│        │ emit('change', event)        │                                  │
+│        ▼                              ▼                                  │
+│   ┌─────────────┐              ┌─────────────┐                           │
+│   │  Service    │─────────────▶│  Listeners  │                           │
+│   │  (Cache,    │   publish    │  (Routes,   │                           │
+│   │   Queue,    │              │   Workers,  │                           │
+│   │   Custom)   │              │   SSE)      │                           │
+│   └─────────────┘              └─────────────┘                           │
+│                                      │                                   │
+│                                      │ notify                            │
+│                                      ▼                                   │
+│                               ┌─────────────┐                            │
+│                               │   Clients   │                            │
+│                               │  (via SSE)  │                            │
+│                               └─────────────┘                            │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Event Subscription Pattern
+
+Services can expose event subscriptions that route handlers consume:
+
+```typescript
+// Subscribe to service events and stream to clients
+export const getEvents = route.sse({
+  schema: {
+    query: z.object({ pattern: z.string().optional() }),
+    events: {
+      'data.changed': z.object({
+        key: z.string(),
+        type: z.enum(['set', 'delete']),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  handler: async (stream, ctx, params, logger) => {
+    const pattern = ctx.request.query.pattern || '*';
+    
+    // Subscribe to service events
+    const unsubscribe = ctx.services.myService.watch(pattern, (event) => {
+      stream.send('data.changed', event);
+    });
+    
+    // Cleanup on disconnect
+    stream.onClose(() => {
+      unsubscribe();
+      logger.info('Event stream closed');
+    });
+  },
+});
+```
+
+### Multi-Server Coordination
+
+For distributed deployments, services can coordinate across servers:
+
+```typescript
+// Events propagate across all server instances
+// Each server filters its own events by serverId
+
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  Server A    │     │  Server B    │     │  Server C    │
+│  (serverId)  │     │  (serverId)  │     │  (serverId)  │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │                    │                    │
+       └────────────────────┼────────────────────┘
+                            │
+                     ┌──────▼──────┐
+                     │   Pub/Sub   │
+                     │   (Redis)   │
+                     └─────────────┘
+```
+
+Services publish events that other servers receive, enabling:
+- Cache invalidation across instances
+- Job status updates across workers
+- Real-time sync for distributed state
+
+---
+
+## 📦 Package Dependencies
+
+The BlaizeJS packages have these relationships:
+
+```
+                    ┌─────────────────┐
+                    │ @blaizejs/types │
+                    │   (shared TS    │
+                    │     types)      │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              ▼              ▼
+      ┌───────────┐  ┌───────────────┐  ┌────────────────────┐
+      │ blaizejs  │  │ @blaizejs/    │  │ @blaizejs/         │
+      │  (core)   │  │    client     │  │  testing-utils     │
+      └─────┬─────┘  └───────────────┘  └────────────────────┘
+            │
+            │ Peer dependency
+            │
+  ┌─────────┼─────────────────┬────────────────────┐
+  │         │                 │                    │
+  ▼         ▼                 ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│ @blaizejs/      │  │ @blaizejs/      │  │ @blaizejs/      │
+│  plugin-queue   │  │  plugin-cache   │  │  plugin-metrics │
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+```
+
+**Package roles:**
+
+| Package | Role | Dependencies |
+|---------|------|--------------|
+| `@blaizejs/types` | Shared TypeScript types | None |
+| `blaizejs` | Core framework | `@blaizejs/types`, `zod` |
+| `@blaizejs/client` | RPC client | `@blaizejs/types` |
+| `@blaizejs/testing-utils` | Test helpers | `blaizejs` (peer) |
+| `@blaizejs/plugin-*` | Feature plugins | `blaizejs` (peer) |
+
+---
+
+## 🏗️ Design Decisions
+
+### Why HTTP/2 by Default?
+
+**Decision:** BlaizeJS uses HTTP/2 as the default protocol.
+
+**Rationale:**
+- **Multiplexing:** Multiple requests over single connection reduces latency
+- **Header compression:** HPACK reduces overhead for API calls with similar headers
+- **Server push ready:** Future optimization path for preloading resources
+- **Modern baseline:** All modern browsers and clients support HTTP/2
+
+**Tradeoffs:**
+- Requires HTTPS (self-signed cert generated for local dev)
+- Slightly more complex debugging (need HTTP/2-aware tools)
+- Some corporate proxies still struggle with HTTP/2
+
+**Fallback:** HTTP/1.1 is fully supported via `{ http2: false }` option.
+
+### Why AsyncLocalStorage for Context?
+
+**Decision:** Request context is stored in Node.js AsyncLocalStorage.
+
+**Rationale:**
+- **No prop drilling:** Access context anywhere without passing through every function
+- **Automatic propagation:** Works across async boundaries, promises, callbacks
+- **Clean handler signatures:** Handlers don't need context passed through middleware chain
+
+**Tradeoffs:**
+- Node.js specific (not portable to edge runtimes yet)
+- Small performance overhead (~2-5% in microbenchmarks)
+- Debugging can be confusing without understanding async context
+
+**Alternative considered:** Explicit context passing (like Koa). Rejected due to verbosity.
+
+### Why File-Based Routing?
+
+**Decision:** Routes are discovered from the file system.
+
+**Rationale:**
+- **Convention over configuration:** URL structure is visible in file tree
+- **Colocation:** Route, schema, and middleware live together
+- **Familiarity:** Developers coming from Next.js, Remix, SvelteKit feel at home
+- **Tooling friendly:** Static analysis can understand routes
+
+**Tradeoffs:**
+- Less flexible than programmatic routing
+- Dynamic route registration requires workarounds
+- IDE support for route linking varies
+
+**Escape hatch:** Programmatic route registration is possible via `server.register()`.
+
+### Why Zod for Schemas?
+
+**Decision:** Zod is the default (and currently only) schema library.
+
+**Rationale:**
+- **Best-in-class inference:** `z.infer<>` provides accurate types
+- **Runtime + compile time:** Same schema validates and types
+- **Ecosystem:** Most popular TypeScript validation library
+- **Composable:** Schemas can extend, merge, and transform
+
+**Tradeoffs:**
+- Locked to Zod (no Yup, Joi, ArkType support yet)
+- Bundle size (~10kb gzipped)
+- Learning curve for complex schemas
+
+**Future:** May add adapter pattern for alternative schema libraries.
+
+### Why Not WebSockets?
+
+**Decision:** Real-time features use SSE instead of WebSockets.
+
+**Rationale:**
+- **Simpler protocol:** SSE is just HTTP with streaming
+- **Unidirectional sufficient:** Most real-time needs are server → client
+- **HTTP/2 compensates:** Multiplexing eliminates SSE's connection limit
+- **Easier debugging:** Standard HTTP tools work
+- **Better compatibility:** Works through more proxies and load balancers
+
+**Tradeoffs:**
+- No bidirectional real-time (use POST + SSE pattern)
+- Browser EventSource API is less flexible than WebSocket
+- Some use cases genuinely need WebSocket (games, collaborative editing)
+
+**Pattern:** For bidirectional communication, use POST requests for client → server and SSE for server → client. This pattern covers most real-time application needs.
+
+---
+
+## 🔮 Future Architecture Considerations
+
+These are potential future directions being considered:
+
+### Edge Runtime Support
+
+Adapting the core to run on edge platforms:
+- Cloudflare Workers
+- Deno Deploy
+- Vercel Edge Functions
+- Bun
+
+This requires abstracting Node.js-specific APIs (AsyncLocalStorage, file system) behind platform adapters.
+
+### HTTP/2 Hosting Solutions
+
+Improving deployment options for HTTP/2:
+- Simplified reverse proxy configurations
+- Cloud provider integration guides
+- Container-ready HTTP/2 setups
+- Load balancer compatibility patterns
+
+### Plugin & Middleware Ecosystem
+
+Expanding the official plugin ecosystem:
+- Additional storage adapters (DynamoDB, MongoDB, etc.)
+- Authentication plugins (OAuth, JWT, session)
+- Rate limiting middleware
+- Compression middleware
+- Request validation enhancements
+
+### External Queue Workers
+
+Enhancing the queue plugin for distributed processing:
+- External worker process support
+- Redis-backed job storage
+- Cross-service job coordination
+- Horizontal scaling patterns
+
+### AI Integrations
+
+Deeper integration with AI/ML workflows:
+- Streaming response helpers for LLM outputs
+- Token-aware rate limiting
+- AI provider SDK integrations
+- Prompt management patterns
+
+### Distributed Tracing
+
+OpenTelemetry integration for:
+- Automatic span creation per request
+- Trace propagation to downstream services
+- Metric export to observability platforms
+- Correlation ID integration with traces
+
+---
+
+## 📚 Further Reading
+
+- [Getting Started Guide](../docs/getting-started/quick-start.md) — Build your first BlaizeJS app
+- [Core Package API](../packages/blaize-core/README.md) — Full API reference
+- [Plugin Development](./guides/plugins.md) — Create custom plugins
+- [Contributing Guide](./CONTRIBUTING.md) — Help improve BlaizeJS

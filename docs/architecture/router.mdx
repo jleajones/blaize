@@ -1,0 +1,518 @@
+# 🛤️ Router
+
+> File paths become URL paths. Export names become client methods. Types flow automatically.
+
+---
+
+## Why File-Based Routing?
+
+Most frameworks require you to manually register routes:
+
+```typescript
+// Traditional approach
+app.get('/users', listUsers);
+app.get('/users/:id', getUser);
+app.post('/users', createUser);
+// ... repeat for every route
+```
+
+BlaizeJS takes a different approach: **your file structure IS your route structure**. Create a file, get a route. No registration, no configuration, no room for URL/handler mismatches.
+
+```
+src/routes/                         URL
+├── index.ts                   →    /
+├── health.ts                  →    /health
+├── users/
+│   ├── index.ts               →    /users
+│   └── [userId]/
+│       ├── index.ts           →    /users/:userId
+│       └── posts.ts           →    /users/:userId/posts
+└── api/
+    └── v1/
+        └── status.ts          →    /api/v1/status
+```
+
+**Benefits:**
+- **Discoverable:** New developers can understand your API by browsing files
+- **Predictable:** File location guarantees URL structure
+- **Maintainable:** Refactoring files automatically refactors URLs
+- **Type-safe:** File exports carry types to the client
+
+---
+
+## How Routes Connect to Types
+
+Before diving into route definitions, it's important to understand where the `route` object comes from. This is the bridge between your server's types and your route handlers.
+
+In your main app file, you create a **route factory** that inherits types from your server:
+
+```typescript
+// src/app.ts
+import { Blaize, type InferContext } from 'blaizejs';
+
+// 1. Create server with middleware and plugins
+const app = Blaize.createServer({
+  port: 3000,
+  routesDir: './src/routes',
+  middleware: [authMiddleware],
+  plugins: [databasePlugin()],
+});
+
+// 2. Extract the composed context types
+type AppContext = InferContext<typeof app>;
+
+// 3. Create a route factory that carries these types
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],     // { user: User } from authMiddleware
+  AppContext['services']   // { db: Database } from databasePlugin
+>();
+
+await app.listen();
+```
+
+Now every route file imports this `route` factory:
+
+```typescript
+// src/routes/users.ts
+import { route } from '../app';  // ← Types flow from here
+
+export const listUsers = route.get({
+  handler: async (ctx) => {
+    ctx.state.user;      // ✅ Typed as User
+    ctx.services.db;     // ✅ Typed as Database
+  },
+});
+```
+
+For a deeper explanation of how types flow through the system, see **[Type System](/docs/architecture/type-system)**.
+
+---
+
+## Path Mapping Rules
+
+### Basic Mapping
+
+| File Path | URL Path |
+|-----------|----------|
+| `routes/index.ts` | `/` |
+| `routes/users.ts` | `/users` |
+| `routes/users/index.ts` | `/users` |
+| `routes/health.ts` | `/health` |
+| `routes/api/v1/status.ts` | `/api/v1/status` |
+
+### Dynamic Segments
+
+Use `[param]` brackets for dynamic URL segments:
+
+| File Path | URL Path | Parameters |
+|-----------|----------|------------|
+| `routes/users/[userId].ts` | `/users/:userId` | `userId` |
+| `routes/users/[userId]/index.ts` | `/users/:userId` | `userId` |
+| `routes/users/[userId]/posts.ts` | `/users/:userId/posts` | `userId` |
+| `routes/posts/[postId]/comments/[commentId].ts` | `/posts/:postId/comments/:commentId` | `postId`, `commentId` |
+
+The parameter name inside brackets becomes the key in `params`:
+
+```typescript
+// routes/users/[userId].ts
+export const getUser = route.get({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+  },
+  handler: async (ctx, params) => {
+    // params.userId is the value from the URL
+    // GET /users/abc-123 → params.userId = "abc-123"
+    return await db.users.findById(params.userId);
+  },
+});
+```
+
+### Index Files
+
+`index.ts` files represent the directory path:
+
+```
+routes/users/index.ts    →  /users      (not /users/index)
+routes/users/[userId]/index.ts  →  /users/:userId
+```
+
+---
+
+## Route Factory Methods
+
+The route factory (explained above) provides methods for all HTTP verbs:
+
+| Method | HTTP Verb | Request Body | Common Use |
+|--------|-----------|--------------|------------|
+| `route.get()` | GET | No | Fetch resources |
+| `route.post()` | POST | Yes | Create resources |
+| `route.put()` | PUT | Yes | Replace resources |
+| `route.patch()` | PATCH | Yes | Partial update |
+| `route.delete()` | DELETE | No | Remove resources |
+| `route.head()` | HEAD | No | Headers only |
+| `route.options()` | OPTIONS | No | CORS preflight |
+| `route.sse()` | GET | No | Server-Sent Events |
+
+---
+
+## Route Definition
+
+Each route is defined with a schema and handler:
+
+```typescript
+// src/routes/users/[userId].ts
+import { route } from '../../app';
+import { z } from 'zod';
+
+export const getUser = route.get({
+  // Schema validates params, query, body, and response
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    query: z.object({ 
+      include: z.array(z.string()).optional() 
+    }),
+    response: z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string().email(),
+    }),
+  },
+  
+  // Optional route-level middleware
+  middleware: [rateLimitMiddleware],
+  
+  // Handler receives typed context and params
+  handler: async (ctx, params, logger) => {
+    logger.info('Fetching user', { userId: params.userId });
+    
+    const user = await ctx.services.db.users.findById(params.userId);
+    
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    
+    return user;  // Validated against response schema
+  },
+});
+```
+
+### Handler Signature
+
+```typescript
+handler: async (ctx, params, logger) => {
+  // ctx     - Context with request, response, state, services
+  // params  - Validated URL parameters (typed from schema.params)
+  // logger  - BlaizeLogger scoped to this route
+  
+  return response;  // Validated against schema.response
+}
+```
+
+### Schema Properties
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `params` | `z.ZodObject` | URL path parameters (`:userId`) |
+| `query` | `z.ZodObject` | Query string parameters (`?limit=10`) |
+| `body` | `z.ZodObject` | Request body (POST, PUT, PATCH) |
+| `response` | `z.ZodType` | Response validation and client types |
+
+---
+
+## Named Exports → Client Methods
+
+**This is crucial:** The export name becomes the client method name.
+
+```typescript
+// src/routes/users/index.ts
+export const listUsers = route.get({ ... });   // client.$get.listUsers()
+export const createUser = route.post({ ... }); // client.$post.createUser()
+
+// src/routes/users/[userId].ts
+export const getUser = route.get({ ... });     // client.$get.getUser()
+export const updateUser = route.put({ ... });  // client.$put.updateUser()
+export const deleteUser = route.delete({ ... }); // client.$delete.deleteUser()
+```
+
+### Routes Registry
+
+Export your routes in a registry file for the client:
+
+```typescript
+// src/app-type.ts
+import { listUsers, createUser } from './routes/users';
+import { getUser, updateUser, deleteUser } from './routes/users/[userId]';
+import { streamNotifications } from './routes/notifications/stream';
+
+export const routes = {
+  listUsers,
+  createUser,
+  getUser,
+  updateUser,
+  deleteUser,
+  streamNotifications,
+} as const;  // `as const` is important!
+```
+
+### Client Usage
+
+```typescript
+// client.ts
+import bc from '@blaizejs/client';
+import { routes } from './server/app-type';
+
+const client = bc.create('https://api.example.com', routes);
+
+// Methods use export names, not file paths!
+const users = await client.$get.listUsers({ query: { limit: 10 } });
+const user = await client.$get.getUser({ params: { userId: '123' } });
+const newUser = await client.$post.createUser({ body: { name: 'Alice' } });
+```
+
+---
+
+## Route Matching Priority
+
+When multiple routes could match a URL, BlaizeJS uses this priority:
+
+1. **Static segments beat dynamic:** `/users/profile` wins over `/users/[id]`
+2. **Deeper paths beat shallow:** `/users/[id]/posts` wins over `/users/[id]`
+3. **Earlier registration wins ties:** Alphabetical file order
+
+```
+GET /users/profile
+
+✅ routes/users/profile.ts     (static match)
+❌ routes/users/[userId].ts    (dynamic, lower priority)
+```
+
+```
+GET /users/123
+
+❌ routes/users/profile.ts     (doesn't match "123")
+✅ routes/users/[userId].ts    (dynamic match, userId = "123")
+```
+
+---
+
+## Route Discovery
+
+On server start, BlaizeJS:
+
+1. **Scans** the `routesDir` recursively for `.ts` files
+2. **Parses** file paths into URL patterns
+3. **Imports** each file and extracts route exports
+4. **Registers** routes for fast matching
+
+```typescript
+const app = Blaize.createServer({
+  routesDir: './src/routes',  // Where to look for routes
+});
+```
+
+### What Gets Discovered
+
+The router looks for exports that look like routes (objects with HTTP method properties):
+
+```typescript
+// ✅ Discovered: Named export with route.get()
+export const getUser = route.get({ handler: async () => {} });
+
+// ✅ Discovered: Named export with route.post()  
+export const createUser = route.post({ handler: async () => {} });
+
+// ❌ Not a route: No HTTP method
+export const userSchema = z.object({ ... });
+
+// ❌ Not a route: Just a function
+export function validateUser() { ... }
+```
+
+---
+
+## Multiple Routes Per File
+
+A single file can export multiple routes:
+
+```typescript
+// src/routes/users/index.ts
+import { route } from '../../app';
+
+// GET /users
+export const listUsers = route.get({
+  schema: {
+    query: z.object({ limit: z.coerce.number().default(20) }),
+    response: z.array(userSchema),
+  },
+  handler: async (ctx) => {
+    return await ctx.services.db.users.findMany({
+      take: ctx.request.query.limit,
+    });
+  },
+});
+
+// POST /users
+export const createUser = route.post({
+  schema: {
+    body: createUserSchema,
+    response: userSchema,
+  },
+  handler: async (ctx) => {
+    return await ctx.services.db.users.create(ctx.request.body);
+  },
+});
+```
+
+Both routes share the same URL path (`/users`) but handle different HTTP methods.
+
+---
+
+## Route-Level Middleware
+
+Add middleware to specific routes:
+
+```typescript
+export const getSecrets = route.get({
+  middleware: [adminOnlyMiddleware, auditLogMiddleware],
+  handler: async (ctx) => {
+    // Only runs if middleware passes
+    return await ctx.services.vault.getSecrets();
+  },
+});
+```
+
+Middleware executes in array order, before the handler.
+
+---
+
+## CRUD Pattern
+
+A typical RESTful resource:
+
+```
+src/routes/
+└── posts/
+    ├── index.ts           # GET /posts, POST /posts
+    └── [postId]/
+        └── index.ts       # GET /posts/:postId, PUT, PATCH, DELETE
+```
+
+```typescript
+// src/routes/posts/index.ts
+export const listPosts = route.get({
+  schema: {
+    query: paginationSchema,
+    response: z.array(postSchema),
+  },
+  handler: async (ctx) => {
+    return await ctx.services.db.posts.findMany();
+  },
+});
+
+export const createPost = route.post({
+  schema: {
+    body: createPostSchema,
+    response: postSchema,
+  },
+  handler: async (ctx) => {
+    return await ctx.services.db.posts.create({
+      ...ctx.request.body,
+      authorId: ctx.state.user.id,
+    });
+  },
+});
+```
+
+```typescript
+// src/routes/posts/[postId]/index.ts
+export const getPost = route.get({
+  schema: {
+    params: z.object({ postId: z.string().uuid() }),
+    response: postSchema,
+  },
+  handler: async (ctx, params) => {
+    const post = await ctx.services.db.posts.findById(params.postId);
+    if (!post) throw new NotFoundError('Post not found');
+    return post;
+  },
+});
+
+export const updatePost = route.put({
+  schema: {
+    params: z.object({ postId: z.string().uuid() }),
+    body: updatePostSchema,
+    response: postSchema,
+  },
+  handler: async (ctx, params) => {
+    return await ctx.services.db.posts.update(params.postId, ctx.request.body);
+  },
+});
+
+export const deletePost = route.delete({
+  schema: {
+    params: z.object({ postId: z.string().uuid() }),
+  },
+  handler: async (ctx, params) => {
+    await ctx.services.db.posts.delete(params.postId);
+    ctx.response.status(204);
+  },
+});
+```
+
+---
+
+## Low-Level Route Creators
+
+For advanced use cases, you can use individual route creators instead of the factory:
+
+```typescript
+import { createGetRoute, createPostRoute } from 'blaizejs';
+
+// Without factory — no inherited types
+export const getHealth = createGetRoute()({
+  handler: async () => ({ status: 'ok' }),
+});
+
+// With explicit types
+export const getUser = createGetRoute<MyState, MyServices>()({
+  handler: async (ctx, params) => {
+    ctx.state.user;      // Typed as MyState['user']
+    ctx.services.db;     // Typed as MyServices['db']
+  },
+});
+```
+
+**Prefer the route factory** — it's simpler and automatically inherits types.
+
+---
+
+## Configuration
+
+```typescript
+const app = Blaize.createServer({
+  // Where to find route files
+  routesDir: './src/routes',
+});
+```
+
+The router scans `.ts` files recursively from `routesDir`. Currently, only TypeScript files are supported.
+
+---
+
+## Key Takeaways
+
+1. **File paths = URL paths** — No configuration needed
+2. **`[param]` = dynamic segments** — Extracted and typed automatically
+3. **Export names = client method names** — Choose meaningful names
+4. **Route factory inherits types** — Context is fully typed in handlers
+5. **Static beats dynamic** — Exact matches take priority
+6. **One file, multiple routes** — Export different HTTP methods
+
+---
+
+## Related Pages
+
+- **[Type System](/docs/architecture/type-system)** — How route types flow to client
+- **[Context](/docs/architecture/context)** — What's available in handlers
+- **[Middleware](/docs/architecture/middleware)** — Route-level middleware
+- **[SSE](/docs/architecture/sse)** — Real-time streaming routes

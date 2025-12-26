@@ -1,0 +1,482 @@
+# 🔄 Context
+
+> The Context is the single object that flows through every request — carrying request data in, response methods out, and accumulating state along the way.
+
+---
+
+## The Big Picture
+
+Every HTTP request in BlaizeJS creates a `Context` object that lives for the duration of that request. This context is:
+
+- **Passed explicitly** to route handlers and middleware
+- **Propagated automatically** via AsyncLocalStorage for nested async operations
+- **Typed dynamically** based on what middleware and plugins contribute
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Context (ctx)                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────┐    ┌─────────────────┐                        │
+│  │   ctx.request   │    │   ctx.response  │                        │
+│  ├─────────────────┤    ├─────────────────┤                        │
+│  │ method          │    │ status()        │                        │
+│  │ path            │    │ json()          │                        │
+│  │ query           │    │ html()          │                        │
+│  │ params          │    │ redirect()      │                        │
+│  │ body            │    │ stream()        │                        │
+│  │ header()        │    │ header()        │                        │
+│  │ headers()       │    │ sent            │                        │
+│  └─────────────────┘    └─────────────────┘                        │
+│                                                                     │
+│  ┌─────────────────┐    ┌─────────────────┐                        │
+│  │   ctx.state     │    │  ctx.services   │                        │
+│  ├─────────────────┤    ├─────────────────┤                        │
+│  │ Per-request     │    │ Shared          │                        │
+│  │ Added by        │    │ Added by        │                        │
+│  │ middleware      │    │ plugins         │                        │
+│  │                 │    │                 │                        │
+│  │ • user          │    │ • db            │                        │
+│  │ • requestId     │    │ • cache         │                        │
+│  │ • startTime     │    │ • queue         │                        │
+│  └─────────────────┘    └─────────────────┘                        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## The Four Parts of Context
+
+### 1. ctx.request — What Came In
+
+The request object provides read-only access to the incoming HTTP request:
+
+```typescript
+export const GET = route.get({
+  handler: async (ctx) => {
+    // HTTP method and path
+    ctx.request.method;    // 'GET'
+    ctx.request.path;      // '/users/123'
+    ctx.request.url;       // Full URL object
+    ctx.request.protocol;  // 'https'
+    ctx.request.isHttp2;   // true/false
+
+    // Parsed data (typed from schema)
+    ctx.request.params;    // { userId: '123' }
+    ctx.request.query;     // { include: ['posts'] }
+    ctx.request.body;      // POST/PUT body
+
+    // Headers
+    ctx.request.header('authorization');  // Single header
+    ctx.request.headers(['content-type', 'accept']);  // Multiple
+    
+    // Raw Node.js request (escape hatch)
+    ctx.request.raw;  // IncomingMessage | Http2ServerRequest
+  },
+});
+```
+
+**Key properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `method` | `string` | HTTP method (GET, POST, etc.) |
+| `path` | `string` | Request path without query string |
+| `url` | `URL \| null` | Parsed URL object |
+| `params` | `Record<string, string>` | Route parameters (from `[param]` segments) |
+| `query` | `TQuery` | Parsed query string (typed from schema) |
+| `body` | `TBody` | Parsed request body (typed from schema) |
+| `protocol` | `'http' \| 'https'` | Request protocol |
+| `isHttp2` | `boolean` | Whether using HTTP/2 |
+| `raw` | `IncomingMessage` | Raw Node.js request |
+
+### 2. ctx.response — What Goes Out
+
+The response object provides methods to send the HTTP response:
+
+```typescript
+export const POST = route.post({
+  handler: async (ctx) => {
+    // Set status (chainable)
+    ctx.response.status(201);
+
+    // Send JSON (most common)
+    return { id: '123', created: true };
+    // Or explicitly: ctx.response.json({ ... })
+
+    // Other response types
+    ctx.response.html('<h1>Hello</h1>');
+    ctx.response.text('Plain text');
+    ctx.response.redirect('/other-page');
+    ctx.response.redirect('/other-page', 301);  // Permanent
+
+    // Set headers (chainable)
+    ctx.response.header('X-Custom', 'value');
+    ctx.response.headers({ 
+      'X-One': 'a',
+      'X-Two': 'b',
+    });
+
+    // Streaming
+    ctx.response.stream(readableStream);
+
+    // Check if already sent
+    if (ctx.response.sent) {
+      // Can't send again
+    }
+  },
+});
+```
+
+**Key methods:**
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `status(code)` | `this` | Set HTTP status code (chainable) |
+| `json(data)` | `this` | Send JSON response |
+| `html(content)` | `this` | Send HTML response |
+| `text(content)` | `this` | Send plain text response |
+| `redirect(url, code?)` | `this` | Redirect (default 302) |
+| `stream(readable)` | `this` | Stream response body |
+| `header(name, value)` | `this` | Set single header |
+| `headers(obj)` | `this` | Set multiple headers |
+| `sent` | `boolean` | Whether response was already sent |
+| `statusCode` | `number` | Current status code |
+
+> ⚠️ **Double Response Protection:** Attempting to send a response after one was already sent throws `ResponseSentError`. This prevents subtle bugs where headers are sent twice.
+
+### 3. ctx.state — Per-Request Data
+
+State holds data that's specific to the current request. Middleware adds to state, and route handlers read from it:
+
+```typescript
+// Middleware adds to state
+const authMiddleware = createMiddleware<{ user: User }, {}>({
+  handler: async (ctx, next) => {
+    ctx.state.user = await validateToken(ctx.request.header('authorization'));
+    await next();
+  },
+});
+
+const timingMiddleware = createMiddleware<{ startTime: number }, {}>({
+  handler: async (ctx, next) => {
+    ctx.state.startTime = Date.now();
+    await next();
+    const duration = Date.now() - ctx.state.startTime;
+    ctx.response.header('X-Response-Time', `${duration}ms`);
+  },
+});
+
+// Route handler reads from state
+export const GET = route.get({
+  middleware: [authMiddleware, timingMiddleware],
+  handler: async (ctx) => {
+    // Both are typed!
+    ctx.state.user;      // User
+    ctx.state.startTime; // number
+  },
+});
+```
+
+**State characteristics:**
+- ✅ Per-request (isolated between concurrent requests)
+- ✅ Mutable (middleware adds properties)
+- ✅ Typed (via middleware generics)
+- ✅ Survives async boundaries (via AsyncLocalStorage)
+
+### 4. ctx.services — Shared Instances
+
+Services holds shared resources that plugins inject. Unlike state, services are typically the same instance across all requests:
+
+```typescript
+// Plugin injects a service
+const databasePlugin = createPlugin<
+  { url: string },       // Config
+  {},                    // State (none)
+  { db: Database }       // Services
+>({
+  name: 'database',
+  version: '1.0.0',
+  setup: (config) => {
+    let db: Database;  // Singleton in closure
+
+    return {
+      // Add middleware that provides the service
+      register: async (server) => {
+        server.use(createMiddleware<{}, { db: Database }>({
+          name: 'database',
+          handler: async (ctx, next) => {
+            ctx.services.db = db;  // Same instance for all requests
+            await next();
+          },
+        }));
+      },
+      initialize: async () => {
+        db = await Database.connect(config.url);
+      },
+      terminate: async () => {
+        await db.disconnect();
+      },
+    };
+  },
+});
+
+// Route handler uses the service
+export const GET = route.get({
+  handler: async (ctx) => {
+    const users = await ctx.services.db.query('SELECT * FROM users');
+    return { users };
+  },
+});
+```
+
+**Services characteristics:**
+- ✅ Shared (same instance across requests)
+- ✅ Injected by plugins (via middleware)
+- ✅ Typed (via middleware generics)
+- ✅ Lifecycle-managed (plugins handle connect/disconnect)
+
+---
+
+## State vs Services: When to Use Which
+
+| Aspect | `ctx.state` | `ctx.services` |
+|--------|-------------|----------------|
+| **Scope** | Per-request | Shared across requests |
+| **Lifetime** | Dies with request | Lives for server lifetime |
+| **Set by** | Middleware | Plugins (via middleware) |
+| **Examples** | `user`, `requestId`, `startTime` | `db`, `cache`, `queue`, `logger` |
+| **Mutable?** | Yes, during request | Usually read-only after init |
+| **Typical pattern** | Compute per request | Connect once, reuse |
+
+**Rule of thumb:**
+- If it's **computed for each request** → `state`
+- If it's a **shared connection/client** → `services`
+
+---
+
+## How Context Flows
+
+### Request Lifecycle
+
+```
+1. Request arrives
+        │
+        ▼
+2. Context created (internal)
+   ┌─────────────────────────┐
+   │ ctx = {                 │
+   │   request: { ... },     │
+   │   response: { ... },    │
+   │   state: {},            │
+   │   services: {}          │
+   │ }                       │
+   └─────────────────────────┘
+        │
+        ▼
+3. Global middleware runs (adds to state/services)
+   ctx.state.requestId = 'req_123'
+   ctx.services.db = dbInstance
+        │
+        ▼
+4. Route matched, route middleware runs
+   ctx.state.user = authenticatedUser
+        │
+        ▼
+5. Handler executes with fully-typed context
+   handler(ctx, params) → response
+        │
+        ▼
+6. Response sent, context discarded
+```
+
+### AsyncLocalStorage Propagation
+
+Context is stored in Node.js AsyncLocalStorage, which means it automatically propagates through async operations:
+
+```typescript
+export const GET = route.get({
+  handler: async (ctx) => {
+    // Context available here
+    const userId = ctx.state.user.id;
+
+    // Also available in nested async calls
+    const data = await fetchData();  // Can access context internally
+    
+    // Even in Promise.all
+    const [a, b] = await Promise.all([
+      serviceA.get(userId),  // Context available
+      serviceB.get(userId),  // Context available
+    ]);
+
+    return { data, a, b };
+  },
+});
+```
+
+> 🔒 **Internal Note:** The `runWithContext()` and `getContext()` functions exist internally but are not exported. Context is passed explicitly to handlers for clarity and testability.
+
+---
+
+## Context in Testing
+
+For testing, use `createTestContext` from `@blaizejs/testing-utils`:
+
+```typescript
+import { createTestContext } from '@blaizejs/testing-utils';
+import { GET } from './routes/users/[userId]';
+
+test('returns user by ID', async () => {
+  const ctx = createTestContext({
+    method: 'GET',
+    path: '/users/123',
+    params: { userId: '123' },
+    state: {
+      user: { id: 'admin', role: 'admin' },  // Mock auth state
+    },
+    services: {
+      db: mockDatabase,  // Mock database service
+    },
+  });
+
+  const result = await GET.handler(ctx, ctx.request.params);
+
+  expect(result.id).toBe('123');
+});
+```
+
+`createTestContext` options:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `method` | `string` | HTTP method (default: 'GET') |
+| `path` | `string` | Request path (default: '/') |
+| `params` | `Record<string, string>` | Route parameters |
+| `query` | `Record<string, unknown>` | Query parameters |
+| `body` | `unknown` | Request body |
+| `headers` | `Record<string, string>` | Request headers |
+| `state` | `Record<string, unknown>` | Pre-populated state |
+| `services` | `Record<string, unknown>` | Pre-populated services |
+
+---
+
+## Body Parsing
+
+Request bodies are parsed automatically based on `Content-Type`:
+
+| Content-Type | Parsed As | Access Via |
+|--------------|-----------|------------|
+| `application/json` | Object | `ctx.request.body` |
+| `application/x-www-form-urlencoded` | Object | `ctx.request.body` |
+| `multipart/form-data` | Files + fields | `ctx.request.files`, `ctx.request.multipart` |
+| `text/*` | String | `ctx.request.body` |
+
+Body size limits are configurable:
+
+```typescript
+const app = Blaize.createServer({
+  bodyLimits: {
+    json: 512 * 1024,      // 512KB (default)
+    form: 1024 * 1024,     // 1MB (default)
+    text: 5 * 1024 * 1024, // 5MB (default)
+    raw: 10 * 1024 * 1024, // 10MB (default)
+    multipart: {
+      maxFileSize: 10 * 1024 * 1024,  // 10MB per file
+      maxTotalSize: 50 * 1024 * 1024, // 50MB total
+      maxFiles: 10,
+    },
+  },
+});
+```
+
+---
+
+## Common Patterns
+
+### Pattern 1: Correlation IDs
+
+Track requests across services:
+
+```typescript
+const correlationMiddleware = createMiddleware<{ correlationId: string }, {}>({
+  name: 'correlation',
+  handler: async (ctx, next) => {
+    // Use incoming header or generate new
+    ctx.state.correlationId = 
+      ctx.request.header('x-correlation-id') || 
+      `req_${crypto.randomUUID()}`;
+    
+    // Add to response headers
+    ctx.response.header('x-correlation-id', ctx.state.correlationId);
+    
+    await next();
+  },
+});
+```
+
+### Pattern 2: Request Timing
+
+Measure and expose response time:
+
+```typescript
+const timingMiddleware = createMiddleware<{ startTime: number }, {}>({
+  name: 'timing',
+  handler: async (ctx, next) => {
+    ctx.state.startTime = performance.now();
+    
+    await next();
+    
+    const duration = performance.now() - ctx.state.startTime;
+    ctx.response.header('X-Response-Time', `${duration.toFixed(2)}ms`);
+  },
+});
+```
+
+### Pattern 3: Feature Flags
+
+Inject feature flags based on user/request:
+
+```typescript
+const featureFlagsMiddleware = createMiddleware<
+  { features: FeatureFlags },
+  { flagService: FlagService }
+>({
+  name: 'features',
+  handler: async (ctx, next) => {
+    const userId = ctx.state.user?.id;
+    ctx.state.features = await ctx.services.flagService.getFlags(userId);
+    await next();
+  },
+});
+
+// Usage in handler
+export const GET = route.get({
+  handler: async (ctx) => {
+    if (ctx.state.features.newDashboard) {
+      return { dashboard: 'v2' };
+    }
+    return { dashboard: 'v1' };
+  },
+});
+```
+
+---
+
+## Key Takeaways
+
+1. **Context is the single carrier** — Everything flows through `ctx`
+2. **Four distinct parts** — `request` (in), `response` (out), `state` (per-request), `services` (shared)
+3. **Typed via composition** — Middleware and plugins declare what they add
+4. **Explicitly passed** — Handlers receive `ctx` as first parameter
+5. **Testable** — `createTestContext` makes unit testing easy
+6. **Protected** — Double responses throw errors, not silent failures
+
+---
+
+## Related Pages
+
+- **[Type System](/docs/architecture/type-system)** — How types flow from middleware to handlers
+- **[Middleware](/docs/architecture/middleware)** — How middleware adds to state and services
+- **[Plugins](/docs/architecture/plugins)** — How plugins provide services
+- **[Testing Guide](/docs/guides/testing)** — Testing with `createTestContext`

@@ -1,0 +1,261 @@
+# 🔥 The BlaizeJS Philosophy
+
+> **Build APIs like it's 2025, not 2015.**
+
+---
+
+## 🎯 Our Vision
+
+BlaizeJS aims to be **the Rails of TypeScript** — an opinionated, batteries-included framework that makes building production APIs genuinely enjoyable.
+
+Just as Rails transformed Ruby web development by eliminating boilerplate and embracing convention over configuration, BlaizeJS does the same for TypeScript APIs. And just as Next.js brought structure and developer experience to React, we bring that same philosophy to backend development.
+
+**We believe:**
+- You shouldn't need to wire up 15 packages to build a simple API
+- Types should flow from server to client without code generation
+- Real-time features shouldn't require a separate infrastructure
+- Testing should be a first-class concern, not an afterthought
+- Modern protocols (HTTP/2, SSE) should be the default, not an upgrade path
+
+---
+
+## 💎 Core Values
+
+### 1. Developer Experience Above All
+
+Every design decision starts with: **"How will this feel to use?"**
+
+We obsess over the details that make development enjoyable:
+- Autocomplete that actually works
+- Error messages that point to the problem
+- Defaults that make sense
+- Documentation that teaches, not just references
+
+Bad DX creates friction. Friction creates bugs. Bugs create unhappy users. We break that chain at the source.
+
+```typescript
+// This is what good DX looks like:
+// - One import
+// - Types inferred automatically
+// - Handler params are typed from schema
+// - Client knows the response shape
+
+export const getUser = route.get({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    response: userSchema,
+  },
+  handler: async (ctx, params) => {
+    // params.userId is typed as string ✓
+    // Return type is validated against schema ✓
+    return await db.users.findById(params.userId);
+  },
+});
+```
+
+### 2. Type Safety as a Feature
+
+Types aren't just for catching typos — they're **living documentation** that travels with your code.
+
+In BlaizeJS, types flow end-to-end:
+- **Schema → Handler:** Your Zod schemas become your handler's type constraints
+- **Handler → Response:** Return types are validated at compile time
+- **Server → Client:** The client knows every route, every parameter, every response shape
+
+No code generation. No manual syncing. No "any" escape hatches. Change a field on the server, and TypeScript tells you everywhere it breaks on the client.
+
+```typescript
+// Server: Add a field
+response: z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.date(), // ← Add this
+}),
+
+// Client: TypeScript immediately knows
+const user = await client.$get.getUser({ params: { userId } });
+user.createdAt // ← Autocomplete works. Type is Date.
+```
+
+### 3. Testability by Design
+
+If it's hard to test, the design is wrong.
+
+Every BlaizeJS component is built with testing in mind:
+- **Routes** can be tested as pure functions
+- **Middleware** can be tested in isolation
+- **Plugins** have predictable lifecycle hooks
+- **Context** can be mocked with a single helper
+
+We don't just make testing possible — we make it obvious. When you look at a route handler, you should immediately see how to test it.
+
+```typescript
+import { createTestContext } from '@blaizejs/testing-utils';
+
+test('getUser returns user by ID', async () => {
+  const ctx = createTestContext({
+    params: { userId: '123' },
+    services: { db: mockDb },
+  });
+
+  const result = await getUser.handler(ctx, ctx.params);
+  
+  expect(result.id).toBe('123');
+});
+```
+
+### 4. Modern Defaults
+
+We don't carry legacy baggage. BlaizeJS is built for **how we build APIs today**, not how we built them a decade ago.
+
+| Legacy Default | BlaizeJS Default |
+|----------------|------------------|
+| HTTP/1.1 | HTTP/2 |
+| Manual HTTPS setup | Auto-HTTPS in development |
+| Polling for real-time | Server-Sent Events |
+| REST with manual types | RPC with inferred types |
+| Callback-based middleware | Async/await throughout |
+| CommonJS | ESM-first |
+
+We embrace new Node.js features (AsyncLocalStorage, native fetch, HTTP/2) rather than polyfilling old patterns.
+
+### 5. Batteries Included, Doors Open
+
+BlaizeJS ships with everything you need to build production APIs:
+- Plugin system for queues, caching, metrics
+- Middleware for security, logging, validation
+- Error classes that format to RFC 7807 responses
+- SSE for real-time without WebSocket complexity
+
+But we're not a walled garden. Every piece is:
+- **Swappable** — Don't like our cache plugin? Use your own
+- **Composable** — Combine plugins and middleware freely
+- **Extensible** — The plugin API is public, documented, and typed
+
+---
+
+## ⚖️ Our Tradeoffs
+
+We're opinionated, and opinions have tradeoffs. Here's what we chose and why:
+
+### We chose: TypeScript-first
+**Tradeoff:** No plain JavaScript support
+
+**Why:** Half-measures create confusion. Type safety that's optional becomes type safety that's ignored. By requiring TypeScript, we can build APIs that assume types exist — and deliver a better experience because of it.
+
+### We chose: Zod as the default validator
+**Tradeoff:** Other validators require adapters
+
+**Why:** Zod's `z.infer<>` enables our entire type inference chain out of the box. It's the zero-config path. That said, we recognize teams have existing investments in Yup, Joi, and other validators — so we're building adapters where possible, and we encourage the community to contribute adapters for their preferred validation libraries. The type inference story may vary by adapter, but the goal is flexibility without forcing migration.
+
+### We chose: HTTP/2 by default
+**Tradeoff:** Requires HTTPS (even in development)
+
+**Why:** HTTP/2's multiplexing eliminates SSE's connection limits and enables future server push. We auto-generate dev certs to minimize friction.
+
+### We chose: SSE over WebSockets
+**Tradeoff:** Different mental model for bidirectional communication
+
+**Why:** The vast majority of "real-time" needs are actually server → client: notifications, progress updates, live feeds. SSE handles these elegantly, works through more proxies, and debugs with standard HTTP tools. For client → server communication, POST requests work perfectly — giving you a "POST + SSE" pattern that covers most use cases. True bidirectional streaming (games, collaborative cursors, live audio) genuinely benefits from WebSockets, but that's a smaller subset of applications than most assume.
+
+### We chose: File-based routing
+**Tradeoff:** Less flexibility than programmatic routes
+
+**Why:** Convention eliminates configuration. Your file structure *is* your API documentation. Dynamic routes use a clear `[param]` syntax. For complex cases, the escape hatch exists.
+
+### We chose: Opinionated structure
+**Tradeoff:** Less "do it your way" flexibility
+
+**Why:** Opinions are features. They reduce decisions, speed onboarding, and enable tooling. We'd rather be Rails than Express.
+
+---
+
+## 🧭 Guiding Principles
+
+These principles guide our decisions when building BlaizeJS:
+
+### 1. Make the right thing easy, the wrong thing hard
+
+Good patterns should require less code than bad patterns. If developers consistently reach for anti-patterns, the framework design is wrong.
+
+### 2. Fail fast, fail loud
+
+Runtime errors should be compile-time errors. Compile-time errors should have clear messages. Silent failures are bugs in the framework.
+
+### 3. Composition over inheritance
+
+Middleware composes. Plugins compose. Types compose. We don't use class hierarchies or inheritance chains.
+
+### 4. Explicit over implicit (mostly)
+
+Dependencies are injected, not global. State is passed through context, not hidden in closures. But we're pragmatic — some magic (like type inference) is worth it.
+
+### 5. Optimize for reading, not writing
+
+Code is read 10x more than it's written. We favor clear, verbose patterns over clever, terse ones. Autocomplete handles the typing; humans handle the reading.
+
+### 6. Progressive disclosure
+
+Simple things should be simple. Complex things should be possible. The getting-started experience matters as much as the advanced features.
+
+---
+
+## 🎪 Who BlaizeJS Is For
+
+**BlaizeJS is for you if:**
+- You're building TypeScript APIs and want end-to-end type safety
+- You value developer experience and want things to "just work"
+- You're starting a new project and want modern defaults
+- You want real-time features without WebSocket complexity
+- You appreciate opinionated frameworks that reduce decisions
+
+**Consider your options carefully if:**
+
+- **You need battle-tested stability** — BlaizeJS is pre-1.0 software. Express and Fastify have years of production hardening, massive ecosystems, and proven scale. If you need a framework with a decade of Stack Overflow answers and proven reliability at massive scale, those are safer choices today. We're working toward that level of stability, but we're not there yet.
+
+- **You need the largest possible ecosystem** — Express has thousands of middleware packages. Fastify has a rich plugin ecosystem. BlaizeJS has a growing but smaller ecosystem. If your project depends on specific integrations that don't exist for BlaizeJS yet, factor that into your decision.
+
+- **You prefer minimal, unopinionated tools** — BlaizeJS has opinions about structure, routing, and patterns. If you want maximum flexibility to architect things your way, a minimal framework like Hono or Fastify might be a better fit.
+
+- **Your team isn't comfortable with TypeScript** — We're TypeScript-only by design. If your team works primarily in JavaScript or is still learning TypeScript, the learning curve compounds.
+
+**Common concerns we address:**
+
+| "I need WebSockets" | Our SSE + POST pattern handles most real-time use cases. WebSockets excel at high-frequency bidirectional communication (games, collaborative editing). If that's your core use case, evaluate whether SSE fits before choosing. |
+|---------------------|---|
+| "I need GraphQL" | Our typed RPC provides similar benefits: client-driven data fetching, strong typing, no over-fetching. GraphQL shines for complex, nested data graphs with many clients. RPC shines for simpler, more predictable API surfaces. |
+| "I have a large Express/Fastify app" | We're building migration guides to help. The architectural patterns translate — routes, middleware, plugins all have BlaizeJS equivalents. Migration effort depends on how much framework-specific code you have. |
+
+---
+
+## 🔮 Where We're Going
+
+BlaizeJS is evolving toward a complete backend platform:
+
+**Near-term focus:**
+- **Production hardening** — Stability, performance, edge case handling
+- **Testing utilities** — `@blaizejs/testing-utils` is a first-class citizen, not an afterthought. We're investing heavily in making BlaizeJS apps the easiest to test.
+- **Plugin ecosystem** — More official plugins (auth, database, storage) and better patterns for community plugins
+- **Developer experience** — Better error messages, debugging tools, and documentation
+
+**Longer-term vision:**
+- **First-party deployment** — We want deploying a BlaizeJS app to be as simple as `blaize deploy`. No Dockerfile wrestling, no infrastructure decisions. This is a big undertaking, but it's where we're headed.
+- **Deeper AI/ML patterns** — Streaming responses for LLM outputs, token-aware middleware, prompt management patterns. AI is reshaping how APIs are built and consumed — we want first-class support.
+- **Edge runtime support** — Running on Cloudflare Workers, Deno Deploy, etc. This becomes less critical if we nail first-party deployment, but we're keeping the architecture edge-compatible where possible.
+
+We're building the framework we want to use. If that resonates, we'd love to have you along.
+
+---
+
+## 🤝 Join Us
+
+BlaizeJS is open source and community-driven. We believe the best frameworks are built by the people who use them.
+
+- ⭐ **Star us on [GitHub](https://github.com/jleajones/blaize)** — It helps others find us
+- 🐛 **Report issues** — Help us find the rough edges
+- 💡 **Start discussions** — Share ideas for where we should go
+- 🔧 **Contribute** — Code, docs, examples — all welcome
+
+---
+
+**We're not trying to be everything to everyone. We're trying to be the best choice for TypeScript API development. If that's what you're building, welcome to BlaizeJS.** 🔥

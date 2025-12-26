@@ -399,7 +399,7 @@ We welcome contributions! BlaizeJS is built by developers, for developers.
 
 - 🐛 **Found a bug?** [Open an issue](https://github.com/jleajones/blaize/issues)
 - 💡 **Have an idea?** [Start a discussion](https://github.com/jleajones/blaize/discussions)
-- 🔧 **Want to contribute?** See our [Contributing Guide](./CONTRIBUTING.md)
+- 🔧 **Want to contribute?** See our [Contributing Guide](./docs/CONTRIBUTING.md)
 
 ### Development Setup
 

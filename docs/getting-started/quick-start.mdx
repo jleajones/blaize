@@ -1,0 +1,496 @@
+# 🚀 Quick Start
+
+> **Time:** 10 minutes | **Goal:** Running BlaizeJS server with routes, validation, and type safety
+
+---
+
+## Prerequisites
+
+- **Node.js 23+** — [Download](https://nodejs.org/)
+- **Package manager** — npm, pnpm, yarn, or bun
+
+Verify your Node version:
+
+```bash
+node --version
+# v23.0.0 or higher
+```
+
+---
+
+## 1. Create Your Project
+
+```bash
+npx create-blaize-app my-api
+cd my-api
+```
+
+You'll see output like:
+
+```
+🔥 BlaizeJS CLI
+
+✓ Created project directory
+✓ Generated 8 files
+✓ Initialized git repository
+✓ Installed dependencies
+
+🎉 Success! Created my-api
+
+Next steps:
+  cd my-api
+  npm run dev
+```
+
+<details>
+<summary>Using a different package manager?</summary>
+
+```bash
+# pnpm
+pnpm create blaize-app my-api
+
+# yarn
+yarn create blaize-app my-api
+
+# bun
+bun create blaize-app my-api
+```
+
+</details>
+
+---
+
+## 2. Start the Dev Server
+
+```bash
+npm run dev
+```
+
+You'll see:
+
+```
+🚀 Server running at https://localhost:7485
+```
+
+> **Note:** BlaizeJS uses HTTPS by default (HTTP/2). Your browser may warn about the self-signed certificate in development — that's expected.
+
+---
+
+## 3. Test Your API
+
+Open a new terminal and make a request:
+
+```bash
+curl -k https://localhost:7485/health
+```
+
+Response:
+
+```json
+{
+  "status": "healthy",
+  "uptime": 1.234,
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "checks": {
+    "database": true,
+    "redis": true
+  }
+}
+```
+
+> The `-k` flag tells curl to accept the self-signed certificate.
+
+---
+
+## 4. Explore the Project Structure
+
+```
+my-api/
+├── src/
+│   ├── app.ts              # Server setup + route factory
+│   └── routes/
+│       ├── index.ts        # GET /
+│       ├── health.ts       # GET /health
+│       └── users/
+│           ├── index.ts    # GET /users, POST /users
+│           └── [userId].ts # GET /users/:userId, DELETE /users/:userId
+├── package.json
+└── tsconfig.json
+```
+
+Open `src/app.ts` to see the server setup:
+
+```typescript
+import { Blaize, type InferContext } from 'blaizejs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = Blaize.createServer({
+  host: 'localhost',
+  port: 7485,
+  routesDir: path.resolve(__dirname, './routes'),
+  http2: { enabled: true },
+});
+
+// Create a typed route factory for use in route files
+type AppContext = InferContext<typeof app>;
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],
+  AppContext['services']
+>();
+
+await app.listen();
+```
+
+Open `src/routes/health.ts` to see a route:
+
+```typescript
+import { route } from '../app';
+import { z } from 'zod';
+
+export const GET = route.get({
+  schema: {
+    response: z.object({
+      status: z.enum(['healthy', 'degraded', 'unhealthy']),
+      uptime: z.number(),
+      timestamp: z.string(),
+    }),
+  },
+  handler: async () => ({
+    status: 'healthy' as const,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  }),
+});
+```
+
+**Key concepts:**
+- `route.get()` creates a GET route handler
+- `export const GET` tells the router this handles GET requests
+- `schema.response` defines and validates your response shape
+- The handler returns data that TypeScript checks against the schema
+
+---
+
+## 5. Add a Route with Query Parameters
+
+Create a new file `src/routes/hello.ts`:
+
+```typescript
+import { route } from '../app';
+import { z } from 'zod';
+
+export const GET = route.get({
+  schema: {
+    query: z.object({
+      name: z.string().optional(),
+      excited: z.coerce.boolean().optional(), // "true" string → true boolean
+    }),
+    response: z.object({
+      message: z.string(),
+    }),
+  },
+  handler: async (ctx) => {
+    const { name = 'World', excited = false } = ctx.request.query;
+    const punctuation = excited ? '!' : '.';
+    return { message: `Hello, ${name}${punctuation}` };
+  },
+});
+```
+
+Test it:
+
+```bash
+curl -k "https://localhost:7485/hello"
+# {"message":"Hello, World."}
+
+curl -k "https://localhost:7485/hello?name=BlaizeJS"
+# {"message":"Hello, BlaizeJS."}
+
+curl -k "https://localhost:7485/hello?name=BlaizeJS&excited=true"
+# {"message":"Hello, BlaizeJS!"}
+```
+
+**Key concepts:**
+- `schema.query` defines and validates query string parameters
+- `z.coerce.boolean()` converts string `"true"` to boolean `true`
+- `ctx.request.query` is fully typed based on your schema
+
+---
+
+## 6. Add a Route with Request Body
+
+Create `src/routes/messages.ts`:
+
+```typescript
+import { route } from '../app';
+import { z } from 'zod';
+
+// Define reusable schemas
+const messageSchema = z.object({
+  id: z.string(),
+  from: z.string().email(),
+  to: z.string().email(),
+  subject: z.string(),
+  body: z.string(),
+  sentAt: z.string(),
+});
+
+const createMessageSchema = z.object({
+  from: z.string().email(),
+  to: z.string().email(),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(10000),
+});
+
+export const POST = route.post({
+  schema: {
+    body: createMessageSchema,
+    response: messageSchema,
+  },
+  handler: async (ctx) => {
+    // ctx.request.body is typed as { from, to, subject, body }
+    const { from, to, subject, body } = ctx.request.body;
+    
+    // Create the message (in real app, save to database)
+    const message = {
+      id: crypto.randomUUID(),
+      from,
+      to,
+      subject,
+      body,
+      sentAt: new Date().toISOString(),
+    };
+    
+    return message;
+  },
+});
+```
+
+Test it:
+
+```bash
+curl -k -X POST https://localhost:7485/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "alice@example.com",
+    "to": "bob@example.com", 
+    "subject": "Hello!",
+    "body": "Welcome to BlaizeJS"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "from": "alice@example.com",
+  "to": "bob@example.com",
+  "subject": "Hello!",
+  "body": "Welcome to BlaizeJS",
+  "sentAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+**Validation errors are automatic:**
+
+```bash
+curl -k -X POST https://localhost:7485/messages \
+  -H "Content-Type: application/json" \
+  -d '{"from": "not-an-email", "to": "bob@example.com", "subject": "", "body": "Hi"}'
+```
+
+Response (400 Bad Request):
+
+```json
+{
+  "type": "VALIDATION_ERROR",
+  "title": "Validation failed",
+  "status": 400,
+  "details": {
+    "errors": [
+      { "path": ["from"], "message": "Invalid email" },
+      { "path": ["subject"], "message": "String must contain at least 1 character(s)" }
+    ]
+  }
+}
+```
+
+**Key concepts:**
+- `schema.body` validates the JSON request body
+- `ctx.request.body` is fully typed from your schema
+- Invalid requests automatically return 400 with detailed errors
+- Zod constraints (`.min()`, `.max()`, `.email()`) are enforced
+
+---
+
+## 7. Explore Dynamic Routes
+
+Look at `src/routes/users/[userId].ts` — this is a dynamic route:
+
+```typescript
+import { route } from '../../app';
+import { NotFoundError } from 'blaizejs';
+import { z } from 'zod';
+
+export const GET = route.get({
+  schema: {
+    params: z.object({
+      userId: z.string().uuid(),
+    }),
+    response: z.object({
+      id: z.string().uuid(),
+      name: z.string(),
+      email: z.string().email(),
+    }),
+  },
+  handler: async (ctx, params) => {
+    // params.userId is typed as string
+    if (params.userId === '00000000-0000-0000-0000-000000000000') {
+      throw new NotFoundError(`User ${params.userId} not found`);
+    }
+    
+    return {
+      id: params.userId,
+      name: 'John Doe',
+      email: 'john@example.com',
+    };
+  },
+});
+```
+
+Test it:
+
+```bash
+curl -k https://localhost:7485/users/550e8400-e29b-41d4-a716-446655440000
+# {"id":"550e8400-e29b-41d4-a716-446655440000","name":"John Doe","email":"john@example.com"}
+
+curl -k https://localhost:7485/users/00000000-0000-0000-0000-000000000000
+# {"type":"NOT_FOUND","title":"User 00000000-0000-0000-0000-000000000000 not found","status":404,...}
+```
+
+**Key concepts:**
+- `[userId]` in the filename becomes a URL parameter
+- `schema.params` validates URL parameters
+- `params.userId` is fully typed
+- `NotFoundError` automatically formats to a proper HTTP 404 response
+
+---
+
+## 8. Connect the Type-Safe Client (Optional)
+
+To call your API with full type safety, create `src/app-type.ts`:
+
+```typescript
+// Export routes with names that become client methods
+import { GET as getHealth } from './routes/health';
+import { GET as getHello } from './routes/hello';
+import { POST as createMessage } from './routes/messages';
+import { GET as getUser } from './routes/users/[userId]';
+
+export const routes = {
+  getHealth,
+  getHello,
+  createMessage,
+  getUser,
+} as const;
+```
+
+Now a client application can call your API:
+
+```typescript
+import bc from '@blaizejs/client';
+import { routes } from './app-type';
+
+const client = bc.create('https://localhost:7485', routes);
+
+// Full autocomplete and type checking!
+const user = await client.$get.getUser({ 
+  params: { userId: '550e8400-e29b-41d4-a716-446655440000' } 
+});
+console.log(user.name); // TypeScript knows this is a string
+
+// POST requests with typed body
+const message = await client.$post.createMessage({
+  body: {
+    from: 'alice@example.com',
+    to: 'bob@example.com',
+    subject: 'Hello!',
+    body: 'Welcome to BlaizeJS',
+  },
+});
+console.log(message.id); // TypeScript knows this is a string
+```
+
+---
+
+## ✅ What You've Learned
+
+In 10 minutes, you've:
+- Created a new BlaizeJS project
+- Started the development server
+- Explored file-based routing
+- Added routes with **query parameters** (validated and typed)
+- Added routes with **request body validation** (with automatic error responses)
+- Explored **dynamic routes** with URL parameters
+- Seen type-safe error handling
+- Previewed the type-safe client
+
+---
+
+## 🔗 Next Steps
+
+- **[Tutorial](/docs/getting-started/tutorial)** — Build a complete API in 30 minutes
+- **[File-Based Routing](/docs/guides/routing)** — Deep dive into routing patterns
+- **[Middleware](/docs/guides/middleware)** — Add authentication, logging, and more
+- **[API Reference](/docs/api-reference/blaizejs)** — Full API documentation
+
+---
+
+## 📚 Available Scripts
+
+Your project includes these npm scripts:
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start development server with hot reload |
+| `npm run build` | Build for production |
+| `npm start` | Run production build |
+| `npm run type-check` | Check TypeScript types |
+
+---
+
+## 🆘 Troubleshooting
+
+### "Certificate error" in browser
+
+BlaizeJS uses HTTPS by default. In development, it uses a self-signed certificate. You can:
+- Click "Advanced" → "Proceed anyway" in your browser
+- Use `curl -k` to skip certificate verification
+- Use an HTTP client like Postman or Insomnia
+
+### Port already in use
+
+Change the port in `src/app.ts`:
+
+```typescript
+const app = Blaize.createServer({
+  port: 3000, // Change this
+  // ...
+});
+```
+
+### Route not found
+
+- Check that your file is in the `src/routes/` directory
+- Verify the file exports the correct HTTP method (`GET`, `POST`, `PUT`, `DELETE`, etc.)
+- For POST routes, make sure you're sending `Content-Type: application/json`
+- Make sure the dev server is running
+
+---
+
+**Ready to build something real? Continue to the [Tutorial](./tutorial) →**
