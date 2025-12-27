@@ -1,620 +1,607 @@
 /**
- * EventBus Type Definitions for BlaizeJS
- *
- * This module defines the core types for the EventBus system, enabling
- * type-safe event publishing and subscription with optional cross-server
- * propagation through adapters.
- *
+ * EventBus Type Definitions
+ * 
+ * Foundational types for the BlaizeJS EventBus system.
+ * These types define the contract for event-driven communication
+ * within and across BlaizeJS server instances.
+ * 
  * @module @blaizejs/types/events
- * @since 0.5.0
+ * @since 0.4.0
  */
 
-import type { BlaizeLogger } from './logger';
-
-// ============================================================================
-// Core Event Types
-// ============================================================================
+import type { z } from 'zod';
 
 /**
- * Core event structure for all BlaizeJS events
- *
- * Events flow through the EventBus system and can optionally be propagated
- * across servers via adapters (like Redis).
- *
- * @template TData - Type of the event payload data
- *
- * @example Basic event structure
+ * Event schema map for typed event validation
+ * 
+ * Maps event type strings to Zod schemas for runtime validation.
+ * Used by TypedEventBus to provide compile-time and runtime type safety.
+ * 
+ * @example
+ * ```typescript
+ * import { z } from 'zod';
+ * 
+ * const schemas = {
+ *   'user:created': z.object({
+ *     userId: z.string().uuid(),
+ *     email: z.string().email(),
+ *   }),
+ *   'order:placed': z.object({
+ *     orderId: z.string(),
+ *     total: z.number().positive(),
+ *   }),
+ * } satisfies EventSchemas;
+ * ```
+ * 
+ * @see TypedEventBus
+ */
+export type EventSchemas = Record<string, z.ZodType<unknown>>;
+
+/**
+ * Core event structure for BlaizeJS EventBus
+ * 
+ * Represents a single event with associated metadata.
+ * All events follow this structure whether published locally
+ * or distributed across servers via adapters.
+ * 
+ * @template T - Type of the event data payload
+ * 
+ * @example Basic event
  * ```typescript
  * const event: BlaizeEvent<{ userId: string }> = {
- *   id: 'evt_abc123',
  *   type: 'user:created',
- *   data: { userId: '12345' },
- *   serverId: 'server-a',
+ *   data: { userId: '123' },
  *   timestamp: Date.now(),
+ *   serverId: 'server-1',
  * };
  * ```
- *
- * @example Event with complex data
+ * 
+ * @example Event with correlation ID
  * ```typescript
- * interface OrderData {
- *   orderId: string;
- *   items: Array<{ productId: string; quantity: number }>;
- *   total: number;
- * }
- *
- * const orderEvent: BlaizeEvent<OrderData> = {
- *   id: 'evt_order_456',
+ * const event: BlaizeEvent<{ orderId: string }> = {
  *   type: 'order:placed',
- *   data: {
- *     orderId: 'ord_789',
- *     items: [{ productId: 'prod_1', quantity: 2 }],
- *     total: 99.99,
- *   },
- *   serverId: 'api-server-1',
+ *   data: { orderId: 'ord_123' },
  *   timestamp: Date.now(),
+ *   serverId: 'server-1',
+ *   correlationId: 'req_abc',
+ * };
+ * ```
+ * 
+ * @example Event with no data
+ * ```typescript
+ * const event: BlaizeEvent<undefined> = {
+ *   type: 'system:ready',
+ *   data: undefined,
+ *   timestamp: Date.now(),
+ *   serverId: 'server-1',
  * };
  * ```
  */
-export interface BlaizeEvent<TData = unknown> {
-  /**
-   * Unique identifier for this event instance
-   *
-   * Used for deduplication and tracing. Auto-generated if not provided.
-   */
-  readonly id: string;
-
+export interface BlaizeEvent<T = unknown> {
   /**
    * Event type identifier
-   *
-   * Uses colon-separated naming convention (e.g., 'user:created', 'order:shipped').
-   * Supports pattern matching with wildcards (e.g., 'user:*' matches 'user:created').
+   * 
+   * Typically follows namespace:action convention (e.g., 'user:created').
+   * Used for pattern matching and routing to subscribers.
+   * 
+   * Must be non-empty. Very long type names (>256 chars) may cause
+   * performance issues with pattern matching.
+   * 
+   * @example
+   * - 'user:created'
+   * - 'order:placed'
+   * - 'cache:invalidated'
+   * - 'system:shutdown'
    */
-  readonly type: string;
+  type: string;
 
   /**
-   * Event payload data
-   *
-   * The actual data associated with the event. Type is generic
-   * for compile-time type safety.
+   * Event data payload
+   * 
+   * Can be any JSON-serializable value, including:
+   * - Objects: `{ userId: '123' }`
+   * - Primitives: `'completed'`, `42`, `true`
+   * - Arrays: `['item1', 'item2']`
+   * - null/undefined: Indicates no data
+   * 
+   * Type parameter T provides compile-time type safety.
    */
-  readonly data: TData;
+  data: T;
 
   /**
-   * Server identifier where the event originated
-   *
-   * Used for filtering events in multi-server deployments.
-   * Allows servers to ignore their own events when needed.
-   */
-  readonly serverId: string;
-
-  /**
-   * Timestamp when the event was created (ms since epoch)
-   *
+   * Unix timestamp (milliseconds) when event was created
+   * 
+   * Set automatically by EventBus.publish().
    * Used for event ordering and debugging.
    */
-  readonly timestamp: number;
+  timestamp: number;
+
+  /**
+   * ID of the server that published this event
+   * 
+   * Automatically set by EventBus based on server configuration.
+   * Used to:
+   * - Prevent echo when using distributed adapters
+   * - Track event origin for debugging
+   * - Implement server-specific routing
+   */
+  serverId: string;
 
   /**
    * Optional correlation ID for request tracing
-   *
-   * Links events to specific requests for distributed tracing.
+   * 
+   * Links this event to a specific request or operation.
+   * Propagates through the system for distributed tracing.
+   * 
+   * @example
+   * ```typescript
+   * // In a route handler
+   * const correlationId = ctx.correlationId;
+   * await eventBus.publish('user:created', { userId }, correlationId);
+   * ```
    */
-  readonly correlationId?: string;
+  correlationId?: string;
 }
 
-// ============================================================================
-// Handler Types
-// ============================================================================
-
 /**
- * Event handler function type
- *
- * Handlers receive events and can perform sync or async operations.
- * Errors in handlers are caught and logged but don't affect other handlers.
- *
- * @template TData - Type of the event data the handler expects
- *
- * @example Sync handler
+ * Event handler function signature
+ * 
+ * Receives a BlaizeEvent and processes it.
+ * Can be synchronous or asynchronous.
+ * 
+ * @template T - Type of the event data payload
+ * 
+ * @param event - The event to handle
+ * @returns void or Promise<void>
+ * 
+ * @example Synchronous handler
  * ```typescript
  * const handler: EventHandler<{ userId: string }> = (event) => {
  *   console.log('User created:', event.data.userId);
  * };
  * ```
- *
+ * 
  * @example Async handler
  * ```typescript
  * const handler: EventHandler<{ userId: string }> = async (event) => {
- *   await notifyAdmins(event.data.userId);
- *   await updateAnalytics('user_created', event.data);
+ *   await database.saveUser(event.data.userId);
+ *   await cache.invalidate(`user:${event.data.userId}`);
+ * };
+ * ```
+ * 
+ * @example Handler with error handling
+ * ```typescript
+ * const handler: EventHandler<{ orderId: string }> = async (event) => {
+ *   try {
+ *     await processOrder(event.data.orderId);
+ *   } catch (error) {
+ *     logger.error('Order processing failed', {
+ *       orderId: event.data.orderId,
+ *       error,
+ *       correlationId: event.correlationId,
+ *     });
+ *   }
  * };
  * ```
  */
-export type EventHandler<TData = unknown> = (
-  event: BlaizeEvent<TData>
-) => void | Promise<void>;
+export type EventHandler<T = unknown> = (event: BlaizeEvent<T>) => void | Promise<void>;
 
 /**
- * Unsubscribe function returned from subscribe()
- *
+ * Function to unsubscribe from events
+ * 
+ * Returned by EventBus.subscribe() and EventBusAdapter.subscribe().
  * Calling this function removes the subscription.
- * Multiple calls are safe (idempotent).
- *
+ * 
+ * Must be idempotent - calling multiple times should be safe.
+ * 
  * @example
  * ```typescript
  * const unsubscribe = eventBus.subscribe('user:*', handler);
- *
- * // Later, when done:
+ * 
+ * // Later, remove subscription
  * unsubscribe();
- *
- * // Safe to call multiple times:
- * unsubscribe(); // No-op, no error
+ * 
+ * // Safe to call again
+ * unsubscribe(); // No-op
+ * ```
+ * 
+ * @example Cleanup on component unmount
+ * ```typescript
+ * let unsubscribe: Unsubscribe;
+ * 
+ * onMount(() => {
+ *   unsubscribe = eventBus.subscribe('data:updated', handleUpdate);
+ * });
+ * 
+ * onUnmount(() => {
+ *   unsubscribe?.();
+ * });
  * ```
  */
 export type Unsubscribe = () => void;
 
-// ============================================================================
-// Adapter Types
-// ============================================================================
-
 /**
- * EventBus adapter interface for cross-server event propagation
- *
- * Adapters enable events to flow between multiple server instances.
- * The primary implementation is Redis-based for production use.
- *
- * **Adapter Responsibilities:**
- * - Publish events to external message broker
- * - Subscribe to events from other servers
- * - Handle connection lifecycle
- * - Provide health status
- *
- * @example Adapter usage
+ * Adapter interface for distributed event systems
+ * 
+ * Adapters enable EventBus to work with external message brokers
+ * like Redis Pub/Sub, RabbitMQ, or cloud messaging services.
+ * 
+ * The adapter handles:
+ * - Connection management
+ * - Message serialization/deserialization
+ * - Cross-server event propagation
+ * - Health monitoring
+ * 
+ * @example Redis adapter implementation
  * ```typescript
- * const redisAdapter = createRedisEventBusAdapter({
- *   client: redisClient,
- *   channel: 'blaize:events',
- * });
- *
- * await redisAdapter.connect();
- *
- * // Adapter is used internally by EventBus
- * eventBus.setAdapter(redisAdapter);
+ * class RedisEventBusAdapter implements EventBusAdapter {
+ *   async connect(): Promise<void> {
+ *     await this.redis.connect();
+ *   }
+ * 
+ *   async disconnect(): Promise<void> {
+ *     await this.redis.quit();
+ *   }
+ * 
+ *   async publish(event: BlaizeEvent): Promise<void> {
+ *     await this.redis.publish(
+ *       'blaize:events',
+ *       JSON.stringify(event)
+ *     );
+ *   }
+ * 
+ *   async subscribe(
+ *     pattern: string,
+ *     handler: EventHandler
+ *   ): Promise<Unsubscribe> {
+ *     const channel = `blaize:events:${pattern}`;
+ *     await this.redis.subscribe(channel, handler);
+ *     
+ *     return () => {
+ *       this.redis.unsubscribe(channel);
+ *     };
+ *   }
+ * 
+ *   async healthCheck(): Promise<{ healthy: boolean; message?: string }> {
+ *     try {
+ *       await this.redis.ping();
+ *       return { healthy: true };
+ *     } catch (error) {
+ *       return { 
+ *         healthy: false, 
+ *         message: 'Redis connection failed' 
+ *       };
+ *     }
+ *   }
+ * }
  * ```
+ * 
+ * @see EventBus.setAdapter
  */
 export interface EventBusAdapter {
   /**
-   * Publish an event to the external message broker
-   *
-   * Called by EventBus after local handlers have been notified.
-   * Should serialize and send the event to the broker.
-   *
-   * @param event - The event to publish
-   * @returns Promise that resolves when published
-   *
-   * @throws {EventBusAdapterError} If publish fails
-   */
-  publish(event: BlaizeEvent): Promise<void>;
-
-  /**
-   * Subscribe to events from the external message broker
-   *
-   * Called by EventBus when a subscription is added.
-   * Should set up the subscription on the broker.
-   *
-   * @param pattern - Event type pattern (supports wildcards like 'user:*')
-   * @param handler - Handler to call when matching events arrive
-   * @returns Promise resolving to unsubscribe function
-   *
-   * @throws {EventBusAdapterError} If subscription fails
-   */
-  subscribe(pattern: string, handler: EventHandler): Promise<Unsubscribe>;
-
-  /**
-   * Connect to the external message broker
-   *
-   * Should be called before any publish/subscribe operations.
-   * Idempotent - safe to call if already connected.
-   *
-   * @returns Promise that resolves when connected
-   *
-   * @throws {EventBusConnectionError} If connection fails
+   * Establish connection to the underlying message broker
+   * 
+   * Must be idempotent - safe to call multiple times.
+   * Should throw if connection cannot be established.
+   * 
+   * @throws {Error} If connection fails
+   * 
+   * @example
+   * ```typescript
+   * await adapter.connect();
+   * console.log('Connected to message broker');
+   * ```
    */
   connect(): Promise<void>;
 
   /**
-   * Disconnect from the external message broker
-   *
-   * Should clean up all subscriptions and close connections.
-   * Idempotent - safe to call if already disconnected.
-   *
-   * @returns Promise that resolves when disconnected
+   * Close connection to the underlying message broker
+   * 
+   * Must be idempotent - safe to call multiple times.
+   * Should gracefully handle cases where already disconnected.
+   * 
+   * @example
+   * ```typescript
+   * await adapter.disconnect();
+   * console.log('Disconnected from message broker');
+   * ```
    */
   disconnect(): Promise<void>;
 
   /**
-   * Check adapter health and connectivity
-   *
-   * Used for health checks and monitoring.
-   *
-   * @returns Health status with optional details
-   *
+   * Publish an event to the distributed system
+   * 
+   * The adapter is responsible for:
+   * - Serializing the event
+   * - Publishing to appropriate channels/topics
+   * - Handling transient failures with retries
+   * 
+   * @param event - The event to publish
+   * @throws {Error} If publish fails after retries
+   * 
    * @example
    * ```typescript
-   * const health = await adapter.healthCheck();
-   * if (!health.healthy) {
-   *   logger.error('EventBus adapter unhealthy', health);
-   * }
+   * const event: BlaizeEvent = {
+   *   type: 'user:created',
+   *   data: { userId: '123' },
+   *   timestamp: Date.now(),
+   *   serverId: 'server-1',
+   * };
+   * 
+   * await adapter.publish(event);
    * ```
    */
-  healthCheck(): Promise<{
-    healthy: boolean;
-    message?: string;
-    details?: Record<string, unknown>;
-  }>;
-}
-
-// ============================================================================
-// EventBus Interface
-// ============================================================================
-
-/**
- * Configuration options for EventBus
- *
- * @example Basic configuration
- * ```typescript
- * const options: EventBusOptions = {
- *   serverId: 'api-server-1',
- * };
- * ```
- *
- * @example With logger
- * ```typescript
- * const options: EventBusOptions = {
- *   serverId: 'api-server-1',
- *   logger: createLogger({ name: 'eventbus' }),
- * };
- * ```
- */
-export interface EventBusOptions {
-  /**
-   * Unique identifier for this server instance
-   *
-   * Used to identify event sources in multi-server deployments.
-   * If not provided, a random UUID will be generated.
-   */
-  serverId?: string;
+  publish(event: BlaizeEvent): Promise<void>;
 
   /**
-   * Logger instance for EventBus operations
-   *
-   * If not provided, uses a default console logger.
+   * Subscribe to events matching a pattern
+   * 
+   * The pattern format is adapter-specific:
+   * - Redis: 'user:*' matches 'user:created', 'user:updated'
+   * - RabbitMQ: Routing key patterns
+   * - Custom: Regex or glob patterns
+   * 
+   * @param pattern - Event type pattern to match
+   * @param handler - Function to call for matching events
+   * @returns Unsubscribe function
+   * 
+   * @example
+   * ```typescript
+   * const unsubscribe = await adapter.subscribe(
+   *   'user:*',
+   *   async (event) => {
+   *     console.log('User event:', event.type);
+   *   }
+   * );
+   * 
+   * // Later
+   * unsubscribe();
+   * ```
    */
-  logger?: BlaizeLogger;
+  subscribe(pattern: string, handler: EventHandler): Promise<Unsubscribe>;
+
+  /**
+   * Check adapter health and connectivity
+   * 
+   * Optional method to verify the adapter is functioning correctly.
+   * Used by monitoring systems and health check endpoints.
+   * 
+   * @returns Health status with optional message
+   * 
+   * @example Healthy adapter
+   * ```typescript
+   * const health = await adapter.healthCheck?.();
+   * // { healthy: true }
+   * ```
+   * 
+   * @example Unhealthy adapter
+   * ```typescript
+   * const health = await adapter.healthCheck?.();
+   * // { healthy: false, message: 'Connection timeout' }
+   * ```
+   */
+  healthCheck?(): Promise<{ healthy: boolean; message?: string }>;
 }
 
 /**
  * Main EventBus interface for event-driven communication
- *
- * The EventBus provides publish/subscribe functionality for decoupled
- * communication between components. It supports:
- * - Local event handling within a single server
- * - Cross-server event propagation via adapters
- * - Pattern-based subscriptions with wildcards
- *
- * **Event Flow:**
- * 1. `publish()` → local handlers notified
- * 2. If adapter set → event forwarded to adapter
- * 3. Adapter broadcasts to other servers
- * 4. Other servers' EventBus instances receive and notify local handlers
- *
+ * 
+ * EventBus provides a publish-subscribe pattern for decoupled
+ * communication within a BlaizeJS application.
+ * 
+ * Features:
+ * - Type-safe event publishing and subscription
+ * - Pattern-based routing (wildcards, regex)
+ * - Optional distributed mode via adapters
+ * - Automatic server identification
+ * - Correlation ID propagation
+ * 
  * @example Basic usage
  * ```typescript
+ * import { createEventBus } from '@blaizejs/core';
+ * 
  * const eventBus = createEventBus({ serverId: 'server-1' });
- *
- * // Subscribe to user events
+ * 
+ * // Subscribe to events
  * const unsubscribe = eventBus.subscribe('user:created', async (event) => {
- *   console.log('New user:', event.data.userId);
- *   await sendWelcomeEmail(event.data.userId);
+ *   console.log('New user:', event.data);
+ *   await sendWelcomeEmail(event.data.email);
  * });
- *
+ * 
  * // Publish an event
- * await eventBus.publish('user:created', { userId: '12345' });
- *
- * // Cleanup when done
+ * await eventBus.publish('user:created', {
+ *   userId: '123',
+ *   email: 'user@example.com',
+ * });
+ * 
+ * // Cleanup
  * unsubscribe();
  * ```
- *
- * @example Pattern subscriptions
+ * 
+ * @example With adapter for distributed events
  * ```typescript
- * // Subscribe to ALL user events
- * eventBus.subscribe('user:*', (event) => {
- *   console.log('User event:', event.type, event.data);
+ * import { createEventBus } from '@blaizejs/core';
+ * import { RedisEventBusAdapter } from '@blaizejs/adapter-redis';
+ * 
+ * const eventBus = createEventBus({ serverId: 'server-1' });
+ * 
+ * // Enable distributed mode
+ * const adapter = new RedisEventBusAdapter({
+ *   host: 'localhost',
+ *   port: 6379,
  * });
- *
- * // These all match:
- * await eventBus.publish('user:created', { userId: '1' });
- * await eventBus.publish('user:updated', { userId: '1', name: 'New Name' });
- * await eventBus.publish('user:deleted', { userId: '1' });
+ * 
+ * await eventBus.setAdapter(adapter);
+ * 
+ * // Events now propagate across all servers
+ * await eventBus.publish('cache:invalidate', { key: 'users' });
  * ```
- *
- * @example Multi-server with adapter
+ * 
+ * @example Pattern matching
  * ```typescript
- * const eventBus = createEventBus({ serverId: 'api-1' });
- * const adapter = createRedisEventBusAdapter({ client: redis });
- *
- * await adapter.connect();
- * eventBus.setAdapter(adapter);
- *
- * // Events now propagate across all servers connected to Redis
- * eventBus.subscribe('cache:invalidated', (event) => {
- *   if (event.serverId !== 'api-1') {
- *     // Event from another server - invalidate local cache
- *     localCache.delete(event.data.key);
- *   }
- * });
+ * // Wildcard pattern
+ * eventBus.subscribe('user:*', handler);
+ * 
+ * // Regex pattern
+ * eventBus.subscribe(/^(user|admin):/, handler);
+ * 
+ * // Exact match
+ * eventBus.subscribe('system:shutdown', handler);
  * ```
+ * 
+ * @see createEventBus
+ * @see TypedEventBus
  */
 export interface EventBus {
   /**
-   * Server identifier for this EventBus instance
-   *
-   * Included in all published events for source identification.
-   */
-  readonly serverId: string;
-
-  /**
    * Publish an event to all matching subscribers
-   *
-   * Events are delivered to local subscribers first, then forwarded
-   * to the adapter (if set) for cross-server propagation.
-   *
-   * @template TData - Type of the event data
-   * @param type - Event type (e.g., 'user:created')
-   * @param data - Event payload data (optional for events with no data)
-   * @param options - Optional publish options
-   * @returns Promise that resolves when local handlers complete
-   *
-   * @example Simple publish
+   * 
+   * The event is delivered to:
+   * - All local subscribers with matching patterns
+   * - All remote subscribers (if adapter is set)
+   * 
+   * Publishing is fire-and-forget. If a handler throws,
+   * the error is logged but doesn't fail the publish operation.
+   * 
+   * @param type - Event type identifier
+   * @param data - Event data payload (optional)
+   * @returns Promise that resolves when event is published
+   * 
+   * @example Publish with data
    * ```typescript
-   * await eventBus.publish('user:created', { userId: '123' });
+   * await eventBus.publish('user:created', {
+   *   userId: '123',
+   *   email: 'user@example.com',
+   * });
    * ```
-   *
+   * 
    * @example Publish without data
    * ```typescript
-   * await eventBus.publish('system:shutdown');
+   * await eventBus.publish('system:ready');
    * ```
-   *
+   * 
    * @example Publish with correlation ID
    * ```typescript
-   * await eventBus.publish(
-   *   'order:placed',
-   *   { orderId: 'ord_123' },
-   *   { correlationId: 'req_abc' }
-   * );
+   * // Inside a route handler
+   * async ({ ctx, eventBus }) => {
+   *   await eventBus.publish('order:placed', 
+   *     { orderId: '123' },
+   *     ctx.correlationId
+   *   );
+   * }
    * ```
    */
-  publish<TData = unknown>(
-    type: string,
-    data?: TData,
-    options?: EventPublishOptions
-  ): Promise<void>;
+  publish(type: string, data?: unknown): Promise<void>;
 
   /**
    * Subscribe to events matching a pattern
-   *
-   * Patterns support wildcards:
-   * - `*` matches any single segment (e.g., 'user:*' matches 'user:created')
-   * - Exact strings for exact matches (e.g., 'user:created')
-   *
-   * @template TData - Type of the event data expected
-   * @param pattern - Event type pattern to match
-   * @param handler - Handler function called for matching events
-   * @returns Unsubscribe function to remove the subscription
-   *
-   * @example Exact match
+   * 
+   * Patterns can be:
+   * - Exact string: 'user:created'
+   * - Wildcard: 'user:*' (matches user:created, user:updated, etc.)
+   * - RegExp: /^user:/ (matches any event starting with 'user:')
+   * 
+   * The subscription is active immediately.
+   * Handlers are called in the order they were registered.
+   * 
+   * @param pattern - Event type pattern (string or RegExp)
+   * @param handler - Function to call for matching events
+   * @returns Unsubscribe function
+   * 
+   * @example String pattern
    * ```typescript
-   * const unsubscribe = eventBus.subscribe('user:created', (event) => {
-   *   console.log('User created:', event.data);
+   * const unsubscribe = eventBus.subscribe(
+   *   'user:created',
+   *   async (event) => {
+   *     await sendWelcomeEmail(event.data.email);
+   *   }
+   * );
+   * ```
+   * 
+   * @example Wildcard pattern
+   * ```typescript
+   * eventBus.subscribe('user:*', (event) => {
+   *   console.log('User event:', event.type, event.data);
    * });
    * ```
-   *
-   * @example Pattern match
+   * 
+   * @example RegExp pattern
    * ```typescript
-   * eventBus.subscribe('order:*', (event) => {
-   *   // Matches: order:placed, order:shipped, order:delivered
-   *   console.log('Order event:', event.type);
+   * eventBus.subscribe(/^(user|admin):created$/, (event) => {
+   *   auditLog.record(event);
    * });
    * ```
-   */
-  subscribe<TData = unknown>(
-    pattern: string,
-    handler: EventHandler<TData>
-  ): Unsubscribe;
-
-  /**
-   * Set an adapter for cross-server event propagation
-   *
-   * Only one adapter can be set at a time. Setting a new adapter
-   * replaces the previous one.
-   *
-   * @param adapter - The adapter to use, or null to remove
-   *
-   * @example Set adapter
+   * 
+   * @example Cleanup
    * ```typescript
-   * const adapter = createRedisEventBusAdapter({ client: redis });
-   * await adapter.connect();
-   * eventBus.setAdapter(adapter);
-   * ```
-   *
-   * @example Remove adapter
-   * ```typescript
-   * eventBus.setAdapter(null);
+   * const unsubscribe = eventBus.subscribe('data:updated', handler);
+   * 
+   * // Later
+   * unsubscribe();
    * ```
    */
-  setAdapter(adapter: EventBusAdapter | null): void;
+  subscribe(pattern: string | RegExp, handler: EventHandler): Unsubscribe;
 
   /**
-   * Get the current adapter (if any)
-   *
-   * @returns The current adapter or null if none set
+   * Set or replace the distributed adapter
+   * 
+   * Enables cross-server event propagation.
+   * Automatically connects the adapter.
+   * 
+   * If an adapter is already set, it will be disconnected first.
+   * 
+   * @param adapter - EventBusAdapter implementation
+   * @returns Promise that resolves when adapter is connected
+   * 
+   * @example
+   * ```typescript
+   * import { RedisEventBusAdapter } from '@blaizejs/adapter-redis';
+   * 
+   * const adapter = new RedisEventBusAdapter({
+   *   host: 'localhost',
+   *   port: 6379,
+   * });
+   * 
+   * await eventBus.setAdapter(adapter);
+   * console.log('Distributed mode enabled');
+   * ```
    */
-  getAdapter(): EventBusAdapter | null;
+  setAdapter(adapter: EventBusAdapter): Promise<void>;
 
   /**
-   * Check if an adapter is currently set
-   *
-   * @returns true if an adapter is configured
+   * Disconnect and cleanup
+   * 
+   * Disconnects the adapter (if set) and clears all subscriptions.
+   * Should be called during server shutdown.
+   * 
+   * @returns Promise that resolves when cleanup is complete
+   * 
+   * @example
+   * ```typescript
+   * // During server shutdown
+   * await eventBus.disconnect();
+   * ```
    */
-  hasAdapter(): boolean;
-}
-
-/**
- * Options for publishing events
- */
-export interface EventPublishOptions {
-  /**
-   * Correlation ID for request tracing
-   *
-   * Links this event to a specific request for distributed tracing.
-   */
-  correlationId?: string;
+  disconnect(): Promise<void>;
 
   /**
-   * Custom event ID
-   *
-   * If not provided, a unique ID is auto-generated.
+   * Server ID for this EventBus instance
+   * 
+   * Used to:
+   * - Identify event origin
+   * - Prevent echo in distributed mode
+   * - Debug event flow
+   * 
+   * Automatically set during EventBus creation.
+   * 
+   * @readonly
+   * 
+   * @example
+   * ```typescript
+   * console.log('Server ID:', eventBus.serverId);
+   * // Output: 'server-1' or auto-generated UUID
+   * ```
    */
-  id?: string;
-}
-
-// ============================================================================
-// Error Detail Interfaces
-// ============================================================================
-
-/**
- * Base error details for EventBus errors
- *
- * Common fields included in all EventBus error details.
- */
-export interface EventBusErrorDetails {
-  /** Operation that failed (e.g., 'publish', 'subscribe') */
-  operation?: string;
-
-  /** Event type involved */
-  eventType?: string;
-
-  /** Server ID where error occurred */
-  serverId?: string;
-
-  /** Additional context */
-  [key: string]: unknown;
-}
-
-/**
- * Error details for EventBus connection failures
- *
- * Used when connecting to external message brokers fails.
- */
-export interface EventBusConnectionErrorDetails extends EventBusErrorDetails {
-  /** Host address of the message broker */
-  host?: string;
-
-  /** Port number of the message broker */
-  port?: number;
-
-  /** Reason for connection failure */
-  reason?: string;
-
-  /** Original error message from underlying driver */
-  originalError?: string;
-
-  /** Number of connection attempts made */
-  attempts?: number;
-}
-
-/**
- * Error details for EventBus adapter operation failures
- *
- * Used when publish/subscribe operations fail on the adapter.
- */
-export interface EventBusAdapterErrorDetails extends EventBusErrorDetails {
-  /** Adapter operation that failed */
-  adapterOperation?: 'publish' | 'subscribe' | 'unsubscribe' | 'connect' | 'disconnect';
-
-  /** Event pattern involved (for subscriptions) */
-  pattern?: string;
-
-  /** Event ID involved (for publish) */
-  eventId?: string;
-
-  /** Original error message from adapter */
-  originalError?: string;
-}
-
-/**
- * Error details for event validation failures
- *
- * Used when event data fails validation.
- */
-export interface EventValidationErrorDetails extends EventBusErrorDetails {
-  /** Field that failed validation */
-  field?: string;
-
-  /** Expected type or constraint */
-  expectedType?: string;
-
-  /** Type that was actually received */
-  receivedType?: string;
-
-  /** Validation constraint that failed */
-  constraint?: string;
-
-  /** Value that failed validation */
-  value?: unknown;
-}
-
-// ============================================================================
-// Utility Types
-// ============================================================================
-
-/**
- * Extract event data type from a BlaizeEvent
- *
- * @example
- * ```typescript
- * type UserCreatedEvent = BlaizeEvent<{ userId: string; email: string }>;
- * type UserData = EventData<UserCreatedEvent>;
- * // UserData = { userId: string; email: string }
- * ```
- */
-export type EventData<T> = T extends BlaizeEvent<infer TData> ? TData : never;
-
-/**
- * Create a typed event type for a specific event
- *
- * @example
- * ```typescript
- * type UserCreatedEvent = TypedEvent<'user:created', { userId: string }>;
- * ```
- */
-export type TypedEvent<TType extends string, TData> = BlaizeEvent<TData> & {
-  readonly type: TType;
-};
-
-/**
- * Event schema map for defining typed events
- *
- * Used with TypedEventBus for compile-time type safety.
- *
- * @example
- * ```typescript
- * interface MyEventSchemas extends EventSchemas {
- *   'user:created': { userId: string; email: string };
- *   'user:deleted': { userId: string };
- *   'order:placed': { orderId: string; total: number };
- * }
- * ```
- */
-export interface EventSchemas {
-  [eventType: string]: unknown;
+  readonly serverId: string;
 }
