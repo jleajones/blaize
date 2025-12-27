@@ -1,0 +1,923 @@
+# 🔌 Plugins
+
+> Plugins manage expensive resources with lifecycle hooks — connect once at startup, clean up at shutdown, provide access through middleware.
+
+---
+
+## Plugins vs Middleware: When to Use Which
+
+This is the most important decision to understand:
+
+| Need                        | Use Middleware | Use Plugin     |
+| --------------------------- | -------------- | -------------- |
+| Run logic on every request  | ✅             | ❌             |
+| Connect to database once    | ❌             | ✅             |
+| Add data to `ctx.state`     | ✅             | Via middleware |
+| Manage connection pools     | ❌             | ✅             |
+| Validate authentication     | ✅             | ❌             |
+| Clean up on server shutdown | ❌             | ✅             |
+| Add routes dynamically      | ❌             | ✅             |
+
+### The Key Difference
+
+**Middleware** runs on every request — it's for per-request logic like authentication, logging, and validation.
+
+**Plugins** run once at startup/shutdown — they're for managing expensive resources like database connections, cache clients, and external service connections.
+
+```typescript
+// ❌ WRONG: Creating a database connection on every request
+const dbMiddleware = createMiddleware({
+  handler: async (ctx, next) => {
+    ctx.services.db = await Database.connect(); // Expensive! Every request!
+    await next();
+    await ctx.services.db.close(); // Wasteful!
+  },
+});
+
+// ✅ CORRECT: Plugin connects once, middleware provides access
+const databasePlugin = createPlugin<
+  { connectionString: string }, // Config
+  {}, // State (none)
+  { db: Database } // Services
+>({
+  name: 'database',
+  version: '1.0.0',
+  setup: config => {
+    let db: Database; // Singleton in closure
+
+    return {
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { db: Database }>({
+            handler: async (ctx, next) => {
+              ctx.services.db = db; // Just a reference — no connection!
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        db = await Database.connect(config.connectionString); // Connect ONCE
+      },
+      terminate: async () => {
+        await db.close(); // Clean up ONCE at shutdown
+      },
+    };
+  },
+});
+```
+
+### Decision Flowchart
+
+```
+Do you need to run code on every request?
+├── YES → Use Middleware
+└── NO → Continue...
+
+Do you need to connect to an external resource?
+├── YES → Use Plugin
+└── NO → Continue...
+
+Do you need cleanup when the server stops?
+├── YES → Use Plugin
+└── NO → Continue...
+
+Do you need to add routes programmatically?
+├── YES → Use Plugin
+└── NO → Use Middleware (or neither)
+```
+
+---
+
+## The Plugin Pattern
+
+Plugins follow a specific pattern:
+
+1. **Declare resource variables in a closure** (singleton)
+2. **Register middleware** to provide typed access
+3. **Initialize resources** in the `initialize` hook
+4. **Clean up** in the `terminate` hook
+
+```typescript
+import { createPlugin, createMiddleware } from 'blaizejs';
+
+const myPlugin = createPlugin<
+  { connectionString: string }, // TConfig - plugin configuration
+  {}, // TState - adds to ctx.state (usually empty for plugins)
+  { myService: MyService } // TServices - adds to ctx.services
+>({
+  name: 'my-plugin',
+  version: '1.0.0',
+  setup: (config, logger) => {
+    // 1. Declare resources in closure
+    let service: MyService;
+
+    return {
+      // 2. Register middleware for typed access
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { myService: MyService }>({
+            name: 'my-service-provider',
+            handler: async (ctx, next) => {
+              ctx.services.myService = service; // Reference to singleton
+              await next();
+            },
+          })
+        );
+      },
+
+      // 3. Initialize resources
+      initialize: async () => {
+        logger.info('Connecting to service...');
+        service = await MyService.connect(config.connectionString);
+      },
+
+      // 4. Clean up
+      terminate: async () => {
+        logger.info('Disconnecting from service...');
+        await service.disconnect();
+      },
+    };
+  },
+});
+```
+
+### createPlugin Signature
+
+```typescript
+function createPlugin<
+  TConfig = {}, // Plugin configuration type
+  TState = {}, // State additions (rarely used by plugins)
+  TServices = {}, // Service additions
+>(options: CreatePluginOptions<TConfig, TState, TServices>): PluginFactory;
+```
+
+| Generic     | Purpose                                         | Typical Usage                                            |
+| ----------- | ----------------------------------------------- | -------------------------------------------------------- |
+| `TConfig`   | Shape of configuration options                  | `{ host: string; port: number }`                         |
+| `TState`    | What plugin's middleware adds to `ctx.state`    | Usually `{}` — plugins typically add services, not state |
+| `TServices` | What plugin's middleware adds to `ctx.services` | `{ db: Database; cache: CacheService }`                  |
+
+### CreatePluginOptions
+
+```typescript
+interface CreatePluginOptions<TConfig, TState, TServices> {
+  name: string; // Plugin identifier
+  version: string; // Semantic version
+  defaultConfig?: TConfig; // Default configuration values
+  setup: (config: TConfig, logger: BlaizeLogger) => Partial<PluginHooks>;
+}
+```
+
+The `setup` function receives:
+
+- `config` — Merged configuration (defaults + user-provided)
+- `logger` — A child logger scoped to this plugin
+
+---
+
+## Lifecycle Hooks
+
+Plugins can implement five lifecycle hooks:
+
+| Hook            | When It Runs                     | Use For                                |
+| --------------- | -------------------------------- | -------------------------------------- |
+| `register`      | During `server.register(plugin)` | Adding middleware, routes              |
+| `initialize`    | Before `server.listen()`         | Connecting to resources                |
+| `onServerStart` | After server is listening        | Verifying connections, starting timers |
+| `onServerStop`  | When server begins shutdown      | Stopping new work, draining queues     |
+| `terminate`     | During server shutdown           | Closing connections, cleanup           |
+
+### Execution Order
+
+```
+Server Startup:
+  plugin1.register() → plugin2.register() → plugin3.register()
+  plugin1.initialize() → plugin2.initialize() → plugin3.initialize()
+  plugin1.onServerStart() → plugin2.onServerStart() → plugin3.onServerStart()
+
+Server Shutdown (reverse order):
+  plugin3.onServerStop() → plugin2.onServerStop() → plugin1.onServerStop()
+  plugin3.terminate() → plugin2.terminate() → plugin1.terminate()
+```
+
+**Why reverse order for shutdown?** Resources registered last may depend on resources registered first. Shutting down in reverse ensures dependencies are available during cleanup.
+
+### Hook Examples
+
+```typescript
+interface DbOptions {
+  connectionString: string;
+  poolSize?: number;
+}
+
+const databasePlugin = createPlugin<DbOptions, {}, { db: ConnectionPool }>({
+  name: 'database',
+  version: '1.0.0',
+  defaultConfig: {
+    connectionString: 'postgresql://localhost:5432/app',
+    poolSize: 10,
+  },
+  setup: (config, logger) => {
+    let pool: ConnectionPool;
+
+    return {
+      // Called during server.register()
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { db: ConnectionPool }>({
+            name: 'database',
+            handler: async (ctx, next) => {
+              ctx.services.db = pool;
+              await next();
+            },
+          })
+        );
+        logger.debug('Database middleware registered');
+      },
+
+      // Called before server.listen()
+      initialize: async () => {
+        pool = await ConnectionPool.create({
+          connectionString: config.connectionString,
+          max: config.poolSize,
+        });
+        logger.info('Database pool created');
+      },
+
+      // Called after server is listening
+      onServerStart: async () => {
+        await pool.query('SELECT 1'); // Verify connection
+        logger.info('Database connection verified');
+      },
+
+      // Called when server begins shutdown
+      onServerStop: async () => {
+        pool.stopAcceptingQueries();
+        logger.info('Draining database connections...');
+      },
+
+      // Called during shutdown
+      terminate: async () => {
+        await pool.close();
+        logger.info('Database pool closed');
+      },
+    };
+  },
+});
+```
+
+---
+
+## Adding Plugins to Server
+
+Use `.register()` to add plugins. Remember to capture the return value for type accumulation:
+
+```typescript
+// Approach 1: In server config
+const app = Blaize.createServer({
+  plugins: [databasePlugin(), cachePlugin()],
+});
+
+// Approach 2: Chaining
+const app = Blaize.createServer().register(databasePlugin()).register(cachePlugin());
+
+// Approach 3: Reassignment
+const server = Blaize.createServer();
+const withDb = server.register(databasePlugin());
+const app = withDb.register(cachePlugin());
+
+// Extract types from final server
+type AppContext = InferContext<typeof app>;
+```
+
+---
+
+## Plugin Configuration
+
+Plugins accept configuration as the first type parameter:
+
+```typescript
+interface DatabasePluginOptions {
+  host: string;
+  port: number;
+  database: string;
+  poolSize?: number;
+}
+
+const databasePlugin = createPlugin<
+  DatabasePluginOptions, // TConfig
+  {}, // TState (none)
+  { db: ConnectionPool } // TServices
+>({
+  name: 'database',
+  version: '1.0.0',
+  defaultConfig: {
+    host: 'localhost',
+    port: 5432,
+    database: 'app',
+    poolSize: 10,
+  },
+  setup: config => {
+    // config is typed as DatabasePluginOptions
+    const { host, port, database, poolSize } = config;
+
+    let pool: ConnectionPool;
+
+    return {
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { db: ConnectionPool }>({
+            handler: async (ctx, next) => {
+              ctx.services.db = pool;
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        pool = await ConnectionPool.create({
+          host,
+          port,
+          database,
+          max: poolSize,
+        });
+      },
+      terminate: async () => {
+        await pool.close();
+      },
+    };
+  },
+});
+
+// Usage with config (overrides defaults)
+const app = Blaize.createServer().register(
+  databasePlugin({
+    host: 'prod.db.example.com',
+    port: 5432,
+    database: 'production',
+    poolSize: 20,
+  })
+);
+
+// Usage with defaults
+const devApp = Blaize.createServer().register(databasePlugin()); // Uses all defaults
+```
+
+### Default Configuration
+
+The `defaultConfig` option provides base values that user config merges into:
+
+```typescript
+const cachePlugin = createPlugin<{ ttl: number; maxSize: number }, {}, { cache: CacheService }>({
+  name: 'cache',
+  version: '1.0.0',
+  defaultConfig: {
+    ttl: 3600, // 1 hour default
+    maxSize: 1000, // 1000 items default
+  },
+  setup: config => {
+    // config.ttl and config.maxSize are always defined
+    // (from defaults or user override)
+    // ...
+  },
+});
+
+// Override just ttl
+const app = Blaize.createServer().register(cachePlugin({ ttl: 60 })); // maxSize stays at 1000
+```
+
+---
+
+## Type Flow Through Plugins
+
+Plugins add types via the `TState` and `TServices` generic parameters. The types flow through middleware:
+
+```typescript
+// Plugin declares its type contributions
+const databasePlugin = createPlugin<
+  { url: string }, // Config
+  {}, // State (none)
+  { db: Database } // Services
+>({
+  name: 'database',
+  version: '1.0.0',
+  setup: config => {
+    let db: Database;
+
+    return {
+      register: async server => {
+        // Middleware must match the TServices generic
+        server.use(
+          createMiddleware<{}, { db: Database }>({
+            handler: async (ctx, next) => {
+              ctx.services.db = db;
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        db = await Database.connect(config.url);
+      },
+      terminate: async () => {
+        await db.close();
+      },
+    };
+  },
+});
+```
+
+When the plugin is registered, types flow to the server:
+
+```typescript
+const app = Blaize.createServer()
+  .register(databasePlugin({ url: 'postgres://...' })) // Adds { db: Database }
+  .register(cachePlugin()); // Adds { cache: CacheService }
+
+type AppContext = InferContext<typeof app>;
+// AppContext['services'] = { db: Database; cache: CacheService }
+
+// Route handlers get the types
+export const GET = route.get({
+  handler: async ctx => {
+    ctx.services.db; // ✅ Typed as Database
+    ctx.services.cache; // ✅ Typed as CacheService
+  },
+});
+```
+
+---
+
+## Adding Routes from Plugins
+
+Plugins can add routes dynamically via the `register` hook:
+
+```typescript
+const healthPlugin = createPlugin<{}, {}, {}>({
+  name: 'health',
+  version: '1.0.0',
+  setup: () => ({
+    register: async server => {
+      server.router.addRoute({
+        path: '/health',
+        GET: {
+          handler: async () => ({
+            status: 'ok',
+            timestamp: Date.now(),
+          }),
+        },
+      });
+    },
+  }),
+});
+
+interface MetricsOptions {
+  path?: string;
+}
+
+const metricsPlugin = createPlugin<MetricsOptions, {}, { metrics: MetricsCollector }>({
+  name: 'metrics',
+  version: '1.0.0',
+  defaultConfig: {
+    path: '/metrics',
+  },
+  setup: (config, logger) => {
+    let collector: MetricsCollector;
+
+    return {
+      register: async server => {
+        // Add middleware for typed access
+        server.use(
+          createMiddleware<{}, { metrics: MetricsCollector }>({
+            handler: async (ctx, next) => {
+              ctx.services.metrics = collector;
+              await next();
+            },
+          })
+        );
+
+        // Add metrics endpoint
+        server.router.addRoute({
+          path: config.path!,
+          GET: {
+            handler: async ctx => {
+              const metrics = await collector.export();
+              ctx.response.header('Content-Type', 'text/plain');
+              return metrics;
+            },
+          },
+        });
+      },
+      initialize: async () => {
+        collector = new MetricsCollector();
+        collector.start();
+        logger.info('Metrics collector started');
+      },
+      terminate: async () => {
+        collector.stop();
+        logger.info('Metrics collector stopped');
+      },
+    };
+  },
+});
+```
+
+---
+
+## Common Plugin Patterns
+
+### Pattern 1: Database Connection Pool
+
+```typescript
+interface DatabaseOptions {
+  connectionString: string;
+  poolSize?: number;
+}
+
+const databasePlugin = createPlugin<DatabaseOptions, {}, { db: Pool }>({
+  name: 'database',
+  version: '1.0.0',
+  defaultConfig: {
+    connectionString: 'postgresql://localhost:5432/app',
+    poolSize: 10,
+  },
+  setup: config => {
+    let pool: Pool;
+
+    return {
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { db: Pool }>({
+            name: 'database',
+            handler: async (ctx, next) => {
+              ctx.services.db = pool;
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        pool = new Pool({
+          connectionString: config.connectionString,
+          max: config.poolSize,
+        });
+        // Verify connection
+        await pool.query('SELECT 1');
+      },
+      terminate: async () => {
+        await pool.end();
+      },
+    };
+  },
+});
+```
+
+### Pattern 2: Redis Cache
+
+```typescript
+interface CacheOptions {
+  url: string;
+  ttl?: number;
+}
+
+interface CacheService {
+  get: (key: string) => Promise<unknown | null>;
+  set: (key: string, value: unknown, ttl?: number) => Promise<void>;
+  del: (key: string) => Promise<void>;
+}
+
+const cachePlugin = createPlugin<CacheOptions, {}, { cache: CacheService }>({
+  name: 'cache',
+  version: '1.0.0',
+  defaultConfig: {
+    url: 'redis://localhost:6379',
+    ttl: 3600,
+  },
+  setup: config => {
+    let redis: RedisClient;
+
+    const cache: CacheService = {
+      get: async key => {
+        const value = await redis.get(key);
+        return value ? JSON.parse(value) : null;
+      },
+      set: async (key, value, ttl) => {
+        const serialized = JSON.stringify(value);
+        const expiry = ttl ?? config.ttl;
+        if (expiry) {
+          await redis.setex(key, expiry, serialized);
+        } else {
+          await redis.set(key, serialized);
+        }
+      },
+      del: async key => {
+        await redis.del(key);
+      },
+    };
+
+    return {
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { cache: CacheService }>({
+            name: 'cache',
+            handler: async (ctx, next) => {
+              ctx.services.cache = cache;
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        redis = new RedisClient(config.url);
+        await redis.connect();
+      },
+      terminate: async () => {
+        await redis.quit();
+      },
+    };
+  },
+});
+```
+
+### Pattern 3: Background Job Queue
+
+```typescript
+interface QueueOptions {
+  concurrency?: number;
+}
+
+interface QueueService {
+  add: (name: string, data: unknown) => Promise<string>;
+  getStatus: (jobId: string) => Promise<string>;
+}
+
+const queuePlugin = createPlugin<QueueOptions, {}, { queue: QueueService }>({
+  name: 'queue',
+  version: '1.0.0',
+  defaultConfig: {
+    concurrency: 5,
+  },
+  setup: config => {
+    let queue: JobQueue;
+
+    const queueService: QueueService = {
+      add: async (name, data) => queue.add(name, data),
+      getStatus: async jobId => queue.getStatus(jobId),
+    };
+
+    return {
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { queue: QueueService }>({
+            name: 'queue',
+            handler: async (ctx, next) => {
+              ctx.services.queue = queueService;
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        queue = new JobQueue({ concurrency: config.concurrency });
+      },
+      onServerStart: async () => {
+        queue.startProcessing();
+      },
+      onServerStop: async () => {
+        await queue.drain(); // Wait for in-flight jobs
+      },
+      terminate: async () => {
+        queue.shutdown();
+      },
+    };
+  },
+});
+```
+
+### Pattern 4: External API Client
+
+```typescript
+interface ApiClientOptions {
+  baseUrl: string;
+  apiKey: string;
+  timeout?: number;
+}
+
+interface ApiClient {
+  get: (path: string) => Promise<unknown>;
+  post: (path: string, body: unknown) => Promise<unknown>;
+}
+
+const apiClientPlugin = createPlugin<ApiClientOptions, {}, { api: ApiClient }>({
+  name: 'api-client',
+  version: '1.0.0',
+  defaultConfig: {
+    baseUrl: 'https://api.example.com',
+    apiKey: '',
+    timeout: 30000,
+  },
+  setup: config => {
+    const client: ApiClient = {
+      get: async path => {
+        const res = await fetch(`${config.baseUrl}${path}`, {
+          headers: { Authorization: `Bearer ${config.apiKey}` },
+          signal: AbortSignal.timeout(config.timeout!),
+        });
+        return res.json();
+      },
+      post: async (path, body) => {
+        const res = await fetch(`${config.baseUrl}${path}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(config.timeout!),
+        });
+        return res.json();
+      },
+    };
+
+    return {
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { api: ApiClient }>({
+            name: 'api-client',
+            handler: async (ctx, next) => {
+              ctx.services.api = client;
+              await next();
+            },
+          })
+        );
+      },
+      // No async initialization needed for fetch-based clients
+    };
+  },
+});
+```
+
+---
+
+## Anti-Patterns to Avoid
+
+### ❌ Creating Resources Per Request
+
+```typescript
+// ❌ WRONG: New connection every request
+const badPlugin = createPlugin<{}, {}, { db: Database }>({
+  name: 'bad',
+  version: '1.0.0',
+  setup: () => ({
+    register: async server => {
+      server.use(
+        createMiddleware({
+          handler: async (ctx, next) => {
+            ctx.services.db = await Database.connect(); // Expensive!
+            await next();
+            await ctx.services.db.close();
+          },
+        })
+      );
+    },
+  }),
+});
+
+// ✅ CORRECT: Create once, reference many
+const goodPlugin = createPlugin<{}, {}, { db: Database }>({
+  name: 'good',
+  version: '1.0.0',
+  setup: () => {
+    let db: Database;
+
+    return {
+      register: async server => {
+        server.use(
+          createMiddleware({
+            handler: async (ctx, next) => {
+              ctx.services.db = db; // Just a reference
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        db = await Database.connect();
+      },
+      terminate: async () => {
+        await db.close();
+      },
+    };
+  },
+});
+```
+
+### ❌ Forgetting Cleanup
+
+```typescript
+// ❌ WRONG: No cleanup
+const leakyPlugin = createPlugin<{}, {}, {}>({
+  name: 'leaky',
+  version: '1.0.0',
+  setup: () => {
+    let interval: NodeJS.Timeout;
+
+    return {
+      initialize: async () => {
+        interval = setInterval(doSomething, 1000); // Runs forever!
+      },
+      // Missing terminate!
+    };
+  },
+});
+
+// ✅ CORRECT: Clean up resources
+const cleanPlugin = createPlugin<{}, {}, {}>({
+  name: 'clean',
+  version: '1.0.0',
+  setup: () => {
+    let interval: NodeJS.Timeout;
+
+    return {
+      initialize: async () => {
+        interval = setInterval(doSomething, 1000);
+      },
+      terminate: async () => {
+        clearInterval(interval); // Clean up!
+      },
+    };
+  },
+});
+```
+
+### ❌ Ignoring Return Value
+
+```typescript
+// ❌ WRONG: Types lost
+const server = Blaize.createServer();
+server.register(databasePlugin()); // Return value ignored!
+
+type AppContext = InferContext<typeof server>;
+// services = {}  ← db is missing!
+
+// ✅ CORRECT: Capture return
+const app = Blaize.createServer().register(databasePlugin());
+
+type AppContext = InferContext<typeof app>;
+// services = { db: Database }  ✅
+```
+
+---
+
+## Official Plugins
+
+BlaizeJS provides official plugins:
+
+| Plugin  | Package                    | Purpose                                     |
+| ------- | -------------------------- | ------------------------------------------- |
+| Queue   | `@blaizejs/plugin-queue`   | Background job processing with SSE progress |
+| Cache   | `@blaizejs/plugin-cache`   | Memory and Redis caching                    |
+| Metrics | `@blaizejs/plugin-metrics` | Prometheus metrics collection               |
+
+```typescript
+import { createQueuePlugin } from '@blaizejs/plugin-queue';
+import { createCachePlugin } from '@blaizejs/plugin-cache';
+import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
+
+const app = Blaize.createServer()
+  .register(
+    createQueuePlugin({
+      /* options */
+    })
+  )
+  .register(
+    createCachePlugin({
+      /* options */
+    })
+  )
+  .register(
+    createMetricsPlugin({
+      /* options */
+    })
+  );
+```
+
+---
+
+## Key Takeaways
+
+1. **Use plugins for resources** — Database connections, cache clients, external APIs
+2. **Use middleware for requests** — Authentication, logging, validation
+3. **Closure pattern** — Declare singleton in closure, reference in middleware
+4. **Lifecycle hooks** — `initialize` to connect, `terminate` to clean up
+5. **Type accumulation** — Capture `.register()` return value for types
+6. **Reverse shutdown** — Plugins terminate in reverse registration order
+
+---
+
+## Related Pages
+
+- **[Middleware](/docs/architecture/middleware)** — For per-request logic
+- **[Type System](/docs/architecture/type-system)** — How plugin types flow
+- **[Context](/docs/architecture/context)** — Where services are accessed

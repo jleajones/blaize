@@ -1,0 +1,399 @@
+# 📦 Installation
+
+> Choose the setup method that fits your workflow
+
+---
+
+## Prerequisites
+
+Before installing BlaizeJS, ensure you have:
+
+| Requirement | Minimum Version | Check Command |
+|-------------|-----------------|---------------|
+| **Node.js** | 23.0.0+ | `node --version` |
+| **Package Manager** | npm 10+, pnpm 9+, yarn 4+, or bun 1+ | `npm --version` / `pnpm --version` |
+
+> **Why Node.js 23?** BlaizeJS uses modern Node.js features like native fetch, AsyncLocalStorage improvements, and ESM-first module resolution. Node 23+ provides the best experience.
+
+---
+
+## Option 1: Create BlaizeJS App (Recommended)
+
+The fastest way to start a new BlaizeJS project:
+
+```bash
+npx create-blaize-app my-api
+cd my-api
+npm run dev
+```
+
+This gives you:
+- ✅ Pre-configured TypeScript
+- ✅ File-based routing structure
+- ✅ Development server with hot reload
+- ✅ HTTP/2 with auto-generated HTTPS certificates
+- ✅ Example routes to learn from
+
+<details>
+<summary>Using a different package manager?</summary>
+
+```bash
+# pnpm (recommended for monorepos)
+pnpm create blaize-app my-api
+
+# yarn
+yarn create blaize-app my-api
+
+# bun
+bun create blaize-app my-api
+```
+
+</details>
+
+### CLI Options
+
+```bash
+create-blaize-app <project-name> [options]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--template <name>` | Project template | `minimal` |
+| `--pm <manager>` | Package manager (npm, pnpm, yarn, bun) | Auto-detected |
+| `--no-git` | Skip git initialization | `false` |
+| `--no-install` | Skip dependency installation | `false` |
+| `--dry-run` | Preview without creating files | `false` |
+
+**Examples:**
+
+```bash
+# Use pnpm explicitly
+npx create-blaize-app my-api --pm pnpm
+
+# Preview what would be created
+npx create-blaize-app my-api --dry-run
+
+# Skip git init (useful in existing repos)
+npx create-blaize-app my-api --no-git
+```
+
+---
+
+## Option 2: Manual Installation
+
+For adding BlaizeJS to an existing project or when you want full control over your setup.
+
+### Step 1: Install Dependencies
+
+**Runtime dependencies:**
+
+```bash
+npm install blaizejs zod
+```
+
+| Package | Purpose |
+|---------|---------|
+| `blaizejs` | Core framework |
+| `zod` | Schema validation (required for type inference) |
+
+**Development dependencies:**
+
+```bash
+npm install -D typescript tsx @types/node
+```
+
+| Package | Purpose |
+|---------|---------|
+| `typescript` | TypeScript compiler |
+| `tsx` | Development server with hot reload |
+| `@types/node` | Node.js type definitions |
+
+### Step 2: Configure TypeScript
+
+Create `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+**Key settings explained:**
+
+| Setting | Why It Matters |
+|---------|----------------|
+| `"module": "NodeNext"` | Required for ESM support |
+| `"strict": true` | Enables full type safety |
+| `"target": "ES2022"` | Modern JavaScript features |
+
+### Step 3: Configure package.json
+
+Add these fields to your `package.json`:
+
+```json
+{
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch src/app.ts",
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "type-check": "tsc --noEmit"
+  }
+}
+```
+
+> **Important:** `"type": "module"` is required for ESM imports.
+
+### Step 4: Create Project Structure
+
+```bash
+mkdir -p src/routes
+```
+
+Create `src/app.ts`:
+
+```typescript
+import { Blaize, type InferContext } from 'blaizejs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+// ESM path resolution
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Create server
+const app = Blaize.createServer({
+  host: 'localhost',
+  port: 3000,
+  routesDir: path.resolve(__dirname, './routes'),
+  http2: { enabled: true },
+});
+
+// Create typed route factory
+type AppContext = InferContext<typeof app>;
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],
+  AppContext['services']
+>();
+
+// Start server
+await app.listen();
+console.log(`🚀 Server running at https://localhost:3000`);
+```
+
+Create `src/routes/index.ts`:
+
+```typescript
+import { route } from '../app';
+import { z } from 'zod';
+
+export const GET = route.get({
+  schema: {
+    response: z.object({
+      message: z.string(),
+      timestamp: z.string(),
+    }),
+  },
+  handler: async () => ({
+    message: 'Hello from BlaizeJS!',
+    timestamp: new Date().toISOString(),
+  }),
+});
+```
+
+### Step 5: Run Your Server
+
+```bash
+npm run dev
+```
+
+Visit `https://localhost:3000` (accept the self-signed certificate warning).
+
+---
+
+## Additional Packages
+
+### Type-Safe Client
+
+For calling your API with full type inference:
+
+```bash
+npm install @blaizejs/client
+```
+
+```typescript
+import bc from '@blaizejs/client';
+import { routes } from './app-type';
+
+const client = bc.create('https://localhost:3000', routes);
+const data = await client.$get.getHealth();
+```
+
+### Testing Utilities
+
+For testing your routes and middleware:
+
+```bash
+npm install -D @blaizejs/testing-utils vitest
+```
+
+```typescript
+import { createTestContext } from '@blaizejs/testing-utils';
+import { describe, it, expect } from 'vitest';
+
+describe('GET /', () => {
+  it('returns greeting', async () => {
+    const ctx = createTestContext({ method: 'GET' });
+    const result = await GET.handler(ctx, {});
+    expect(result.message).toBe('Hello from BlaizeJS!');
+  });
+});
+```
+
+### Official Plugins
+
+| Package | Purpose | Install |
+|---------|---------|---------|
+| `@blaizejs/plugin-queue` | Background job processing | `npm install @blaizejs/plugin-queue` |
+| `@blaizejs/plugin-cache` | Caching (memory/Redis) | `npm install @blaizejs/plugin-cache` |
+| `@blaizejs/plugin-metrics` | Prometheus metrics | `npm install @blaizejs/plugin-metrics` |
+
+### Official Middleware
+
+| Package | Purpose | Install |
+|---------|---------|---------|
+| `@blaizejs/middleware-security` | Security headers (CSP, HSTS, etc.) | `npm install @blaizejs/middleware-security` |
+
+---
+
+## Project Structure
+
+Whether you use `create-blaize-app` or manual setup, the recommended structure is:
+
+```
+my-api/
+├── src/
+│   ├── app.ts              # Server entry point + route factory
+│   ├── app-type.ts         # Routes registry (for client)
+│   ├── routes/             # File-based routes
+│   │   ├── index.ts        # GET /
+│   │   ├── health.ts       # GET /health
+│   │   └── users/
+│   │       ├── index.ts    # GET /users, POST /users
+│   │       └── [userId].ts # GET /users/:userId
+│   ├── middleware/         # Custom middleware
+│   └── plugins/            # Custom plugins
+├── package.json
+├── tsconfig.json
+└── .gitignore
+```
+
+---
+
+## Environment Configuration
+
+BlaizeJS reads these environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | `3000` |
+| `HOST` | Server host | `localhost` |
+| `NODE_ENV` | Environment mode | `development` |
+
+```bash
+# .env (use with dotenv or similar)
+PORT=8080
+HOST=0.0.0.0
+NODE_ENV=production
+```
+
+```typescript
+// src/app.ts
+const app = Blaize.createServer({
+  port: parseInt(process.env.PORT || '3000'),
+  host: process.env.HOST || 'localhost',
+  // ...
+});
+```
+
+---
+
+## Verification
+
+After installation, verify everything works:
+
+```bash
+# Start dev server
+npm run dev
+
+# In another terminal, test the API
+curl -k https://localhost:3000/
+```
+
+Expected response:
+
+```json
+{
+  "message": "Hello from BlaizeJS!",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+---
+
+## Troubleshooting
+
+### "Cannot find module" errors
+
+Ensure `"type": "module"` is in your `package.json` and you're using `.ts` extensions in imports if needed.
+
+### TypeScript errors about ESM
+
+Make sure `tsconfig.json` has:
+```json
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
+  }
+}
+```
+
+### Certificate warnings in browser
+
+BlaizeJS uses HTTPS by default with a self-signed certificate in development. This is expected — click through the warning or use `curl -k`.
+
+### Port already in use
+
+Change the port in your server configuration:
+```typescript
+const app = Blaize.createServer({
+  port: 3001, // Use a different port
+  // ...
+});
+```
+
+---
+
+## Next Steps
+
+- **[Quick Start](./quick-start.mdx)** — Build your first routes
+- **[Tutorial](./tutorial.mdx)** — Complete API walkthrough
+- **[Architecture](./architecture/overview.mdx)** — Understand how BlaizeJS works

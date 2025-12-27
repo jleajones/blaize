@@ -1,0 +1,782 @@
+# 🔷 Type System
+
+> Types flow from your Zod schemas through your handlers to your client — no code generation, no manual syncing, no runtime overhead.
+
+---
+
+## The Big Picture
+
+BlaizeJS achieves end-to-end type safety through a chain of TypeScript inference. Each step passes types to the next, creating an unbroken flow from server to client:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Zod Schema    │────▶│  Route Factory  │────▶│  Route Export   │
+│   (Runtime)     │     │   route.get()   │     │   getUser       │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  z.infer<T>     │     │ InferContext<>  │     │ typeof routes   │
+│  Params, Body   │     │ State, Services │     │   Registry      │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+                                                ┌─────────────────┐
+                                                │  Client Proxy   │
+                                                │  bc.create()    │
+                                                └─────────────────┘
+                                                        │
+                                                        ▼
+                                                ┌─────────────────┐
+                                                │  Autocomplete   │
+                                                │  & Type Check   │
+                                                └─────────────────┘
+```
+
+**The key insight:** TypeScript infers types at each step without generating any code. The types exist only at compile time — zero runtime overhead.
+
+---
+
+## Schema-Driven Types
+
+Zod schemas define both runtime validation and TypeScript types. The `z.infer<T>` utility extracts the TypeScript type from any Zod schema:
+
+```typescript
+import { z } from 'zod';
+
+// Define a schema
+const userSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  email: z.string().email(),
+  role: z.enum(['admin', 'user', 'guest']),
+  createdAt: z.coerce.date(),
+});
+
+// Extract the TypeScript type
+type User = z.infer<typeof userSchema>;
+// Equivalent to:
+// type User = {
+//   id: string;
+//   name: string;
+//   email: string;
+//   role: 'admin' | 'user' | 'guest';
+//   createdAt: Date;
+// }
+```
+
+### Schema in Routes
+
+When you provide schemas to a route, BlaizeJS infers types for:
+
+| Schema Property | Infers Type For     | Used In                |
+| --------------- | ------------------- | ---------------------- |
+| `params`        | `params` argument   | `handler(ctx, params)` |
+| `query`         | `ctx.request.query` | Handler body           |
+| `body`          | `ctx.request.body`  | Handler body           |
+| `response`      | Return type         | Handler return         |
+
+```typescript
+export const getUser = route.get({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    query: z.object({ include: z.array(z.string()).optional() }),
+    response: z.object({
+      id: z.string(),
+      name: z.string(),
+      posts: z.array(postSchema).optional(),
+    }),
+  },
+  handler: async (ctx, params) => {
+    // params.userId is typed as string ✅
+    // ctx.request.query.include is typed as string[] | undefined ✅
+
+    const user = await db.users.findById(params.userId);
+
+    // Return type must match response schema ✅
+    return {
+      id: user.id,
+      name: user.name,
+      posts: ctx.request.query.include?.includes('posts') ? user.posts : undefined,
+    };
+  },
+});
+```
+
+### Transforms Work Too
+
+Zod's `.transform()` method modifies the output type, and BlaizeJS respects this:
+
+```typescript
+export const GET = route.get({
+  schema: {
+    params: z.object({
+      // Input: string from URL → Output: number after transform
+      userId: z.string().transform(s => parseInt(s, 10)),
+    }),
+    query: z.object({
+      // "true" string → true boolean
+      includeDeleted: z
+        .string()
+        .optional()
+        .transform(val => val === 'true'),
+    }),
+  },
+  handler: async (ctx, params) => {
+    params.userId; // number (not string!)
+    ctx.request.query.includeDeleted; // boolean | undefined
+  },
+});
+```
+
+### Coercion Helpers
+
+Zod's `z.coerce` is especially useful for query parameters:
+
+```typescript
+const paginationSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  sortDesc: z.coerce.boolean().default(false),
+});
+
+export const GET = route.get({
+  schema: { query: paginationSchema },
+  handler: async ctx => {
+    // All typed as their final types, not strings
+    ctx.request.query.page; // number
+    ctx.request.query.limit; // number
+    ctx.request.query.sortDesc; // boolean
+  },
+});
+```
+
+---
+
+## Context Type Composition
+
+The `InferContext` utility type extracts the combined state and services types from your server:
+
+```typescript
+import { Blaize, type InferContext } from 'blaizejs';
+
+// Server with middleware that adds to state/services
+const app = Blaize.createServer({
+  middleware: [authMiddleware, loggingMiddleware],
+  plugins: [databasePlugin(), cachePlugin()],
+});
+
+// Extract the composed context type
+type AppContext = InferContext<typeof app>;
+
+// AppContext has two key properties:
+// - AppContext['state']    → Combined state from all middleware
+// - AppContext['services'] → Combined services from all plugins
+```
+
+### Type Accumulation: Three Approaches
+
+TypeScript needs to track types as you add middleware and plugins. There are three ways to ensure types accumulate correctly:
+
+#### Approach 1: Define in Server Config
+
+Pass middleware and plugins directly to `createServer()`:
+
+```typescript
+const app = Blaize.createServer({
+  port: 3000,
+  routesDir: './src/routes',
+  middleware: [authMiddleware, loggingMiddleware],
+  plugins: [databasePlugin(), cachePlugin()],
+});
+
+type AppContext = InferContext<typeof app>;
+// All types included ✅
+```
+
+**Best for:** Simple setups where all middleware/plugins are known upfront.
+
+#### Approach 2: Chaining
+
+Chain `.use()` and `.register()` calls, capturing the final result:
+
+```typescript
+const app = Blaize.createServer({ port: 3000, routesDir: './src/routes' })
+  .use(authMiddleware)
+  .use(loggingMiddleware)
+  .register(databasePlugin)
+  .register(cachePlugin);
+
+type AppContext = InferContext<typeof app>;
+// All types included ✅
+```
+
+**Best for:** Clean, readable setup when order matters.
+
+#### Approach 3: Reassignment
+
+Capture each return value in a new variable:
+
+```typescript
+const server = Blaize.createServer({ port: 3000, routesDir: './src/routes' });
+const serverWithAuth = server.use(authMiddleware);
+const serverWithLogging = serverWithAuth.use(loggingMiddleware);
+const serverWithDb = serverWithLogging.register(databasePlugin);
+const app = serverWithDb.register(cachePlugin);
+
+type AppContext = InferContext<typeof app>;
+// All types included ✅
+```
+
+**Best for:** Conditional middleware, complex setup logic, debugging.
+
+```typescript
+// Example: Conditional middleware
+const base = Blaize.createServer({ port: 3000, routesDir: './src/routes' });
+const withAuth = base.use(authMiddleware);
+
+const app =
+  process.env.NODE_ENV === 'production'
+    ? withAuth.use(rateLimitMiddleware).register(metricsPlugin)
+    : withAuth;
+
+type AppContext = InferContext<typeof app>;
+```
+
+#### ❌ What NOT to Do
+
+Don't ignore the return value — types will be lost:
+
+```typescript
+const server = Blaize.createServer({ port: 3000, routesDir: './src/routes' });
+server.use(authMiddleware); // ❌ Return value ignored!
+server.register(databasePlugin); // ❌ Return value ignored!
+
+type AppContext = InferContext<typeof server>;
+// AppContext['state'] = {}       ← Missing user!
+// AppContext['services'] = {}    ← Missing db!
+```
+
+**Why this happens:** `.use()` and `.register()` return a _new_ server instance with updated types. They don't mutate the original. TypeScript tracks types through return values, so ignoring them means losing the type information.
+
+### How Types Compose
+
+Each middleware declares what it adds:
+
+```typescript
+// Auth middleware adds user to state
+const authMiddleware = createMiddleware<
+  { user: User; isAuthenticated: boolean },  // State additions
+  { auth: AuthService }                       // Service additions
+>({ ... });
+
+// Logging middleware adds requestId to state
+const loggingMiddleware = createMiddleware<
+  { requestId: string; startTime: number },
+  { logger: Logger }
+>({ ... });
+
+// Database plugin adds db to services (via internal middleware)
+const databasePlugin = createPlugin<{}, {}, { db: Database }>({
+  name: 'database',
+  version: '1.0.0',
+  setup: () => ({
+    register: async (server) => {
+      server.use(createMiddleware<{}, { db: Database }>({ ... }));
+    },
+  }),
+});
+```
+
+When combined on the server, TypeScript intersects all the types:
+
+```typescript
+const app = Blaize.createServer({
+  middleware: [authMiddleware, loggingMiddleware],
+  plugins: [databasePlugin()],
+});
+
+type AppContext = InferContext<typeof app>;
+// AppContext['state'] = {
+//   user: User;
+//   isAuthenticated: boolean;
+//   requestId: string;
+//   startTime: number;
+// }
+// AppContext['services'] = {
+//   auth: AuthService;
+//   logger: Logger;
+//   db: Database;
+// }
+```
+
+---
+
+## Route Factory Pattern
+
+The route factory carries context types to all routes:
+
+```typescript
+// 1. Create server using any of the three type accumulation approaches
+const app = Blaize.createServer({
+  port: 3000,
+  routesDir: './src/routes',
+  middleware: [authMiddleware],
+  plugins: [databasePlugin()],
+});
+
+// 2. Extract context types from final server
+type AppContext = InferContext<typeof app>;
+
+// 3. Create route factory with those types
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'], // Passed to all route handlers
+  AppContext['services'] // Passed to all route handlers
+>();
+
+// 4. Start the server
+await app.listen();
+```
+
+Now in route files, types flow automatically:
+
+```typescript
+// src/routes/users.ts
+import { route } from '../app';
+
+export const GET = route.get({
+  handler: async (ctx, params) => {
+    ctx.state.user; // ✅ Typed as User
+    ctx.services.db; // ✅ Typed as Database
+  },
+});
+```
+
+### Why a Factory?
+
+The factory pattern solves a key problem: how do route files know about types defined in the server file?
+
+```
+src/
+├── app.ts              ← Server created, types inferred
+│   └── route exported  ← Factory carries types
+├── routes/
+│   ├── users.ts        ← Imports route, gets types
+│   └── posts.ts        ← Imports route, gets types
+```
+
+Each route file imports the same `route` factory, ensuring consistent types everywhere:
+
+```typescript
+// src/routes/users.ts
+import { route } from '../app';
+
+export const GET = route.get({
+  handler: async ctx => {
+    // Types available because route factory was created
+    // with AppContext['state'] and AppContext['services']
+    ctx.state.user;
+    ctx.services.db;
+  },
+});
+```
+
+### Factory Methods
+
+The route factory provides methods for all HTTP verbs:
+
+| Method            | HTTP Verb | Body | Common Use         |
+| ----------------- | --------- | ---- | ------------------ |
+| `route.get()`     | GET       | No   | Fetch resources    |
+| `route.post()`    | POST      | Yes  | Create resources   |
+| `route.put()`     | PUT       | Yes  | Replace resources  |
+| `route.patch()`   | PATCH     | Yes  | Partial update     |
+| `route.delete()`  | DELETE    | No   | Remove resources   |
+| `route.head()`    | HEAD      | No   | Headers only       |
+| `route.options()` | OPTIONS   | No   | CORS preflight     |
+| `route.sse()`     | GET       | No   | Server-Sent Events |
+
+---
+
+## Middleware Type Flow
+
+Middleware declares its type contributions via generics:
+
+```typescript
+const authMiddleware = createMiddleware<
+  { user: User }, // Adds to ctx.state
+  { auth: AuthService } // Adds to ctx.services
+>({
+  name: 'auth',
+  handler: async (ctx, next) => {
+    // Before: ctx.state.user doesn't exist
+    ctx.state.user = await validateToken(/*...*/);
+    ctx.services.auth = authService;
+    // After: ctx.state.user exists for downstream
+    await next();
+  },
+});
+```
+
+### Type Safety Within Middleware
+
+Inside the middleware handler, you can safely assign to the declared types:
+
+```typescript
+const authMiddleware = createMiddleware<{ user: User; permissions: string[] }, {}>({
+  handler: async (ctx, next) => {
+    // ✅ TypeScript knows these properties should be assigned
+    ctx.state.user = await getUser();
+    ctx.state.permissions = await getPermissions(ctx.state.user.id);
+
+    // ❌ TypeScript would error if you tried:
+    // ctx.state.wrongProperty = 'value';
+
+    await next();
+  },
+});
+```
+
+### Composition at Server Level
+
+When you add middleware to the server, types compose automatically — but remember to capture return values:
+
+```typescript
+// Chaining (captures final result)
+const app = Blaize.createServer()
+  .use(authMiddleware) // Adds { user } to state
+  .use(loggingMiddleware) // Adds { requestId } to state
+  .use(cacheMiddleware); // Adds { cache } to services
+
+// Types are intersected on the final `app`
+type AppContext = InferContext<typeof app>;
+// state: { user: User } & { requestId: string }
+// services: { cache: CacheService }
+```
+
+```typescript
+// Step-by-step (useful for conditional middleware)
+const base = Blaize.createServer();
+const withAuth = base.use(authMiddleware);
+const withLogging = withAuth.use(loggingMiddleware);
+const app = process.env.ENABLE_CACHE ? withLogging.use(cacheMiddleware) : withLogging;
+
+type AppContext = InferContext<typeof app>;
+```
+
+---
+
+## Plugin Type Flow
+
+Plugins add types through the middleware they register:
+
+```typescript
+const databasePlugin = createPlugin<
+  { url: string }, // Config
+  {}, // State (none)
+  { db: Database } // Services
+>({
+  name: 'database',
+  version: '1.0.0',
+  setup: config => {
+    let db: Database; // Singleton via closure
+
+    return {
+      // Plugin registers middleware that provides the service
+      register: async server => {
+        server.use(
+          createMiddleware<{}, { db: Database }>({
+            name: 'database-provider',
+            handler: async (ctx, next) => {
+              ctx.services.db = db; // Inject the singleton
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        db = await Database.connect(config.url);
+      },
+      terminate: async () => {
+        await db.disconnect();
+      },
+    };
+  },
+});
+```
+
+When the plugin is added to the server, its middleware types flow through:
+
+```typescript
+const app = Blaize.createServer({
+  plugins: [databasePlugin({ url: process.env.DATABASE_URL })],
+});
+
+type AppContext = InferContext<typeof app>;
+// AppContext['services'] includes { db: Database }
+```
+
+---
+
+## Client Type Inference
+
+The client infers types from your route exports:
+
+### Step 1: Export Routes with Names
+
+```typescript
+// src/app-type.ts
+import { GET as getUser } from './routes/users/[userId]';
+import { GET as listUsers, POST as createUser } from './routes/users';
+import { POST as login } from './routes/auth/login';
+
+// Export with meaningful names — these become method names
+export const routes = {
+  getUser,
+  listUsers,
+  createUser,
+  login,
+} as const; // as const is important!
+```
+
+### Step 2: Create Typed Client
+
+```typescript
+// client.ts
+import bc from '@blaizejs/client';
+import { routes } from './server/app-type';
+
+// Client infers all types from routes
+const client = bc.create('https://api.example.com', routes);
+```
+
+### Step 3: Use with Full Type Safety
+
+```typescript
+// ✅ Method name from export name
+const user = await client.$get.getUser({
+  params: { userId: '123' }, // Typed from params schema
+});
+// user is typed from response schema
+
+// ✅ Body typed from schema
+const newUser = await client.$post.createUser({
+  body: {
+    name: 'Alice', // Required
+    email: 'a@b.com', // Required, must be email
+  },
+});
+
+// ❌ TypeScript catches errors
+await client.$get.getUser({
+  params: { wrongParam: '123' }, // Error: 'wrongParam' not in params
+});
+
+await client.$post.createUser({
+  body: { name: 'Alice' }, // Error: 'email' is required
+});
+```
+
+### Why Export Names Matter
+
+The client method names come from your export names, not file paths:
+
+```typescript
+// File: src/routes/users/[userId].ts
+export const GET = route.get({ ... });
+
+// In app-type.ts, you name it:
+import { GET as getUser } from './routes/users/[userId]';
+export const routes = { getUser } as const;
+
+// Client uses that name:
+client.$get.getUser({ ... });  // Not "getUserId" or "[userId]"
+```
+
+This gives you control over the client API regardless of file structure.
+
+---
+
+## Type Boundaries
+
+Understanding where inference works vs. where you need explicit types:
+
+### Inference Works
+
+| Scenario                | Types Flow Automatically                        |
+| ----------------------- | ----------------------------------------------- |
+| Schema → Handler params | `params.userId` typed from `schema.params`      |
+| Schema → Handler return | Return type checked against `schema.response`   |
+| Middleware → Context    | `ctx.state.user` typed from middleware generics |
+| Route export → Client   | Client methods typed from route exports         |
+
+### Explicit Types Needed
+
+| Scenario           | Why                                          | Solution                      |
+| ------------------ | -------------------------------------------- | ----------------------------- |
+| Helper functions   | Not connected to route context               | Pass `ctx` as typed parameter |
+| External libraries | Not aware of your schemas                    | Cast or wrap with types       |
+| Dynamic routes     | TypeScript can't follow string interpolation | Define type manually          |
+
+```typescript
+// ❌ Helper function loses types
+function getUser(id: string) {
+  // No access to ctx.services.db here
+}
+
+// ✅ Pass context explicitly
+function getUser(ctx: AppContext, id: string) {
+  return ctx.services.db.users.findById(id);
+}
+
+// ✅ Or use closure in handler
+export const GET = route.get({
+  handler: async (ctx, params) => {
+    const getUser = (id: string) => ctx.services.db.users.findById(id);
+    return await getUser(params.userId);
+  },
+});
+```
+
+---
+
+## Common Patterns
+
+### Pattern 1: Shared Schemas
+
+Define schemas once, reuse everywhere:
+
+```typescript
+// src/lib/schemas.ts
+export const userSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  email: z.string().email(),
+});
+
+export const createUserSchema = userSchema.omit({ id: true });
+export const updateUserSchema = userSchema.partial().omit({ id: true });
+
+export type User = z.infer<typeof userSchema>;
+export type CreateUser = z.infer<typeof createUserSchema>;
+export type UpdateUser = z.infer<typeof updateUserSchema>;
+```
+
+```typescript
+// src/routes/users.ts
+import { userSchema, createUserSchema } from '../lib/schemas';
+
+export const GET = route.get({
+  schema: { response: z.array(userSchema) },
+  handler: async (ctx) => { ... },
+});
+
+export const POST = route.post({
+  schema: { body: createUserSchema, response: userSchema },
+  handler: async (ctx) => { ... },
+});
+```
+
+### Pattern 2: Pagination Schema
+
+Reusable pagination for list endpoints:
+
+```typescript
+// src/lib/schemas.ts
+export const paginationSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export function paginatedResponse<T extends z.ZodType>(itemSchema: T) {
+  return z.object({
+    items: z.array(itemSchema),
+    total: z.number(),
+    page: z.number(),
+    limit: z.number(),
+    pages: z.number(),
+  });
+}
+```
+
+```typescript
+// src/routes/users.ts
+import { paginationSchema, paginatedResponse, userSchema } from '../lib/schemas';
+
+export const GET = route.get({
+  schema: {
+    query: paginationSchema,
+    response: paginatedResponse(userSchema),
+  },
+  handler: async ctx => {
+    const { page, limit } = ctx.request.query;
+    const [items, total] = await Promise.all([
+      db.users.findMany({ skip: (page - 1) * limit, take: limit }),
+      db.users.count(),
+    ]);
+    return {
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
+  },
+});
+```
+
+### Pattern 3: Error Response Types
+
+Type-safe error handling with response unions:
+
+```typescript
+const getUserSchema = {
+  params: z.object({ userId: z.string().uuid() }),
+  response: z.union([
+    z.object({ success: z.literal(true), user: userSchema }),
+    z.object({ success: z.literal(false), error: z.string() }),
+  ]),
+};
+
+export const GET = route.get({
+  schema: getUserSchema,
+  handler: async (ctx, params) => {
+    const user = await db.users.findById(params.userId);
+
+    if (!user) {
+      return { success: false as const, error: 'User not found' };
+    }
+
+    return { success: true as const, user };
+  },
+});
+
+// Client can discriminate:
+const result = await client.$get.getUser({ params: { userId: '123' } });
+if (result.success) {
+  console.log(result.user.name); // ✅ TypeScript knows user exists
+} else {
+  console.log(result.error); // ✅ TypeScript knows error exists
+}
+```
+
+---
+
+## Key Takeaways
+
+1. **Zod schemas are the source of truth** — They define runtime validation AND TypeScript types
+2. **`InferContext` captures composed types** — All middleware and plugin contributions combined
+3. **Capture return values** — `.use()` and `.register()` return new typed servers; always capture or chain
+4. **Route factory carries types** — Creates the bridge from server to route files
+5. **Export names become client methods** — You control the client API
+6. **No code generation** — Everything is TypeScript inference at compile time
+7. **Transforms work** — Zod `.transform()` and `.coerce` flow through correctly
+
+---
+
+## Related Pages
+
+- **[Context](/docs/architecture/context)** — The object that carries state and services
+- **[Middleware](/docs/architecture/middleware)** — How middleware adds to context types
+- **[Plugins](/docs/architecture/plugins)** — How plugins inject services
+- **[Routing](/docs/architecture/router)** — File-based routing and route exports
