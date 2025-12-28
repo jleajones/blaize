@@ -1120,3 +1120,17 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
    */
   onValidationError?: (error: BlaizeError<EventValidationErrorDetails>) => void;
 }
+
+/**
+ * Subscription entry tracking pattern and handler
+ */
+export interface Subscription {
+  /** Unique ID for this subscription */
+  id: string;
+  /** Pattern to match against event types */
+  pattern: string | RegExp;
+  /** Compiled regex for matching (cached) */
+  matcher: RegExp;
+  /** Handler function to call for matching events */
+  handler: EventHandler;
+}
