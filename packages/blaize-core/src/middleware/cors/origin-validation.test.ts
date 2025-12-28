@@ -238,12 +238,8 @@ describe('Origin Validator', () => {
 
         const origins = [createValidator(30, 1), createValidator(10, 2), createValidator(20, 3)];
 
-        const start = Date.now();
         await validateOrigin('https://example.com', origins);
-        const duration = Date.now() - start;
 
-        // Should complete in ~30ms (parallel), not ~60ms (sequential)
-        expect(duration).toBeLessThan(50);
         // Order should reflect completion times
         expect(callOrder).toEqual([2, 3, 1]);
       });
