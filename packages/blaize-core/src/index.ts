@@ -48,9 +48,9 @@ import {
 } from './router/matching/params';
 // Server
 import { create as createServer } from './server/create';
-import { inferContext, type InferContext } from './server/types';
-// Tracing
 import { getCorrelationId } from './tracing/correlation';
+import { inferContext, type InferContext } from './types/server';
+// Tracing
 
 // TODO: ideally this could be import as an npm package, but for now we use a relative path
 // Explicit imports to avoid using values without importing

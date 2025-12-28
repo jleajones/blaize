@@ -4,6 +4,7 @@ export * from './context';
 export * from './cors';
 export * from './errors';
 export * from './events';
+export * from './handler-context';
 export * from './logger';
 export * from './middleware';
 export * from './plugins';

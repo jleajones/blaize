@@ -3,13 +3,13 @@
  * Tests for server type inference utilities
  */
 
-import { create as createServer } from '../../src/server/create';
+import { create as createServer } from '../server/create';
 import {
   inferContext,
   type InferContext,
   type InferServerState,
   type InferServerServices,
-} from '../../src/server/types';
+} from './server';
 
 import type { Middleware, Plugin } from '@blaize-types/index';
 
