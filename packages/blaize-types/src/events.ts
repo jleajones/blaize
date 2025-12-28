@@ -9,6 +9,7 @@
  * @since 0.4.0
  */
 
+import type { BlaizeError, EventValidationErrorDetails } from './errors';
 import type { z } from 'zod';
 
 /**
@@ -1099,7 +1100,7 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
    * Note: This is called in addition to the default behavior
    * determined by unknownEventBehavior, not instead of it.
    *
-   * @param error - The validation error
+   * @param error - The validation error (BlaizeError with EventValidationErrorDetails)
    *
    * @example
    * ```typescript
@@ -1107,8 +1108,9 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
    *   schemas,
    *   onValidationError: (error) => {
    *     console.error('Validation error:', error.message);
-   *     console.error('Event type:', error.details.eventType);
-   *     console.error('Validation errors:', error.details.errors);
+   *     console.error('Event type:', error.details?.eventType);
+   *     console.error('Context:', error.details?.context);
+   *     console.error('Validation errors:', error.details?.zodError?.issues);
    *
    *     // Send to error tracking service
    *     Sentry.captureException(error);
@@ -1116,59 +1118,5 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
    * };
    * ```
    */
-  onValidationError?: (error: EventValidationError) => void;
-}
-
-/**
- * Interface for event validation error details
- *
- * Provides structured information about validation failures
- * for debugging and error handling.
- */
-export interface EventValidationErrorDetails {
-  /**
-   * The event type that failed validation
-   */
-  eventType: string;
-
-  /**
-   * The event data that failed validation
-   */
-  data: unknown;
-
-  /**
-   * Array of validation error messages from Zod
-   */
-  errors: string[];
-
-  /**
-   * Original Zod error object (if available)
-   */
-  zodError?: z.ZodError;
-}
-
-/**
- * Error thrown when event validation fails
- *
- * Thrown by TypedEventBus when:
- * - Publishing with invalid data (if validateOnPublish is true)
- * - Receiving invalid events (if validateOnReceive is true)
- * - Unknown events encountered (if unknownEventBehavior is 'error')
- *
- * @example Catching validation errors
- * ```typescript
- * try {
- *   await typedBus.publish('user:created', invalidData);
- * } catch (error) {
- *   if (error instanceof EventValidationError) {
- *     console.error('Event type:', error.details.eventType);
- *     console.error('Errors:', error.details.errors);
- *   }
- * }
- * ```
- */
-export interface EventValidationError extends Error {
-  readonly name: 'EventValidationError';
-  readonly message: string;
-  readonly details: EventValidationErrorDetails;
+  onValidationError?: (error: BlaizeError<EventValidationErrorDetails>) => void;
 }

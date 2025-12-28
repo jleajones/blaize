@@ -4,11 +4,12 @@
  * These tests verify that the type definitions compile correctly
  * and handle various edge cases properly.
  *
- * @module @blaizejs/events/types.test
+ * @module @blaizejs/types/events.test
  */
 
 import { z } from 'zod';
 
+import type { EventValidationErrorDetails } from '@blaize-types/errors';
 import type {
   EventSchemas,
   BlaizeEvent,
@@ -20,8 +21,6 @@ import type {
   EventDataUnion,
   TypedEventBus,
   TypedEventBusOptions,
-  EventValidationError,
-  EventValidationErrorDetails,
 } from '@blaize-types/events';
 
 describe('EventBus Types', () => {
@@ -737,7 +736,8 @@ describe('EventBus Types', () => {
       it('should return never for non-matching patterns', () => {
         // When pattern doesn't match any events, EventDataUnion should be never
         // Note: Direct toBeNever() check doesn't work with real Zod instances
-        type _NoData = EventDataUnion<TestSchemas, 'nonexistent:*'>;
+        type NoData = EventDataUnion<TestSchemas, 'nonexistent:*'>;
+        expectTypeOf<NoData>().toBeNever();
 
         // Verify MatchingEvents returns never for this pattern (the root cause)
         type NoMatch = MatchingEvents<TestSchemas, 'nonexistent:*'>;
@@ -893,10 +893,12 @@ describe('EventBus Types', () => {
       it('should accept validation error handler', () => {
         const options: TypedEventBusOptions<TestSchemas> = {
           schemas: {} as TestSchemas,
-          onValidationError: (error: EventValidationError) => {
-            expectTypeOf(error.details.eventType).toEqualTypeOf<string>();
-            expectTypeOf(error.details.data).toEqualTypeOf<unknown>();
-            expectTypeOf(error.details.errors).toEqualTypeOf<string[]>();
+          onValidationError: error => {
+            // error should be BlaizeError<EventValidationErrorDetails>
+            expectTypeOf(error.details?.eventType).toEqualTypeOf<string | undefined>();
+            expectTypeOf(error.details?.context).toEqualTypeOf<'publish' | 'receive' | undefined>();
+            expectTypeOf(error.details?.data).toEqualTypeOf<unknown>();
+            expectTypeOf(error.details?.zodError).toMatchTypeOf<z.ZodError | undefined>();
           },
         };
 
@@ -915,49 +917,75 @@ describe('EventBus Types', () => {
       });
     });
 
-    describe('EventValidationError', () => {
-      it('should have required properties', () => {
-        const mockError = {
-          name: 'EventValidationError' as const,
-          message: 'Validation failed',
-          details: {
-            eventType: 'user:created',
-            data: { userId: '123' },
-            errors: ['userId must be a UUID'],
-          },
-        };
-
-        expectTypeOf(mockError).toMatchTypeOf<EventValidationError>();
-      });
-
-      it('should have correctly typed details', () => {
-        const mockDetails: EventValidationErrorDetails = {
+    describe('EventValidationErrorDetails', () => {
+      it('should have correct structure with all required fields', () => {
+        const details: EventValidationErrorDetails = {
           eventType: 'user:created',
-          data: { userId: '123' },
-          errors: ['Error 1', 'Error 2'],
+          context: 'publish',
         };
 
-        expectTypeOf(mockDetails.eventType).toEqualTypeOf<string>();
-        expectTypeOf(mockDetails.data).toEqualTypeOf<unknown>();
-        expectTypeOf(mockDetails.errors).toEqualTypeOf<string[]>();
+        expectTypeOf(details.eventType).toEqualTypeOf<string>();
+        expectTypeOf(details.context).toEqualTypeOf<'publish' | 'receive'>();
       });
 
-      it('should allow optional zodError', () => {
+      it('should allow optional zodError field', () => {
         const detailsWithZod: EventValidationErrorDetails = {
           eventType: 'user:created',
-          data: {},
-          errors: [],
+          context: 'publish',
           zodError: {} as z.ZodError,
         };
 
         const detailsWithoutZod: EventValidationErrorDetails = {
           eventType: 'user:created',
-          data: {},
-          errors: [],
+          context: 'receive',
         };
 
         expectTypeOf(detailsWithZod).toMatchTypeOf<EventValidationErrorDetails>();
         expectTypeOf(detailsWithoutZod).toMatchTypeOf<EventValidationErrorDetails>();
+        expectTypeOf(detailsWithZod.zodError).toEqualTypeOf<z.ZodError | undefined>();
+      });
+
+      it('should allow optional data field', () => {
+        const detailsWithData: EventValidationErrorDetails = {
+          eventType: 'user:created',
+          context: 'publish',
+          data: { userId: '123' },
+        };
+
+        const detailsWithoutData: EventValidationErrorDetails = {
+          eventType: 'user:created',
+          context: 'receive',
+        };
+
+        expectTypeOf(detailsWithData).toMatchTypeOf<EventValidationErrorDetails>();
+        expectTypeOf(detailsWithoutData).toMatchTypeOf<EventValidationErrorDetails>();
+        expectTypeOf(detailsWithData.data).toEqualTypeOf<unknown>();
+      });
+
+      it('should accept both publish and receive contexts', () => {
+        const publishContext: EventValidationErrorDetails = {
+          eventType: 'order:placed',
+          context: 'publish',
+        };
+
+        const receiveContext: EventValidationErrorDetails = {
+          eventType: 'order:placed',
+          context: 'receive',
+        };
+
+        expectTypeOf(publishContext.context).toEqualTypeOf<'publish' | 'receive'>();
+        expectTypeOf(receiveContext.context).toEqualTypeOf<'publish' | 'receive'>();
+      });
+
+      it('should allow all fields together', () => {
+        const fullDetails: EventValidationErrorDetails = {
+          eventType: 'user:created',
+          context: 'publish',
+          zodError: {} as z.ZodError,
+          data: { userId: '123', email: 'test@example.com' },
+        };
+
+        expectTypeOf(fullDetails).toMatchTypeOf<EventValidationErrorDetails>();
       });
     });
 
