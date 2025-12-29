@@ -1,9 +1,11 @@
-import type { EventBus, Unsubscribe } from '@blaize-types/events';
+import type { EventBus, Unsubscribe, EventSchemas, TypedEventBus } from '@blaize-types/events';
 
 /**
  * Create a mock EventBus for testing
  */
-export function createMockEventBus(overrides: Partial<EventBus> = {}): EventBus {
+export function createMockEventBus<TSchemas extends EventSchemas = EventSchemas>(
+  overrides: Partial<EventBus> = {}
+): TypedEventBus<TSchemas> {
   return {
     serverId: 'mock-eventbus-server',
     publish: vi.fn().mockResolvedValue(undefined),
@@ -11,7 +13,7 @@ export function createMockEventBus(overrides: Partial<EventBus> = {}): EventBus 
     setAdapter: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
     ...overrides,
-  } as EventBus;
+  } as TypedEventBus<TSchemas>;
 }
 
 /**
@@ -22,7 +24,7 @@ export function createWorkingMockEventBus(serverId: string = 'mock-server'): Eve
 
   return {
     serverId,
-    
+
     publish: vi.fn().mockImplementation(async (type: string, data?: unknown) => {
       const event = {
         type,
@@ -40,20 +42,22 @@ export function createWorkingMockEventBus(serverId: string = 'mock-server'): Eve
       }
     }),
 
-    subscribe: vi.fn().mockImplementation((pattern: string, handler: (event: any) => void): Unsubscribe => {
-      if (!subscriptions.has(pattern)) {
-        subscriptions.set(pattern, new Set());
-      }
-      subscriptions.get(pattern)!.add(handler);
-
-      // Return unsubscribe function
-      return () => {
-        subscriptions.get(pattern)?.delete(handler);
-        if (subscriptions.get(pattern)?.size === 0) {
-          subscriptions.delete(pattern);
+    subscribe: vi
+      .fn()
+      .mockImplementation((pattern: string, handler: (event: any) => void): Unsubscribe => {
+        if (!subscriptions.has(pattern)) {
+          subscriptions.set(pattern, new Set());
         }
-      };
-    }),
+        subscriptions.get(pattern)!.add(handler);
+
+        // Return unsubscribe function
+        return () => {
+          subscriptions.get(pattern)?.delete(handler);
+          if (subscriptions.get(pattern)?.size === 0) {
+            subscriptions.delete(pattern);
+          }
+        };
+      }),
 
     setAdapter: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
@@ -66,7 +70,7 @@ export function createWorkingMockEventBus(serverId: string = 'mock-server'): Eve
 function matchesPattern(eventType: string, pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern === eventType) return true;
-  
+
   // Simple wildcard support
   const regex = new RegExp('^' + pattern.replace(/\*/g, '[^:]*') + '$');
   return regex.test(eventType);
