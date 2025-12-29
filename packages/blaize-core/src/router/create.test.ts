@@ -514,7 +514,7 @@ describe('Method-specific route creators', () => {
             sortBy: z.enum(['name', 'date']).optional(),
           }),
         },
-        handler: async (ctx, params) => {
+        handler: async ({ ctx, params }) => {
           // These type assertions verify that TypeScript sees the correct types
           // If the types were wrong, TypeScript would error here
 
@@ -576,7 +576,7 @@ describe('Method-specific route creators', () => {
             }),
           }),
         },
-        handler: async (ctx, params) => {
+        handler: async ({ ctx, params }) => {
           // Verify params transform
           const orgId: number = params.organizationId; // Should be number
 
@@ -667,7 +667,7 @@ describe('Method-specific route creators', () => {
             success: z.boolean(),
           }),
         },
-        handler: async ctx => {
+        handler: async ({ ctx }) => {
           // These should be typed correctly
           const userId: string = ctx.state.userId;
           const isAdmin: boolean = ctx.state.isAdmin;

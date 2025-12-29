@@ -12,6 +12,7 @@ import type {
   CreatePatchRoute,
   CreateHeadRoute,
   CreateOptionsRoute,
+  EventSchemas,
   State,
   Services,
 } from '@blaize-types/index';
@@ -67,6 +68,7 @@ export function getRoutePath(): string {
 export const createGetRoute: CreateGetRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     validateMethodConfig('GET', config);
