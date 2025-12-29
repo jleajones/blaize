@@ -18,14 +18,26 @@ import type {
 } from './composition';
 import type { BodyLimits, Context } from './context';
 import type { CorsOptions } from './cors';
-import type { EventBus } from './events';
+import type { EventSchemas, TypedEventBus } from './events';
 import type { BlaizeLogger, LoggerConfig } from './logger';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
 import type { Router } from './router';
 import type { EventEmitter } from 'node:events';
 
-export type UnknownServer = Server<Record<string, unknown>, Record<string, unknown>>;
+/**
+ * Server with unknown state and services (for internal use)
+ */
+export type UnknownServer = Server<any, any, EventSchemas>;
+
+/**
+ * Server with specific state and services
+ */
+export type TypedServer<TState, TServices, TEvents extends EventSchemas = EventSchemas> = Server<
+  TState,
+  TServices,
+  TEvents
+>;
 
 export interface Http2Options {
   enabled?: boolean | undefined;
@@ -245,7 +257,7 @@ export interface ServerOptions {
  * @template TServices - The accumulated services type from middleware and plugins
  *
  */
-export interface Server<TState, TServices> {
+export interface Server<TState, TServices, TEvents extends EventSchemas = EventSchemas> {
   /** The underlying HTTP or HTTP/2 server */
   server: http.Server | http2.Http2Server | undefined;
 
@@ -284,10 +296,10 @@ export interface Server<TState, TServices> {
    * EventBus for server-wide event communication
    * @readonly
    */
-  readonly eventBus: EventBus;
+  readonly eventBus: TypedEventBus<TEvents>;
 
   /** Start the server and listen for connections */
-  listen: (port?: number, host?: string) => Promise<Server<TState, TServices>>;
+  listen: (port?: number, host?: string) => Promise<Server<TState, TServices, TEvents>>;
 
   /** Stop the server */
   close: (stopOptions?: StopOptions) => Promise<void>;
@@ -309,13 +321,14 @@ export interface Server<TState, TServices> {
    * // serverWithMiddleware has type Server<{user, requestId}, {auth, logger}>
    * ```
    */
-  use<MS, MSvc>(middleware: Middleware<MS, MSvc>): Server<TState & MS, TServices & MSvc>;
+  use<MS, MSvc>(middleware: Middleware<MS, MSvc>): Server<TState & MS, TServices & MSvc, TEvents>;
 
   use<MW extends readonly Middleware<any, any>[]>(
     middleware: MW
   ): Server<
     TState & UnionToIntersection<ExtractMiddlewareState<MW[number]>>,
-    TServices & UnionToIntersection<ExtractMiddlewareServices<MW[number]>>
+    TServices & UnionToIntersection<ExtractMiddlewareServices<MW[number]>>,
+    TEvents
   >;
 
   /**
@@ -335,14 +348,17 @@ export interface Server<TState, TServices> {
    * // serverWithPlugins has type Server<{}, {db, cache}>
    * ```
    */
-  register<PS, PSvc>(plugin: Plugin<PS, PSvc>): Promise<Server<TState & PS, TServices & PSvc>>;
+  register<PS, PSvc>(
+    plugin: Plugin<PS, PSvc>
+  ): Promise<Server<TState & PS, TServices & PSvc, TEvents>>;
 
   register<P extends readonly Plugin<any, any>[]>(
     plugin: P
   ): Promise<
     Server<
       TState & UnionToIntersection<ExtractPluginState<P[number]>>,
-      TServices & UnionToIntersection<ExtractPluginServices<P[number]>>
+      TServices & UnionToIntersection<ExtractPluginServices<P[number]>>,
+      TEvents
     >
   >;
 

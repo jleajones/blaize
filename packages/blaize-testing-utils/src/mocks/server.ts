@@ -5,15 +5,20 @@ import { createMockEventBus } from './event-bus';
 import { createMockLogger } from './logger';
 import { createMockPluginLifecycleManager, createMockPlugins } from './plugins';
 import { createMockRouter } from './router';
-import { Plugin, PluginLifecycleManager, Server } from '../../../blaize-types/src/index';
+import {
+  Plugin,
+  PluginLifecycleManager,
+  Server,
+  EventSchemas,
+} from '../../../blaize-types/src/index';
 
 /**
  * Create a mock server instance for testing
  */
-export function createMockServer<TState, TServices>(
-  overrides: Partial<Server<TState, TServices>> = {},
+export function createMockServer<TState, TServices, TEvents extends EventSchemas = EventSchemas>(
+  overrides: Partial<Server<TState, TServices, TEvents>> = {},
   pluginManagerOverrides: Partial<PluginLifecycleManager> = {}
-): Server<TState, TServices> {
+): Server<TState, TServices, TEvents> {
   const mockRouter = createMockRouter();
   const mockPluginManager = createMockPluginLifecycleManager(pluginManagerOverrides);
   const logger = createMockLogger();
@@ -58,22 +63,26 @@ export function createMockServer<TState, TServices>(
       exit: vi.fn(),
     } as any,
     ...overrides,
-  } as Server<TState, TServices>;
+  } as Server<TState, TServices, TEvents>;
 }
 
 /**
  * Create a mock server with plugins for testing
  */
-export function createMockServerWithPlugins<TState, TServices>(
+export function createMockServerWithPlugins<
+  TState,
+  TServices,
+  TEvents extends EventSchemas = EventSchemas,
+>(
   pluginCount: number = 2,
-  serverOverrides: Partial<Server<TState, TServices>> = {},
+  serverOverrides: Partial<Server<TState, TServices, TEvents>> = {},
   pluginOverrides: Partial<Plugin> = {},
   pluginManagerOverrides: Partial<PluginLifecycleManager> = {}
-): { server: Server<TState, TServices>; plugins: Plugin[] } {
+): { server: Server<TState, TServices, TEvents>; plugins: Plugin[] } {
   const plugins = createMockPlugins(pluginCount, pluginOverrides);
 
   const pluginManager = createMockPluginLifecycleManager(pluginManagerOverrides);
-  const server = createMockServer<TState, TServices>({
+  const server = createMockServer<TState, TServices, TEvents>({
     plugins,
     pluginManager,
     ...serverOverrides,
