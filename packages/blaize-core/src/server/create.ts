@@ -8,6 +8,7 @@ import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
 import { validateServerOptions } from './validation';
 import { MemoryEventBus } from '../events/memory-event-bus';
+import { createTypedEventBus } from '../events/typed-event-bus';
 import { configureGlobalLogger, createLogger } from '../logger';
 import { createPluginLifecycleManager } from '../plugins/lifecycle';
 import { validatePlugin } from '../plugins/validation';
@@ -293,7 +294,8 @@ export function create<
   const events = new EventEmitter();
 
   // Create MemoryEventBus with serverId and logger
-  const eventBus = new MemoryEventBus(serverId, serverLogger);
+  const baseBus = new MemoryEventBus(serverId, serverLogger);
+  const eventBus = createTypedEventBus(baseBus, { schemas: {} }, serverLogger);
 
   // Type alias for the accumulated types
   type AccumulatedState = ComposeMiddlewareStates<TMw> & ComposePluginStates<TP>;

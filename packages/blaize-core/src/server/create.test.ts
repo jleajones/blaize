@@ -106,15 +106,19 @@ vi.mock('../tracing/correlation', () => ({
 // Mock the logger module
 vi.mock('../logger', () => ({
   createLogger: vi.fn(config => {
-    return {
+    // Create a logger factory function that returns a logger with recursive child support
+    const createMockLoggerInstance = (): any => ({
       debug: vi.fn(),
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
-      child: vi.fn(),
       flush: vi.fn(),
+      // CRITICAL: child() must RETURN a logger with all methods
+      child: vi.fn(() => createMockLoggerInstance()),
       _mockConfig: config,
-    };
+    });
+
+    return createMockLoggerInstance();
   }),
   configureGlobalLogger: vi.fn(),
   logger: {
