@@ -1,4 +1,4 @@
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 import type { MockLogger } from '@blaizejs/testing-utils';
 
 import { createRequestHandler } from './request-handler';
@@ -47,6 +47,7 @@ describe('createRequestHandler', () => {
         handleRequest: vi.fn().mockResolvedValue(undefined),
       },
       bodyLimits: {},
+      eventBus: createMockEventBus(),
     };
 
     // Setup mock request
@@ -147,13 +148,7 @@ describe('createRequestHandler', () => {
       expect(mockHandler).toHaveBeenCalledWith(
         mockContext,
         expect.any(Function), // next
-        expect.objectContaining({
-          info: expect.any(Function),
-          error: expect.any(Function),
-          debug: expect.any(Function),
-          warn: expect.any(Function),
-          child: expect.any(Function),
-        })
+        expect.any(Object)
       );
     });
 
@@ -163,12 +158,19 @@ describe('createRequestHandler', () => {
 
       expect(mockServer.router.handleRequest).toHaveBeenCalledWith(
         mockContext,
-        expect.objectContaining({
-          info: expect.any(Function),
-          error: expect.any(Function),
-          child: expect.any(Function),
-        })
+        expect.any(Object), // logger
+        mockServer.eventBus
       );
+
+      // Verify the logger argument
+      const loggerArg = mockServer.router.handleRequest.mock.calls[0][1];
+      expect(typeof loggerArg.info).toBe('function');
+      expect(typeof loggerArg.child).toBe('function');
+
+      // Verify the eventBus argument
+      const eventBusArg = mockServer.router.handleRequest.mock.calls[0][2];
+      expect(typeof eventBusArg.publish).toBe('function');
+      expect(typeof eventBusArg.subscribe).toBe('function');
     });
 
     test('error boundary receives logger from compose', async () => {

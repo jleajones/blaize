@@ -58,7 +58,11 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
             async () => {
               if (!context.response.sent) {
                 // Let the router handle the request
-                await serverInstance.router.handleRequest(context, requestLogger);
+                await serverInstance.router.handleRequest(
+                  context,
+                  requestLogger,
+                  serverInstance.eventBus
+                );
                 // If router didn't handle it either, send a 404
                 if (!res.headersSent && !context.response.sent) {
                   throw new NotFoundError(

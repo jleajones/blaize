@@ -5,7 +5,9 @@ import { z } from 'zod';
  * @description Server-Sent Events (SSE) type definitions for BlaizeJS framework
  */
 
-import type { Context, QueryParams, Services, State } from './context';
+import type { QueryParams, Services, State } from './context';
+import type { EventSchemas } from './events';
+import type { SSEHandlerContext } from './handler-context';
 import type { BlaizeLogger } from './logger';
 import type { Middleware } from './middleware';
 import type { Infer } from './router';
@@ -377,20 +379,35 @@ export interface SSERouteSchema<
 }
 
 /**
- * SSE route handler function with stream as first parameter
- * This is the user-facing API - they write handlers with this signature
+ * SSE route handler function with context object
+ *
+ * @template TStream - SSE stream type (TypedSSEStream or SSEStreamExtended)
+ * @template TState - Application state type (accumulated from middleware)
+ * @template TServices - Application services type (accumulated from middleware)
+ * @template TQuery - Query parameters type (from schema validation)
+ * @template TParams - URL parameters type (from schema validation)
+ * @template TEvents - Event schemas for typed event bus
+ *
+ * @example
+ * ```typescript
+ * const handler: SSERouteHandler = async ({ stream, ctx, params, logger, eventBus }) => {
+ *   logger.info('SSE connection established', { userId: params.userId });
+ *
+ *   eventBus.subscribe('user:*', (event) => {
+ *     stream.send('user-event', event.data);
+ *   });
+ * };
+ * ```
  */
 export type SSERouteHandler<
   TStream extends SSEStreamExtended = SSEStreamExtended,
-  TParams = Record<string, string>,
-  TQuery = Record<string, string | string[] | undefined>,
   TState extends State = State,
   TServices extends Services = Services,
+  TQuery = QueryParams,
+  TParams = Record<string, string>,
+  TEvents extends EventSchemas = EventSchemas,
 > = (
-  stream: TStream,
-  ctx: Context<TState, TServices, never, TQuery>, // SSE never has body
-  params: TParams,
-  logger: BlaizeLogger
+  hc: SSEHandlerContext<TStream, TState, TServices, TQuery, TParams, TEvents>
 ) => Promise<void> | void;
 
 /**
@@ -405,6 +422,7 @@ export type SSERouteHandler<
 export type CreateSSERoute = <
   TState extends State = State,
   TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
 >() => <P = never, Q = never, E = never>(config: {
   schema?: {
     params?: P extends never ? never : P;
@@ -416,7 +434,8 @@ export type CreateSSERoute = <
     P extends z.ZodType ? Infer<P> : Record<string, string>,
     Q extends z.ZodType ? Infer<Q> : QueryParams,
     TState,
-    TServices
+    TServices,
+    TEvents
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;

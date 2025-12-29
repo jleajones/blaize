@@ -2,13 +2,18 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import * as z from 'zod';
 
-import { createMockMiddleware, createMockLogger } from '@blaizejs/testing-utils';
-import type { MockLogger } from '@blaizejs/testing-utils';
+import {
+  createMockMiddleware,
+  createMockLogger,
+  createMockEventBus,
+  MockLogger,
+} from '@blaizejs/testing-utils';
 
 import { executeHandler } from './executor';
 import { compose } from '../../middleware/compose';
 import { createRequestValidator, createResponseValidator } from '../validation/schema';
 
+import type { TypedEventBus, EventSchemas } from '@blaize-types';
 import type { Context } from '@blaize-types/context';
 import type { RouteMethodOptions } from '@blaize-types/router';
 
@@ -42,6 +47,7 @@ describe('executeHandler', () => {
   let routeOptions: RouteMethodOptions;
   let params: Record<string, string>;
   let mockLogger: MockLogger;
+  let mockEventBus: TypedEventBus<EventSchemas>;
 
   beforeEach(() => {
     // Reset mocks
@@ -49,6 +55,7 @@ describe('executeHandler', () => {
 
     // Create mock logger
     mockLogger = createMockLogger();
+    mockEventBus = createMockEventBus();
 
     // Set up test context
     ctx = {
@@ -75,7 +82,7 @@ describe('executeHandler', () => {
 
   describe('🆕 T5: Logger Parameter Integration', () => {
     test('route handler receives logger as 3rd parameter', async () => {
-      const handlerSpy = vi.fn(async (_ctx, _params, _logger) => {
+      const handlerSpy = vi.fn(async () => {
         return { success: true };
       });
 
@@ -83,30 +90,33 @@ describe('executeHandler', () => {
         handler: handlerSpy,
       };
 
-      await executeHandler(ctx, route, { id: '123' }, mockLogger);
+      await executeHandler(ctx, route, { id: '123' }, mockLogger, mockEventBus);
 
       expect(handlerSpy).toHaveBeenCalledWith(
-        ctx,
-        { id: '123' },
         expect.objectContaining({
-          info: expect.any(Function),
-          error: expect.any(Function),
-          debug: expect.any(Function),
-          warn: expect.any(Function),
-          child: expect.any(Function),
-          flush: expect.any(Function),
+          ctx,
+          params: { id: '123' },
+          logger: expect.objectContaining({
+            info: expect.any(Function),
+            error: expect.any(Function),
+            debug: expect.any(Function),
+            warn: expect.any(Function),
+            child: expect.any(Function),
+            flush: expect.any(Function),
+          }),
+          eventBus: mockEventBus,
         })
       );
     });
 
     test('creates route-scoped logger with route path', async () => {
       const route: RouteMethodOptions = {
-        handler: async (_ctx, _params, _logger) => {
+        handler: async () => {
           return {};
         },
       };
 
-      await executeHandler(ctx, route, {}, mockLogger);
+      await executeHandler(ctx, route, {}, mockLogger, mockEventBus);
 
       // Verify child logger was created with route context
       expect(mockLogger.childContexts).toContainEqual(
@@ -114,7 +124,7 @@ describe('executeHandler', () => {
       );
 
       // Verify it includes the actual route path
-      const routeContext = mockLogger.childContexts.find(c => 'route' in c);
+      const routeContext = mockLogger.childContexts.find((c: any) => 'route' in c);
       expect(routeContext?.route).toBe('/users/123');
     });
 
@@ -129,7 +139,7 @@ describe('executeHandler', () => {
         middleware: [{ name: 'test', execute: middlewareSpy }],
       };
 
-      await executeHandler(ctx, route, {}, mockLogger);
+      await executeHandler(ctx, route, {}, mockLogger, mockEventBus);
 
       // Verify compose was called with middleware
       expect(compose).toHaveBeenCalled();
@@ -145,7 +155,7 @@ describe('executeHandler', () => {
         middleware: [{ name: 'mw1', execute: async (ctx, next, _logger) => next() }],
       };
 
-      await executeHandler(ctx, route, {}, mockLogger);
+      await executeHandler(ctx, route, {}, mockLogger, mockEventBus);
 
       // Note: In reality, compose creates child loggers for middleware
       // This test verifies executeHandler passes baseLogger to compose
@@ -162,7 +172,7 @@ describe('executeHandler', () => {
         params: z.object({ id: z.string() }),
       };
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify validator was created
       expect(createRequestValidator).toHaveBeenCalledWith(routeOptions.schema);
@@ -175,14 +185,14 @@ describe('executeHandler', () => {
       let capturedRouteLogger: any = null;
 
       const route: RouteMethodOptions = {
-        handler: async (ctx, params, logger) => {
+        handler: async ({ logger }) => {
           capturedRouteLogger = logger;
           return { data: 'test' };
         },
         middleware: [{ name: 'auth', execute: async (ctx, next) => next() }],
       };
 
-      await executeHandler(ctx, route, {}, mockLogger);
+      await executeHandler(ctx, route, {}, mockLogger, mockEventBus);
 
       // Verify route handler received a logger
       expect(capturedRouteLogger).toBeDefined();
@@ -193,13 +203,16 @@ describe('executeHandler', () => {
 
   describe('✅ Existing Functionality Preserved', () => {
     test('should execute the handler and set the response', async () => {
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify the handler was called with context, params, and logger
       expect(routeOptions.handler).toHaveBeenCalledWith(
-        ctx,
-        params,
-        expect.any(Object) // logger
+        expect.objectContaining({
+          ctx,
+          params,
+          logger: expect.any(Object),
+          eventBus: mockEventBus,
+        })
       );
 
       // Verify the response was set
@@ -209,10 +222,17 @@ describe('executeHandler', () => {
     test('should not set response if result is undefined', async () => {
       routeOptions.handler = vi.fn().mockResolvedValue(undefined);
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify the handler was called
-      expect(routeOptions.handler).toHaveBeenCalledWith(ctx, params, expect.any(Object));
+      expect(routeOptions.handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ctx,
+          params,
+          logger: expect.any(Object),
+          eventBus: mockEventBus,
+        })
+      );
 
       // Verify response.json was not called
       expect(ctx.response.json).not.toHaveBeenCalled();
@@ -221,10 +241,17 @@ describe('executeHandler', () => {
     test('should not set response if already sent', async () => {
       ctx.response.sent = true;
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify the handler was called
-      expect(routeOptions.handler).toHaveBeenCalledWith(ctx, params, expect.any(Object));
+      expect(routeOptions.handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ctx,
+          params,
+          logger: expect.any(Object),
+          eventBus: mockEventBus,
+        })
+      );
 
       // Verify response.json was not called
       expect(ctx.response.json).not.toHaveBeenCalled();
@@ -243,7 +270,7 @@ describe('executeHandler', () => {
 
       routeOptions.middleware = [middleware1, middleware2];
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify compose was called with middleware
       expect(compose).toHaveBeenCalled();
@@ -256,7 +283,7 @@ describe('executeHandler', () => {
         params: z.object({ id: z.string() }),
       };
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify createRequestValidator was called
       expect(createRequestValidator).toHaveBeenCalledWith(routeOptions.schema);
@@ -272,7 +299,7 @@ describe('executeHandler', () => {
         response: z.object({ message: z.string() }),
       };
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify createResponseValidator was called
       expect(createResponseValidator).toHaveBeenCalledWith(routeOptions.schema.response);
@@ -294,7 +321,9 @@ describe('executeHandler', () => {
       });
 
       // Expect the handler to propagate the error
-      await expect(executeHandler(ctx, routeOptions, params, mockLogger)).rejects.toThrow(error);
+      await expect(
+        executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus)
+      ).rejects.toThrow(error);
 
       // Verify the handler was not called (since middleware threw)
       expect(routeOptions.handler).not.toHaveBeenCalled();
@@ -305,7 +334,9 @@ describe('executeHandler', () => {
       routeOptions.handler = vi.fn().mockRejectedValue(error);
 
       // Expect the handler to propagate the error
-      await expect(executeHandler(ctx, routeOptions, params, mockLogger)).rejects.toThrow(error);
+      await expect(
+        executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus)
+      ).rejects.toThrow(error);
     });
 
     test('should add both request and response validators when both schemas provided', async () => {
@@ -316,7 +347,7 @@ describe('executeHandler', () => {
         response: z.object({ message: z.string() }),
       };
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       // Verify both validators were created
       expect(createRequestValidator).toHaveBeenCalledWith(routeOptions.schema);
@@ -340,7 +371,7 @@ describe('executeHandler', () => {
 
       routeOptions.middleware = [skippedMiddleware, normalMiddleware];
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       expect(compose).toHaveBeenCalled();
       const composedMiddleware = (compose as any).mock.calls[0][0];
@@ -357,7 +388,7 @@ describe('executeHandler', () => {
 
       routeOptions.middleware = [debugMiddleware];
 
-      await executeHandler(ctx, routeOptions, params, mockLogger);
+      await executeHandler(ctx, routeOptions, params, mockLogger, mockEventBus);
 
       expect(compose).toHaveBeenCalled();
       const composedMiddleware = (compose as any).mock.calls[0][0];
@@ -378,7 +409,7 @@ describe('executeHandler', () => {
       };
 
       const route: RouteMethodOptions = {
-        handler: vi.fn(async (ctx, params, logger) => {
+        handler: vi.fn(async ({ logger }) => {
           executionOrder.push('handler');
           expect(logger).toBeDefined();
           return { success: true };
@@ -389,7 +420,7 @@ describe('executeHandler', () => {
         },
       };
 
-      await executeHandler(ctx, route, { id: '123' }, mockLogger);
+      await executeHandler(ctx, route, { id: '123' }, mockLogger, mockEventBus);
 
       // Verify execution happened
       expect(route.handler).toHaveBeenCalled();
@@ -401,14 +432,14 @@ describe('executeHandler', () => {
 
       let capturedRouteLogger: any = null;
       const route: RouteMethodOptions = {
-        handler: async (ctx, params, logger) => {
+        handler: async ({ logger }) => {
           capturedRouteLogger = logger;
           logger.info('Test log from handler'); // ✅ Use it
           return {};
         },
       };
 
-      await executeHandler(ctx, route, {}, parentLogger);
+      await executeHandler(ctx, route, {}, parentLogger, mockEventBus);
 
       // Verify logger received and works
       expect(capturedRouteLogger).toBeDefined();
