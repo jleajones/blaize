@@ -50,7 +50,7 @@ export const POST = appRouter.post({
     body: uploadBodySchema,
     response: z.union([uploadResponseSchema, uploadErrorResponseSchema]),
   },
-  handler: async (ctx, _params) => {
+  handler: async ({ ctx }) => {
     // Check for parsing errors first
     // Access validated form fields (validated by schema)
     const fields = ctx.request.body;
