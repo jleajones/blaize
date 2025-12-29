@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 import EventEmitter from 'node:events';
 
+import { createMockEventBus } from './event-bus';
 import { createMockLogger } from './logger';
 import { createMockPluginLifecycleManager, createMockPlugins } from './plugins';
 import { createMockRouter } from './router';
@@ -16,14 +17,31 @@ export function createMockServer<TState, TServices>(
   const mockRouter = createMockRouter();
   const mockPluginManager = createMockPluginLifecycleManager(pluginManagerOverrides);
   const logger = createMockLogger();
+  const mockEventBus = createMockEventBus(); // NEW
 
   return {
     server: undefined,
     port: 3000,
     host: 'localhost',
+    serverId: 'mock-server-id', // NEW
+    eventBus: mockEventBus, // NEW
     events: new EventEmitter(),
     plugins: [],
     middleware: [],
+    corsOptions: undefined, // NEW - was missing
+    bodyLimits: {
+      // NEW - was missing
+      json: 512 * 1024,
+      form: 1024 * 1024,
+      text: 5 * 1024 * 1024,
+      raw: 10 * 1024 * 1024,
+      multipart: {
+        maxFileSize: 50 * 1024 * 1024,
+        maxTotalSize: 100 * 1024 * 1024,
+        maxFiles: 10,
+        maxFieldSize: 1024 * 1024,
+      },
+    },
     _signalHandlers: { unregister: vi.fn() },
     _logger: logger,
     listen: vi.fn().mockResolvedValue({} as Server<TState, TServices>),

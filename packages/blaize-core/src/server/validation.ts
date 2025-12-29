@@ -154,6 +154,7 @@ export const serverOptionsSchema = z.object({
   cors: serverCorsSchema,
   bodyLimits: bodyLimitsSchema,
   logging: loggerConfigSchema,
+  serverId: z.string().min(1).optional(),
 });
 
 export function validateServerOptions(options: ServerOptions): ServerOptions {

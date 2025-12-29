@@ -18,6 +18,7 @@ import type {
 } from './composition';
 import type { BodyLimits, Context } from './context';
 import type { CorsOptions } from './cors';
+import type { EventBus } from './events';
 import type { BlaizeLogger, LoggerConfig } from './logger';
 import type { Middleware } from './middleware';
 import type { Plugin, PluginLifecycleManager } from './plugins';
@@ -170,6 +171,18 @@ export interface ServerOptionsInput {
    * ```
    */
   logging?: LoggerConfig;
+
+  /**
+   * Server ID for multi-server coordination
+   *
+   * Used for:
+   * - EventBus identification (prevents echo in distributed setups)
+   * - Logging and tracing
+   * - Plugin coordination
+   *
+   * @default Auto-generated UUID
+   */
+  serverId?: string;
 }
 
 /**
@@ -220,6 +233,9 @@ export interface ServerOptions {
 
   /** Logger configuration */
   logging?: LoggerConfig;
+
+  /** Optional server ID for multi-server coordination */
+  serverId?: string;
 }
 
 /**
@@ -257,6 +273,18 @@ export interface Server<TState, TServices> {
 
   /** Internal logger instance (for server use only) */
   _logger: BlaizeLogger;
+
+  /**
+   * Server ID for multi-server coordination
+   * @readonly
+   */
+  readonly serverId: string;
+
+  /**
+   * EventBus for server-wide event communication
+   * @readonly
+   */
+  readonly eventBus: EventBus;
 
   /** Start the server and listen for connections */
   listen: (port?: number, host?: string) => Promise<Server<TState, TServices>>;

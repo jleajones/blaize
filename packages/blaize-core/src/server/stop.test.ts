@@ -302,4 +302,94 @@ describe('Server Module', () => {
       consoleErrorSpy.mockRestore();
     });
   });
+
+  describe('EventBus disconnection', () => {
+    test('should disconnect EventBus during shutdown', async () => {
+      const disconnectSpy = vi
+        .spyOn(serverInstance.eventBus, 'disconnect')
+        .mockResolvedValue(undefined);
+
+      await stopServer(serverInstance);
+
+      expect(disconnectSpy).toHaveBeenCalledOnce();
+      expect(serverInstance.server).toBeNull();
+    });
+
+    test('should handle EventBus disconnect timeout gracefully', async () => {
+      const disconnectSpy = vi
+        .spyOn(serverInstance.eventBus, 'disconnect')
+        .mockImplementation(() => new Promise(() => {})); // Never resolves
+
+      // Should not hang due to EventBus timeout
+      await stopServer(serverInstance, { timeout: 100 });
+
+      expect(disconnectSpy).toHaveBeenCalledOnce();
+      expect(serverInstance.server).toBeNull();
+    });
+
+    test('should handle EventBus disconnect errors gracefully', async () => {
+      const disconnectError = new Error('EventBus disconnect failed');
+      const disconnectSpy = vi
+        .spyOn(serverInstance.eventBus, 'disconnect')
+        .mockRejectedValue(disconnectError);
+
+      // Should not throw - error should be logged and shutdown continues
+      await expect(stopServer(serverInstance)).resolves.toBeUndefined();
+
+      expect(disconnectSpy).toHaveBeenCalledOnce();
+      expect(serverInstance.server).toBeNull();
+    });
+
+    test('should handle missing EventBus gracefully', async () => {
+      // Delete the eventBus to simulate it not existing
+      (serverInstance as any).eventBus = undefined;
+
+      // Should not throw
+      await expect(stopServer(serverInstance)).resolves.toBeUndefined();
+      expect(serverInstance.server).toBeNull();
+    });
+
+    test('should disconnect EventBus after plugins stop', async () => {
+      const callOrder: string[] = [];
+
+      const onServerStopSpy = vi
+        .spyOn(serverInstance.pluginManager, 'onServerStop')
+        .mockImplementation(async () => {
+          callOrder.push('plugin-stop');
+        });
+
+      const disconnectSpy = vi
+        .spyOn(serverInstance.eventBus, 'disconnect')
+        .mockImplementation(async () => {
+          callOrder.push('eventbus-disconnect');
+        });
+
+      await stopServer(serverInstance);
+
+      expect(callOrder).toEqual(['plugin-stop', 'eventbus-disconnect']);
+      expect(onServerStopSpy).toHaveBeenCalled();
+      expect(disconnectSpy).toHaveBeenCalled();
+    });
+
+    test('should disconnect EventBus before HTTP server close', async () => {
+      const callOrder: string[] = [];
+
+      const disconnectSpy = vi
+        .spyOn(serverInstance.eventBus, 'disconnect')
+        .mockImplementation(async () => {
+          callOrder.push('eventbus-disconnect');
+        });
+
+      mockServerClose.mockImplementation((callback: any) => {
+        callOrder.push('http-close');
+        if (callback) callback();
+      });
+
+      await stopServer(serverInstance);
+
+      expect(callOrder).toEqual(['eventbus-disconnect', 'http-close']);
+      expect(disconnectSpy).toHaveBeenCalled();
+      expect(mockServerClose).toHaveBeenCalled();
+    });
+  });
 });

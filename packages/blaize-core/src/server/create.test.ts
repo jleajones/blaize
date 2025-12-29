@@ -1172,4 +1172,177 @@ describe('create', () => {
       expect(server._logger).toBeDefined();
     });
   });
+
+  describe('EventBus Integration', () => {
+    describe('EventBus Creation', () => {
+      it('should create EventBus on server initialization', () => {
+        const server = create();
+
+        expect(server.eventBus).toBeDefined();
+        expect(server.eventBus).toHaveProperty('publish');
+        expect(server.eventBus).toHaveProperty('subscribe');
+        expect(server.eventBus).toHaveProperty('setAdapter');
+        expect(server.eventBus).toHaveProperty('disconnect');
+      });
+
+      it('should generate serverId if not provided', () => {
+        const server = create();
+
+        expect(server.serverId).toBeDefined();
+        expect(typeof server.serverId).toBe('string');
+        expect(server.serverId.length).toBeGreaterThan(0);
+
+        // Should be a UUID format
+        expect(server.serverId).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        );
+      });
+
+      it('should use provided serverId from config', () => {
+        const server = create({
+          serverId: 'test-server-1',
+        });
+
+        expect(server.serverId).toBe('test-server-1');
+      });
+
+      it('should pass serverId to EventBus', () => {
+        const server = create({
+          serverId: 'test-server-1',
+        });
+
+        expect(server.eventBus.serverId).toBe('test-server-1');
+        expect(server.serverId).toBe(server.eventBus.serverId);
+      });
+
+      it('should create different serverIds for different instances', () => {
+        const server1 = create();
+        const server2 = create();
+
+        expect(server1.serverId).not.toBe(server2.serverId);
+        expect(server1.eventBus.serverId).not.toBe(server2.eventBus.serverId);
+      });
+
+      it('should allow same serverId for different instances', () => {
+        const server1 = create({ serverId: 'shared-id' });
+        const server2 = create({ serverId: 'shared-id' });
+
+        expect(server1.serverId).toBe('shared-id');
+        expect(server2.serverId).toBe('shared-id');
+      });
+    });
+
+    describe('EventBus Functionality', () => {
+      it('should allow publishing events through server.eventBus', async () => {
+        const server = create({ serverId: 'test-server' });
+        const handler = vi.fn();
+
+        server.eventBus.subscribe('test:event', handler);
+        await server.eventBus.publish('test:event', { value: 123 });
+
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(handler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'test:event',
+            data: { value: 123 },
+            serverId: 'test-server',
+          })
+        );
+      });
+
+      it('should support pattern subscriptions', async () => {
+        const server = create({ serverId: 'test-server' });
+        const handler = vi.fn();
+
+        server.eventBus.subscribe('user:*', handler);
+        await server.eventBus.publish('user:created', { userId: '123' });
+        await server.eventBus.publish('user:updated', { userId: '123' });
+
+        expect(handler).toHaveBeenCalledTimes(2);
+      });
+
+      it('should isolate EventBus between server instances', async () => {
+        const server1 = create({ serverId: 'server-1' });
+        const server2 = create({ serverId: 'server-2' });
+
+        const handler1 = vi.fn();
+        const handler2 = vi.fn();
+
+        server1.eventBus.subscribe('test', handler1);
+        server2.eventBus.subscribe('test', handler2);
+
+        // Events on server1 should not trigger server2 handlers
+        await server1.eventBus.publish('test', { source: 'server1' });
+
+        expect(handler1).toHaveBeenCalledTimes(1);
+        expect(handler2).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('Integration with Existing Features', () => {
+      it('should work with middleware', () => {
+        const testMiddleware = createMockMiddleware();
+
+        const server = create({
+          middleware: [testMiddleware],
+        });
+
+        expect(server.middleware).toHaveLength(1);
+        expect(server.eventBus).toBeDefined();
+        expect(server.serverId).toBeDefined();
+      });
+
+      it('should work with plugins', () => {
+        const testPlugin = {
+          name: 'test-plugin',
+          version: '1.0.0',
+          register: vi.fn().mockResolvedValue({}),
+        };
+
+        const server = create({
+          plugins: [testPlugin],
+        });
+
+        expect(server.plugins).toHaveLength(1);
+        expect(server.eventBus).toBeDefined();
+        expect(server.serverId).toBeDefined();
+      });
+
+      it('should work with custom port and host', () => {
+        const server = create({
+          port: 8080,
+          host: '0.0.0.0',
+        });
+
+        expect(server.port).toBe(8080);
+        expect(server.host).toBe('0.0.0.0');
+        expect(server.eventBus).toBeDefined();
+        expect(server.serverId).toBeDefined();
+      });
+
+      it('should preserve EventBus and serverId with all options', () => {
+        const testMiddleware = createMockMiddleware();
+        const testPlugin = {
+          name: 'test-plugin',
+          version: '1.0.0',
+          register: vi.fn().mockResolvedValue({}),
+        };
+
+        const server = create({
+          port: 8080,
+          host: '0.0.0.0',
+          serverId: 'full-server',
+          middleware: [testMiddleware],
+          plugins: [testPlugin],
+        });
+
+        expect(server.port).toBe(8080);
+        expect(server.host).toBe('0.0.0.0');
+        expect(server.serverId).toBe('full-server');
+        expect(server.eventBus.serverId).toBe('full-server');
+        expect(server.middleware).toHaveLength(1);
+        expect(server.plugins).toHaveLength(1);
+      });
+    });
+  });
 });

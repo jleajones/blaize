@@ -435,4 +435,79 @@ describe('Server Options Validation', () => {
       }
     });
   });
+
+  describe('serverId validation', () => {
+    it('should accept valid serverId string', () => {
+      const result = validateServerOptions({
+        port: 3000,
+        host: 'localhost',
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        serverId: 'my-server-1',
+      });
+
+      expect(result.serverId).toBe('my-server-1');
+    });
+
+    it('should accept UUID format serverId', () => {
+      const uuid = '123e4567-e89b-12d3-a456-426614174000';
+      const result = validateServerOptions({
+        port: 3000,
+        host: 'localhost',
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        serverId: uuid,
+      });
+
+      expect(result.serverId).toBe(uuid);
+    });
+
+    it('should accept serverId as optional (undefined)', () => {
+      const result = validateServerOptions({
+        port: 3000,
+        host: 'localhost',
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        // No serverId provided
+      });
+
+      expect(result.serverId).toBeUndefined();
+    });
+
+    it('should accept alphanumeric serverId with hyphens', () => {
+      const result = validateServerOptions({
+        port: 3000,
+        host: 'localhost',
+        routesDir: './routes',
+        bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+        serverId: 'api-server-1-prod',
+      });
+
+      expect(result.serverId).toBe('api-server-1-prod');
+    });
+
+    it('should reject non-string serverId', () => {
+      expect(() =>
+        validateServerOptions({
+          port: 3000,
+          host: 'localhost',
+          routesDir: './routes',
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+          serverId: 123 as any,
+        })
+      ).toThrow(/Invalid server options/);
+    });
+
+    it('should reject empty string serverId', () => {
+      expect(() =>
+        validateServerOptions({
+          port: 3000,
+          host: 'localhost',
+          routesDir: './routes',
+          bodyLimits: DEFAULT_OPTIONS.bodyLimits,
+          serverId: '',
+        })
+      ).toThrow(/Invalid server options/);
+    });
+  });
 });
