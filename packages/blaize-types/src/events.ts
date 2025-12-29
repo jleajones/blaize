@@ -815,15 +815,13 @@ export type EventDataUnion<TSchemas extends EventSchemas, TPattern extends strin
  * ```typescript
  * const typedBus = createTypedEventBus(baseBus, {
  *   schemas,
- *   validateOnPublish: true,
- *   validateOnReceive: true,
  *   unknownEventBehavior: 'warn',
  *   onValidationError: (error) => {
  *     logger.error('Validation failed', { error });
  *   },
  * });
  *
- * // Runtime validation on publish
+ * // Validation always runs on publish
  * try {
  *   await typedBus.publish('user:created', {
  *     userId: 'invalid-uuid', // Fails UUID validation
@@ -831,6 +829,12 @@ export type EventDataUnion<TSchemas extends EventSchemas, TPattern extends strin
  * } catch (error) {
  *   // EventValidationError thrown
  * }
+ *
+ * // Validation always runs on receive (invalid events dropped)
+ * typedBus.subscribe('user:created', async (event) => {
+ *   // Only valid events reach this handler
+ *   // Extra fields are stripped automatically
+ * });
  * ```
  *
  * @see createTypedEventBus
@@ -844,8 +848,9 @@ export interface TypedEventBus<TSchemas extends EventSchemas> {
    * Only allows publishing events that exist in the schema map,
    * and the data must match the schema's inferred type.
    *
-   * If `validateOnPublish` is enabled, the data is validated
-   * against the Zod schema at runtime.
+   * **Validation**: The data is always validated against the Zod
+   * schema at runtime. Extra fields are stripped automatically (Zod's
+   * default `.strip()` behavior).
    *
    * @template K - Event type (must be a key in TSchemas)
    * @param type - Event type to publish
@@ -859,6 +864,15 @@ export interface TypedEventBus<TSchemas extends EventSchemas> {
    * await typedBus.publish('user:created', {
    *   userId: '123',
    *   email: 'user@example.com',
+   * });
+   * ```
+   *
+   * @example Extra fields are stripped
+   * ```typescript
+   * await typedBus.publish('user:created', {
+   *   userId: '123',
+   *   email: 'user@example.com',
+   *   extraField: 'ignored', // Stripped automatically
    * });
    * ```
    */
@@ -957,25 +971,25 @@ export interface TypedEventBus<TSchemas extends EventSchemas> {
  * Controls validation behavior, error handling, and how
  * unknown events are processed.
  *
+ * **Validation Philosophy**: TypedEventBus always validates on both
+ * publish and receive. Zod's default `.strip()` behavior automatically
+ * removes extra fields, making this safe for rolling deployments with
+ * schema changes.
+ *
  * @template TSchemas - Event schema map
  *
- * @example Strict validation
+ * @example Basic usage
  * ```typescript
  * const options: TypedEventBusOptions<typeof schemas> = {
  *   schemas,
- *   validateOnPublish: true,
- *   validateOnReceive: true,
- *   unknownEventBehavior: 'error',
  * };
  * ```
  *
- * @example Lenient validation
+ * @example Strict unknown event handling
  * ```typescript
  * const options: TypedEventBusOptions<typeof schemas> = {
  *   schemas,
- *   validateOnPublish: false,
- *   validateOnReceive: false,
- *   unknownEventBehavior: 'allow',
+ *   unknownEventBehavior: 'error',
  * };
  * ```
  *
@@ -983,7 +997,6 @@ export interface TypedEventBus<TSchemas extends EventSchemas> {
  * ```typescript
  * const options: TypedEventBusOptions<typeof schemas> = {
  *   schemas,
- *   validateOnPublish: true,
  *   onValidationError: (error) => {
  *     logger.error('Event validation failed', {
  *       eventType: error.details.eventType,
@@ -1002,6 +1015,10 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
    * Maps event type strings to Zod schemas that define
    * the shape and validation rules for each event's data.
    *
+   * **Important**: Schemas are automatically configured to strip
+   * extra fields (Zod's default behavior), making them safe for
+   * rolling deployments where old services may send extra fields.
+   *
    * @example
    * ```typescript
    * const schemas = {
@@ -1019,53 +1036,17 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
   schemas: TSchemas;
 
   /**
-   * Enable Zod validation when publishing events
-   *
-   * When true, validates event data against the schema
-   * before publishing. Throws EventValidationError if
-   * validation fails.
-   *
-   * Default: false (compile-time type checking only)
-   *
-   * @example
-   * ```typescript
-   * const options = { schemas, validateOnPublish: true };
-   *
-   * // This will throw EventValidationError
-   * await typedBus.publish('user:created', {
-   *   userId: 'not-a-uuid',
-   *   email: 'invalid-email',
-   * });
-   * ```
-   */
-  validateOnPublish?: boolean;
-
-  /**
-   * Enable Zod validation when receiving events
-   *
-   * When true, validates received event data against
-   * the schema before calling handlers. Invalid events
-   * are handled according to unknownEventBehavior.
-   *
-   * Default: false (trust incoming data)
-   *
-   * @example
-   * ```typescript
-   * const options = { schemas, validateOnReceive: true };
-   *
-   * // Invalid events are logged/rejected based on unknownEventBehavior
-   * ```
-   */
-  validateOnReceive?: boolean;
-
-  /**
-   * How to handle unknown or invalid events
+   * How to handle events not defined in schemas
    *
    * - `'error'`: Throw EventValidationError
-   * - `'warn'`: Log warning and continue
-   * - `'allow'`: Silently allow (no validation)
+   * - `'warn'`: Log warning and allow through (default)
+   * - `'allow'`: Silently allow through
    *
-   * Default: 'warn'
+   * **Note**: This only affects unknown event types, not validation
+   * failures of known events (which always throw on publish and drop
+   * on receive).
+   *
+   * @default 'warn'
    *
    * @example Error on unknown events
    * ```typescript
@@ -1075,10 +1056,10 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
    * };
    *
    * // Publishing unknown event throws
-   * await typedBus.publish('unknown:event', {}); // Error
+   * await typedBus.publish('unknown:event', {}); // Throws
    * ```
    *
-   * @example Warn on unknown events
+   * @example Warn on unknown events (default)
    * ```typescript
    * const options = {
    *   schemas,
@@ -1086,7 +1067,18 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
    * };
    *
    * // Logs warning but continues
-   * await typedBus.publish('unknown:event', {}); // Logs warning
+   * await typedBus.publish('unknown:event', {}); // Logs + allows
+   * ```
+   *
+   * @example Allow unknown events silently
+   * ```typescript
+   * const options = {
+   *   schemas,
+   *   unknownEventBehavior: 'allow' as const,
+   * };
+   *
+   * // Passes through without validation
+   * await typedBus.publish('unknown:event', {}); // Passes through
    * ```
    */
   unknownEventBehavior?: 'error' | 'warn' | 'allow';
@@ -1094,11 +1086,14 @@ export interface TypedEventBusOptions<TSchemas extends EventSchemas> {
   /**
    * Custom validation error handler
    *
-   * Called when validation fails (either on publish or receive).
-   * Useful for custom logging, monitoring, or error tracking.
+   * Called when validation fails (on publish or receive) or when
+   * unknown events are encountered. Invoked before throwing (publish)
+   * or dropping (receive) the event.
    *
-   * Note: This is called in addition to the default behavior
-   * determined by unknownEventBehavior, not instead of it.
+   * **Use cases**:
+   * - Custom logging
+   * - Monitoring and alerting
+   * - Error tracking services
    *
    * @param error - The validation error (BlaizeError with EventValidationErrorDetails)
    *

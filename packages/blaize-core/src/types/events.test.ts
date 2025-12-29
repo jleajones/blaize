@@ -845,22 +845,19 @@ describe('EventBus Types', () => {
       it('should accept all optional fields', () => {
         const fullOptions: TypedEventBusOptions<TestSchemas> = {
           schemas: {} as TestSchemas,
-          validateOnPublish: true,
-          validateOnReceive: true,
           unknownEventBehavior: 'error',
           onValidationError: _error => {},
         };
 
-        expectTypeOf(fullOptions).toMatchTypeOf<TypedEventBusOptions<TestSchemas>>();
+        expectTypeOf(fullOptions).toEqualTypeOf<TypedEventBusOptions<TestSchemas>>();
       });
 
       it('should accept partial options', () => {
         const partialOptions: TypedEventBusOptions<TestSchemas> = {
           schemas: {} as TestSchemas,
-          validateOnPublish: true,
         };
 
-        expectTypeOf(partialOptions).toMatchTypeOf<TypedEventBusOptions<TestSchemas>>();
+        expectTypeOf(partialOptions).toEqualTypeOf<TypedEventBusOptions<TestSchemas>>();
       });
 
       it('should constrain unknownEventBehavior to valid values', () => {

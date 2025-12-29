@@ -20,21 +20,8 @@ import type {
   BlaizeEvent,
   Unsubscribe,
   BlaizeLogger,
+  Subscription,
 } from '@blaize-types/index';
-
-/**
- * Subscription entry tracking pattern and handler
- */
-interface Subscription {
-  /** Unique ID for this subscription */
-  id: string;
-  /** Pattern to match against event types */
-  pattern: string | RegExp;
-  /** Compiled regex for matching (cached) */
-  matcher: RegExp;
-  /** Handler function to call for matching events */
-  handler: EventHandler;
-}
 
 /**
  * Convert glob pattern to RegExp
