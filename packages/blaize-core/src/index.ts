@@ -7,6 +7,9 @@
  * @package blaizejs
  */
 import config from '../package.json';
+// Events
+import { MemoryEventBus } from './events/memory-event-bus';
+import { createTypedEventBus } from './events/typed-event-bus';
 // Logging
 import {
   logger,
@@ -59,6 +62,10 @@ export * from '../../blaize-types/src/index';
 // Re-export everything
 
 export {
+  // Events module exports
+  MemoryEventBus,
+  createTypedEventBus,
+
   // Server module exports
   createServer,
   inferContext,
@@ -146,9 +153,12 @@ export { RequestTimeoutError } from './errors/request-timeout-error';
 export { UnprocessableEntityError } from './errors/unprocessable-entity-error';
 export { UnsupportedMediaTypeError } from './errors/unsupported-media-type-error';
 export { ServiceNotAvailableError } from './errors/service-not-available-error';
+export { EventValidationError } from './errors/event-validation-error';
 
 // Default export
 const Blaize = {
+  // Events
+  createTypedEventBus,
   // Core functions
   createServer,
   createMiddleware,
