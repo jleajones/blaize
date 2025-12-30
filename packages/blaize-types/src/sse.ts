@@ -5,8 +5,8 @@ import { z } from 'zod';
  * @description Server-Sent Events (SSE) type definitions for BlaizeJS framework
  */
 
-import type { QueryParams, Services, State } from './context';
-import type { EventSchemas } from './events';
+import type { Context, QueryParams, Services, State } from './context';
+import type { EventSchemas, TypedEventBus } from './events';
 import type { SSEHandlerContext } from './handler-context';
 import type { BlaizeLogger } from './logger';
 import type { Middleware } from './middleware';
@@ -401,23 +401,21 @@ export interface SSERouteSchema<
  */
 export type SSERouteHandler<
   TStream extends SSEStreamExtended = SSEStreamExtended,
+  TParams = Record<string, string>,
+  TQuery = QueryParams,
   TState extends State = State,
   TServices extends Services = Services,
-  TQuery = QueryParams,
-  TParams = Record<string, string>,
   TEvents extends EventSchemas = EventSchemas,
 > = (
   hc: SSEHandlerContext<TStream, TState, TServices, TQuery, TParams, TEvents>
 ) => Promise<void> | void;
 
 /**
- * SSE route creator with state and services support
- * Returns a higher-order function to handle generics properly
+ * SSE route creator
  *
- * The return type matches what the implementation actually returns:
- * - A route object with a GET property
- * - The GET property contains the wrapped handler and schemas
- * - The wrapped handler has the standard (ctx, params) signature expected by the router
+ * @template TState - Application state type
+ * @template TServices - Application services type
+ * @template TEvents - Event schemas for typed event bus
  */
 export type CreateSSERoute = <
   TState extends State = State,
@@ -427,7 +425,7 @@ export type CreateSSERoute = <
   schema?: {
     params?: P extends never ? never : P;
     query?: Q extends never ? never : Q;
-    events?: E extends never ? never : E; // SSE-specific event schemas
+    events?: E extends never ? never : E;
   };
   handler: SSERouteHandler<
     E extends Record<string, z.ZodType> ? TypedSSEStream<E> : SSEStreamExtended,
@@ -441,7 +439,12 @@ export type CreateSSERoute = <
   options?: Record<string, unknown>;
 }) => {
   GET: {
-    handler: (ctx: any, params: any, logger: BlaizeLogger) => Promise<void>; // Wrapped handler with standard signature
+    handler: (
+      ctx: Context<TState, TServices, never, any>,
+      params: any,
+      logger: BlaizeLogger,
+      eventBus: TypedEventBus<TEvents>
+    ) => Promise<void>;
     schema?: {
       params?: P extends never ? undefined : P;
       query?: Q extends never ? undefined : Q;
