@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import { createMockLogger, createMockMiddleware, createMockServer } from '@blaizejs/testing-utils';
+import {
+  createMockEventBus,
+  createMockLogger,
+  createMockMiddleware,
+  createMockServer,
+} from '@blaizejs/testing-utils';
 
 import type {
   PluginHooks,
@@ -8,9 +13,18 @@ import type {
   CreatePluginOptions,
   UnknownServer,
   Server,
+  State,
+  Services,
+  TypedEventBus,
+  EventSchemas,
 } from '@blaize-types/index';
 
 describe('Task 1.1: PluginHooks Interface with JSDoc', () => {
+  let mockEventBus: TypedEventBus<EventSchemas>;
+
+  beforeEach(() => {
+    mockEventBus = createMockEventBus();
+  });
   describe('Type Safety', () => {
     test('all hooks should be optional', () => {
       const emptyHooks: PluginHooks = {};
@@ -67,11 +81,11 @@ describe('Task 1.1: PluginHooks Interface with JSDoc', () => {
 
   describe('Generic Type Parameters', () => {
     test('supports TState and TServices generic types', () => {
-      interface MyState {
+      interface MyState extends State {
         userId: string;
       }
 
-      interface MyServices {
+      interface MyServices extends Services {
         db: { query: () => Promise<any> };
       }
 
@@ -108,11 +122,11 @@ describe('Task 1.1: PluginHooks Interface with JSDoc', () => {
     });
 
     test('Plugin supports generic types', () => {
-      interface MyState {
+      interface MyState extends State {
         counter: number;
       }
 
-      interface MyServices {
+      interface MyServices extends Services {
         cache: Map<string, any>;
       }
 
@@ -271,9 +285,7 @@ describe('Task 1.1: PluginHooks Interface with JSDoc', () => {
       expect(plugin.onServerStop).toBeUndefined();
     });
   });
-});
 
-describe('Task 1.2: CreatePluginOptions Interface', () => {
   describe('Type Structure', () => {
     test('accepts valid options with all required fields', () => {
       interface TestConfig {
@@ -283,7 +295,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const options: CreatePluginOptions<TestConfig> = {
         name: 'test-plugin',
         version: '1.0.0',
-        setup: config => ({
+        setup: ({ config }) => ({
           initialize: async () => {
             console.log('Port:', config.port);
           },
@@ -325,7 +337,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const options: CreatePluginOptions<TestConfig> = {
         name: 'minimal-plugin',
         version: '1.0.0',
-        setup: config => ({
+        setup: ({ config }) => ({
           initialize: async () => {
             console.log(config.value);
           },
@@ -350,7 +362,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
           port: 3000,
           host: 'localhost',
         },
-        setup: config => {
+        setup: ({ config }) => {
           // Type test: config should be fully typed
           const _portTest: number = config.port;
           const _hostTest: string = config.host;
@@ -372,11 +384,11 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         db: string;
       }
 
-      interface MyState {
+      interface MyState extends State {
         requestId: string;
       }
 
-      interface MyServices {
+      interface MyServices extends Services {
         database: { query: () => Promise<any> };
       }
 
@@ -406,7 +418,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const options: CreatePluginOptions<MyConfig> = {
         name: 'default-generics',
         version: '1.0.0',
-        setup: config => ({
+        setup: ({ config }) => ({
           initialize: async () => {
             console.log(config.value);
           },
@@ -432,7 +444,11 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         },
       };
 
-      const hooks = options.setup({ enabled: true }, createMockLogger());
+      const hooks = options.setup({
+        config: { enabled: true },
+        logger: createMockLogger(),
+        eventBus: mockEventBus,
+      });
       expect(hooks).toEqual({});
     });
 
@@ -444,7 +460,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const options: CreatePluginOptions<TestConfig> = {
         name: 'partial-hooks',
         version: '1.0.0',
-        setup: config => ({
+        setup: ({ config }) => ({
           initialize: async () => {
             console.log('Init:', config.value);
           },
@@ -455,7 +471,11 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         }),
       };
 
-      const hooks = options.setup({ value: 'test' }, createMockLogger());
+      const hooks = options.setup({
+        config: { value: 'test' },
+        logger: createMockLogger(),
+        eventBus: mockEventBus,
+      });
       expect(hooks.initialize).toBeDefined();
       expect(hooks.terminate).toBeDefined();
       expect(hooks.register).toBeUndefined();
@@ -469,7 +489,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const options: CreatePluginOptions<TestConfig> = {
         name: 'all-hooks',
         version: '1.0.0',
-        setup: config => ({
+        setup: ({ config }) => ({
           register: async _server => {
             console.log('Register:', config.name);
           },
@@ -488,7 +508,11 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         }),
       };
 
-      const hooks = options.setup({ name: 'test' }, createMockLogger());
+      const hooks = options.setup({
+        config: { name: 'test' },
+        logger: createMockLogger(),
+        eventBus: mockEventBus,
+      });
       expect(hooks.register).toBeDefined();
       expect(hooks.initialize).toBeDefined();
       expect(hooks.onServerStart).toBeDefined();
@@ -513,7 +537,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
           host: 'localhost',
           port: 5432,
         },
-        setup: config => {
+        setup: ({ config }) => {
           // Closure variable - singleton resource
           let _connection: { host: string; port: number } | null = null;
 
@@ -532,7 +556,11 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       };
 
       // Simulate plugin lifecycle
-      const hooks1 = options.setup({ host: 'db.example.com', port: 5432 }, createMockLogger());
+      const hooks1 = options.setup({
+        config: { host: 'db.example.com', port: 5432 },
+        logger: createMockLogger(),
+        eventBus: mockEventBus,
+      });
       const mockServer = createMockServer();
       hooks1.initialize?.(mockServer);
       expect(connectionCount).toBe(1);
@@ -555,7 +583,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
           interval: 60000,
           excludePaths: ['/health', '/metrics'],
         },
-        setup: config => {
+        setup: ({ config }) => {
           let collector: { collect: () => void } | null = null;
 
           return {
@@ -586,7 +614,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
         poolSize: number;
       }
 
-      interface DbServices {
+      interface DbServices extends Services {
         db: { query: (sql: string) => Promise<any> };
       }
 
@@ -632,7 +660,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const numericOptions: CreatePluginOptions<number> = {
         name: 'numeric-config',
         version: '1.0.0',
-        setup: (config: number) => ({
+        setup: ({ config }) => ({
           initialize: async () => {
             expect(typeof config).toBe('number');
           },
@@ -648,7 +676,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const options: CreatePluginOptions<MixedConfig> = {
         name: 'union-config',
         version: '1.0.0',
-        setup: config => {
+        setup: ({ config }) => {
           if (config.mode === 'simple') {
             console.log('Simple:', config.value);
           } else {
@@ -669,7 +697,7 @@ describe('Task 1.2: CreatePluginOptions Interface', () => {
       const syncOptions: CreatePluginOptions<TestConfig> = {
         name: 'sync-setup',
         version: '1.0.0',
-        setup: config => {
+        setup: ({ config }) => {
           // Synchronous setup
           return {
             initialize: async () => {

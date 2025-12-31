@@ -659,10 +659,7 @@ export interface MiddlewareContext<TEvents extends EventSchemas = EventSchemas> 
  * };
  * ```
  */
-export interface PluginSetupContext<
-  TConfig = unknown,
-  TEvents extends EventSchemas = EventSchemas,
-> {
+export interface PluginSetupContext<TConfig = unknown> {
   /**
    * Plugin configuration object
    *
@@ -687,5 +684,5 @@ export interface PluginSetupContext<
    * - Subscribe to application events
    * - Enable inter-plugin communication
    */
-  eventBus: TypedEventBus<TEvents>;
+  eventBus: TypedEventBus<EventSchemas>;
 }
