@@ -3,13 +3,13 @@
  * Tests for server type inference utilities
  */
 
-import { create as createServer } from '../server/create';
 import {
   inferContext,
   type InferContext,
   type InferServerState,
   type InferServerServices,
 } from './server';
+import { create as createServer } from '../server/create';
 
 import type { Middleware, Plugin } from '@blaize-types/index';
 
@@ -21,7 +21,7 @@ describe('Type Inference Utilities', () => {
       { auth: { verify: () => boolean } }
     > = {
       name: 'auth',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.user = { id: '123', name: 'Test User' };
         (ctx.services as any).auth = { verify: () => true };
         await next();
@@ -33,7 +33,7 @@ describe('Type Inference Utilities', () => {
       { logger: { log: (msg: string) => void } }
     > = {
       name: 'logger',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.requestId = 'req_123';
         (ctx.services as any).logger = { log: console.log };
         await next();
@@ -61,7 +61,7 @@ describe('Type Inference Utilities', () => {
   it('should provide runtime type hints with inferContext', () => {
     const authMiddleware: Middleware<{ authenticated: boolean }, {}> = {
       name: 'auth',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.authenticated = true;
         await next();
       },
@@ -78,7 +78,7 @@ describe('Type Inference Utilities', () => {
   it('should work with reassignment pattern', () => {
     const middleware1: Middleware<{ foo: string }, {}> = {
       name: 'm1',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.foo = 'bar';
         await next();
       },
@@ -86,7 +86,7 @@ describe('Type Inference Utilities', () => {
 
     const middleware2: Middleware<{ bar: number }, {}> = {
       name: 'm2',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.bar = 42;
         await next();
       },
@@ -106,7 +106,7 @@ describe('Type Inference Utilities', () => {
   it('should work with plugins contributing to types', () => {
     const middleware: Middleware<{ user: { id: string } }, { auth: { check: () => boolean } }> = {
       name: 'auth',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.user = { id: '123' };
         (ctx.services as any).auth = { check: () => true };
         await next();
@@ -142,7 +142,7 @@ describe('Type Inference Utilities', () => {
   it('should extract state and services separately', () => {
     const middleware: Middleware<{ count: number }, { counter: { increment: () => void } }> = {
       name: 'counter',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.count = 0;
         (ctx.services as any).counter = { increment: () => {} };
         await next();
@@ -173,7 +173,7 @@ describe('Type Inference Utilities', () => {
   it('should work with array middleware composition', () => {
     const m1: Middleware<{ a: string }, {}> = {
       name: 'm1',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.a = 'a';
         await next();
       },
@@ -181,7 +181,7 @@ describe('Type Inference Utilities', () => {
 
     const m2: Middleware<{ b: string }, {}> = {
       name: 'm2',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.b = 'b';
         await next();
       },
@@ -189,7 +189,7 @@ describe('Type Inference Utilities', () => {
 
     const m3: Middleware<{ c: string }, {}> = {
       name: 'm3',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.c = 'c';
         await next();
       },
@@ -216,7 +216,7 @@ describe('Type Inference Utilities', () => {
     // Step 1: Create server with middleware
     const authMiddleware: Middleware<{ user: UserType }, { auth: AuthServiceType }> = {
       name: 'auth',
-      execute: async (ctx, next) => {
+      execute: async ({ ctx, next }) => {
         ctx.state.user = { id: '123', role: 'admin' };
         ctx.services.auth = {
           hasPermission: (_perm: string) => {

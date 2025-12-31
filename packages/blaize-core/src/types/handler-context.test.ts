@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 
+import type { ExtractMiddlewareState } from '@blaize-types';
 import type { Context, State, Services, QueryParams } from '@blaize-types/context';
 import type { EventSchemas, TypedEventBus } from '@blaize-types/events';
 import type {
@@ -18,7 +19,7 @@ import type {
   PluginSetupContext,
 } from '@blaize-types/handler-context';
 import type { BlaizeLogger } from '@blaize-types/logger';
-import type { NextFunction } from '@blaize-types/middleware';
+import type { Middleware, NextFunction } from '@blaize-types/middleware';
 import type { SSEStreamExtended } from '@blaize-types/sse';
 
 describe('Handler Context Types', () => {
@@ -369,28 +370,47 @@ describe('Handler Context Types', () => {
         db: { query: () => Promise<void> };
       }
 
-      it('should accept custom state and services', () => {
-        type TestContext = MiddlewareContext<AppState, AppServices>;
-        type CtxType = TestContext['ctx'];
-        type StateType = CtxType['state'];
-        type ServicesType = CtxType['services'];
+      it('should accept custom state and services on Middleware interface', () => {
+        type TestMiddleware = Middleware<AppState, AppServices>;
 
-        expectTypeOf<CtxType>().toEqualTypeOf<Context<AppState, AppServices>>();
-        expectTypeOf<StateType['user']>().toEqualTypeOf<{ id: string }>();
-        expectTypeOf<ServicesType['db']>().toEqualTypeOf<{ query: () => Promise<void> }>();
+        // Test the type carriers (these enable composition)
+        expectTypeOf<TestMiddleware['_state']>().toEqualTypeOf<AppState | undefined>();
+        expectTypeOf<TestMiddleware['_services']>().toEqualTypeOf<AppServices | undefined>();
       });
 
-      it('should allow destructuring with custom types', () => {
-        const middleware = ({ ctx, next }: MiddlewareContext<AppState, AppServices>) => {
-          expectTypeOf(ctx.state.user.id).toEqualTypeOf<string>();
-          expectTypeOf(ctx.services.db.query).toBeFunction();
-          expectTypeOf(next).toBeFunction();
+      it('should receive base Context in middleware function', () => {
+        // Middleware ALWAYS receives base Context
+        const middleware: Middleware<AppState, AppServices> = {
+          name: 'test',
+          execute: async ({ ctx, next }) => {
+            // ctx is base Context at runtime
+            expectTypeOf(ctx).toEqualTypeOf<Context>();
+
+            // We mutate it to add our properties
+            ctx.state.user = { id: '123' };
+            ctx.services.db = { query: async () => {} };
+
+            await next();
+          },
         };
 
-        expectTypeOf(middleware).toBeFunction();
+        expectTypeOf(middleware).toEqualTypeOf<Middleware<AppState, AppServices>>();
+      });
+
+      it('should support type composition', () => {
+        const _m1: Middleware<{ user: { id: string } }> = {
+          name: 'm1',
+          execute: async ({ ctx, next }) => {
+            ctx.state.user = { id: '123' };
+            await next();
+          },
+        };
+
+        // Verify type extraction works
+        type State1 = ExtractMiddlewareState<typeof _m1>;
+        expectTypeOf<State1>().toEqualTypeOf<{ user: { id: string } }>();
       });
     });
-
     describe('Partial Destructuring', () => {
       it('should allow destructuring only needed properties', () => {
         const middleware1 = ({ ctx, next }: MiddlewareContext) => {
@@ -543,12 +563,10 @@ describe('Handler Context Types', () => {
       }
 
       type HandlerCtx = HandlerContext<AppState, AppServices>;
-      type MiddlewareCtx = MiddlewareContext<AppState, AppServices>;
+      type MiddlewareCtx = MiddlewareContext;
 
-      expectTypeOf<HandlerCtx['ctx']['state']>().toEqualTypeOf<MiddlewareCtx['ctx']['state']>();
-      expectTypeOf<HandlerCtx['ctx']['services']>().toEqualTypeOf<
-        MiddlewareCtx['ctx']['services']
-      >();
+      expectTypeOf<HandlerCtx['ctx']>().toEqualTypeOf<Context<AppState, AppServices>>();
+      expectTypeOf<MiddlewareCtx['ctx']>().toEqualTypeOf<Context>();
     });
   });
 });
