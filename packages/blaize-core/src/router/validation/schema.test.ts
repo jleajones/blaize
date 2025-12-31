@@ -1,9 +1,8 @@
 /* eslint-disable import/order */
 // packages/blaize-core/src/router/validation/schema.test.ts
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 
 import { InternalServerError } from '../../errors/internal-server-error';
 import { ValidationError } from '../../errors/validation-error';
@@ -33,12 +32,14 @@ import { validateBody } from './body';
 import { validateParams } from './params';
 import { validateQuery } from './query';
 import { validateResponse } from './response';
+import type { EventSchemas, TypedEventBus } from '@blaize-types';
 
 describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
   let ctx: any;
   let next: any;
   let mockLogger: MockLogger;
   let consoleErrorSpy: any;
+  let mockEventBus: TypedEventBus<EventSchemas>;
 
   beforeEach(() => {
     // Reset mocks
@@ -46,6 +47,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
 
     // Create mock logger
     mockLogger = createMockLogger();
+    mockEventBus = createMockEventBus();
 
     // Reset mock implementations to default behavior
     (validateBody as any).mockImplementation((body: unknown, schema: z.ZodType<any>) =>
@@ -93,7 +95,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
 
       ctx.request.params = { id: '123' };
 
-      await validator.execute(ctx, next, mockLogger);
+      await validator.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       expect(next).toHaveBeenCalled();
       expect(validateParams).toHaveBeenCalledWith(ctx.request.params, schema.params);
@@ -119,7 +121,9 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
         throw paramsError;
       });
 
-      await expect(validator.execute(ctx, next, mockLogger)).rejects.toThrow(ValidationError);
+      await expect(
+        validator.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow(ValidationError);
     });
 
     test('validates query parameters with logger', async () => {
@@ -128,7 +132,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
 
       ctx.request.query = { page: '1' };
 
-      await validator.execute(ctx, next, mockLogger);
+      await validator.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       expect(next).toHaveBeenCalled();
       expect(validateQuery).toHaveBeenCalledWith(ctx.request.query, schema.query);
@@ -154,7 +158,9 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
         throw queryError;
       });
 
-      await expect(validator.execute(ctx, next, mockLogger)).rejects.toThrow(ValidationError);
+      await expect(
+        validator.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow(ValidationError);
     });
 
     test('validates request body with logger', async () => {
@@ -163,7 +169,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
 
       ctx.request.body = { name: 'John' };
 
-      await validator.execute(ctx, next, mockLogger);
+      await validator.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       expect(next).toHaveBeenCalled();
       expect(validateBody).toHaveBeenCalledWith(ctx.request.body, schema.body);
@@ -190,7 +196,9 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
         throw bodyError;
       });
 
-      await expect(validator.execute(ctx, next, mockLogger)).rejects.toThrow(ValidationError);
+      await expect(
+        validator.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow(ValidationError);
     });
 
     test('includes validation errors and context in debug logs', async () => {
@@ -212,7 +220,9 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
         throw paramsError;
       });
 
-      await expect(validator.execute(ctx, next, mockLogger)).rejects.toThrow();
+      await expect(
+        validator.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow();
     });
 
     test('middleware uses createMiddleware helper', () => {
@@ -240,7 +250,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
       });
 
       const middleware = createResponseValidator(responseSchema);
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       expect(next).toHaveBeenCalled();
       expect(validateResponse).toHaveBeenCalledWith({ id: '123', name: 'Example' }, responseSchema);
@@ -256,7 +266,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
       });
 
       const middleware = createResponseValidator(responseSchema);
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
     });
 
     test('logs response validation failures at error level', async () => {
@@ -286,7 +296,9 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
 
       const middleware = createResponseValidator(responseSchema);
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow(InternalServerError);
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow(InternalServerError);
     });
 
     test('middleware uses createMiddleware helper', () => {
@@ -310,7 +322,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
       };
 
       const middleware = createRequestValidator(schema);
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       expect(validateParams).toHaveBeenCalledWith(ctx.request.params, schema.params);
       expect(validateQuery).toHaveBeenCalledWith(ctx.request.query, schema.query);
@@ -325,7 +337,7 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
       };
 
       const middleware = createRequestValidator(schema);
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       expect(validateParams).toHaveBeenCalled();
       expect(validateQuery).not.toHaveBeenCalled();
@@ -354,7 +366,9 @@ describe('Schema Validation Middleware (T4.5: Logger Parameter)', () => {
 
       const middleware = createRequestValidator(schema);
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow(ValidationError);
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow(ValidationError);
       expect(next).not.toHaveBeenCalled();
     });
   });
