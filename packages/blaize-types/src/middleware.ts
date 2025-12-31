@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import type { Context } from './context';
-import type { BlaizeLogger } from './logger';
+import type { Context, Services, State } from './context';
+import type { EventSchemas } from './events';
+import type { MiddlewareContext } from './handler-context';
 
 /**
  * Function to pass control to the next middleware
@@ -21,21 +22,19 @@ export type NextFunction = () => Promise<void> | void;
  *    await next();
  *  };
  */
-export type MiddlewareFunction = (
-  ctx: Context,
-  next: NextFunction,
-  logger: BlaizeLogger
+export type MiddlewareFunction<TEvents extends EventSchemas = EventSchemas> = (
+  mc: MiddlewareContext<TEvents>
 ) => Promise<void> | void;
 
 /**
  * Named middleware options
  */
-export interface MiddlewareOptions {
+export interface MiddlewareOptions<TEvents extends EventSchemas = EventSchemas> {
   /** Name of the middleware for debugging and logging */
   name?: string;
 
   /** The middleware handler function */
-  handler: MiddlewareFunction;
+  handler: MiddlewareFunction<TEvents>;
 
   /** Skip function to conditionally bypass middleware */
   skip?: ((ctx: Context<any, any>) => boolean) | undefined;
@@ -49,9 +48,13 @@ export interface MiddlewareOptions {
  * @template TState - Type of state this middleware contributes to the context
  * @template TServices - Type of services this middleware contributes to the context
  */
-export interface Middleware<TState = {}, TServices = {}> {
+export interface Middleware<
+  TState extends State = State,
+  TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
+> {
   name: string;
-  execute: MiddlewareFunction;
+  execute: MiddlewareFunction<TEvents>;
   skip?: ((ctx: Context) => boolean) | undefined;
   debug?: boolean | undefined;
 

@@ -460,18 +460,14 @@ export interface SSEHandlerContext<
  * };
  * ```
  */
-export interface MiddlewareContext<
-  TState extends State = State,
-  TServices extends Services = Services,
-  TEvents extends EventSchemas = EventSchemas,
-> {
+export interface MiddlewareContext<TEvents extends EventSchemas = EventSchemas> {
   /**
    * The Blaize context object
    *
    * Middleware can read and modify ctx.state and ctx.services
    * to pass data to subsequent middleware and route handlers.
    */
-  ctx: Context<TState, TServices>;
+  ctx: Context;
 
   /**
    * Function to invoke the next middleware in the chain

@@ -16,7 +16,7 @@ import type {
   ExtractPluginState,
   UnionToIntersection,
 } from './composition';
-import type { BodyLimits, Context } from './context';
+import type { BodyLimits, Context, Services, State } from './context';
 import type { CorsOptions } from './cors';
 import type { EventSchemas, TypedEventBus } from './events';
 import type { BlaizeLogger, LoggerConfig } from './logger';
@@ -321,7 +321,9 @@ export interface Server<TState, TServices, TEvents extends EventSchemas = EventS
    * // serverWithMiddleware has type Server<{user, requestId}, {auth, logger}>
    * ```
    */
-  use<MS, MSvc>(middleware: Middleware<MS, MSvc>): Server<TState & MS, TServices & MSvc, TEvents>;
+  use<MS extends State, MSvc extends Services>(
+    middleware: Middleware<MS, MSvc>
+  ): Server<TState & MS, TServices & MSvc, TEvents>;
 
   use<MW extends readonly Middleware<any, any>[]>(
     middleware: MW
@@ -348,7 +350,7 @@ export interface Server<TState, TServices, TEvents extends EventSchemas = EventS
    * // serverWithPlugins has type Server<{}, {db, cache}>
    * ```
    */
-  register<PS, PSvc>(
+  register<PS extends State, PSvc extends Services>(
     plugin: Plugin<PS, PSvc>
   ): Promise<Server<TState & PS, TServices & PSvc, TEvents>>;
 
