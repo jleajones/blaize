@@ -34,9 +34,9 @@ export async function executeHandler(
   const handler = compose([...middleware]);
 
   // Execute the middleware chain
-  await handler(
+  await handler({
     ctx,
-    async () => {
+    next: async () => {
       const routeLogger = baseLogger.child({
         route: ctx.request.path,
         method: ctx.request.method,
@@ -49,6 +49,7 @@ export async function executeHandler(
         ctx.response.json(result);
       }
     },
-    baseLogger
-  );
+    logger: baseLogger,
+    eventBus,
+  });
 }

@@ -13,14 +13,21 @@ import { executeHandler } from './executor';
 import { compose } from '../../middleware/compose';
 import { createRequestValidator, createResponseValidator } from '../validation/schema';
 
-import type { TypedEventBus, EventSchemas } from '@blaize-types';
+import type { TypedEventBus, EventSchemas, NextFunction } from '@blaize-types';
 import type { Context } from '@blaize-types/context';
 import type { RouteMethodOptions } from '@blaize-types/router';
 
 // Mock the dependencies
 vi.mock('../../middleware/compose', () => ({
   compose: vi.fn(_middleware => {
-    return async (ctx: any, next: any, _logger: any) => {
+    return async ({
+      next,
+    }: {
+      ctx: Context;
+      next: NextFunction;
+      logger: MockLogger;
+      eventBus: TypedEventBus<EventSchemas>;
+    }) => {
       await next();
     };
   }),
@@ -129,8 +136,10 @@ describe('executeHandler', () => {
     });
 
     test('passes base logger to compose for middleware chain', async () => {
-      const middlewareSpy = vi.fn(async (ctx, next, logger) => {
+      const middlewareSpy = vi.fn(async ({ ctx, next, logger, eventBus }) => {
+        expect(ctx).toBeDefined();
         expect(logger).toBeDefined();
+        expect(eventBus).toBeDefined();
         await next();
       });
 
@@ -152,7 +161,7 @@ describe('executeHandler', () => {
     test('route middleware gets scoped logger via compose', async () => {
       const route: RouteMethodOptions = {
         handler: async () => ({}),
-        middleware: [{ name: 'mw1', execute: async (ctx, next, _logger) => next() }],
+        middleware: [{ name: 'mw1', execute: async ({ next }) => next() }],
       };
 
       await executeHandler(ctx, route, {}, mockLogger, mockEventBus);
@@ -189,7 +198,7 @@ describe('executeHandler', () => {
           capturedRouteLogger = logger;
           return { data: 'test' };
         },
-        middleware: [{ name: 'auth', execute: async (ctx, next) => next() }],
+        middleware: [{ name: 'auth', execute: async ({ next }) => next() }],
       };
 
       await executeHandler(ctx, route, {}, mockLogger, mockEventBus);
@@ -402,7 +411,7 @@ describe('executeHandler', () => {
 
       const customMiddleware = {
         name: 'custom',
-        execute: vi.fn(async (ctx: any, next: any, _logger: any) => {
+        execute: vi.fn(async ({ next }) => {
           executionOrder.push('middleware');
           await next();
         }),
