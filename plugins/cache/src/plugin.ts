@@ -14,7 +14,7 @@ import { MemoryAdapter, RedisAdapter } from './storage';
 import pkg from '../package.json';
 
 import type { CacheAdapter, CachePluginConfig, CachePluginServices, RedisPubSub } from './types';
-import type { BlaizeLogger } from 'blaizejs';
+import type { Server } from 'blaizejs';
 
 /**
  * Create cache plugin for BlaizeJS
@@ -66,7 +66,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
     defaultTtl: 3600,
   },
 
-  setup: (config, logger: BlaizeLogger) => {
+  setup: ({ config, logger }) => {
     // ========================================================================
     // Plugin Logger
     // ========================================================================
@@ -95,14 +95,14 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
        * ⚠️ CRITICAL: Middleware MUST be registered here, NOT in setup body.
        * This ensures middleware is added during the correct lifecycle phase.
        */
-      register: async server => {
+      register: async (server: Server<any, any>) => {
         pluginLogger.debug('Registering cache middleware');
 
         server.use(
           // eslint-disable-next-line @typescript-eslint/no-empty-object-type
           createMiddleware<{}, CachePluginServices>({
             name: 'cache',
-            handler: async (ctx, next) => {
+            handler: async ({ ctx, next }) => {
               // Expose cache service to routes via ctx.services
               ctx.services.cache = cacheService;
               await next();

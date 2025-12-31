@@ -134,6 +134,7 @@ describe('createCachePlugin', () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await expect(hooks.initialize?.()).resolves.toBeUndefined();
     });
 
@@ -159,6 +160,7 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
 
       // Should not throw
@@ -181,6 +183,7 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
 
       expect(mockAdapter.connect).toHaveBeenCalled();
@@ -201,6 +204,7 @@ describe('createCachePlugin', () => {
         adapter: mockAdapter,
       });
       const hooks = getPluginHooks(plugin);
+      await hooks.register?.(createMockServer());
 
       await expect(hooks.initialize?.()).resolves.toBeUndefined();
     });
@@ -210,11 +214,12 @@ describe('createCachePlugin', () => {
   // Lifecycle: Server Start Hook
   // ==========================================================================
 
-  describe('Lifecycle: onServerStart()', () => {
+  describe('Lifecycle: onServerStart()', async () => {
     test('completes without error', async () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
       await expect(hooks.onServerStart?.()).resolves.toBeUndefined();
     });
@@ -223,6 +228,7 @@ describe('createCachePlugin', () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
       await hooks.onServerStart?.();
 
@@ -235,11 +241,12 @@ describe('createCachePlugin', () => {
   // Lifecycle: Server Stop Hook
   // ==========================================================================
 
-  describe('Lifecycle: onServerStop()', () => {
+  describe('Lifecycle: onServerStop()', async () => {
     test('completes without error', async () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
       await expect(hooks.onServerStop?.()).resolves.toBeUndefined();
     });
@@ -266,6 +273,7 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
       await hooks.terminate?.();
 
@@ -288,6 +296,7 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
       await expect(hooks.terminate?.()).resolves.toBeUndefined();
     });
@@ -296,6 +305,7 @@ describe('createCachePlugin', () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
       await hooks.terminate?.();
 
@@ -313,6 +323,7 @@ describe('createCachePlugin', () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
 
       // Should use default (1000)
@@ -325,6 +336,7 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
 
       // Should use custom value
@@ -337,6 +349,7 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
 
       // Should use custom TTL
@@ -349,6 +362,7 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register?.(createMockServer());
       await hooks.initialize?.();
 
       // Should accept serverId
@@ -434,12 +448,12 @@ describe('createCachePlugin', () => {
 
       // Get middleware with execute method
       const middleware = server.middleware[0] as {
-        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+        execute: ({ ctx, next }: { ctx: any; next: () => Promise<void> }) => Promise<void>;
       };
 
       // Use createMockContext from testing-utils
       const ctx = createMockContext();
-      await middleware.execute(ctx, vi.fn());
+      await middleware.execute({ ctx, next: vi.fn() });
 
       // Type-safe access with casting
       const cacheService = ctx.services.cache as CacheService;
@@ -463,10 +477,13 @@ describe('createCachePlugin', () => {
         connect: vi.fn().mockRejectedValue(new Error('Connection failed')),
       };
 
+      const server = createMockServer();
+
       const plugin = createCachePlugin({
         adapter: mockAdapter,
       });
       const hooks = getPluginHooks(plugin);
+      await hooks.register!(server);
 
       // Should propagate error
       await expect(hooks.initialize?.()).rejects.toThrow('Connection failed');
@@ -483,11 +500,14 @@ describe('createCachePlugin', () => {
         disconnect: vi.fn().mockRejectedValue(new Error('Disconnect failed')),
       };
 
+      const server = createMockServer();
+
       const plugin = createCachePlugin({
         adapter: mockAdapter,
       });
       const hooks = getPluginHooks(plugin);
 
+      await hooks.register!(server);
       await hooks.initialize?.();
 
       // Should propagate error

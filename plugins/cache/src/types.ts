@@ -4,7 +4,7 @@
  * @packageDocumentation
  */
 import type { CacheService } from './cache-service';
-import type { BlaizeLogger } from 'blaizejs';
+import type { BlaizeLogger, Services } from 'blaizejs';
 
 /**
  * Cache adapter statistics
@@ -222,7 +222,7 @@ export interface CachePluginConfig {
 /**
  * Services provided by cache plugin
  */
-export interface CachePluginServices {
+export interface CachePluginServices extends Services {
   /** Cache service instance */
   cache: CacheService;
 }

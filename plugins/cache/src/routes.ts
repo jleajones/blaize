@@ -145,11 +145,13 @@ export type CacheSSEStream = TypedSSEStream<typeof cacheEventsSchema>;
  * @throws ServiceNotAvailableError if cache service unavailable
  * @throws InternalServerError if stats retrieval fails
  */
-export const cacheStatsHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<CacheStatsResponse> => {
+export const cacheStatsHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<CacheStatsResponse> => {
   const cache = getCacheServiceOrThrow(ctx);
 
   logger.debug('Fetching cache statistics');
@@ -208,11 +210,13 @@ export const cacheStatsHandler = async (
  * @throws ServiceNotAvailableError if cache service unavailable
  * @throws InternalServerError if metrics generation fails
  */
-export const cachePrometheusHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<void> => {
+export const cachePrometheusHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<void> => {
   const cache = getCacheServiceOrThrow(ctx);
 
   logger.debug('Generating Prometheus metrics');
@@ -301,11 +305,13 @@ export const cachePrometheusHandler = async (
  * @throws ServiceNotAvailableError if cache service unavailable
  * @throws InternalServerError if dashboard rendering fails
  */
-export const cacheDashboardHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<void> => {
+export const cacheDashboardHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<void> => {
   const cache = getCacheServiceOrThrow(ctx);
   const { refresh } = ctx.request.query as unknown as CacheDashboardQuery;
   const refreshInterval = refresh ? parseInt(refresh, 10) : undefined;
@@ -384,12 +390,15 @@ export const cacheDashboardHandler = async (
  * @param logger - BlaizeJS logger instance
  * @throws ServiceNotAvailableError if cache service unavailable
  */
-export const cacheEventsHandler = async (
-  stream: CacheSSEStream,
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<void> => {
+export const cacheEventsHandler = async ({
+  stream,
+  ctx,
+  logger,
+}: {
+  stream: CacheSSEStream;
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<void> => {
   const cache = getCacheServiceOrThrow(ctx);
   const { pattern } = ctx.request.query as unknown as CacheEventsQuery;
 
