@@ -27,7 +27,7 @@ const authMiddleware: Middleware<
   { auth: { verify: (token: string) => boolean } }
 > = {
   name: 'auth',
-  execute: async (ctx, next) => {
+  execute: async ({ ctx, next }) => {
     ctx.state.user = { id: '123', email: 'test@example.com' };
     (ctx.services as any).auth = {
       verify: (token: string) => token === 'valid',
@@ -41,7 +41,7 @@ const loggerMiddleware: Middleware<
   { logger: { log: (msg: string) => void } }
 > = {
   name: 'logger',
-  execute: async (ctx, next) => {
+  execute: async ({ ctx, next }) => {
     ctx.state.requestId = `req_${Date.now()}`;
     (ctx.services as any).logger = {
       log: console.log,
@@ -55,7 +55,7 @@ const cacheMiddleware: Middleware<
   { cache: { get: (key: string) => any; set: (key: string, value: any) => void } }
 > = {
   name: 'cache',
-  execute: async (ctx, next) => {
+  execute: async ({ ctx, next }) => {
     ctx.state.cacheKey = 'cache_key';
     (ctx.services as any).cache = {
       get: vi.fn(),
@@ -914,7 +914,7 @@ describe('create', () => {
       it('should handle untyped middleware for backward compatibility', () => {
         const untypedMiddleware: Middleware = {
           name: 'untyped',
-          execute: async (_ctx, next) => {
+          execute: async ({ next }) => {
             await next();
           },
         };

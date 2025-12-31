@@ -7,8 +7,7 @@ import { runWithContext } from '../context/store';
 import { compose } from '../middleware/compose';
 import { createErrorBoundary } from '../middleware/error-boundary/create';
 
-import type { Context } from '@blaize-types/context';
-import type { NextFunction } from '@blaize-types/middleware';
+import type { MiddlewareContext, Context, Middleware } from '@blaize-types';
 
 // Mock dependencies
 vi.mock('../context/create');
@@ -83,7 +82,7 @@ describe('createRequestHandler', () => {
     // Setup mock error boundary
     mockErrorBoundary = {
       name: 'ErrorBoundary',
-      execute: vi.fn(async (ctx: Context, next: NextFunction, _logger: any) => {
+      execute: vi.fn(async ({ next }) => {
         await next();
       }),
     };
@@ -96,7 +95,7 @@ describe('createRequestHandler', () => {
     (createErrorBoundary as any).mockReturnValue(mockErrorBoundary);
 
     // ✅ FIX: Make mock handler actually call next() by default
-    mockHandler = vi.fn(async (ctx: Context, next: NextFunction, _logger: any) => {
+    mockHandler = vi.fn(async ({ next }) => {
       await next();
     });
     (compose as any).mockReturnValue(mockHandler);
@@ -146,9 +145,12 @@ describe('createRequestHandler', () => {
 
       // Verify the composed handler was called with logger as 3rd param
       expect(mockHandler).toHaveBeenCalledWith(
-        mockContext,
-        expect.any(Function), // next
-        expect.any(Object)
+        expect.objectContaining({
+          ctx: mockContext,
+          next: expect.any(Function),
+          logger: expect.any(Object), // Logger
+          eventBus: expect.any(Object), // EventBus
+        })
       );
     });
 
@@ -176,14 +178,15 @@ describe('createRequestHandler', () => {
     test('error boundary receives logger from compose', async () => {
       // ✅ FIX: Re-mock compose to actually execute middleware
       (compose as any).mockImplementation((middlewareArray: any[]) => {
-        return async (ctx: Context, next: NextFunction, logger: any) => {
+        return async (mc: any) => {
+          const { ctx, next, logger, eventBus } = mc;
           let index = 0;
           const dispatch = async (): Promise<void> => {
             if (index >= middlewareArray.length) {
               return next();
             }
             const mw = middlewareArray[index++];
-            await mw.execute(ctx, dispatch, logger);
+            await mw.execute({ ctx, next: dispatch, logger, eventBus });
           };
           await dispatch();
         };
@@ -198,11 +201,11 @@ describe('createRequestHandler', () => {
 
       // When composed handler executes, error boundary gets logger
       expect(mockErrorBoundary.execute).toHaveBeenCalledWith(
-        mockContext,
-        expect.any(Function),
         expect.objectContaining({
-          info: expect.any(Function),
-          error: expect.any(Function),
+          ctx: mockContext,
+          next: expect.any(Function),
+          logger: expect.any(Object),
+          eventBus: expect.any(Object),
         })
       );
     });
@@ -212,7 +215,7 @@ describe('createRequestHandler', () => {
 
       const middlewareSpy = {
         name: 'custom',
-        execute: vi.fn(async (ctx: Context, next: NextFunction, logger: any) => {
+        execute: vi.fn(async ({ next, logger }) => {
           receivedLogger = logger;
           await next();
         }),
@@ -222,7 +225,8 @@ describe('createRequestHandler', () => {
 
       // Re-setup compose mock to properly execute middleware
       (compose as any).mockImplementation((middlewareArray: any[]) => {
-        return async (ctx: Context, next: NextFunction, logger: any) => {
+        return async (mc: any) => {
+          const { ctx, next, logger, eventBus } = mc;
           // Execute each middleware in order
           let index = 0;
           const dispatch = async (): Promise<void> => {
@@ -230,7 +234,7 @@ describe('createRequestHandler', () => {
               return next();
             }
             const mw = middlewareArray[index++];
-            await mw.execute(ctx, dispatch, logger);
+            await mw.execute({ ctx, next: dispatch, logger, eventBus });
           };
           await dispatch();
         };
@@ -367,7 +371,7 @@ describe('createRequestHandler', () => {
 
       const trackingMiddleware = {
         name: 'tracker',
-        execute: vi.fn(async (ctx: Context, next: NextFunction, logger: any) => {
+        execute: vi.fn(async ({ next, logger }) => {
           executionOrder.push('middleware-start');
           expect(logger).toBeDefined();
           expect(logger).toHaveProperty('child');
@@ -388,14 +392,15 @@ describe('createRequestHandler', () => {
 
       // Re-setup compose to actually execute middleware
       (compose as any).mockImplementation((middlewareArray: any[]) => {
-        return async (ctx: Context, next: NextFunction, logger: any) => {
+        return async (mc: MiddlewareContext) => {
+          const { ctx, next: finalNext, logger, eventBus } = mc;
           let index = 0;
           const dispatch = async (): Promise<void> => {
             if (index >= middlewareArray.length) {
-              return next();
+              return finalNext();
             }
             const mw = middlewareArray[index++];
-            await mw.execute(ctx, dispatch, logger);
+            await mw.execute({ ctx, next: dispatch, logger, eventBus });
           };
           await dispatch();
         };
@@ -422,7 +427,7 @@ describe('createRequestHandler', () => {
 
       const captureMiddleware = {
         name: 'capture',
-        execute: vi.fn(async (ctx: Context, next: NextFunction, logger: any) => {
+        execute: vi.fn(async ({ next, logger }) => {
           middlewareLogger = logger;
           await next();
         }),
@@ -434,15 +439,16 @@ describe('createRequestHandler', () => {
       });
 
       // Re-setup compose to properly execute middleware
-      (compose as any).mockImplementation((middlewareArray: any[]) => {
-        return async (ctx: Context, next: NextFunction, logger: any) => {
+      (compose as any).mockImplementation((middlewareArray: Middleware[]) => {
+        return async (mc: MiddlewareContext) => {
+          const { ctx, next, logger, eventBus } = mc;
           let index = 0;
           const dispatch = async (): Promise<void> => {
             if (index >= middlewareArray.length) {
               return next();
             }
             const mw = middlewareArray[index++];
-            await mw.execute(ctx, dispatch, logger);
+            if (mw) await mw.execute({ ctx, next: dispatch, logger, eventBus });
           };
           await dispatch();
         };

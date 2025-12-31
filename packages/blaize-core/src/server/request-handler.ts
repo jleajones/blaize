@@ -50,29 +50,31 @@ export function createRequestHandler(serverInstance: UnknownServer): RequestHand
 
         // Compose all middleware into a single function
         const handler = compose(middlewareChain);
+        const nextFn = async () => {
+          if (!context.response.sent) {
+            // Let the router handle the request
+            await serverInstance.router.handleRequest(
+              context,
+              requestLogger,
+              serverInstance.eventBus
+            );
+            // If router didn't handle it either, send a 404
+            if (!res.headersSent && !context.response.sent) {
+              throw new NotFoundError(
+                `Route not found: ${context.request.method} ${context.request.path}`
+              );
+            }
+          }
+        };
 
         // Run the request with context in AsyncLocalStorage
         await runWithContext(context, async () => {
-          await handler(
-            context,
-            async () => {
-              if (!context.response.sent) {
-                // Let the router handle the request
-                await serverInstance.router.handleRequest(
-                  context,
-                  requestLogger,
-                  serverInstance.eventBus
-                );
-                // If router didn't handle it either, send a 404
-                if (!res.headersSent && !context.response.sent) {
-                  throw new NotFoundError(
-                    `Route not found: ${context.request.method} ${context.request.path}`
-                  );
-                }
-              }
-            },
-            requestLogger
-          );
+          await handler({
+            ctx: context,
+            next: nextFn,
+            logger: requestLogger,
+            eventBus: serverInstance.eventBus,
+          });
         });
       });
     } catch (error) {
