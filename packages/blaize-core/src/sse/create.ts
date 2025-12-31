@@ -150,12 +150,17 @@ export const createSSERoute: CreateSSERoute = <
     const path = getRoutePath();
 
     // Create a wrapped handler that manages the SSE stream lifecycle
-    const wrappedHandler = async (
-      ctx: Context<_TState, _TServices, never, any>,
-      params: any,
-      logger: BlaizeLogger,
-      eventBus: TypedEventBus<_TEvents>
-    ) => {
+    const wrappedHandler = async ({
+      ctx,
+      params,
+      logger,
+      eventBus,
+    }: {
+      ctx: Context<_TState, _TServices, never, any>;
+      params: any;
+      logger: BlaizeLogger;
+      eventBus: TypedEventBus<_TEvents>;
+    }) => {
       // Validate SSE accept header
       const accept = ctx.request.header('accept');
       if (accept && !accept.includes('text/event-stream') && !accept.includes('*/*')) {

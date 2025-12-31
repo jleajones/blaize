@@ -439,12 +439,17 @@ export type CreateSSERoute = <
   options?: Record<string, unknown>;
 }) => {
   GET: {
-    handler: (
-      ctx: Context<TState, TServices, never, any>,
-      params: any,
-      logger: BlaizeLogger,
-      eventBus: TypedEventBus<TEvents>
-    ) => Promise<void>;
+    handler: ({
+      ctx,
+      params,
+      logger,
+      eventBus,
+    }: {
+      ctx: Context<TState, TServices, never, any>;
+      params: any;
+      logger: BlaizeLogger;
+      eventBus: TypedEventBus<TEvents>;
+    }) => Promise<void>;
     schema?: {
       params?: P extends never ? undefined : P;
       query?: Q extends never ? undefined : Q;
