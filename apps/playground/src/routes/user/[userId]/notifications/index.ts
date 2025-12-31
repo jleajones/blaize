@@ -40,7 +40,7 @@ export const getNotifications = appRouter.sse({
       heartbeat: z.object({ timestamp: z.string() }),
     },
   },
-  handler: async ({ stream, params, logger }) => {
+  handler: async ({ stream, params, logger, eventBus }) => {
     logger.info(`[SSE] Client connected to notifications. UserId: ${params.userId || 'anonymous'}`);
 
     // Send initial connection confirmation
@@ -53,65 +53,21 @@ export const getNotifications = appRouter.sse({
       read: false,
     });
 
+    const unsubscribe = eventBus.subscribe('order:*', event => {
+      logger.debug('Broadcasting event to SSE', { type: event.type });
+
+      stream.send('notification', {
+        id: event.serverId,
+        type: 'info',
+        title: `Event: ${event.type}`,
+        message: JSON.stringify(event.data),
+        timestamp: new Date(event.timestamp).toISOString(),
+        read: false,
+      });
+    });
+
     // Simulate various events
-    let notificationCounter = 0;
     const intervals: NodeJS.Timeout[] = [];
-
-    // Send periodic notifications (simulate real events)
-    intervals.push(
-      setInterval(() => {
-        notificationCounter++;
-        const types: Array<'info' | 'warning' | 'error' | 'success'> = [
-          'info',
-          'warning',
-          'error',
-          'success',
-        ];
-        const randomType = types[Math.floor(Math.random() * types.length)]!;
-
-        stream.send('notification', {
-          id: `notif-${notificationCounter}`,
-          type: randomType,
-          title: `Notification #${notificationCounter}`,
-          message: `This is a ${randomType} notification sent at ${new Date().toLocaleTimeString()}`,
-          timestamp: new Date().toISOString(),
-          read: false,
-        });
-      }, 5000) // Every 5 seconds
-    );
-
-    // Send user status updates
-    intervals.push(
-      setInterval(() => {
-        const statuses: Array<'online' | 'offline' | 'away'> = ['online', 'offline', 'away'];
-        const randomStatus = statuses[Math.floor(Math.random() * statuses.length)]!;
-
-        stream.send('userStatus', {
-          userId: `user-${Math.floor(Math.random() * 100)}`,
-          status: randomStatus,
-          lastSeen: new Date().toISOString(),
-        });
-      }, 8000) // Every 8 seconds
-    );
-
-    // Send occasional system events
-    intervals.push(
-      setInterval(() => {
-        const systemTypes: Array<'maintenance' | 'update' | 'alert'> = [
-          'maintenance',
-          'update',
-          'alert',
-        ];
-        const severities: Array<'low' | 'medium' | 'high'> = ['low', 'medium', 'high'];
-
-        stream.send('system', {
-          type: systemTypes[Math.floor(Math.random() * systemTypes.length)]!,
-          message: 'System event: Scheduled maintenance window approaching',
-          severity: severities[Math.floor(Math.random() * severities.length)]!,
-          affectedServices: ['API', 'Database'],
-        });
-      }, 15000) // Every 15 seconds
-    );
 
     // Send heartbeat every 10 seconds
     intervals.push(
@@ -124,9 +80,10 @@ export const getNotifications = appRouter.sse({
 
     // Clean up on disconnect
     stream.onClose(() => {
-      console.log(
+      logger.info(
         `[SSE] Client disconnected from notifications. UserId: ${params.userId || 'anonymous'}`
       );
+      unsubscribe();
       intervals.forEach(interval => clearInterval(interval));
     });
   },
