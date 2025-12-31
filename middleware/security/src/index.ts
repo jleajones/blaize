@@ -39,7 +39,7 @@ import { applySecurityHeaders } from './headers';
 import { validateSecurityOptions } from './validation';
 
 import type { SecurityOptions } from './types';
-import type { Context, Middleware, NextFunction } from 'blaizejs';
+import type { Context, Middleware } from 'blaizejs';
 
 /**
  * Create security headers middleware for BlaizeJS.
@@ -149,7 +149,7 @@ export function createSecurityMiddleware(userOptions?: Partial<SecurityOptions>)
      * - Headers not already sent
      * - Not a skipped path (/health, /healthz)
      */
-    handler: async (ctx: Context, next: NextFunction) => {
+    handler: async ({ ctx, next }) => {
       // Skip if middleware is disabled
       if (options.enabled === false) {
         await next();
