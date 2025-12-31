@@ -1,15 +1,15 @@
 /**
  * Middleware Testing Utilities
  *
- * Helper functions for testing middleware with the 3-parameter signature
+ * Helper functions for testing middleware with context object signature
  */
 
 import { createMockContext } from './context';
+import { createMockEventBus } from './event-bus';
 import { createMockLogger } from './logger';
 
 import type { MockLogger } from './logger';
-import type { Middleware, Context, NextFunction } from '@blaize-types/index';
-import type { BlaizeLogger } from '@blaize-types/logger';
+import type { Middleware, Context, NextFunction, TypedEventBus, EventSchemas } from '@blaize-types';
 
 /**
  * Result from executing middleware in tests
@@ -18,6 +18,7 @@ export interface MiddlewareTestResult {
   context: Context;
   nextCalled: boolean;
   logger: MockLogger;
+  eventBus: TypedEventBus<EventSchemas>;
   error?: Error;
 }
 
@@ -28,10 +29,12 @@ export interface MiddlewareTestResult {
 export async function executeMiddleware(
   middleware: Middleware,
   context?: Context,
-  logger?: MockLogger
+  logger?: MockLogger,
+  eventBus?: TypedEventBus<EventSchemas>
 ): Promise<MiddlewareTestResult> {
   const ctx = context || createMockContext();
   const mockLogger = logger || createMockLogger();
+  const mockEventBus = eventBus || createMockEventBus();
   let nextCalled = false;
   let error: Error | undefined;
 
@@ -40,7 +43,12 @@ export async function executeMiddleware(
   });
 
   try {
-    await middleware.execute(ctx, next, mockLogger);
+    await middleware.execute({
+      ctx,
+      next,
+      logger: mockLogger,
+      eventBus: mockEventBus,
+    });
   } catch (err) {
     error = err as Error;
   }
@@ -49,6 +57,7 @@ export async function executeMiddleware(
     context: ctx,
     nextCalled,
     logger: mockLogger,
+    eventBus: mockEventBus,
   };
 
   if (error) {
@@ -65,25 +74,33 @@ export async function executeMiddleware(
 export async function trackMiddlewareOrder(
   middlewares: Middleware[],
   context?: Context,
-  logger?: MockLogger
+  logger?: MockLogger,
+  eventBus?: TypedEventBus<EventSchemas>
 ): Promise<{
   context: Context;
   executionOrder: string[];
   logger: MockLogger;
+  eventBus: TypedEventBus<EventSchemas>;
   error?: Error;
 }> {
   const ctx = context || createMockContext();
   const mockLogger = logger || createMockLogger();
+  const mockEventBus = eventBus || createMockEventBus();
   const executionOrder: string[] = [];
   let error: Error | undefined;
 
   // Wrap middlewares to track their execution
   const trackedMiddlewares = middlewares.map(middleware => ({
     ...middleware,
-    execute: async (ctx: Context, next: NextFunction, logger: BlaizeLogger) => {
+    execute: async (mc: {
+      ctx: Context;
+      next: NextFunction;
+      logger: MockLogger;
+      eventBus: TypedEventBus<EventSchemas>;
+    }) => {
       executionOrder.push(`${middleware.name}-before`);
       try {
-        await middleware.execute(ctx, next, logger);
+        await middleware.execute(mc);
         executionOrder.push(`${middleware.name}-after`);
       } catch (err) {
         executionOrder.push(`${middleware.name}-error`);
@@ -108,7 +125,12 @@ export async function trackMiddlewareOrder(
       if (!middleware) {
         throw new Error('Middleware is undefined - this should not happen');
       }
-      await middleware.execute(ctx, dispatch, mockLogger);
+      await middleware.execute({
+        ctx,
+        next: dispatch,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
     }
     await dispatch();
   } catch (err) {
@@ -119,6 +141,7 @@ export async function trackMiddlewareOrder(
     context: ctx,
     executionOrder,
     logger: mockLogger,
+    eventBus: mockEventBus,
   };
 
   if (error) {
@@ -134,7 +157,12 @@ export async function trackMiddlewareOrder(
 export function createMockMiddleware(
   config: {
     name?: string;
-    execute?: (ctx: Context, next: NextFunction, logger: BlaizeLogger) => Promise<void> | void;
+    execute?: (mc: {
+      ctx: Context;
+      next: NextFunction;
+      logger: MockLogger;
+      eventBus: TypedEventBus<EventSchemas>;
+    }) => Promise<void> | void;
     behavior?: 'pass' | 'block' | 'error';
     errorMessage?: string;
     stateChanges?: Record<string, unknown>;
@@ -158,26 +186,33 @@ export function createMockMiddleware(
     debug,
     execute: vi
       .fn()
-      .mockImplementation(async (ctx: Context, next: NextFunction, logger: BlaizeLogger) => {
-        // If custom execute function provided, use that
-        if (execute) {
-          return execute(ctx, next, logger);
-        }
+      .mockImplementation(
+        async (mc: {
+          ctx: Context;
+          next: NextFunction;
+          logger: MockLogger;
+          eventBus: TypedEventBus<EventSchemas>;
+        }) => {
+          // If custom execute function provided, use that
+          if (execute) {
+            return execute(mc);
+          }
 
-        // Apply any state changes
-        Object.assign(ctx.state, stateChanges);
+          // Apply any state changes
+          Object.assign(mc.ctx.state, stateChanges);
 
-        switch (behavior) {
-          case 'pass':
-            await next();
-            break;
-          case 'block':
-            ctx.response.status(403).json({ error: 'Blocked' });
-            // Don't call next()
-            break;
-          case 'error':
-            throw new Error(errorMessage);
+          switch (behavior) {
+            case 'pass':
+              await mc.next();
+              break;
+            case 'block':
+              mc.ctx.response.status(403).json({ error: 'Blocked' });
+              // Don't call next()
+              break;
+            case 'error':
+              throw new Error(errorMessage);
+          }
         }
-      }),
+      ),
   };
 }
