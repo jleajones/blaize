@@ -1,5 +1,7 @@
 /* eslint-disable import/order */
 /* eslint-disable @typescript-eslint/no-empty-object-type */
+import { z } from 'zod';
+
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
@@ -10,6 +12,7 @@ import * as startModule from './start';
 import * as stopModule from './stop';
 import * as validationModule from './validation';
 
+import { createTypedEventBus } from '../events/typed-event-bus';
 import { _setCorrelationConfig } from '../tracing/correlation';
 import { createLogger } from '../logger';
 
@@ -1177,6 +1180,375 @@ describe('create', () => {
     });
   });
 
+  describe('Event Schemas Integration', () => {
+    describe('Schema Configuration', () => {
+      it('should accept event schemas in config', () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z.string().email(),
+          }),
+          'order:placed': z.object({
+            orderId: z.string(),
+            total: z.number(),
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+        });
+
+        expect(server.eventBus).toBeDefined();
+        expect(server.eventBus.base).toBeDefined();
+      });
+
+      it('should use empty schemas when not provided', () => {
+        const server = create();
+
+        expect(server.eventBus).toBeDefined();
+        expect(server.eventBus.base).toBeDefined();
+      });
+
+      it('should pass schemas to TypedEventBus', () => {
+        const eventSchemas = {
+          'test:event': z.object({ value: z.number() }),
+        };
+
+        const server = create({
+          eventSchemas,
+        });
+
+        // TypedEventBus should have the schemas
+        expect(server.eventBus).toBeDefined();
+      });
+    });
+
+    describe('Schema Validation on Publish', () => {
+      it('should validate events against schemas on publish', async () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z.string().email(),
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+          serverId: 'test-server',
+        });
+
+        const handler = vi.fn();
+        server.eventBus.subscribe('user:created', handler);
+
+        // Valid event should work
+        await server.eventBus.publish('user:created', {
+          userId: '123',
+          email: 'test@example.com',
+        });
+
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(handler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'user:created',
+            data: {
+              userId: '123',
+              email: 'test@example.com',
+            },
+          })
+        );
+      });
+
+      it('should throw validation error for invalid event data on publish', async () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z.string().email(),
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+          serverId: 'test-server',
+        });
+
+        // Invalid email should fail validation
+        await expect(
+          server.eventBus.publish('user:created', {
+            userId: '123',
+            email: 'invalid-email', // Not a valid email
+          })
+        ).rejects.toThrow();
+      });
+
+      it('should apply Zod transforms on publish', async () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z
+              .string()
+              .email()
+              .transform(val => val.toLowerCase()), // Transform to lowercase
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+          serverId: 'test-server',
+        });
+
+        const handler = vi.fn();
+        server.eventBus.subscribe('user:created', handler);
+
+        await server.eventBus.publish('user:created', {
+          userId: '123',
+          email: 'TEST@EXAMPLE.COM', // Should be lowercased
+        });
+
+        expect(handler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: {
+              userId: '123',
+              email: 'test@example.com', // Lowercased
+            },
+          })
+        );
+      });
+
+      it('should strip extra fields per Zod behavior', async () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z.string().email(),
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+          serverId: 'test-server',
+        });
+
+        const handler = vi.fn();
+        server.eventBus.subscribe('user:created', handler);
+
+        await server.eventBus.publish('user:created', {
+          userId: '123',
+          email: 'test@example.com',
+          extraField: 'should be stripped', // Extra field
+        } as any);
+
+        // Extra field should be stripped
+        expect(handler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: {
+              userId: '123',
+              email: 'test@example.com',
+              // extraField should NOT be here
+            },
+          })
+        );
+
+        const receivedData = handler.mock.calls[0]![0].data;
+        expect(receivedData).not.toHaveProperty('extraField');
+      });
+    });
+
+    describe('Schema Validation on Receive', () => {
+      it('should validate events on receive', async () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z.string().email(),
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+          serverId: 'test-server',
+        });
+
+        const handler = vi.fn();
+        server.eventBus.subscribe('user:*', handler);
+
+        // Publish valid event
+        await server.eventBus.publish('user:created', {
+          userId: '123',
+          email: 'test@example.com',
+        });
+
+        expect(handler).toHaveBeenCalledTimes(1);
+      });
+
+      it('should drop invalid events on receive without crashing', async () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z.string().email(),
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+          serverId: 'test-server',
+        });
+
+        const handler = vi.fn();
+        server.eventBus.subscribe('user:*', handler);
+
+        // Manually publish an invalid event through the base bus
+        // (simulating receiving from another server with different schema version)
+        await server.eventBus.base.publish('user:created', {
+          userId: '123',
+          email: 'invalid-email', // Invalid
+        });
+
+        // Handler should not have been called (event dropped)
+        expect(handler).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('Unknown Event Behavior', () => {
+      it('should warn for unknown events by default', async () => {
+        const eventSchemas = {
+          'user:created': z.object({ userId: z.string() }),
+        };
+
+        let childLoggerWarn: any;
+        const mockLogger = {
+          debug: vi.fn(),
+          info: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+          flush: vi.fn(),
+          child: vi.fn(() => {
+            childLoggerWarn = vi.fn();
+            return {
+              debug: vi.fn(),
+              info: vi.fn(),
+              warn: childLoggerWarn, // Capture the child's warn
+              error: vi.fn(),
+              flush: vi.fn(),
+              child: vi.fn(),
+            };
+          }),
+        };
+
+        const server = create({
+          eventSchemas,
+          serverId: 'test-server',
+        });
+
+        // Replace the logger after creation
+        (server as any)._logger = mockLogger;
+
+        // Recreate the TypedEventBus with the mock logger
+        const baseBus = server.eventBus.base;
+        const typedBus = createTypedEventBus(baseBus, { schemas: eventSchemas }, mockLogger as any);
+        (server as any).eventBus = typedBus;
+
+        // Publish unknown event
+        await server.eventBus.publish('unknown:event' as any, { data: 'test' });
+
+        // Check the child logger's warn was called
+        expect(childLoggerWarn).toHaveBeenCalledWith(
+          expect.stringContaining('Unknown event type'),
+          expect.any(Object)
+        );
+      });
+    });
+
+    describe('Type Safety', () => {
+      it('should provide type-safe event publishing at compile time', () => {
+        const eventSchemas = {
+          'user:created': z.object({
+            userId: z.string(),
+            email: z.string().email(),
+          }),
+          'order:placed': z.object({
+            orderId: z.string(),
+            total: z.number(),
+          }),
+        } as const;
+
+        const server = create({
+          eventSchemas,
+        });
+
+        // These should compile correctly (type checks)
+        type _EventBusType = typeof server.eventBus;
+
+        // Runtime test to ensure EventBus is created
+        expect(server.eventBus).toBeDefined();
+      });
+    });
+
+    describe('Integration with Existing Features', () => {
+      it('should work with middleware and event schemas', () => {
+        const testMiddleware = createMockMiddleware();
+        const eventSchemas = {
+          'test:event': z.object({ value: z.string() }),
+        };
+
+        const server = create({
+          middleware: [testMiddleware],
+          eventSchemas,
+        });
+
+        expect(server.middleware).toHaveLength(1);
+        expect(server.eventBus).toBeDefined();
+      });
+
+      it('should work with plugins and event schemas', () => {
+        const testPlugin = {
+          name: 'test-plugin',
+          version: '1.0.0',
+          register: vi.fn().mockResolvedValue({}),
+        };
+
+        const eventSchemas = {
+          'test:event': z.object({ value: z.string() }),
+        };
+
+        const server = create({
+          plugins: [testPlugin],
+          eventSchemas,
+        });
+
+        expect(server.plugins).toHaveLength(1);
+        expect(server.eventBus).toBeDefined();
+      });
+
+      it('should work with all config options including event schemas', () => {
+        const testMiddleware = createMockMiddleware();
+        const testPlugin = {
+          name: 'test-plugin',
+          version: '1.0.0',
+          register: vi.fn().mockResolvedValue({}),
+        };
+
+        const eventSchemas = {
+          'user:created': z.object({ userId: z.string() }),
+          'order:placed': z.object({ orderId: z.string(), total: z.number() }),
+        };
+
+        const server = create({
+          port: 8080,
+          host: '0.0.0.0',
+          serverId: 'full-server',
+          middleware: [testMiddleware],
+          plugins: [testPlugin],
+          eventSchemas,
+        });
+
+        expect(server.port).toBe(8080);
+        expect(server.host).toBe('0.0.0.0');
+        expect(server.serverId).toBe('full-server');
+        expect(server.eventBus.serverId).toBe('full-server');
+        expect(server.middleware).toHaveLength(1);
+        expect(server.plugins).toHaveLength(1);
+        expect(server.eventBus).toBeDefined();
+      });
+    });
+  });
   describe('EventBus Integration', () => {
     describe('EventBus Creation', () => {
       it('should create EventBus on server initialization', () => {

@@ -78,6 +78,9 @@ export interface CorrelationOptions {
  * Server options for configuring the BlaizeJS server
  */
 export interface ServerOptionsInput {
+  /** Event schemas for typed EventBus (optional) */
+  eventSchemas?: EventSchemas;
+
   /** Port to listen on (default: 3000) */
   port?: number;
 
@@ -201,6 +204,8 @@ export interface ServerOptionsInput {
  * Configuration for a BlaizeJS server
  */
 export interface ServerOptions {
+  /** Event schemas for typed EventBus (optional) */
+  eventSchemas: EventSchemas;
   /** Port to listen on (default: 3000) */
   port: number;
 

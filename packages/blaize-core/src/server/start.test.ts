@@ -65,6 +65,7 @@ describe('Server Module', () => {
     // Default server options
     serverOptions = {
       port: 3000,
+      eventSchemas: {},
       host: 'localhost',
       routesDir: './routes',
       middleware: [],

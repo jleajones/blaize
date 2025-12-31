@@ -876,7 +876,7 @@ export interface TypedEventBus<TSchemas extends EventSchemas> {
    * });
    * ```
    */
-  publish<K extends keyof TSchemas & string>(type: K, data: z.infer<TSchemas[K]>): Promise<void>;
+  publish<K extends keyof TSchemas & string>(type: K, data: z.input<TSchemas[K]>): Promise<void>;
 
   /**
    * Subscribe to events matching a pattern with type-safe handlers

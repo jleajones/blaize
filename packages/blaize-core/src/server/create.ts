@@ -39,6 +39,7 @@ export const DEFAULT_OPTIONS: ServerOptions = {
   http2: {
     enabled: true,
   },
+  eventSchemas: {},
   middleware: [],
   plugins: [],
   bodyLimits: {
@@ -69,6 +70,7 @@ function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
       keyFile: options.http2?.keyFile,
       certFile: options.http2?.certFile,
     },
+    eventSchemas: options.eventSchemas || DEFAULT_OPTIONS.eventSchemas,
     middleware: options.middleware ?? DEFAULT_OPTIONS.middleware,
     plugins: options.plugins ?? DEFAULT_OPTIONS.plugins,
     correlation: options.correlation,
@@ -295,7 +297,11 @@ export function create<
 
   // Create MemoryEventBus with serverId and logger
   const baseBus = new MemoryEventBus(serverId, serverLogger);
-  const eventBus = createTypedEventBus(baseBus, { schemas: {} }, serverLogger);
+  const eventBus = createTypedEventBus(
+    baseBus,
+    { schemas: validatedOptions.eventSchemas },
+    serverLogger
+  );
 
   // Type alias for the accumulated types
   type AccumulatedState = ComposeMiddlewareStates<TMw> & ComposePluginStates<TP>;

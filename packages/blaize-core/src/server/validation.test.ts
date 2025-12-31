@@ -35,6 +35,7 @@ describe('Server Options Validation', () => {
 
       const options: ServerOptions = {
         port: 8080,
+        eventSchemas: {},
         cors: {
           origin: ['https://example.com'],
         },
@@ -58,6 +59,7 @@ describe('Server Options Validation', () => {
         cors: {
           origin: ['https://example.com'],
         },
+        eventSchemas: {},
         host: '0.0.0.0',
         routesDir: './api',
         http2: {
@@ -84,6 +86,7 @@ describe('Server Options Validation', () => {
       // Arrange
       const options: ServerOptions = {
         port: -1,
+        eventSchemas: {},
         host: 'localhost',
         routesDir: './routes',
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
@@ -97,6 +100,7 @@ describe('Server Options Validation', () => {
       // Arrange
       const options: ServerOptions = {
         port: 8080,
+        eventSchemas: {},
         host: 'localhost',
         routesDir: './routes',
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
@@ -111,6 +115,7 @@ describe('Server Options Validation', () => {
       // Arrange
       const options: ServerOptions = {
         port: 8080,
+        eventSchemas: {},
         host: 'localhost',
         routesDir: './routes',
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
@@ -128,6 +133,7 @@ describe('Server Options Validation', () => {
           cors: {
             origin: ['https://example.com'],
           },
+          eventSchemas: {},
           host: '0.0.0.0',
           routesDir: './api',
           http2: {
@@ -160,6 +166,7 @@ describe('Server Options Validation', () => {
           http2: {
             enabled: false,
           },
+          eventSchemas: {},
           bodyLimits: {
             json: -1000, // Invalid
             form: 1024 * 1024,
@@ -188,6 +195,7 @@ describe('Server Options Validation', () => {
           http2: {
             enabled: false,
           },
+          eventSchemas: {},
           bodyLimits: {
             json: 512 * 1024,
             form: 1024 * 1024,
@@ -216,6 +224,7 @@ describe('Server Options Validation', () => {
           http2: {
             enabled: false,
           },
+          eventSchemas: {},
           bodyLimits: {
             json: 512 * 1024,
             form: 1024 * 1024,
@@ -236,6 +245,7 @@ describe('Server Options Validation', () => {
       expect(() =>
         validateServerOptions({
           port: 8080,
+          eventSchemas: {},
           host: 'localhost',
           routesDir: './routes',
           bodyLimits: {
@@ -265,6 +275,7 @@ describe('Server Options Validation', () => {
         http2: {
           enabled: false,
         },
+        eventSchemas: {},
         bodyLimits: {
           json: 10 * 1024 * 1024,
           form: 5 * 1024 * 1024,
@@ -298,7 +309,7 @@ describe('Server Options Validation', () => {
         host: 'localhost',
         port: 3000,
         routesDir: './routes',
-
+        eventSchemas: {},
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
       };
 
@@ -314,6 +325,7 @@ describe('Server Options Validation', () => {
           enabled: true,
           // No keyFile or certFile provided
         },
+        eventSchemas: {},
         host: 'localhost',
         port: 3000,
         routesDir: './routes',
@@ -333,6 +345,7 @@ describe('Server Options Validation', () => {
           keyFile: '/path/to/key.pem',
           certFile: '/path/to/cert.pem',
         },
+        eventSchemas: {},
         host: 'localhost',
         port: 3000,
         routesDir: './routes',
@@ -358,6 +371,7 @@ describe('Server Options Validation', () => {
           enabled: false,
           // No keyFile or certFile provided
         },
+        eventSchemas: {},
         host: 'localhost',
         port: 3000,
         routesDir: './routes',
@@ -391,6 +405,7 @@ describe('Server Options Validation', () => {
         validateServerOptions({
           port: 'invalid' as any,
           host: 'localhost',
+          eventSchemas: {},
           routesDir: './routes',
           bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
@@ -421,6 +436,7 @@ describe('Server Options Validation', () => {
         validateServerOptions({
           port: 8080,
           host: 'localhost',
+          eventSchemas: {},
           routesDir: './routes',
           bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         });
@@ -444,6 +460,7 @@ describe('Server Options Validation', () => {
         routesDir: './routes',
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         serverId: 'my-server-1',
+        eventSchemas: {},
       });
 
       expect(result.serverId).toBe('my-server-1');
@@ -457,6 +474,7 @@ describe('Server Options Validation', () => {
         routesDir: './routes',
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         serverId: uuid,
+        eventSchemas: {},
       });
 
       expect(result.serverId).toBe(uuid);
@@ -467,6 +485,8 @@ describe('Server Options Validation', () => {
         port: 3000,
         host: 'localhost',
         routesDir: './routes',
+
+        eventSchemas: {},
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         // No serverId provided
       });
@@ -478,6 +498,8 @@ describe('Server Options Validation', () => {
       const result = validateServerOptions({
         port: 3000,
         host: 'localhost',
+
+        eventSchemas: {},
         routesDir: './routes',
         bodyLimits: DEFAULT_OPTIONS.bodyLimits,
         serverId: 'api-server-1-prod',
@@ -490,6 +512,7 @@ describe('Server Options Validation', () => {
       expect(() =>
         validateServerOptions({
           port: 3000,
+          eventSchemas: {},
           host: 'localhost',
           routesDir: './routes',
           bodyLimits: DEFAULT_OPTIONS.bodyLimits,
@@ -503,6 +526,8 @@ describe('Server Options Validation', () => {
         validateServerOptions({
           port: 3000,
           host: 'localhost',
+
+          eventSchemas: {},
           routesDir: './routes',
           bodyLimits: DEFAULT_OPTIONS.bodyLimits,
           serverId: '',
