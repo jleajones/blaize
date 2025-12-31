@@ -1,6 +1,11 @@
-import type { Context } from '@blaize-types/context';
-import type { BlaizeLogger } from '@blaize-types/logger';
-import type { Middleware, NextFunction } from '@blaize-types/middleware';
+import type {
+  EventSchemas,
+  TypedEventBus,
+  Context,
+  BlaizeLogger,
+  Middleware,
+  NextFunction,
+} from '@blaize-types';
 
 /**
  * Execute a single middleware, handling both function and object forms
@@ -24,7 +29,8 @@ export function execute(
   middleware: Middleware | undefined,
   ctx: Context,
   next: NextFunction,
-  logger: BlaizeLogger
+  logger: BlaizeLogger,
+  eventBus: TypedEventBus<EventSchemas>
 ): Promise<void> {
   // Handle undefined middleware (safety check)
   if (!middleware) {
@@ -38,7 +44,7 @@ export function execute(
 
   try {
     // Execute middleware
-    const result = middleware.execute(ctx, next, logger);
+    const result = middleware.execute({ ctx, next, logger, eventBus });
 
     // Handle both Promise and non-Promise returns
     if (result instanceof Promise) {
