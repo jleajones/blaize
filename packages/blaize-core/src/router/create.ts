@@ -265,16 +265,17 @@ function validateSchema(method: string, schema: any): void {
 export function createRouteFactory<
   TState extends State = State,
   TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
 >() {
   return {
-    get: createGetRoute<TState, TServices>(),
-    post: createPostRoute<TState, TServices>(),
-    put: createPutRoute<TState, TServices>(),
-    delete: createDeleteRoute<TState, TServices>(),
-    patch: createPatchRoute<TState, TServices>(),
-    head: createHeadRoute<TState, TServices>(),
-    options: createOptionsRoute<TState, TServices>(),
-    sse: createSSERoute<TState, TServices>(),
+    get: createGetRoute<TState, TServices, TEvents>(),
+    post: createPostRoute<TState, TServices, TEvents>(),
+    put: createPutRoute<TState, TServices, TEvents>(),
+    delete: createDeleteRoute<TState, TServices, TEvents>(),
+    patch: createPatchRoute<TState, TServices, TEvents>(),
+    head: createHeadRoute<TState, TServices, TEvents>(),
+    options: createOptionsRoute<TState, TServices, TEvents>(),
+    sse: createSSERoute<TState, TServices, TEvents>(),
   } as const;
 }
 

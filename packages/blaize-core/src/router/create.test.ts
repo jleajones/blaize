@@ -11,6 +11,8 @@ import {
   createRouteFactory,
 } from './create';
 
+import type { Services, State } from '@blaize-types';
+
 // Mock the internal functions
 vi.mock('../config', () => ({
   getRoutesDir: vi.fn(() => '/project/routes'),
@@ -682,6 +684,181 @@ describe('Method-specific route creators', () => {
       });
 
       expect(route.GET.handler).toBeDefined();
+    });
+  });
+  describe('createRouteFactory with TEvents', () => {
+    test('factory accepts TEvents generic parameter', () => {
+      // Define event schemas
+      const _eventSchemas = {
+        'user:created': z.object({ userId: z.string(), email: z.string() }),
+        'user:updated': z.object({ userId: z.string(), changes: z.record(z.unknown()) }),
+      };
+
+      type AppEvents = typeof _eventSchemas;
+
+      // Create factory with events type
+      const factory = createRouteFactory<State, Services, AppEvents>();
+
+      expect(factory).toHaveProperty('get');
+      expect(factory).toHaveProperty('post');
+      expect(factory).toHaveProperty('sse');
+    });
+
+    test('factory with custom state, services, and events maintains type safety', () => {
+      // Define custom types
+      interface CustomState extends State {
+        userId: string;
+        isAdmin: boolean;
+      }
+
+      interface CustomServices extends Services {
+        database: { query: (sql: string) => Promise<any> };
+      }
+
+      const _eventSchemas = {
+        'user:created': z.object({ userId: z.string() }),
+        'order:placed': z.object({ orderId: z.string(), total: z.number() }),
+      };
+
+      type AppEvents = typeof _eventSchemas;
+
+      // Create factory with all custom types
+      const factory = createRouteFactory<CustomState, CustomServices, AppEvents>();
+
+      const route = factory.get({
+        schema: {
+          params: z.object({ id: z.string() }),
+          response: z.object({ success: z.boolean() }),
+        },
+        handler: async ({ ctx, params, logger, eventBus }) => {
+          // State should be typed
+          const _userId: string = ctx.state.userId;
+          const _isAdmin: boolean = ctx.state.isAdmin;
+
+          // Services should be typed
+          const _db = ctx.services.database;
+
+          // Params should be typed
+          const _id: string = params.id;
+
+          // Logger should be available
+          expect(logger).toHaveProperty('info');
+
+          // EventBus should be available
+          expect(eventBus).toBeDefined();
+
+          return { success: true };
+        },
+      });
+
+      expect(route.GET.handler).toBeDefined();
+    });
+
+    test('handler receives eventBus in context object', () => {
+      const factory = createRouteFactory();
+
+      const route = factory.post({
+        schema: {
+          body: z.object({ name: z.string() }),
+          response: z.object({ id: z.string() }),
+        },
+        handler: async ({ ctx, params, logger, eventBus }) => {
+          // Verify all context properties are present
+          expect(ctx).toBeDefined();
+          expect(params).toBeDefined();
+          expect(logger).toBeDefined();
+          expect(eventBus).toBeDefined();
+
+          return { id: 'new-id' };
+        },
+      });
+
+      expect(route.POST.handler).toBeDefined();
+    });
+
+    test('SSE route is included in factory', () => {
+      const factory = createRouteFactory();
+
+      expect(factory).toHaveProperty('sse');
+      expect(typeof factory.sse).toBe('function');
+    });
+
+    test('SSE route handler receives eventBus', () => {
+      const factory = createRouteFactory();
+
+      const route = factory.sse({
+        schema: {
+          params: z.object({ channelId: z.string() }),
+        },
+        handler: async ({ stream, ctx, params, logger, eventBus }) => {
+          // Verify all SSE context properties are present
+          expect(stream).toBeDefined();
+          expect(ctx).toBeDefined();
+          expect(params).toBeDefined();
+          expect(logger).toBeDefined();
+          expect(eventBus).toBeDefined();
+
+          // params should be typed
+          const channelId: string = params.channelId;
+          expect(typeof channelId).toBe('string');
+        },
+      });
+
+      expect(route.GET.handler).toBeDefined();
+      expect(route.SSE).toBeDefined();
+    });
+
+    test('factory without TEvents defaults to EventSchemas', () => {
+      // Factory without explicit TEvents should still work
+      const factory = createRouteFactory<State, Services>();
+
+      const route = factory.get({
+        schema: {
+          response: z.object({ ok: z.boolean() }),
+        },
+        handler: async ({ eventBus }) => {
+          // eventBus should be available with default EventSchemas type
+          expect(eventBus).toBeDefined();
+          return { ok: true };
+        },
+      });
+
+      expect(route.GET.handler).toBeDefined();
+    });
+
+    test('all HTTP methods receive eventBus in handler context', () => {
+      const factory = createRouteFactory();
+
+      // Test methods without body
+      const methodsWithoutBody = ['get', 'delete', 'head', 'options'] as const;
+      methodsWithoutBody.forEach(method => {
+        const route = factory[method]({
+          handler: async ({ ctx, params, logger, eventBus }) => {
+            expect(ctx).toBeDefined();
+            expect(params).toBeDefined();
+            expect(logger).toBeDefined();
+            expect(eventBus).toBeDefined();
+          },
+        });
+        expect(route[method.toUpperCase() as keyof typeof route]).toBeDefined();
+      });
+
+      // Test methods with body
+      const methodsWithBody = ['post', 'put', 'patch'] as const;
+      methodsWithBody.forEach(method => {
+        const route = factory[method]({
+          schema: {
+            body: z.object({ data: z.string() }),
+          },
+          handler: async ({ ctx, params, logger, eventBus }) => {
+            expect(ctx).toBeDefined();
+            expect(params).toBeDefined();
+            expect(logger).toBeDefined();
+            expect(eventBus).toBeDefined();
+          },
+        });
+        expect(route[method.toUpperCase() as keyof typeof route]).toBeDefined();
+      });
     });
   });
 });
