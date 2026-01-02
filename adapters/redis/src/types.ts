@@ -3,6 +3,25 @@ import type { Redis } from 'ioredis';
 
 export type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
+export type RedisCommand =
+  | 'GET'
+  | 'SET'
+  | 'SETEX'
+  | 'DEL'
+  | 'MGET'
+  | 'MSET'
+  | 'HSET'
+  | 'HGETALL'
+  | 'PUBLISH'
+  | 'SUBSCRIBE'
+  | 'LPUSH'
+  | 'RPOP'
+  | 'ZADD'
+  | 'ZRANGE'
+  | 'ZCARD'
+  | 'ZREM'
+  | 'EVALSHA';
+
 /**
  * Configuration options for circuit breaker
  */
@@ -200,20 +219,7 @@ export interface RedisClient {
  */
 export interface RedisOperationErrorDetails {
   /** Redis command that failed */
-  operation:
-    | 'GET'
-    | 'SET'
-    | 'SETEX'
-    | 'DEL'
-    | 'MGET'
-    | 'MSET'
-    | 'PUBLISH'
-    | 'SUBSCRIBE'
-    | 'LPUSH'
-    | 'RPOP'
-    | 'ZADD'
-    | 'ZRANGE'
-    | 'EVALSHA';
+  operation: RedisCommand;
 
   /** Redis key that was being operated on (if applicable) */
   key?: string;
@@ -288,6 +294,17 @@ export interface RedisCacheAdapterOptions {
 }
 
 /**
+ * Options for RedisQueueAdapter
+ */
+export interface RedisQueueAdapterOptions {
+  /** Key prefix for all queue keys (default: 'queue:') */
+  keyPrefix?: string;
+
+  /** Optional logger instance */
+  logger?: BlaizeLogger;
+}
+
+/**
  * Cache adapter statistics
  */
 export interface CacheStats {
@@ -317,4 +334,67 @@ export interface SubscriptionEntry {
   pattern: string;
   handler: EventHandler;
   redisPattern: string;
+}
+
+/**
+ * Options for RedisEventBusAdapter
+ */
+export interface RedisEventBusAdapterOptions {
+  /** Channel prefix for Redis pub/sub (default: 'blaize:events') */
+  channelPrefix?: string;
+
+  /** Circuit breaker configuration */
+  circuitBreaker?: CircuitBreakerConfig;
+
+  /** Optional logger instance */
+  logger?: BlaizeLogger;
+}
+
+// These types are from @blaize-plugins/queue but we define minimal versions here
+// to avoid circular dependencies. In real usage, they'd be imported.
+export interface QueueJob {
+  id: string;
+  type: string;
+  queueName: string;
+  data: unknown;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  priority: number;
+  progress: number;
+  queuedAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  failedAt?: number;
+  retries: number;
+  maxRetries: number;
+  timeout: number;
+  result?: unknown;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface JobFilters {
+  status?: QueueJob['status'] | QueueJob['status'][];
+  jobType?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: 'queuedAt' | 'priority' | 'status';
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface QueueStats {
+  total: number;
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+}
+
+export interface QueueStats {
+  total: number;
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
 }
