@@ -6,12 +6,10 @@
  * @packageDocumentation
  */
 
-// Re-export all public APIs
-
 // Client and circuit breaker
 export { createRedisClient } from './client';
-
 export { createCircuitBreaker } from './circuit-breaker';
+
 export type {
   RedisClientConfig,
   RedisClient,
@@ -29,7 +27,5 @@ export type {
 
 // Adapters
 export { RedisEventBusAdapter } from './event-bus-adapter';
-
 export { RedisCacheAdapter } from './cache-adapter';
-
 export { RedisQueueAdapter } from './queue-adapter';
