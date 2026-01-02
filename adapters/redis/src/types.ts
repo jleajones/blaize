@@ -1,4 +1,4 @@
-import type { BlaizeLogger } from 'blaizejs';
+import type { BlaizeLogger, EventHandler } from 'blaizejs';
 import type { Redis } from 'ioredis';
 
 export type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
@@ -103,11 +103,6 @@ export interface CircuitBreakerErrorDetails {
  */
 export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
-export interface RedisCacheAdapterOptions {
-  prefix?: string;
-  defaultTTL?: number;
-}
-
 /**
  * Redis client configuration
  */
@@ -208,6 +203,7 @@ export interface RedisOperationErrorDetails {
   operation:
     | 'GET'
     | 'SET'
+    | 'SETEX'
     | 'DEL'
     | 'MGET'
     | 'MSET'
@@ -247,34 +243,6 @@ export interface RedisConnectionErrorDetails {
 }
 
 /**
- * Details for Redis operation errors
- *
- * Provides context about which Redis operation failed and on which key.
- */
-export interface RedisOperationErrorDetails {
-  /** Redis command that failed */
-  operation:
-    | 'GET'
-    | 'SET'
-    | 'DEL'
-    | 'MGET'
-    | 'MSET'
-    | 'PUBLISH'
-    | 'SUBSCRIBE'
-    | 'LPUSH'
-    | 'RPOP'
-    | 'ZADD'
-    | 'ZRANGE'
-    | 'EVALSHA';
-
-  /** Redis key that was being operated on (if applicable) */
-  key?: string;
-
-  /** Original error message from ioredis (truncated if very long) */
-  originalError?: string;
-}
-
-/**
  * Details for circuit breaker open errors
  *
  * Provides information about the circuit breaker state and failure history
@@ -292,4 +260,61 @@ export interface CircuitBreakerErrorDetails {
 
   /** Time in milliseconds until circuit attempts to close */
   resetTimeout: number;
+}
+
+/**
+ * Options for RedisEventBusAdapter
+ */
+export interface RedisEventBusAdapterOptions {
+  /** Channel prefix for Redis pub/sub (default: 'blaize:events') */
+  channelPrefix?: string;
+
+  /** Circuit breaker configuration */
+  circuitBreaker?: CircuitBreakerConfig;
+
+  /** Optional logger instance */
+  logger?: BlaizeLogger;
+}
+
+/**
+ * Options for RedisCacheAdapter
+ */
+export interface RedisCacheAdapterOptions {
+  /** Key prefix for all cache keys (default: 'cache:') */
+  keyPrefix?: string;
+
+  /** Optional logger instance */
+  logger?: BlaizeLogger;
+}
+
+/**
+ * Cache adapter statistics
+ */
+export interface CacheStats {
+  /** Number of cache hits */
+  hits: number;
+
+  /** Number of cache misses */
+  misses: number;
+
+  /** Number of entries evicted (LRU or TTL) */
+  evictions: number;
+
+  /** Approximate memory usage in bytes */
+  memoryUsage: number;
+
+  /** Current number of entries in cache */
+  entryCount: number;
+
+  /** Uptime in milliseconds since adapter started */
+  uptime?: number;
+}
+
+/**
+ * Subscription tracking entry
+ */
+export interface SubscriptionEntry {
+  pattern: string;
+  handler: EventHandler;
+  redisPattern: string;
 }
