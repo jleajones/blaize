@@ -1,41 +1,445 @@
 /**
- * Redis Cache adapter
- * 
- * This module will be implemented in Task T3.9
+ * Redis Cache Adapter Implementation
+ *
+ * Provides cache operations using Redis with:
+ * - Key prefixing for namespace isolation
+ * - Statistics tracking (hits, misses, evictions)
+ * - Pipelining for bulk operations
+ * - TTL support with SETEX
+ *
+ * @module @blaizejs/adapter-redis/cache-adapter
+ * @since 0.1.0
  */
 
-import type { RedisClient } from './client';
+import { createLogger } from 'blaizejs';
 
-export interface RedisCacheAdapterOptions {
-  prefix?: string;
-  defaultTTL?: number;
-}
+import { RedisOperationError } from './errors';
+
+import type { RedisClient, RedisCacheAdapterOptions, CacheStats } from './types';
+import type { BlaizeLogger } from 'blaizejs';
 
 /**
- * Redis-based cache adapter
+ * Default options for RedisCacheAdapter
+ */
+const DEFAULT_OPTIONS = {
+  keyPrefix: 'cache:',
+};
+
+/**
+ * RedisCacheAdapter - Cache adapter using Redis
+ *
+ * Implements cache operations with Redis backend, providing:
+ * - Fast key-value storage
+ * - TTL support for automatic expiration
+ * - Bulk operations with pipelining
+ * - Statistics tracking
  */
 export class RedisCacheAdapter {
+  private readonly client: RedisClient;
+  private readonly keyPrefix: string;
+  private readonly logger: BlaizeLogger;
+
+  private isConnected = false;
+  private startTime: number = 0;
+
+  // Statistics tracking
+  private stats = {
+    hits: 0,
+    misses: 0,
+    evictions: 0, // Redis handles evictions, we track DEL operations
+  };
+
   constructor(client: RedisClient, options?: RedisCacheAdapterOptions) {
-    throw new Error('Not yet implemented - see Task T3.9');
+    this.client = client;
+    this.keyPrefix = options?.keyPrefix ?? DEFAULT_OPTIONS.keyPrefix;
+
+    // Setup logger
+    if (options?.logger) {
+      this.logger = options.logger.child({ component: 'RedisCacheAdapter' });
+    } else {
+      this.logger = createLogger().child({ component: 'RedisCacheAdapter' });
+    }
+
+    this.logger.info('RedisCacheAdapter created', {
+      keyPrefix: this.keyPrefix,
+    });
   }
 
+  /**
+   * Connect to Redis
+   */
+  async connect(): Promise<void> {
+    if (this.isConnected) {
+      this.logger.debug('Already connected, skipping connect()');
+      return;
+    }
+
+    this.logger.info('Connecting RedisCacheAdapter');
+
+    // Ensure client is connected
+    if (!this.client.isConnected()) {
+      await this.client.connect();
+    }
+
+    this.isConnected = true;
+    this.startTime = Date.now();
+
+    this.logger.info('RedisCacheAdapter connected');
+  }
+
+  /**
+   * Disconnect from Redis
+   */
+  async disconnect(): Promise<void> {
+    if (!this.isConnected) {
+      this.logger.debug('Not connected, skipping disconnect()');
+      return;
+    }
+
+    this.logger.info('Disconnecting RedisCacheAdapter');
+
+    this.isConnected = false;
+
+    this.logger.info('RedisCacheAdapter disconnected');
+  }
+
+  /**
+   * Get value by key
+   *
+   * @param key - Cache key
+   * @returns Value if exists, null otherwise
+   */
   async get(key: string): Promise<string | null> {
-    throw new Error('Not yet implemented - see Task T3.9');
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    const fullKey = this.buildKey(key);
+
+    try {
+      const value = await this.client.getConnection().get(fullKey);
+
+      if (value === null) {
+        this.stats.misses++;
+        this.logger.debug('Cache miss', { key });
+        return null;
+      }
+
+      this.stats.hits++;
+      this.logger.debug('Cache hit', { key });
+      return value;
+    } catch (error) {
+      this.logger.error('GET failed', {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('GET failed', {
+        operation: 'GET',
+        key: fullKey,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
+  /**
+   * Set value with optional TTL
+   *
+   * @param key - Cache key
+   * @param value - Value to store
+   * @param ttl - Time to live in seconds (optional)
+   */
   async set(key: string, value: string, ttl?: number): Promise<void> {
-    throw new Error('Not yet implemented - see Task T3.9');
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    const fullKey = this.buildKey(key);
+
+    try {
+      const connection = this.client.getConnection();
+
+      if (ttl !== undefined && ttl > 0) {
+        // Use SETEX for key with TTL
+        await connection.setex(fullKey, ttl, value);
+        this.logger.debug('Cache set with TTL', { key, ttl });
+      } else {
+        // Use SET for key without TTL
+        await connection.set(fullKey, value);
+        this.logger.debug('Cache set', { key });
+      }
+    } catch (error) {
+      this.logger.error('SET failed', {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('SET failed', {
+        operation: ttl !== undefined ? 'SETEX' : 'SET',
+        key: fullKey,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
-  async delete(key: string): Promise<void> {
-    throw new Error('Not yet implemented - see Task T3.9');
+  /**
+   * Delete key from cache
+   *
+   * @param key - Cache key
+   * @returns true if key existed and was deleted, false otherwise
+   */
+  async delete(key: string): Promise<boolean> {
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    const fullKey = this.buildKey(key);
+
+    try {
+      const result = await this.client.getConnection().del(fullKey);
+
+      const deleted = result > 0;
+
+      if (deleted) {
+        this.stats.evictions++;
+        this.logger.debug('Cache delete', { key });
+      }
+
+      return deleted;
+    } catch (error) {
+      this.logger.error('DEL failed', {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('DEL failed', {
+        operation: 'DEL',
+        key: fullKey,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
+  /**
+   * Get multiple keys using pipelining
+   *
+   * @param keys - Array of cache keys
+   * @returns Array of values (null for missing keys)
+   */
   async mget(keys: string[]): Promise<(string | null)[]> {
-    throw new Error('Not yet implemented - see Task T3.9');
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    // Handle empty array
+    if (keys.length === 0) {
+      return [];
+    }
+
+    const fullKeys = keys.map(key => this.buildKey(key));
+
+    try {
+      const values = await this.client.getConnection().mget(...fullKeys);
+
+      // Track hits and misses
+      for (const value of values) {
+        if (value === null) {
+          this.stats.misses++;
+        } else {
+          this.stats.hits++;
+        }
+      }
+
+      this.logger.debug('Cache mget', {
+        count: keys.length,
+        hits: values.filter(v => v !== null).length,
+      });
+
+      return values;
+    } catch (error) {
+      this.logger.error('MGET failed', {
+        count: keys.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('MGET failed', {
+        operation: 'MGET',
+        key: fullKeys.join(', '),
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
-  async mset(entries: Array<{ key: string; value: string; ttl?: number }>): Promise<void> {
-    throw new Error('Not yet implemented - see Task T3.9');
+  /**
+   * Set multiple keys using pipelining
+   *
+   * @param entries - Array of [key, value, ttl?] tuples
+   */
+  async mset(entries: [string, string, number?][]): Promise<void> {
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    // Handle empty array
+    if (entries.length === 0) {
+      return;
+    }
+
+    try {
+      const connection = this.client.getConnection();
+      const pipeline = connection.pipeline();
+
+      // Add all SET/SETEX operations to pipeline
+      for (const [key, value, ttl] of entries) {
+        const fullKey = this.buildKey(key);
+
+        if (ttl !== undefined && ttl > 0) {
+          pipeline.setex(fullKey, ttl, value);
+        } else {
+          pipeline.set(fullKey, value);
+        }
+      }
+
+      // Execute pipeline
+      await pipeline.exec();
+
+      this.logger.debug('Cache mset', { count: entries.length });
+    } catch (error) {
+      this.logger.error('MSET failed', {
+        count: entries.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('MSET failed', {
+        operation: 'MSET',
+        key: `${entries.length} entries`,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Get adapter statistics
+   *
+   * Note: Redis doesn't expose memory usage per prefix, so we use DBSIZE
+   * and INFO for approximate values.
+   *
+   * @returns Cache statistics
+   */
+  async getStats(): Promise<CacheStats> {
+    if (!this.isConnected) {
+      return {
+        hits: this.stats.hits,
+        misses: this.stats.misses,
+        evictions: this.stats.evictions,
+        memoryUsage: 0,
+        entryCount: 0,
+        uptime: 0,
+      };
+    }
+
+    try {
+      const connection = this.client.getConnection();
+
+      // Get approximate entry count using SCAN with prefix
+      let entryCount = 0;
+      let cursor = '0';
+
+      do {
+        const [nextCursor, keys] = await connection.scan(
+          cursor,
+          'MATCH',
+          `${this.keyPrefix}*`,
+          'COUNT',
+          100
+        );
+        cursor = nextCursor;
+        entryCount += keys.length;
+      } while (cursor !== '0');
+
+      // Get memory info from Redis INFO
+      const info = await connection.info('memory');
+      const memoryMatch = info.match(/used_memory:(\d+)/);
+      const memoryUsage = memoryMatch && memoryMatch[1] ? parseInt(memoryMatch[1], 10) : 0;
+
+      const uptime = this.startTime > 0 ? Date.now() - this.startTime : undefined;
+
+      return {
+        hits: this.stats.hits,
+        misses: this.stats.misses,
+        evictions: this.stats.evictions,
+        memoryUsage,
+        entryCount,
+        uptime,
+      };
+    } catch (error) {
+      this.logger.error('Failed to get stats', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      // Return basic stats on error
+      return {
+        hits: this.stats.hits,
+        misses: this.stats.misses,
+        evictions: this.stats.evictions,
+        memoryUsage: 0,
+        entryCount: 0,
+        uptime: this.startTime > 0 ? Date.now() - this.startTime : undefined,
+      };
+    }
+  }
+
+  /**
+   * Perform health check
+   *
+   * @returns Health status with optional details
+   */
+  async healthCheck(): Promise<{
+    healthy: boolean;
+    message?: string;
+    details?: Record<string, unknown>;
+  }> {
+    if (!this.isConnected) {
+      return {
+        healthy: false,
+        message: 'Adapter not connected',
+      };
+    }
+
+    // Delegate to client health check
+    const clientHealth = await this.client.healthCheck();
+
+    if (!clientHealth.healthy) {
+      return {
+        healthy: false,
+        message: clientHealth.message,
+        details: {
+          latency: clientHealth.latency,
+        },
+      };
+    }
+
+    // Get stats for additional health details
+    const stats = await this.getStats();
+
+    return {
+      healthy: true,
+      message: 'Connected',
+      details: {
+        latency: clientHealth.latency,
+        hits: stats.hits,
+        misses: stats.misses,
+        entryCount: stats.entryCount,
+      },
+    };
+  }
+
+  /**
+   * Build full key with prefix
+   *
+   * @private
+   */
+  private buildKey(key: string): string {
+    return `${this.keyPrefix}${key}`;
   }
 }
