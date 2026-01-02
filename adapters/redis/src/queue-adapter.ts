@@ -61,7 +61,15 @@ export class RedisQueueAdapter {
   private readonly logger: BlaizeLogger;
 
   private isConnected = false;
+
+  // Lua scripts content (stored for defineCommand)
   private dequeueScript?: string;
+  private completeScript?: string;
+  private failScript?: string;
+
+  private dequeueSha?: string;
+  private completeSha?: string;
+  private failSha?: string;
 
   constructor(client: RedisClient, options?: RedisQueueAdapterOptions) {
     this.client = client;
@@ -95,10 +103,27 @@ export class RedisQueueAdapter {
       await this.client.connect();
     }
 
-    // Load Lua scripts
+    // Load Lua scripts from files and define as custom commands
     try {
       this.dequeueScript = loadLuaScript('dequeue.lua');
-      this.logger.debug('Lua scripts loaded');
+      this.completeScript = loadLuaScript('complete.lua');
+      this.failScript = loadLuaScript('fail.lua');
+
+      this.logger.debug('Lua scripts loaded from files');
+
+      // Define custom commands on the Redis connection
+      // ioredis will automatically handle SCRIPT LOAD + EVALSHA caching
+      const connection = this.client.getConnection();
+
+      this.dequeueSha = (await connection.script('LOAD', this.dequeueScript)) as string;
+      this.completeSha = (await connection.script('LOAD', this.completeScript)) as string;
+      this.failSha = (await connection.script('LOAD', this.failScript)) as string;
+
+      this.logger.debug('Lua scripts registered in Redis', {
+        dequeueSha: this.dequeueSha,
+        completeSha: this.completeSha,
+        failSha: this.failSha,
+      });
     } catch (error) {
       this.logger.error('Failed to load Lua scripts', {
         error: error instanceof Error ? error.message : String(error),
@@ -204,9 +229,9 @@ export class RedisQueueAdapter {
     const jobKeyPrefix = 'job:';
 
     try {
-      // Execute Lua script for atomic dequeue
-      const jobId = (await connection.eval(
-        this.dequeueScript,
+      // Execute Lua script using custom command (ioredis handles EVALSHA automatically)
+      const jobId = (await connection.evalsha(
+        this.dequeueSha!,
         3,
         queuedKey,
         runningKey,
@@ -508,6 +533,161 @@ export class RedisQueueAdapter {
       throw new RedisOperationError('REMOVE_JOB failed', {
         operation: 'DEL',
         key: jobKey,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Mark a job as completed
+   *
+   * Uses Lua script for atomic completion operation.
+   *
+   * @param jobId - Unique job identifier
+   * @param result - Optional result data
+   * @returns true if job was completed, false if not found in running set
+   */
+  async completeJob(jobId: string, result?: unknown): Promise<boolean> {
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    if (!this.completeScript) {
+      throw new Error('Complete script not loaded');
+    }
+
+    // Get job to know queue name
+    const job = await this.getJob(jobId);
+
+    if (!job) {
+      this.logger.warn('Job not found for completion', { jobId });
+      return false;
+    }
+
+    const connection = this.client.getConnection();
+    const runningKey = this.buildQueueKey(job.queueName, 'running');
+    const completedKey = this.buildQueueKey(job.queueName, 'completed');
+    const jobKeyPrefix = 'job:';
+
+    try {
+      // Execute Lua script using custom command
+      const resultJson = result ? JSON.stringify(result) : '';
+
+      const success = await connection.evalsha(
+        this.completeSha!,
+        3,
+        runningKey,
+        completedKey,
+        jobKeyPrefix,
+        jobId,
+        Date.now().toString(),
+        resultJson
+      );
+
+      if (success === 1) {
+        this.logger.debug('Job completed', {
+          jobId,
+          queueName: job.queueName,
+        });
+        return true;
+      } else {
+        this.logger.warn('Job not in running set for completion', {
+          jobId,
+          queueName: job.queueName,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.logger.error('COMPLETE_JOB failed', {
+        jobId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('COMPLETE_JOB failed', {
+        operation: 'EVALSHA',
+        key: runningKey,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Mark a job as failed and handle retry logic
+   *
+   * Uses Lua script for atomic failure operation with retry handling.
+   * - If retries < maxRetries: re-enqueue for retry
+   * - If retries exhausted: move to failed set
+   *
+   * @param jobId - Unique job identifier
+   * @param error - Error message
+   * @returns 'retry' if requeued, 'failed' if moved to failed set, null if not found
+   */
+  async failJob(jobId: string, errorMessage: string): Promise<'retry' | 'failed' | null> {
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    if (!this.failScript) {
+      throw new Error('Fail script not loaded');
+    }
+
+    // Get job to know queue name
+    const job = await this.getJob(jobId);
+
+    if (!job) {
+      this.logger.warn('Job not found for failure', { jobId });
+      return null;
+    }
+
+    const connection = this.client.getConnection();
+    const runningKey = this.buildQueueKey(job.queueName, 'running');
+    const queuedKey = this.buildQueueKey(job.queueName, 'queued');
+    const failedKey = this.buildQueueKey(job.queueName, 'failed');
+    const jobKeyPrefix = 'job:';
+
+    try {
+      // Execute Lua script using custom command
+      const result = (await connection.evalsha(
+        this.failSha!,
+        4,
+        runningKey,
+        queuedKey,
+        failedKey,
+        jobKeyPrefix,
+        jobId,
+        Date.now().toString(),
+        errorMessage
+      )) as 'retry' | 'failed' | null;
+
+      if (result === 'retry') {
+        this.logger.debug('Job failed, requeued for retry', {
+          jobId,
+          queueName: job.queueName,
+          retries: job.retries + 1,
+        });
+      } else if (result === 'failed') {
+        this.logger.debug('Job failed permanently', {
+          jobId,
+          queueName: job.queueName,
+          retries: job.retries + 1,
+        });
+      } else {
+        this.logger.warn('Job not in running set for failure', {
+          jobId,
+          queueName: job.queueName,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error('FAIL_JOB failed', {
+        jobId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('FAIL_JOB failed', {
+        operation: 'EVALSHA',
+        key: runningKey,
         originalError: error instanceof Error ? error.message : String(error),
       });
     }

@@ -46,6 +46,8 @@ describe('RedisQueueAdapter', () => {
       zcard: vi.fn(),
       pipeline: vi.fn(),
       eval: vi.fn(),
+      script: vi.fn().mockResolvedValue('0123456789abcdef0123456789abcdef01234567'),
+      evalsha: vi.fn(),
     };
 
     // Create mock client
@@ -106,7 +108,15 @@ describe('RedisQueueAdapter', () => {
 
       expect(mockClient.isConnected).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith('RedisQueueAdapter connected');
-      expect(mockLogger.debug).toHaveBeenCalledWith('Lua scripts loaded');
+      expect(mockLogger.debug).toHaveBeenCalledWith('Lua scripts loaded from files');
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Lua scripts registered in Redis',
+        expect.objectContaining({
+          dequeueSha: expect.any(String),
+          completeSha: expect.any(String),
+          failSha: expect.any(String),
+        })
+      );
     });
 
     it('should connect client if not already connected', async () => {
@@ -262,7 +272,7 @@ describe('RedisQueueAdapter', () => {
     it('should dequeue highest priority job using Lua script', async () => {
       const _job = createTestJob({ id: 'job1' });
 
-      mockConnection.eval.mockResolvedValue('job1');
+      mockConnection.evalsha.mockResolvedValue('job1');
       mockConnection.hgetall.mockResolvedValue({
         id: 'job1',
         type: 'test:job',
@@ -286,7 +296,7 @@ describe('RedisQueueAdapter', () => {
       expect(result?.status).toBe('running');
 
       // Verify Lua script was called with correct arguments
-      expect(mockConnection.eval).toHaveBeenCalledWith(
+      expect(mockConnection.evalsha).toHaveBeenCalledWith(
         expect.any(String), // Lua script content
         3, // Number of keys
         'queue:default:queued',
@@ -297,7 +307,7 @@ describe('RedisQueueAdapter', () => {
     });
 
     it('should return null when queue is empty', async () => {
-      mockConnection.eval.mockResolvedValue(null);
+      mockConnection.evalsha.mockResolvedValue(null);
 
       const result = await adapter.dequeue('default');
 
@@ -314,7 +324,7 @@ describe('RedisQueueAdapter', () => {
     });
 
     it('should throw RedisOperationError on failure', async () => {
-      mockConnection.eval.mockRejectedValue(new Error('Lua script error'));
+      mockConnection.evalsha.mockRejectedValue(new Error('Lua script error'));
 
       await expect(adapter.dequeue('default')).rejects.toThrow(RedisOperationError);
     });

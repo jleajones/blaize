@@ -305,29 +305,6 @@ export interface RedisQueueAdapterOptions {
 }
 
 /**
- * Cache adapter statistics
- */
-export interface CacheStats {
-  /** Number of cache hits */
-  hits: number;
-
-  /** Number of cache misses */
-  misses: number;
-
-  /** Number of entries evicted (LRU or TTL) */
-  evictions: number;
-
-  /** Approximate memory usage in bytes */
-  memoryUsage: number;
-
-  /** Current number of entries in cache */
-  entryCount: number;
-
-  /** Uptime in milliseconds since adapter started */
-  uptime?: number;
-}
-
-/**
  * Subscription tracking entry
  */
 export interface SubscriptionEntry {
@@ -381,13 +358,27 @@ export interface JobFilters {
   sortOrder?: 'asc' | 'desc';
 }
 
-export interface QueueStats {
-  total: number;
-  queued: number;
-  running: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
+/**
+ * Cache adapter statistics
+ */
+export interface CacheStats {
+  /** Number of cache hits */
+  hits: number;
+
+  /** Number of cache misses */
+  misses: number;
+
+  /** Number of entries evicted (LRU or TTL) */
+  evictions: number;
+
+  /** Approximate memory usage in bytes */
+  memoryUsage: number;
+
+  /** Current number of entries in cache */
+  entryCount: number;
+
+  /** Uptime in milliseconds since adapter started */
+  uptime?: number;
 }
 
 export interface QueueStats {
