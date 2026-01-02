@@ -38,7 +38,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "zod": "^3.23.0"
+    "ioredis": "^5.8.2",
+    "zod": "^3.24.4"
   },
   "peerDependencies": {
     "blaizejs": "^0.8.0"
@@ -59,16 +60,13 @@
   },
   "keywords": [
     "blaizejs",
-    "plugin",
+    "adapter",
+    "redis",
+    "eventbus",
+    "cache",
     "queue",
-    "jobs",
-    "background-jobs",
-    "task-queue",
-    "priority-queue",
-    "job-processing",
-    "sse",
-    "server-sent-events",
-    "retry",
+    "circuit-breaker",
+    "distributed",
     "typescript"
   ],
   "license": "MIT"
