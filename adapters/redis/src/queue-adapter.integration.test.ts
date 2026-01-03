@@ -317,6 +317,29 @@ describe('RedisQueueAdapter - Integration Tests', { timeout: TEST_TIMEOUT }, () 
       expect(retried?.retries).toBe(1);
     });
 
+    it('should maintain original queue position when retrying', async () => {
+      // Create and start job1
+      const job1 = createTestJob({ maxRetries: 3, data: { name: 'job1' } });
+      await adapter.enqueue('test-queue', job1);
+      const running1 = await adapter.dequeue('test-queue');
+
+      // While job1 runs, create job2
+      const job2 = createTestJob({ data: { name: 'job2' } });
+      await adapter.enqueue('test-queue', job2);
+
+      // Fail job1 (triggers retry)
+      await adapter.failJob(running1!.id, 'Transient error');
+
+      // Next dequeue gets job1 retry, NOT job2
+      const next = await adapter.dequeue('test-queue');
+      expect(next?.id).toBe(job1.id); // ✅ job1 maintains position
+      expect(next?.retries).toBe(1);
+
+      // Then job2 dequeues
+      const last = await adapter.dequeue('test-queue');
+      expect(last?.id).toBe(job2.id);
+    });
+
     it('should fail permanently after max retries exhausted', async () => {
       const job = createTestJob({ maxRetries: 2 });
       await adapter.enqueue('test-queue', job);
