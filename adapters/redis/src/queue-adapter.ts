@@ -172,7 +172,7 @@ export class RedisQueueAdapter {
       // Calculate score: -priority + (timestamp / 1e13)
       // This ensures: higher priority = lower score = processed first
       // Same priority: earlier timestamp = FIFO
-      const score = -job.priority + job.queuedAt / 1e13;
+      const score = job.priority + job.queuedAt / 1e13;
 
       // Use pipeline for atomicity
       const pipeline = connection.pipeline();
@@ -456,17 +456,20 @@ export class RedisQueueAdapter {
       pipeline.hset(jobKey, hashUpdates);
 
       // If status changed, move between sorted sets
-      if (newStatus !== oldStatus) {
+      // Check if status OR priority changed
+      const priorityChanged =
+        updates.priority !== undefined && updates.priority !== currentJob.priority;
+      const statusChanged = newStatus !== oldStatus;
+
+      if (statusChanged || priorityChanged) {
         const oldQueueKey = this.buildQueueKey(currentJob.queueName, oldStatus);
         const newQueueKey = this.buildQueueKey(currentJob.queueName, newStatus);
 
-        // Remove from old status set
         pipeline.zrem(oldQueueKey, jobId);
 
-        // Add to new status set (recalculate score if priority changed)
         const priority = updates.priority ?? currentJob.priority;
         const timestamp = updates.queuedAt ?? currentJob.queuedAt;
-        const score = -priority + timestamp / 1e13;
+        const score = priority + timestamp / 1e13;
         pipeline.zadd(newQueueKey, score, jobId);
       }
 

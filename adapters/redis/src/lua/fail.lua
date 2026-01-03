@@ -47,7 +47,7 @@ redis.call('ZREM', KEYS[1], ARGV[1])
 if newRetries <= maxRetries then
   -- Re-enqueue for retry
   -- Calculate score: -priority + (timestamp / 1e13)
-  local score = -priority + (queuedAt / 10000000000000)
+  local score = priority + (queuedAt / 10000000000000)
   redis.call('ZADD', KEYS[2], score, ARGV[1])
   
   -- Update job hash for retry

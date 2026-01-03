@@ -208,8 +208,8 @@ describe('RedisQueueAdapter', () => {
     });
 
     it('should handle high priority jobs (lower score)', async () => {
-      const highPriorityJob = createTestJob({ priority: 10 });
-      const lowPriorityJob = createTestJob({ priority: 1 });
+      const lowPriorityJob = createTestJob({ priority: 10 });
+      const highPriorityJob = createTestJob({ priority: 1 });
 
       await adapter.enqueue('default', highPriorityJob);
       await adapter.enqueue('default', lowPriorityJob);
