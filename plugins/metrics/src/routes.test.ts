@@ -162,7 +162,9 @@ describe('metricsJsonRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsJsonRoute.handler(ctx);
+      await metricsJsonRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.statusCode).toBe(200);
@@ -177,7 +179,9 @@ describe('metricsJsonRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsJsonRoute.handler(ctx);
+      await metricsJsonRoute({
+        ctx,
+      });
 
       expect(collector.getSnapshot).toHaveBeenCalledTimes(1);
     });
@@ -186,7 +190,9 @@ describe('metricsJsonRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsJsonRoute.handler(ctx);
+      await metricsJsonRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       const snapshot = response.responseBody;
@@ -203,7 +209,9 @@ describe('metricsJsonRoute', () => {
       const ctx = createMockContext({}, {});
 
       try {
-        await metricsJsonRoute.handler(ctx);
+        await metricsJsonRoute({
+          ctx,
+        });
         expect.fail('Should have thrown');
       } catch (error: any) {
         expect(error.status).toBe(503);
@@ -215,7 +223,9 @@ describe('metricsJsonRoute', () => {
       const ctx = createMockContext({}, {});
 
       try {
-        await metricsJsonRoute.handler(ctx);
+        await metricsJsonRoute({
+          ctx,
+        });
         expect.fail('Should have thrown');
       } catch (error: any) {
         expect(error.details).toMatchObject({
@@ -234,9 +244,11 @@ describe('metricsJsonRoute', () => {
       };
       const ctx = createMockContext({ metrics: collector });
 
-      await expect(metricsJsonRoute.handler(ctx)).rejects.toThrow(
-        'Error generating metrics snapshot'
-      );
+      await expect(
+        metricsJsonRoute({
+          ctx,
+        })
+      ).rejects.toThrow('Error generating metrics snapshot');
     });
   });
 });
@@ -247,7 +259,9 @@ describe('metricsPrometheusRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsPrometheusRoute.handler(ctx);
+      await metricsPrometheusRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.statusCode).toBe(200);
@@ -261,7 +275,9 @@ describe('metricsPrometheusRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsPrometheusRoute.handler(ctx);
+      await metricsPrometheusRoute({
+        ctx,
+      });
 
       expect(collector.getSnapshot).toHaveBeenCalledTimes(1);
     });
@@ -270,7 +286,9 @@ describe('metricsPrometheusRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsPrometheusRoute.handler(ctx);
+      await metricsPrometheusRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.responseBody).toContain('http_requests_total 1000');
@@ -288,7 +306,9 @@ describe('metricsPrometheusRoute', () => {
         }
       );
 
-      await metricsPrometheusRoute.handler(ctx);
+      await metricsPrometheusRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.responseBody).toContain('service="api"');
@@ -300,7 +320,9 @@ describe('metricsPrometheusRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector }, {});
 
-      await metricsPrometheusRoute.handler(ctx);
+      await metricsPrometheusRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.statusCode).toBe(200);
@@ -312,9 +334,11 @@ describe('metricsPrometheusRoute', () => {
     test('throws ServiceNotAvailableError when metrics service unavailable', async () => {
       const ctx = createMockContext({}, {});
 
-      await expect(metricsPrometheusRoute.handler(ctx)).rejects.toThrow(
-        'Metrics service unavailable'
-      );
+      await expect(
+        metricsPrometheusRoute({
+          ctx,
+        })
+      ).rejects.toThrow('Metrics service unavailable');
     });
 
     test('throws InternalServerError when export fails', async () => {
@@ -325,9 +349,11 @@ describe('metricsPrometheusRoute', () => {
       };
       const ctx = createMockContext({ metrics: collector });
 
-      await expect(metricsPrometheusRoute.handler(ctx)).rejects.toThrow(
-        'Error generating Prometheus metrics'
-      );
+      await expect(
+        metricsPrometheusRoute({
+          ctx,
+        })
+      ).rejects.toThrow('Error generating Prometheus metrics');
     });
   });
 
@@ -336,7 +362,9 @@ describe('metricsPrometheusRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsPrometheusRoute.handler(ctx);
+      await metricsPrometheusRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.contentType).toBe('text/plain; version=0.0.4; charset=utf-8');
@@ -350,7 +378,9 @@ describe('metricsDashboardRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsDashboardRoute.handler(ctx);
+      await metricsDashboardRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.statusCode).toBe(200);
@@ -364,7 +394,9 @@ describe('metricsDashboardRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsDashboardRoute.handler(ctx);
+      await metricsDashboardRoute({
+        ctx,
+      });
 
       expect(collector.getSnapshot).toHaveBeenCalledTimes(1);
     });
@@ -373,7 +405,9 @@ describe('metricsDashboardRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsDashboardRoute.handler(ctx);
+      await metricsDashboardRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.responseBody).toContain('Total Requests');
@@ -386,7 +420,9 @@ describe('metricsDashboardRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsDashboardRoute.handler(ctx);
+      await metricsDashboardRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.responseBody).toContain('🔥');
@@ -398,9 +434,11 @@ describe('metricsDashboardRoute', () => {
     test('throws ServiceNotAvailableError when metrics service unavailable', async () => {
       const ctx = createMockContext({}, {});
 
-      await expect(metricsDashboardRoute.handler(ctx)).rejects.toThrow(
-        'Metrics service unavailable'
-      );
+      await expect(
+        metricsDashboardRoute({
+          ctx,
+        })
+      ).rejects.toThrow('Metrics service unavailable');
     });
 
     test('throws InternalServerError when dashboard generation fails', async () => {
@@ -411,9 +449,11 @@ describe('metricsDashboardRoute', () => {
       };
       const ctx = createMockContext({ metrics: collector });
 
-      await expect(metricsDashboardRoute.handler(ctx)).rejects.toThrow(
-        'Error generating metrics dashboard'
-      );
+      await expect(
+        metricsDashboardRoute({
+          ctx,
+        })
+      ).rejects.toThrow('Error generating metrics dashboard');
     });
   });
 
@@ -422,7 +462,9 @@ describe('metricsDashboardRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsDashboardRoute.handler(ctx);
+      await metricsDashboardRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.contentType).toBe('text/html; charset=utf-8');
@@ -434,7 +476,9 @@ describe('metricsDashboardRoute', () => {
       const collector = createMockCollector();
       const ctx = createMockContext({ metrics: collector });
 
-      await metricsDashboardRoute.handler(ctx);
+      await metricsDashboardRoute({
+        ctx,
+      });
 
       const response = (ctx as any)._getResponse();
       expect(response.contentType).toBe('text/html; charset=utf-8');
@@ -450,9 +494,15 @@ describe('Route integration', () => {
     const prometheusCtx = createMockContext({ metrics: collector });
     const dashboardCtx = createMockContext({ metrics: collector });
 
-    await metricsJsonRoute.handler(jsonCtx);
-    await metricsPrometheusRoute.handler(prometheusCtx);
-    await metricsDashboardRoute.handler(dashboardCtx);
+    await metricsJsonRoute({
+      ctx: jsonCtx,
+    });
+    await metricsPrometheusRoute({
+      ctx: prometheusCtx,
+    });
+    await metricsDashboardRoute({
+      ctx: dashboardCtx,
+    });
 
     const jsonResponse = (jsonCtx as any)._getResponse();
     const prometheusResponse = (prometheusCtx as any)._getResponse();
@@ -474,9 +524,15 @@ describe('Route integration', () => {
     const ctx2 = createMockContext({ metrics: collector });
     const ctx3 = createMockContext({ metrics: collector });
 
-    await metricsJsonRoute.handler(ctx1);
-    await metricsPrometheusRoute.handler(ctx2);
-    await metricsDashboardRoute.handler(ctx3);
+    await metricsJsonRoute({
+      ctx: ctx1,
+    });
+    await metricsPrometheusRoute({
+      ctx: ctx2,
+    });
+    await metricsDashboardRoute({
+      ctx: ctx3,
+    });
 
     // Should call getSnapshot three times on the same collector
     expect(collector.getSnapshot).toHaveBeenCalledTimes(3);
@@ -487,21 +543,29 @@ describe('Route integration', () => {
     const ctx2 = createMockContext({});
     const ctx3 = createMockContext({});
 
-    await expect(metricsJsonRoute.handler(ctx1)).rejects.toThrow('Metrics service unavailable');
-    await expect(metricsPrometheusRoute.handler(ctx2)).rejects.toThrow(
-      'Metrics service unavailable'
-    );
-    await expect(metricsDashboardRoute.handler(ctx3)).rejects.toThrow(
-      'Metrics service unavailable'
-    );
+    await expect(
+      metricsJsonRoute({
+        ctx: ctx1,
+      })
+    ).rejects.toThrow('Metrics service unavailable');
+    await expect(
+      metricsPrometheusRoute({
+        ctx: ctx2,
+      })
+    ).rejects.toThrow('Metrics service unavailable');
+    await expect(
+      metricsDashboardRoute({
+        ctx: ctx3,
+      })
+    ).rejects.toThrow('Metrics service unavailable');
   });
 });
 
 describe('TypeScript type compatibility', () => {
   test('all handlers are compatible with BlaizeJS routes', () => {
-    const h1 = metricsJsonRoute.handler;
-    const h2 = metricsPrometheusRoute.handler;
-    const h3 = metricsDashboardRoute.handler;
+    const h1 = metricsJsonRoute;
+    const h2 = metricsPrometheusRoute;
+    const h3 = metricsDashboardRoute;
 
     expect(h1).toBeDefined();
     expect(h2).toBeDefined();

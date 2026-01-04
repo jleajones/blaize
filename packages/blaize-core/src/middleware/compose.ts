@@ -1,9 +1,6 @@
-
 import { execute } from './execute';
 
-import type { Context } from '@blaize-types/context';
-import type { BlaizeLogger } from '@blaize-types/logger';
-import type { Middleware, NextFunction, MiddlewareFunction } from '@blaize-types/middleware';
+import type { Middleware, MiddlewareFunction } from '@blaize-types/middleware';
 
 /**
  * Compose multiple middleware functions into a single middleware function
@@ -11,17 +8,14 @@ import type { Middleware, NextFunction, MiddlewareFunction } from '@blaize-types
 export function compose(middlewareStack: Middleware[]): MiddlewareFunction {
   // No middleware? Return a pass-through function
   if (middlewareStack.length === 0) {
-    return async (_, next, __) => {
+    return async ({ next }) => {
       await Promise.resolve(next());
     };
   }
 
   // Return a function that executes the middleware stack
-  return async function (
-    ctx: Context,
-    finalHandler: NextFunction,
-    baseLogger: BlaizeLogger
-  ): Promise<void> {
+  return async function (mc): Promise<void> {
+    const { ctx, next: finalHandler, logger: baseLogger, eventBus } = mc;
     // Keep track of which "next" functions have been called
     const called = new Set<number>();
 
@@ -54,7 +48,7 @@ export function compose(middlewareStack: Middleware[]): MiddlewareFunction {
       });
 
       // Use the executeMiddleware function we defined
-      return execute(middleware, ctx, nextDispatch, middlewareLogger);
+      return execute(middleware, ctx, nextDispatch, middlewareLogger, eventBus);
     };
 
     // Start middleware chain execution

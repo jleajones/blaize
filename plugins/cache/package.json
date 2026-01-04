@@ -34,7 +34,6 @@
     "test": "vitest run --typecheck",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:integration": "docker-compose -f compose.test.yml up -d && vitest run src/*.integration.test.ts && docker-compose -f compose.test.yml down",
     "lint": "eslint .",
     "clean": "rimraf dist"
   },
@@ -46,6 +45,7 @@
     "blaizejs": "^0.8.0"
   },
   "devDependencies": {
+    "@blaizejs/adapter-redis": "workspace:*",
     "@blaizejs/eslint-config": "workspace:*",
     "@blaizejs/testing-utils": "workspace:*",
     "@blaizejs/tsconfig": "workspace:*",

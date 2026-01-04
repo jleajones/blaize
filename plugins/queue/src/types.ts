@@ -13,7 +13,7 @@
 
 import { QueueService } from './queue-service';
 
-import type { BlaizeLogger } from 'blaizejs';
+import type { BlaizeLogger, Services } from 'blaizejs';
 import type { z } from 'zod';
 
 // ============================================================================
@@ -1183,7 +1183,7 @@ export interface HandlerAlreadyRegisteredDetails {
  *
  * These are accessible via `ctx.services.queue` in route handlers.
  */
-export interface QueuePluginServices {
+export interface QueuePluginServices extends Services {
   /** Queue service instance for job operations */
   queue: QueueService;
 }

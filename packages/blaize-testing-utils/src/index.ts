@@ -20,9 +20,11 @@ import {
   mockPutRoute,
   createMockLogger,
   MockLogger,
+  createMockEventBus,
 } from './mocks';
 
 export {
+  createMockEventBus,
   MockLogger,
   createMockLogger,
   createMockHttp1Request,

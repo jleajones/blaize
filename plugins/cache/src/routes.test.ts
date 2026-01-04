@@ -166,15 +166,11 @@ function createMockStream(): CacheSSEStream & {
 // ============================================================================
 
 describe('cacheStatsHandler', () => {
-  test('should have 3-param signature', () => {
-    expect(cacheStatsHandler.length).toBe(3);
-  });
-
   test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
     const ctx = createMockContext();
     const logger = createMockLogger();
 
-    await expect(cacheStatsHandler(ctx, {}, logger as any)).rejects.toThrow(
+    await expect(cacheStatsHandler({ ctx, logger } as any)).rejects.toThrow(
       ServiceNotAvailableError
     );
   });
@@ -194,7 +190,7 @@ describe('cacheStatsHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    const result = await cacheStatsHandler(ctx, {}, logger as any);
+    const result = await cacheStatsHandler({ ctx, logger } as any);
 
     expect(result).toMatchObject({
       stats: expect.objectContaining({
@@ -228,7 +224,7 @@ describe('cacheStatsHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    const result = await cacheStatsHandler(ctx, {}, logger as any);
+    const result = await cacheStatsHandler({ ctx, logger });
 
     // Hit rate should be 2/3 ≈ 0.667
     expect(result.hitRate).toBeCloseTo(0.667, 2);
@@ -244,7 +240,7 @@ describe('cacheStatsHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    const result = await cacheStatsHandler(ctx, {}, logger as any);
+    const result = await cacheStatsHandler({ ctx, logger });
 
     expect(result.hitRate).toBe(0);
   });
@@ -259,7 +255,7 @@ describe('cacheStatsHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cacheStatsHandler(ctx, {}, logger as any);
+    await cacheStatsHandler({ ctx, logger } as any);
 
     expect(logger.debug).toHaveBeenCalledWith('Fetching cache statistics');
   });
@@ -270,17 +266,11 @@ describe('cacheStatsHandler', () => {
 // ============================================================================
 
 describe('cachePrometheusHandler', () => {
-  test('should have 3-param signature', () => {
-    expect(cachePrometheusHandler.length).toBe(3);
-  });
-
   test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
     const ctx = createMockContext();
     const logger = createMockLogger();
 
-    await expect(cachePrometheusHandler(ctx, {}, logger as any)).rejects.toThrow(
-      ServiceNotAvailableError
-    );
+    await expect(cachePrometheusHandler({ ctx, logger })).rejects.toThrow(ServiceNotAvailableError);
   });
 
   test('should return Prometheus format metrics', async () => {
@@ -297,7 +287,7 @@ describe('cachePrometheusHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cachePrometheusHandler(ctx, {}, logger as any);
+    await cachePrometheusHandler({ ctx, logger });
 
     const response = (ctx as any)._getResponse();
     expect(response.contentType).toBe('text/plain; version=0.0.4; charset=utf-8');
@@ -321,7 +311,7 @@ describe('cachePrometheusHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cachePrometheusHandler(ctx, {}, logger as any);
+    await cachePrometheusHandler({ ctx, logger });
 
     const response = (ctx as any)._getResponse();
     expect(response.content).toContain('blaize_cache_uptime_seconds');
@@ -341,7 +331,7 @@ describe('cachePrometheusHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cachePrometheusHandler(ctx, {}, logger as any);
+    await cachePrometheusHandler({ ctx, logger });
 
     const response = (ctx as any)._getResponse();
     const content = response.content as string;
@@ -362,7 +352,7 @@ describe('cachePrometheusHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cachePrometheusHandler(ctx, {}, logger as any);
+    await cachePrometheusHandler({ ctx, logger });
 
     expect(logger.debug).toHaveBeenCalledWith('Generating Prometheus metrics');
   });
@@ -373,17 +363,11 @@ describe('cachePrometheusHandler', () => {
 // ============================================================================
 
 describe('cacheDashboardHandler', () => {
-  test('should have 3-param signature', () => {
-    expect(cacheDashboardHandler.length).toBe(3);
-  });
-
   test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
     const ctx = createMockContext();
     const logger = createMockLogger();
 
-    await expect(cacheDashboardHandler(ctx, {}, logger as any)).rejects.toThrow(
-      ServiceNotAvailableError
-    );
+    await expect(cacheDashboardHandler({ ctx, logger })).rejects.toThrow(ServiceNotAvailableError);
   });
 
   test('should return HTML dashboard', async () => {
@@ -396,7 +380,7 @@ describe('cacheDashboardHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cacheDashboardHandler(ctx, {}, logger as any);
+    await cacheDashboardHandler({ ctx, logger });
 
     const response = (ctx as any)._getResponse();
     expect(response.contentType).toBe('text/html; charset=utf-8');
@@ -418,7 +402,7 @@ describe('cacheDashboardHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cacheDashboardHandler(ctx, {}, logger as any);
+    await cacheDashboardHandler({ ctx, logger });
 
     const response = (ctx as any)._getResponse();
     expect(response.content).toContain('Cache Hits');
@@ -438,7 +422,7 @@ describe('cacheDashboardHandler', () => {
     const ctx = createMockContext({ refresh: '30' }, cacheService);
     const logger = createMockLogger();
 
-    await cacheDashboardHandler(ctx, {}, logger as any);
+    await cacheDashboardHandler({ ctx, logger });
 
     const response = (ctx as any)._getResponse();
     expect(response.content).toContain('http-equiv="refresh"');
@@ -456,7 +440,7 @@ describe('cacheDashboardHandler', () => {
     const ctx = createMockContext({}, cacheService);
     const logger = createMockLogger();
 
-    await cacheDashboardHandler(ctx, {}, logger as any);
+    await cacheDashboardHandler({ ctx, logger });
 
     const response = (ctx as any)._getResponse();
     expect(response.content).not.toContain('http-equiv="refresh"');
@@ -472,7 +456,7 @@ describe('cacheDashboardHandler', () => {
     const ctx = createMockContext({ refresh: '60' }, cacheService);
     const logger = createMockLogger();
 
-    await cacheDashboardHandler(ctx, {}, logger as any);
+    await cacheDashboardHandler({ ctx, logger });
 
     expect(logger.debug).toHaveBeenCalledWith('Rendering cache dashboard', {
       refreshInterval: 60,
@@ -485,16 +469,12 @@ describe('cacheDashboardHandler', () => {
 // ============================================================================
 
 describe('cacheEventsHandler', () => {
-  test('should have 4-param signature for SSE', () => {
-    expect(cacheEventsHandler.length).toBe(4);
-  });
-
   test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
     const stream = createMockStream();
     const ctx = createMockContext();
     const logger = createMockLogger();
 
-    await expect(cacheEventsHandler(stream, ctx, {}, logger as any)).rejects.toThrow(
+    await expect(cacheEventsHandler({ stream, ctx, logger })).rejects.toThrow(
       ServiceNotAvailableError
     );
   });
@@ -511,7 +491,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler (returns immediately after setup)
-    await cacheEventsHandler(stream, ctx, {}, logger as any);
+    await cacheEventsHandler({ stream, ctx, logger });
 
     // Trigger cache events
     await cacheService.set('test:key', 'value');
@@ -546,7 +526,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler
-    await cacheEventsHandler(stream, ctx, {}, logger as any);
+    await cacheEventsHandler({ stream, ctx, logger });
 
     // Trigger delete event
     await cacheService.delete('test:key');
@@ -576,7 +556,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler
-    await cacheEventsHandler(stream, ctx, {}, logger as any);
+    await cacheEventsHandler({ stream, ctx, logger });
 
     // Set keys that match and don't match pattern
     await cacheService.set('user:123', 'data');
@@ -606,7 +586,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler
-    await cacheEventsHandler(stream, ctx, {}, logger as any);
+    await cacheEventsHandler({ stream, ctx, logger });
 
     // Close immediately
     stream.close();
@@ -630,7 +610,7 @@ describe('cacheEventsHandler', () => {
     const ctx = createMockContext({ pattern: 'test:*' }, cacheService);
     const logger = createMockLogger();
 
-    const handlerPromise = cacheEventsHandler(stream, ctx, {}, logger as any);
+    const handlerPromise = cacheEventsHandler({ stream, ctx, logger });
     stream.close();
     await handlerPromise;
 

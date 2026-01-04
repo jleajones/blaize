@@ -6,6 +6,8 @@
  * errors, and HTTP response formats.
  */
 
+import { z } from 'zod';
+
 /**
  * Structure of error responses sent over HTTP
  *
@@ -802,4 +804,48 @@ export interface SSEHeartbeatErrorContext {
 
   /** Last event ID received */
   lastEventId?: string;
+}
+
+// ============================================================================
+// Event Validation Error
+// ============================================================================
+
+/**
+ * Details for event validation errors
+ *
+ * Provides structured information about what event failed validation,
+ * in what context, and the underlying Zod validation errors.
+ */
+export interface EventValidationErrorDetails {
+  /**
+   * The event type that failed validation
+   *
+   * @example 'user:created'
+   */
+  eventType: string;
+
+  /**
+   * Context where validation failed
+   *
+   * - 'publish': Validation failed when publishing an event
+   * - 'receive': Validation failed when receiving an event
+   */
+  context: 'publish' | 'receive';
+
+  /**
+   * Original Zod validation error
+   *
+   * Contains detailed validation failure information from Zod.
+   * May be undefined if the error occurred outside of Zod validation
+   * (e.g., unknown event type).
+   */
+  zodError?: z.ZodError;
+
+  /**
+   * The event data that failed validation
+   *
+   * May be undefined or excluded for security/privacy reasons.
+   * Be careful logging this in production as it may contain sensitive data.
+   */
+  data?: unknown;
 }

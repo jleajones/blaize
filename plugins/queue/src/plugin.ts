@@ -15,6 +15,7 @@ import { QueueService } from './queue-service';
 import { createInMemoryStorage } from './storage';
 
 import type { QueuePluginConfig, QueuePluginServices, QueueStorageAdapter } from './types';
+import type { Server } from 'blaizejs';
 
 // ============================================================================
 // Constants
@@ -106,7 +107,7 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
     defaultMaxRetries: DEFAULT_CONFIG.defaultMaxRetries,
   },
 
-  setup: (config, logger) => {
+  setup: ({ config, logger }) => {
     // ========================================================================
     // Plugin-Scoped State (Closure Variables)
     // ========================================================================
@@ -143,7 +144,7 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
        * Called during `server.register()`.
        * Middleware exposes `QueueService` via `ctx.services.queue`.
        */
-      register: async (server: unknown) => {
+      register: async (server: Server<any, any>) => {
         pluginLogger.debug('Registering queue middleware');
 
         // Type assertion for server.use method
@@ -153,7 +154,7 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
           createMiddleware<Record<string, never>, QueuePluginServices>({
             name: 'queue',
 
-            handler: async (ctx, next) => {
+            handler: async ({ ctx, next }) => {
               // Expose queue service to route handlers
               ctx.services.queue = queueService;
               await next();

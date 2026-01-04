@@ -11,8 +11,7 @@ import { BlaizeError } from '@blaize-types/errors';
 
 import { create as createMiddleware } from '../../middleware/create';
 
-import type { RequestLoggerOptions, LogMetadata, BlaizeLogger } from '@blaize-types/logger';
-import type { Middleware } from '@blaize-types/middleware';
+import type { RequestLoggerOptions, LogMetadata, Middleware } from '@blaize-types';
 /**
  * Default safe headers to include when includeHeaders is true
  *
@@ -130,7 +129,7 @@ export function requestLoggerMiddleware(options?: RequestLoggerOptions): Middlew
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   return createMiddleware<{}, {}>({
     name: 'requestLogger',
-    handler: async (ctx, next, logger: BlaizeLogger) => {
+    handler: async ({ ctx, next, logger }) => {
       // Start timer for duration calculation
       const startTime = Date.now();
 

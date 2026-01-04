@@ -5,7 +5,7 @@
  * The logger parameter is passed to the middleware (already request-scoped).
  */
 
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 import type { MockLogger } from '@blaizejs/testing-utils';
 
 import { requestLoggerMiddleware } from './request-logger';
@@ -13,7 +13,7 @@ import { InternalServerError } from '../../errors/internal-server-error';
 import { NotFoundError } from '../../errors/not-found-error';
 import { ValidationError } from '../../errors/validation-error';
 
-import type { Context } from '@blaize-types/context';
+import type { EventSchemas, TypedEventBus, Context } from '@blaize-types';
 
 /**
  * Create mock context for testing
@@ -52,9 +52,11 @@ describe('requestLoggerMiddleware', () => {
   let mockLogger: MockLogger;
   let ctx: Context;
   let next: ReturnType<typeof vi.fn>;
+  let mockEventBus: TypedEventBus<EventSchemas>;
 
   beforeEach(() => {
     mockLogger = createMockLogger();
+    mockEventBus = createMockEventBus();
     next = vi.fn(async () => {});
     ctx = createMockContext();
   });
@@ -63,7 +65,7 @@ describe('requestLoggerMiddleware', () => {
     test('logs "Request started" with timestamp', async () => {
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
 
@@ -75,7 +77,7 @@ describe('requestLoggerMiddleware', () => {
     test('logs "Request completed" on success', async () => {
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const completedLog = mockLogger.logs.find(l => l.message === 'Request completed');
 
@@ -90,7 +92,7 @@ describe('requestLoggerMiddleware', () => {
       ctx.response.statusCode = 201;
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const completedLog = mockLogger.logs.find(l => l.message === 'Request completed');
 
@@ -101,7 +103,7 @@ describe('requestLoggerMiddleware', () => {
       ctx.response.statusCode = undefined as any;
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const completedLog = mockLogger.logs.find(l => l.message === 'Request completed');
 
@@ -120,7 +122,7 @@ describe('requestLoggerMiddleware', () => {
         vi.advanceTimersByTime(50); // Deterministic 50ms
       };
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const completedLog = mockLogger.logs.find(l => l.message === 'Request completed');
       const duration = completedLog?.meta?.duration as number;
@@ -133,7 +135,7 @@ describe('requestLoggerMiddleware', () => {
     test('includes IP address when available', async () => {
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta).toHaveProperty('ip', '192.168.1.1');
@@ -143,7 +145,7 @@ describe('requestLoggerMiddleware', () => {
       ctx.request.raw = {} as any; // No socket
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta).not.toHaveProperty('ip');
@@ -157,7 +159,9 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow('Test error');
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow('Test error');
 
       const failedLog = mockLogger.logs.find(l => l.message === 'Request failed');
 
@@ -177,7 +181,9 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow();
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow();
 
       const failedLog = mockLogger.logs.find(l => l.message === 'Request failed');
       expect(failedLog?.meta?.error).toHaveProperty('stack');
@@ -189,7 +195,9 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow('Test error');
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow('Test error');
 
       // Verify error was logged before re-throwing
       const failedLog = mockLogger.logs.find(l => l.message === 'Request failed');
@@ -212,7 +220,9 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow();
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow();
 
       const failedLog = mockLogger.logs.find(l => l.message === 'Request failed');
       expect(failedLog?.meta?.error).toMatchObject({
@@ -229,7 +239,9 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow();
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow();
 
       const failedLog = mockLogger.logs.find(l => l.message === 'Request failed');
       expect(failedLog?.meta?.error).toHaveProperty('stack');
@@ -241,7 +253,9 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toThrow();
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow();
 
       const failedLog = mockLogger.logs.find(l => l.message === 'Request failed');
       expect(failedLog?.meta?.error).not.toHaveProperty('stack');
@@ -252,7 +266,9 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await expect(middleware.execute(ctx, next, mockLogger)).rejects.toBe('String error');
+      await expect(
+        middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toBe('String error');
 
       const failedLog = mockLogger.logs.find(l => l.message === 'Request failed');
       expect(failedLog?.meta?.error).toBe('String error');
@@ -268,7 +284,7 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware({ includeHeaders: true });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta?.headers).toEqual({
@@ -284,7 +300,7 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware({ includeHeaders: false });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta).not.toHaveProperty('headers');
@@ -303,7 +319,7 @@ describe('requestLoggerMiddleware', () => {
         headerWhitelist: ['content-type', 'authorization', 'cookie'], // ✅ Try to whitelist sensitive headers
       });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta?.headers).toEqual({
@@ -325,7 +341,7 @@ describe('requestLoggerMiddleware', () => {
         headerWhitelist: ['content-type', 'user-agent'],
       });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta?.headers).toEqual({
@@ -345,7 +361,7 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware({ includeHeaders: true });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       // Should include default safe headers
@@ -367,7 +383,7 @@ describe('requestLoggerMiddleware', () => {
         headerWhitelist: ['content-type', 'authorization'], // Try to whitelist authorization
       });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta?.headers).toEqual({
@@ -386,7 +402,7 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware({ includeQuery: true });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta?.query).toEqual({
@@ -402,7 +418,7 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware({ includeQuery: false });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta).not.toHaveProperty('query');
@@ -413,7 +429,7 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware({ includeQuery: true });
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       const startLog = mockLogger.logs.find(l => l.message === 'Request started');
       expect(startLog?.meta).not.toHaveProperty('query');
@@ -424,7 +440,7 @@ describe('requestLoggerMiddleware', () => {
     test('calls next() middleware', async () => {
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(ctx, next, mockLogger);
+      await middleware.execute({ ctx, next, logger: mockLogger, eventBus: mockEventBus });
 
       expect(next).toHaveBeenCalledTimes(1);
     });
@@ -434,13 +450,14 @@ describe('requestLoggerMiddleware', () => {
 
       const middleware = requestLoggerMiddleware();
 
-      await middleware.execute(
+      await middleware.execute({
         ctx,
-        async () => {
+        next: async () => {
           executionOrder.push('next');
         },
-        mockLogger
-      );
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       // Verify logs occurred before and after next()
       const logs = mockLogger.logs.map(l => l.message);

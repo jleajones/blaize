@@ -19,7 +19,7 @@ import type {
   MetricsPluginState,
   MetricsPluginServices,
 } from './types';
-import type { Server, Context, NextFunction, BlaizeLogger } from 'blaizejs';
+import type { Server } from 'blaizejs';
 
 // Re-export types for convenience
 export type {
@@ -114,7 +114,7 @@ export const createMetricsPlugin = createPlugin<
   name: config.name,
   version: config.version,
   defaultConfig: DEFAULT_CONFIG,
-  setup: (config: MetricsPluginConfig, logger: BlaizeLogger) => {
+  setup: ({ config, logger }) => {
     // 1. Declare resources in closure (singleton pattern)
     let collector: MetricsCollector;
     let reportInterval: NodeJS.Timeout | null = null;
@@ -130,9 +130,9 @@ export const createMetricsPlugin = createPlugin<
         // 2. Add typed middleware - provides access to the singleton
         server.use(
           // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-          createMiddleware<{}, { metrics: MetricsCollector }>({
+          createMiddleware<{}, MetricsPluginServices>({
             name: 'metrics',
-            handler: async (ctx: Context, next: NextFunction) => {
+            handler: async ({ ctx, next }) => {
               // Inject collector into context (reference to singleton)
               ctx.services.metrics = collector;
 

@@ -62,6 +62,23 @@ export async function stopServer(
       // Continue with shutdown
     }
 
+    // 🆕 NEW: Disconnect EventBus
+    if (serverInstance.eventBus) {
+      console.log('🔌 Disconnecting EventBus...');
+      try {
+        await Promise.race([
+          serverInstance.eventBus.disconnect(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('EventBus disconnect timeout')), 2000)
+          ),
+        ]);
+        console.log('✅ EventBus disconnected');
+      } catch (error) {
+        console.error('❌ Error disconnecting EventBus:', error);
+        // Continue with shutdown - don't fail
+      }
+    }
+
     // Create server close promise with shorter timeout
     const closePromise = new Promise<void>((resolve, reject) => {
       server.close((err?: Error) => {

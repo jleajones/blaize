@@ -7,6 +7,8 @@
  * @module @blaizejs/plugin-metrics/types
  */
 
+import type { Services } from "blaizejs";
+
 /**
  * Configuration options for the metrics plugin
  *
@@ -159,17 +161,12 @@ export interface MetricsPluginState {
  * });
  * ```
  */
-export interface MetricsPluginServices {
+export interface MetricsPluginServices extends Services {
   /**
    * Metrics collector instance
    * Provides methods for tracking custom metrics
    */
   metrics: MetricsCollector;
-
-  /**
-   * Index signature to satisfy BlaizeJS State constraint
-   */
-  [key: string]: any;
 }
 
 /**

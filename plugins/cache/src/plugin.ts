@@ -2,7 +2,7 @@
  * @blaizejs/plugin-cache
  *
  * Event-driven cache plugin for BlaizeJS with Redis support
- * and multi-server coordination via pub/sub.
+ * and multi-server coordination via EventBus.
  *
  * @packageDocumentation
  */
@@ -10,22 +10,26 @@
 import { createPlugin, createMiddleware } from 'blaizejs';
 
 import { CacheService } from './cache-service';
-import { MemoryAdapter, RedisAdapter } from './storage';
+import { MemoryAdapter } from './storage';
 import pkg from '../package.json';
 
-import type { CacheAdapter, CachePluginConfig, CachePluginServices, RedisPubSub } from './types';
-import type { BlaizeLogger } from 'blaizejs';
+import type { CacheAdapter, CachePluginConfig, CachePluginServices } from './types';
+import type { Server } from 'blaizejs';
 
 /**
  * Create cache plugin for BlaizeJS
  *
  * Provides event-driven cache with automatic event emission,
- * pattern-based watching, and multi-server coordination.
+ * pattern-based watching, and multi-server coordination via EventBus.
+ *
+ * **Multi-Server Coordination:**
+ * The plugin automatically uses `server.eventBus` for cross-server cache invalidation
+ * when `serverId` is provided. No additional configuration needed!
  *
  * @param config - Plugin configuration
  * @returns BlaizeJS plugin
  *
- * @example
+ * @example Basic usage (single server)
  * ```typescript
  * import { createServer } from 'blaizejs';
  * import { createCachePlugin } from '@blaizejs/plugin-cache';
@@ -40,20 +44,28 @@ import type { BlaizeLogger } from 'blaizejs';
  * });
  * ```
  *
- * @example With custom adapter
+ * @example Multi-server with EventBus
  * ```typescript
+ * import { createServer } from 'blaizejs';
  * import { createCachePlugin, RedisAdapter } from '@blaizejs/plugin-cache';
  *
  * const server = createServer({
  *   plugins: [
  *     createCachePlugin({
- *       adapter: new RedisAdapter({
- *         host: 'localhost',
- *         port: 6379,
- *       }),
+ *       adapter: new RedisAdapter({ host: 'localhost' }),
+ *       serverId: process.env.SERVER_ID || 'server-1',
+ *       // EventBus from server.eventBus is used automatically!
  *     }),
  *   ],
  * });
+ * ```
+ *
+ * @example Custom adapter
+ * ```typescript
+ * createCachePlugin({
+ *   adapter: new CustomAdapter(),
+ *   serverId: 'my-server',
+ * })
  * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -66,7 +78,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
     defaultTtl: 3600,
   },
 
-  setup: (config, logger: BlaizeLogger) => {
+  setup: ({ config, logger }) => {
     // ========================================================================
     // Plugin Logger
     // ========================================================================
@@ -81,7 +93,6 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
     // ========================================================================
 
     let adapter: CacheAdapter;
-    let pubsub: RedisPubSub | undefined;
     let cacheService: CacheService;
 
     // ========================================================================
@@ -95,14 +106,14 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
        * ⚠️ CRITICAL: Middleware MUST be registered here, NOT in setup body.
        * This ensures middleware is added during the correct lifecycle phase.
        */
-      register: async server => {
+      register: async (server: Server<any, any>) => {
         pluginLogger.debug('Registering cache middleware');
 
         server.use(
           // eslint-disable-next-line @typescript-eslint/no-empty-object-type
           createMiddleware<{}, CachePluginServices>({
             name: 'cache',
-            handler: async (ctx, next) => {
+            handler: async ({ ctx, next }) => {
               // Expose cache service to routes via ctx.services
               ctx.services.cache = cacheService;
               await next();
@@ -121,12 +132,13 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
        * Called before server.listen().
        * This is where we create the adapter and service.
        */
-      initialize: async () => {
+      initialize: async (server: Server<any, any>) => {
         pluginLogger.info('Initializing cache plugin', {
           adapterProvided: !!config.adapter,
           maxEntries: config.maxEntries,
           defaultTtl: config.defaultTtl,
           serverId: config.serverId,
+          hasEventBus: !!server.eventBus,
         });
 
         // Create adapter (use provided or default to MemoryAdapter)
@@ -146,19 +158,10 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
           });
         }
 
-        if (config.serverId && adapter instanceof RedisAdapter) {
-          pubsub = adapter.createPubSub(config.serverId);
-          await pubsub.connect();
-
-          pluginLogger.info('Redis pub/sub connected', {
-            serverId: config.serverId,
-          });
-        }
-
-        // Create cache service
+        // Create cache service with EventBus from server
         cacheService = new CacheService({
           adapter,
-          pubsub,
+          eventBus: server.eventBus, // ← EventBus for multi-server coordination
           serverId: config.serverId,
           logger: pluginLogger,
         });
@@ -168,6 +171,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
 
         pluginLogger.info('Cache plugin initialized', {
           adapter: adapter.constructor.name,
+          multiServer: !!server.eventBus && !!config.serverId,
         });
       },
 
@@ -216,7 +220,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
           pluginLogger.info('Cache adapter disconnected');
         }
 
-        // Disconnect service (removes all listeners)
+        // Disconnect service (removes all listeners and EventBus subscriptions)
         if (cacheService) {
           await cacheService.disconnect();
         }

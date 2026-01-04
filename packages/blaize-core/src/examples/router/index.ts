@@ -9,7 +9,7 @@ export const IndexRoute = appRouter.get({
       timestamp: z.number(),
     }),
   },
-  handler: async (ctx, params, logger) => {
+  handler: async ({ logger }) => {
     logger.info('Handling index route');
     // Returns a JSON object - will be sent using ctx.response.json()
     return {

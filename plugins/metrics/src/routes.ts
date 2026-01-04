@@ -78,26 +78,24 @@ function getGlobalLabels(ctx: Context): Record<string, string> {
  * export const GET = metricsJsonRoute;
  * ```
  */
-export const metricsJsonRoute = {
-  handler: async (ctx: Context) => {
-    const collector = getCollectorOrThrow(ctx);
+export const metricsJsonRoute = async ({ ctx }: { ctx: Context }) => {
+  const collector = getCollectorOrThrow(ctx);
 
-    try {
-      const snapshot = collector.getSnapshot();
-      // TODO: Return snapshot directly insteand of using json()
-      ctx.response.json(snapshot);
-    } catch (error) {
-      throw new InternalServerError(
-        'Error generating metrics snapshot',
-        {
-          originalError: error instanceof Error ? error.message : String(error),
-          component: 'metrics-plugin',
-          operation: 'getSnapshot',
-        },
-        getCorrelationId()
-      );
-    }
-  },
+  try {
+    const snapshot = collector.getSnapshot();
+    // TODO: Return snapshot directly insteand of using json()
+    ctx.response.json(snapshot);
+  } catch (error) {
+    throw new InternalServerError(
+      'Error generating metrics snapshot',
+      {
+        originalError: error instanceof Error ? error.message : String(error),
+        component: 'metrics-plugin',
+        operation: 'getSnapshot',
+      },
+      getCorrelationId()
+    );
+  }
 };
 
 /**
@@ -116,28 +114,26 @@ export const metricsJsonRoute = {
  * export const GET = metricsPrometheusRoute;
  * ```
  */
-export const metricsPrometheusRoute = {
-  handler: async (ctx: Context) => {
-    const collector = getCollectorOrThrow(ctx);
+export const metricsPrometheusRoute = async ({ ctx }: { ctx: Context }) => {
+  const collector = getCollectorOrThrow(ctx);
 
-    try {
-      const snapshot = collector.getSnapshot();
-      const globalLabels = getGlobalLabels(ctx);
-      const prometheusText = exportPrometheus(snapshot, globalLabels);
+  try {
+    const snapshot = collector.getSnapshot();
+    const globalLabels = getGlobalLabels(ctx);
+    const prometheusText = exportPrometheus(snapshot, globalLabels);
 
-      ctx.response.type('text/plain; version=0.0.4; charset=utf-8').text(prometheusText);
-    } catch (error) {
-      throw new InternalServerError(
-        'Error generating Prometheus metrics',
-        {
-          originalError: error instanceof Error ? error.message : String(error),
-          component: 'metrics-plugin',
-          operation: 'exportPrometheus',
-        },
-        getCorrelationId()
-      );
-    }
-  },
+    ctx.response.type('text/plain; version=0.0.4; charset=utf-8').text(prometheusText);
+  } catch (error) {
+    throw new InternalServerError(
+      'Error generating Prometheus metrics',
+      {
+        originalError: error instanceof Error ? error.message : String(error),
+        component: 'metrics-plugin',
+        operation: 'exportPrometheus',
+      },
+      getCorrelationId()
+    );
+  }
 };
 
 /**
@@ -156,25 +152,23 @@ export const metricsPrometheusRoute = {
  * export const GET = metricsDashboardRoute;
  * ```
  */
-export const metricsDashboardRoute = {
-  handler: async (ctx: Context) => {
-    const collector = getCollectorOrThrow(ctx);
+export const metricsDashboardRoute = async ({ ctx }: { ctx: Context }) => {
+  const collector = getCollectorOrThrow(ctx);
 
-    try {
-      const snapshot = collector.getSnapshot();
-      const html = renderDashboard(snapshot);
+  try {
+    const snapshot = collector.getSnapshot();
+    const html = renderDashboard(snapshot);
 
-      ctx.response.type('text/html; charset=utf-8').html(html);
-    } catch (error) {
-      throw new InternalServerError(
-        'Error generating metrics dashboard',
-        {
-          originalError: error instanceof Error ? error.message : String(error),
-          component: 'metrics-plugin',
-          operation: 'renderDashboard',
-        },
-        getCorrelationId()
-      );
-    }
-  },
+    ctx.response.type('text/html; charset=utf-8').html(html);
+  } catch (error) {
+    throw new InternalServerError(
+      'Error generating metrics dashboard',
+      {
+        originalError: error instanceof Error ? error.message : String(error),
+        component: 'metrics-plugin',
+        operation: 'renderDashboard',
+      },
+      getCorrelationId()
+    );
+  }
 };

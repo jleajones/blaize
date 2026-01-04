@@ -9,6 +9,7 @@ import { createSSEStream } from './stream';
 import { SSENotAcceptableError } from '../errors/sse-not-acceptable-error';
 import { getRoutePath } from '../router/create';
 
+import type { EventSchemas, TypedEventBus } from '@blaize-types';
 import type { State, Services, Context } from '@blaize-types/context';
 import type { BlaizeLogger } from '@blaize-types/logger';
 import type { CreateSSERoute, SSEStreamExtended, TypedSSEStream } from '@blaize-types/sse';
@@ -139,6 +140,7 @@ function createTypedStream<TEvents extends Record<string, z.ZodType>>(
 export const createSSERoute: CreateSSERoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     // Validate the configuration
@@ -148,7 +150,17 @@ export const createSSERoute: CreateSSERoute = <
     const path = getRoutePath();
 
     // Create a wrapped handler that manages the SSE stream lifecycle
-    const wrappedHandler = async (ctx: Context, params: any, logger: BlaizeLogger) => {
+    const wrappedHandler = async ({
+      ctx,
+      params,
+      logger,
+      eventBus,
+    }: {
+      ctx: Context<_TState, _TServices, never, any>;
+      params: any;
+      logger: BlaizeLogger;
+      eventBus: TypedEventBus<_TEvents>;
+    }) => {
       // Validate SSE accept header
       const accept = ctx.request.header('accept');
       if (accept && !accept.includes('text/event-stream') && !accept.includes('*/*')) {
@@ -194,8 +206,7 @@ export const createSSERoute: CreateSSERoute = <
       ctx.request.raw.on('close', () => stream.close());
 
       try {
-        // Execute the original handler with (stream, ctx, params) signature
-        await config.handler(stream, ctx, params, sseLogger);
+        await config.handler({ stream, ctx, params, logger: sseLogger, eventBus });
       } catch (error) {
         sseLogger.error('[SSE] Handler error - THIS IS THE REAL ERROR:', { error });
         sseLogger.error('[SSE] Stack trace:', {

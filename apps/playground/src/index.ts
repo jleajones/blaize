@@ -8,6 +8,7 @@ import { createCachePlugin } from '@blaizejs/plugin-cache';
 import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
 import { createQueuePlugin } from '@blaizejs/plugin-queue';
 
+import { playgroundEvents } from './events';
 import {
   dataSyncHandler,
   generateReportHandler,
@@ -144,6 +145,7 @@ export const server = Blaize.createServer({
     }),
   ],
   plugins: [metricsPlugin, queuePlugin, cachePlugin],
+  eventSchemas: playgroundEvents,
 });
 
 try {

@@ -2,20 +2,21 @@
  * Tests for Middleware Composition with Logger Parameter
  */
 
-import { createMockLogger, MockLogger } from '@blaizejs/testing-utils';
+import { createMockEventBus, createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
 import { compose } from './compose';
 
-import type { Context } from '@blaize-types/context';
-import type { Middleware, NextFunction } from '@blaize-types/middleware';
+import type { TypedEventBus, Context, Middleware, NextFunction, EventSchemas } from '@blaize-types';
 
 describe('compose with logger parameter', () => {
   let mockLogger: MockLogger;
   let mockContext: Context;
   let mockNext: NextFunction;
+  let mockEventBus: TypedEventBus<EventSchemas>;
 
   beforeEach(() => {
     mockLogger = createMockLogger();
+    mockEventBus = createMockEventBus();
     mockContext = {} as Context;
     mockNext = vi.fn(async () => {});
   });
@@ -24,7 +25,7 @@ describe('compose with logger parameter', () => {
     test('compose returns function expecting logger as 3rd parameter', async () => {
       const middleware: Middleware = {
         name: 'test',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           await next();
         },
         debug: false,
@@ -33,13 +34,18 @@ describe('compose with logger parameter', () => {
       const composed = compose([middleware]);
 
       // Should accept 3 parameters
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockNext).toHaveBeenCalled();
     });
 
     test('passes logger to middleware.execute as 3rd parameter', async () => {
-      const executeSpy = vi.fn(async (ctx, next, _logger) => {
+      const executeSpy = vi.fn(async ({ next }) => {
         await next();
       });
 
@@ -50,26 +56,37 @@ describe('compose with logger parameter', () => {
       };
 
       const composed = compose([middleware]);
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
-      expect(executeSpy).toHaveBeenCalledWith(
-        mockContext,
-        expect.any(Function),
-        expect.any(Object) // Logger
-      );
+      expect(executeSpy).toHaveBeenCalledWith({
+        ctx: mockContext,
+        next: expect.any(Function),
+        logger: expect.any(Object), // Logger
+        eventBus: expect.any(Object), // EventBus
+      });
     });
 
     test('calls finalNext when all middleware complete', async () => {
       const middleware: Middleware = {
         name: 'test',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           await next();
         },
         debug: false,
       };
 
       const composed = compose([middleware]);
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockNext).toHaveBeenCalledTimes(1);
     });
@@ -79,14 +96,19 @@ describe('compose with logger parameter', () => {
     test('creates child logger with middleware name', async () => {
       const middleware: Middleware = {
         name: 'auth',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           await next();
         },
         debug: false,
       };
 
       const composed = compose([middleware]);
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockLogger.childContexts).toHaveLength(1);
       expect(mockLogger.childContexts[0]).toEqual({ middleware: 'auth' });
@@ -95,7 +117,7 @@ describe('compose with logger parameter', () => {
     test('each middleware gets its own scoped child logger', async () => {
       const middleware1: Middleware = {
         name: 'mw1',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           await next();
         },
         debug: false,
@@ -103,14 +125,19 @@ describe('compose with logger parameter', () => {
 
       const middleware2: Middleware = {
         name: 'mw2',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           await next();
         },
         debug: false,
       };
 
       const composed = compose([middleware1, middleware2]);
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockLogger.childContexts).toHaveLength(2);
       expect(mockLogger.childContexts[0]).toEqual({ middleware: 'mw1' });
@@ -122,7 +149,7 @@ describe('compose with logger parameter', () => {
 
       const middleware: Middleware = {
         name: 'test',
-        execute: async (ctx, next, logger) => {
+        execute: async ({ next, logger }) => {
           receivedLogger = logger;
           await next();
         },
@@ -136,7 +163,12 @@ describe('compose with logger parameter', () => {
       });
 
       const composed = compose([middleware]);
-      await composed(mockContext, mockNext, parentLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: parentLogger,
+        eventBus: mockEventBus,
+      });
 
       // Verify child was created
       expect(receivedLogger).toBeDefined();
@@ -149,7 +181,7 @@ describe('compose with logger parameter', () => {
 
       const middleware1: Middleware = {
         name: 'first',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           executionOrder.push('first-start');
           await next();
           executionOrder.push('first-end');
@@ -159,7 +191,7 @@ describe('compose with logger parameter', () => {
 
       const middleware2: Middleware = {
         name: 'second',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           executionOrder.push('second-start');
           await next();
           executionOrder.push('second-end');
@@ -172,7 +204,12 @@ describe('compose with logger parameter', () => {
       };
 
       const composed = compose([middleware1, middleware2]);
-      await composed(mockContext, finalNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: finalNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(executionOrder).toEqual([
         'first-start',
@@ -185,7 +222,12 @@ describe('compose with logger parameter', () => {
 
     test('handles empty middleware array', async () => {
       const composed = compose([]);
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockNext).toHaveBeenCalledTimes(1);
     });
@@ -193,7 +235,7 @@ describe('compose with logger parameter', () => {
 
   describe('skip functionality', () => {
     test('skips middleware when skip returns true', async () => {
-      const executeSpy = vi.fn(async (ctx, next, _logger) => {
+      const executeSpy = vi.fn(async ({ next }) => {
         await next();
       });
 
@@ -205,14 +247,19 @@ describe('compose with logger parameter', () => {
       };
 
       const composed = compose([middleware]);
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(executeSpy).not.toHaveBeenCalled();
       expect(mockNext).toHaveBeenCalled();
     });
 
     test('executes middleware when skip returns false', async () => {
-      const executeSpy = vi.fn(async (ctx, next, _logger) => {
+      const executeSpy = vi.fn(async ({ next }) => {
         await next();
       });
 
@@ -224,7 +271,12 @@ describe('compose with logger parameter', () => {
       };
 
       const composed = compose([middleware]);
-      await composed(mockContext, mockNext, mockLogger);
+      await composed({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(executeSpy).toHaveBeenCalled();
     });
@@ -234,7 +286,7 @@ describe('compose with logger parameter', () => {
     test('preserves error handling - next() called multiple times', async () => {
       const badMiddleware: Middleware = {
         name: 'bad',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           await next();
           await next(); // Should throw
         },
@@ -243,9 +295,9 @@ describe('compose with logger parameter', () => {
 
       const composed = compose([badMiddleware]);
 
-      await expect(composed(mockContext, mockNext, mockLogger)).rejects.toThrow(
-        'next() called multiple times'
-      );
+      await expect(
+        composed({ ctx: mockContext, next: mockNext, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow('next() called multiple times');
     });
 
     test('handles middleware that throws errors', async () => {
@@ -253,7 +305,7 @@ describe('compose with logger parameter', () => {
 
       const errorMiddleware: Middleware = {
         name: 'error',
-        execute: async (_ctx, _next, _logger) => {
+        execute: async () => {
           throw error;
         },
         debug: false,
@@ -261,7 +313,9 @@ describe('compose with logger parameter', () => {
 
       const composed = compose([errorMiddleware]);
 
-      await expect(composed(mockContext, mockNext, mockLogger)).rejects.toThrow('Test error');
+      await expect(
+        composed({ ctx: mockContext, next: mockNext, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow('Test error');
 
       expect(mockNext).not.toHaveBeenCalled();
     });
@@ -274,7 +328,7 @@ describe('compose with logger parameter', () => {
 
       const middleware: Middleware = {
         name: 'test',
-        execute: async (ctx, next, _logger) => {
+        execute: async ({ next }) => {
           await next();
         },
         debug: false,
@@ -282,9 +336,9 @@ describe('compose with logger parameter', () => {
 
       const composed = compose([middleware]);
 
-      await expect(composed(mockContext, finalNext, mockLogger)).rejects.toThrow(
-        'Final handler error'
-      );
+      await expect(
+        composed({ ctx: mockContext, next: finalNext, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow('Final handler error');
     });
   });
 });

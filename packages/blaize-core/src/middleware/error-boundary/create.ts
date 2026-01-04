@@ -5,9 +5,7 @@ import {
 } from '../../errors/boundary';
 import { create as createMiddleware } from '../create';
 
-import type { Context } from '@blaize-types/context';
-import type { BlaizeLogger } from '@blaize-types/logger';
-import type { Middleware, NextFunction } from '@blaize-types/middleware';
+import type { Middleware } from '@blaize-types/middleware';
 
 /**
  * Options for configuring the error boundary middleware
@@ -33,7 +31,7 @@ export function createErrorBoundary(options: ErrorBoundaryOptions = {}): Middlew
   return createMiddleware({
     name: 'ErrorBoundary',
     debug,
-    handler: async (ctx: Context, next: NextFunction, logger: BlaizeLogger) => {
+    handler: async ({ ctx, next, logger }) => {
       try {
         await next();
       } catch (error) {

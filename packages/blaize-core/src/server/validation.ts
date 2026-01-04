@@ -148,12 +148,14 @@ export const serverOptionsSchema = z.object({
   http2: http2Schema.optional().default({
     enabled: true,
   }),
+  eventSchemas: z.record(z.any()).optional().default({}),
   middleware: z.array(middlewareSchema).optional().default([]),
   plugins: z.array(pluginSchema).optional().default([]),
   correlation: correlationSchema,
   cors: serverCorsSchema,
   bodyLimits: bodyLimitsSchema,
   logging: loggerConfigSchema,
+  serverId: z.string().min(1).optional(),
 });
 
 export function validateServerOptions(options: ServerOptions): ServerOptions {

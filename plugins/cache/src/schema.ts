@@ -1,10 +1,15 @@
 /**
- * Cache Plugin Route Schemas
+ * Cache Plugin Schemas
  *
- * Type-safe schemas for cache route validation using Zod.
- * These schemas validate query parameters, response bodies, and SSE events.
+ * Type-safe schemas for cache route validation and event bus coordination using Zod.
  *
- * @module @blaizejs/plugin-cache/schemas
+ * ## Schema Categories:
+ * 1. **Query Parameters** - Route query validation
+ * 2. **Response Bodies** - HTTP response validation
+ * 3. **SSE Events** - Server-Sent Events for browser clients
+ * 4. **EventBus Events** - Server-to-server coordination
+ *
+ * @module @blaizejs/plugin-cache/schema
  * @packageDocumentation
  */
 
@@ -101,13 +106,15 @@ export const cacheStatsResponseSchema = z.object({
 });
 
 // ============================================================================
-// SSE Event Schemas
+// SSE Event Schemas (Server → Browser Clients)
 // ============================================================================
 
 /**
  * Cache set event (key was added/updated)
+ *
+ * Sent to browser clients via SSE when cache entries are modified.
  */
-export const cacheSetEventSchema = z.object({
+export const cacheSseSetEventSchema = z.object({
   type: z.literal('set'),
   key: z.string().min(1),
   value: z.string().optional(),
@@ -118,8 +125,10 @@ export const cacheSetEventSchema = z.object({
 
 /**
  * Cache delete event (key was removed)
+ *
+ * Sent to browser clients via SSE when cache entries are deleted.
  */
-export const cacheDeleteEventSchema = z.object({
+export const cacheSseDeleteEventSchema = z.object({
   type: z.literal('delete'),
   key: z.string().min(1),
   timestamp: z.string(),
@@ -129,8 +138,10 @@ export const cacheDeleteEventSchema = z.object({
 
 /**
  * Cache eviction event (key was evicted due to LRU or TTL)
+ *
+ * Sent to browser clients via SSE when cache entries are evicted.
  */
-export const cacheEvictionEventSchema = z.object({
+export const cacheSseEvictionEventSchema = z.object({
   type: z.literal('eviction'),
   key: z.string().min(1),
   reason: z.enum(['lru', 'ttl']).optional(),
@@ -140,14 +151,147 @@ export const cacheEvictionEventSchema = z.object({
 });
 
 /**
- * Discriminated union of all cache event types
+ * SSE event schemas for cache monitoring routes
  *
- * Used for SSE event validation.
+ * Used for Server-Sent Events to browser clients.
+ * Provides real-time cache change notifications.
+ *
+ * @example
+ * ```typescript
+ * // SSE route definition
+ * export const getCacheEvents = appRouter.sse({
+ *   schema: {
+ *     query: cacheEventsQuerySchema,
+ *     events: cacheSseEventSchemas,  // ← SSE events for browsers
+ *   },
+ *   handler: cacheEventsHandler,
+ * });
+ * ```
+ *
+ * @example Browser client
+ * ```javascript
+ * const eventSource = new EventSource('/cache/events');
+ *
+ * eventSource.addEventListener('cache.set', (e) => {
+ *   const data = JSON.parse(e.data);
+ *   console.log('Key set:', data.key, data.value);
+ * });
+ *
+ * eventSource.addEventListener('cache.delete', (e) => {
+ *   const data = JSON.parse(e.data);
+ *   console.log('Key deleted:', data.key);
+ * });
+ * ```
  */
-export const cacheEventsSchema = {
-  'cache.set': cacheSetEventSchema,
-  'cache.delete': cacheDeleteEventSchema,
-  'cache.eviction': cacheEvictionEventSchema,
+export const cacheSseEventSchemas = {
+  'cache.set': cacheSseSetEventSchema,
+  'cache.delete': cacheSseDeleteEventSchema,
+  'cache.eviction': cacheSseEvictionEventSchema,
+} as const;
+
+// ============================================================================
+// EventBus Event Schemas (Server → Server Coordination)
+// ============================================================================
+
+/**
+ * Cache invalidation event schema
+ *
+ * Published when cache entries are modified (set, delete, eviction).
+ * Used for cross-server cache coordination via EventBus.
+ *
+ * @example
+ * ```typescript
+ * // Server A sets a key
+ * await server.eventBus.publish('cache:invalidated', {
+ *   operation: 'set',
+ *   key: 'user:123',
+ *   value: '{"name":"Alice"}',
+ *   timestamp: Date.now(),
+ *   serverId: 'server-a',
+ * });
+ *
+ * // Server B receives the event and updates its local cache
+ * server.eventBus.subscribe('cache:invalidated', async (event) => {
+ *   if (event.data.operation === 'delete') {
+ *     await localCache.delete(event.data.key);
+ *   }
+ * });
+ * ```
+ */
+export const cacheInvalidationEventSchema = z.object({
+  /**
+   * Type of cache operation that triggered invalidation
+   */
+  operation: z.enum(['set', 'delete', 'eviction']),
+
+  /**
+   * Cache key that was invalidated
+   */
+  key: z.string(),
+
+  /**
+   * New value (for 'set' operations only)
+   */
+  value: z.string().optional(),
+
+  /**
+   * Timestamp when invalidation occurred (milliseconds since epoch)
+   */
+  timestamp: z.number(),
+
+  /**
+   * ID of server that triggered the invalidation
+   */
+  serverId: z.string(),
+
+  /**
+   * Sequence number for ordering events from same server
+   */
+  sequence: z.number().optional(),
+});
+
+/**
+ * EventBus schemas for server-to-server cache coordination
+ *
+ * Export these schemas to include in your server configuration.
+ * The server will automatically type the EventBus with all provided schemas.
+ *
+ * @example Include in server config
+ * ```typescript
+ * import { createServer } from 'blaizejs';
+ * import { cacheEventBusSchemas } from '@blaizejs/plugin-cache';
+ *
+ * const server = createServer({
+ *   eventSchemas: {
+ *     ...cacheEventBusSchemas,     // Cache plugin events
+ *     // ... other plugin schemas
+ *     // ... your app schemas
+ *   },
+ *   plugins: [
+ *     createCachePlugin({ serverId: 'server-a' }),
+ *   ],
+ * });
+ *
+ * // server.eventBus is now fully typed with cache events!
+ * server.eventBus.subscribe('cache:invalidated', (event) => {
+ *   // event.data is automatically typed as CacheInvalidationEvent
+ *   console.log(event.data.operation);
+ * });
+ * ```
+ *
+ * @example Type extraction for utilities
+ * ```typescript
+ * import type { CacheInvalidationEvent } from '@blaizejs/plugin-cache';
+ *
+ * function handleCacheInvalidation(data: CacheInvalidationEvent) {
+ *   if (data.operation === 'delete') {
+ *     console.log('Cache deleted:', data.key);
+ *   }
+ * }
+ * ```
+ */
+export const cacheEventBusSchemas = {
+  'cache:invalidated': cacheInvalidationEventSchema,
 } as const;
 
 // ============================================================================
@@ -170,16 +314,21 @@ export type CacheDashboardQuery = z.infer<typeof cacheDashboardQuerySchema>;
 export type CacheStatsResponse = z.infer<typeof cacheStatsResponseSchema>;
 
 /**
- * Cache set event (inferred from schema)
+ * Cache SSE set event (inferred from schema)
  */
-export type CacheSetEvent = z.infer<typeof cacheSetEventSchema>;
+export type CacheSseSetEvent = z.infer<typeof cacheSseSetEventSchema>;
 
 /**
- * Cache delete event (inferred from schema)
+ * Cache SSE delete event (inferred from schema)
  */
-export type CacheDeleteEvent = z.infer<typeof cacheDeleteEventSchema>;
+export type CacheSseDeleteEvent = z.infer<typeof cacheSseDeleteEventSchema>;
 
 /**
- * Cache eviction event (inferred from schema)
+ * Cache SSE eviction event (inferred from schema)
  */
-export type CacheEvictionEvent = z.infer<typeof cacheEvictionEventSchema>;
+export type CacheSseEvictionEvent = z.infer<typeof cacheSseEvictionEventSchema>;
+
+/**
+ * Cache invalidation event for EventBus (inferred from schema)
+ */
+export type CacheInvalidationEvent = z.infer<typeof cacheInvalidationEventSchema>;

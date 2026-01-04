@@ -227,7 +227,7 @@ describe('CacheChangeEvent', () => {
   });
 
   test('type is literal union', () => {
-    expectTypeOf<CacheChangeEvent['type']>().toEqualTypeOf<'set' | 'delete'>();
+    expectTypeOf<CacheChangeEvent['type']>().toEqualTypeOf<'set' | 'delete' | 'eviction'>();
   });
 
   test('key is string', () => {

@@ -1,11 +1,11 @@
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 import type { MockLogger } from '@blaizejs/testing-utils';
 
 import { createErrorBoundary } from './create';
 import { NotFoundError } from '../../errors/not-found-error';
 import { ValidationError } from '../../errors/validation-error';
 
-import type { Context } from '@blaize-types/context';
+import type { EventSchemas, TypedEventBus, Context } from '@blaize-types';
 
 // Mock context for testing
 const createMockContext = (): Context => {
@@ -33,12 +33,14 @@ describe('Error Boundary Middleware', () => {
   let mockContext: Context;
   let mockNext: ReturnType<typeof vi.fn>;
   let mockLogger: MockLogger;
+  let mockEventBus: TypedEventBus<EventSchemas>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockContext = createMockContext();
     mockNext = vi.fn();
     mockLogger = createMockLogger();
+    mockEventBus = createMockEventBus();
   });
 
   describe('createErrorBoundary', () => {
@@ -63,7 +65,12 @@ describe('Error Boundary Middleware', () => {
       const middleware = createErrorBoundary();
       mockNext.mockResolvedValue(undefined);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockContext.response.json).not.toHaveBeenCalled();
@@ -74,7 +81,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockContext.response.status).toHaveBeenCalledWith(500);
       expect(mockContext.response.json).toHaveBeenCalled();
@@ -85,7 +97,12 @@ describe('Error Boundary Middleware', () => {
       const error = new NotFoundError('User not found');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockContext.response.status).toHaveBeenCalledWith(404);
       expect(mockContext.response.json).toHaveBeenCalledWith(
@@ -112,7 +129,12 @@ describe('Error Boundary Middleware', () => {
       });
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockContext.response.status).toHaveBeenCalledWith(400);
       expect(mockContext.response.json).toHaveBeenCalledWith(
@@ -129,7 +151,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockContext.response.json).not.toHaveBeenCalled();
     });
@@ -141,7 +168,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       const errorLogs = mockLogger.getLogsByLevel('error');
       expect(errorLogs).toHaveLength(1);
@@ -154,7 +186,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockLogger.logs).toHaveLength(0);
     });
@@ -165,7 +202,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       const errorLogs = mockLogger.getLogsByLevel('error');
       expect(errorLogs).toHaveLength(1);
@@ -180,7 +222,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(consoleErrorSpy).not.toHaveBeenCalled();
 
@@ -202,7 +249,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockContext.response.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -218,7 +270,12 @@ describe('Error Boundary Middleware', () => {
       const error = new Error('Test error');
       mockNext.mockRejectedValue(error);
 
-      await middleware.execute(mockContext, mockNext, mockLogger);
+      await middleware.execute({
+        ctx: mockContext,
+        next: mockNext,
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       expect(mockContext.response.json).toHaveBeenCalledWith(
         expect.objectContaining({

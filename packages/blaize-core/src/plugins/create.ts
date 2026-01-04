@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 import { createLogger } from '../logger';
 
-import type { Plugin, PluginFactory, CreatePluginOptions, BlaizeLogger } from '@blaize-types/index';
+import type {
+  Plugin,
+  PluginFactory,
+  CreatePluginOptions,
+  BlaizeLogger,
+  State,
+  Services,
+} from '@blaize-types/index';
 
 /**
  * Create a type-safe plugin with full IntelliSense support
@@ -10,18 +17,20 @@ import type { Plugin, PluginFactory, CreatePluginOptions, BlaizeLogger } from '@
  * - IntelliSense for all lifecycle hooks
  * - Automatic config merging with defaults
  * - Full type safety for state and services
+ * - EventBus integration for event-driven architecture
  * - Consistent DX with createMiddleware
  *
  * @template TConfig - Plugin configuration shape
  * @template TState - State added to context (default: {})
  * @template TServices - Services added to context (default: {})
+ * @template TEvents - Event schemas for the EventBus (default: EventSchemas)
  *
  * @param options - Plugin creation options
  * @returns Plugin factory function
  *
- * @example Basic plugin with config
+ * @example Basic plugin with config and EventBus
  * ```typescript
- * const createDbPlugin = createPlugin<
+ * const createDbPlugin = create<
  *   { host: string; port: number },
  *   {},
  *   { db: Database }
@@ -32,14 +41,19 @@ import type { Plugin, PluginFactory, CreatePluginOptions, BlaizeLogger } from '@
  *     host: 'localhost',
  *     port: 5432,
  *   },
- *   setup: (config) => {
+ *   setup: ({ config, logger, eventBus }) => {
  *     let db: Database;
+ *
+ *     // Subscribe to events during setup
+ *     eventBus.subscribe('server:shutdown', async () => {
+ *       logger.info('Shutting down database connection');
+ *     });
  *
  *     return {
  *       register: async (server) => {
  *         // Add typed middleware
  *         server.use(createMiddleware<{}, { db: Database }>({
- *           handler: async (ctx, next) => {
+ *           handler: async ({ ctx, next }) => {
  *             ctx.services.db = db;
  *             await next();
  *           },
@@ -48,36 +62,45 @@ import type { Plugin, PluginFactory, CreatePluginOptions, BlaizeLogger } from '@
  *
  *       initialize: async () => {
  *         db = await Database.connect(config);
+ *         // Publish event when ready
+ *         await eventBus.publish('db:connected', { host: config.host });
  *       },
  *
  *       terminate: async () => {
+ *         await eventBus.publish('db:disconnecting', {});
  *         await db?.close();
  *       },
  *     };
  *   },
  * });
  *
- * // Usage
- * const plugin = createDbPlugin({ host: 'prod.db.com' });
+ * // Usage - pass eventBus from server
+ * const plugin = createDbPlugin({ host: 'prod.db.com' }, server.eventBus);
  * ```
  *
  * @example Simple plugin without config
  * ```typescript
- * const loggerPlugin = createPlugin<{}, {}, { logger: Logger }>({
+ * const loggerPlugin = create<{}, {}, { logger: Logger }>({
  *   name: '@my-app/logger',
  *   version: '1.0.0',
- *   setup: () => ({
+ *   setup: ({ logger, eventBus }) => ({
  *     initialize: async () => {
- *       console.log('Logger initialized');
+ *       logger.info('Logger initialized');
+ *       await eventBus.publish('logger:ready', {});
  *     },
  *   }),
  * });
  *
- * // Usage (no config needed)
- * const plugin = loggerPlugin();
+ * // Usage - eventBus still required
+ * const plugin = loggerPlugin(undefined, server.eventBus);
  * ```
  */
-export function createPlugin<TConfig = {}, TState = {}, TServices = {}>(
+
+export function create<
+  TConfig = {},
+  TState extends State = State,
+  TServices extends Services = Services,
+>(
   options: CreatePluginOptions<TConfig, TState, TServices>
 ): PluginFactory<TConfig, TState, TServices> {
   // Validate inputs
@@ -107,15 +130,8 @@ export function createPlugin<TConfig = {}, TState = {}, TServices = {}>(
       version: options.version,
     });
 
-    // Call setup to get hooks
-    const hooks = options.setup(config, pluginLogger);
-
-    // Validate hooks (must return object)
-    if (hooks === null || typeof hooks !== 'object') {
-      throw new Error(
-        `Plugin "${options.name}" setup() must return an object with lifecycle hooks`
-      );
-    }
+    let hooks: ReturnType<typeof options.setup> | null = null;
+    let setupComplete = false;
 
     // Build plugin with all hooks
     const plugin: Plugin<TState, TServices> = {
@@ -123,22 +139,74 @@ export function createPlugin<TConfig = {}, TState = {}, TServices = {}>(
       version: options.version,
 
       // Required hook (always present, even if empty)
-      register:
-        hooks.register ||
-        (async () => {
-          pluginLogger.debug('Plugin registered (no-op)');
-        }),
+      register: async server => {
+        if (!setupComplete) {
+          hooks = options.setup({
+            config,
+            logger: pluginLogger,
+            eventBus: server.eventBus,
+          });
+
+          // Validate hooks (must return object)
+          if (hooks === null || typeof hooks !== 'object') {
+            throw new Error(
+              `Plugin "${options.name}" setup() must return an object with lifecycle hooks`
+            );
+          }
+          setupComplete = true;
+        }
+        if (hooks?.register) {
+          await hooks.register(server);
+        } else {
+          pluginLogger.debug('Plugin registered (no register hook)');
+        }
+      },
 
       // Optional hooks (undefined if not provided)
-      initialize: hooks.initialize,
-      onServerStart: hooks.onServerStart,
-      onServerStop: hooks.onServerStop,
-      terminate: hooks.terminate,
+      initialize: async server => {
+        if (!setupComplete) {
+          throw new Error(
+            `Plugin "${options.name}" initialize() called before register(). ` +
+              `Plugins must be registered to the server before initialization.`
+          );
+        }
+
+        if (hooks?.initialize) {
+          await hooks.initialize(server);
+        }
+      },
+      onServerStart: async server => {
+        if (!setupComplete) {
+          throw new Error(
+            `Plugin "${options.name}" onServerStart() called before register(). ` +
+              `Plugins must be registered to the server before initialization.`
+          );
+        }
+
+        if (hooks?.onServerStart) {
+          await hooks.onServerStart(server);
+        }
+      },
+      onServerStop: async server => {
+        if (!setupComplete) {
+          return;
+        }
+
+        if (hooks?.onServerStop) {
+          await hooks.onServerStop(server);
+        }
+      },
+      terminate: async server => {
+        if (!setupComplete) {
+          return;
+        }
+
+        if (hooks?.terminate) {
+          await hooks.terminate(server);
+        }
+      },
     };
 
     return plugin;
   };
 }
-
-// Re-export for backward compatibility (deprecate later)
-export { createPlugin as create };

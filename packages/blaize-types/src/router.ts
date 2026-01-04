@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import type { Context, QueryParams, State, Services } from './context';
+import type { EventSchemas, TypedEventBus } from './events';
+import type { HandlerContext } from './handler-context';
 import type { BlaizeLogger } from './logger';
 import type { Middleware } from './middleware';
 
@@ -43,30 +45,97 @@ export interface RouteSchema<
 /**
  * Route handler function with strongly typed params and response
  *
- *  @param ctx - The Blaize context object
- *  @param params - Extracted route parameters
- *  @param logger - Logger instance for logging within the handler
+ * **NEW IN v1.0.0:** Handler now receives a single context object instead
+ * of positional parameters. This provides better extensibility and DX.
  *
- *  @returns The response data of type TResponse
+ * **DEPRECATED:** The old signature `(ctx, params, logger) => ...` is still
+ * supported for backward compatibility but will be removed in v2.0.0.
+ * A deprecation warning is shown at runtime for old handlers.
  *
- *  @example
- *  const myRouteHandler: RouteHandler = async (ctx, params, logger) => {
- *    logger.info('Handling route with params:', params);
- *   // Handler logic here
- *    return { message: 'Success' }
- *  };
+ * **MIGRATION:** Update handlers to destructure the context object:
+ *
+ * ```typescript
+ * // Before (deprecated):
+ * handler: async (ctx, params, logger) => {
+ *   logger.info('Request', params);
+ *   return { data: params.userId };
+ * }
+ *
+ * // After (recommended):
+ * handler: async ({ ctx, params, logger, eventBus }) => {
+ *   logger.info('Request', params);
+ *   await eventBus.publish('user:viewed', { userId: params.userId });
+ *   return { data: params.userId };
+ * }
+ * ```
+ *
+ * @template TParams - URL parameters type (from route params like :id)
+ * @template TQuery - Query parameters type (from ?key=value)
+ * @template TBody - Request body type (validated via schema)
+ * @template TResponse - Response data type (validated via schema if provided)
+ * @template TState - Accumulated state from middleware (e.g., user, session)
+ * @template TServices - Accumulated services from middleware and plugins (e.g., db, cache)
+ * @template TEvents - Event schemas for typed EventBus
+ *
+ * @param hc - Handler context containing ctx, params, logger, eventBus
+ * @returns Response data of type TResponse (or Promise<TResponse>)
+ *
+ * @example Basic GET handler
+ * ```typescript
+ * const handler: RouteHandler = async ({ ctx, params, logger }) => {
+ *   logger.info('Fetching user', { userId: params.userId });
+ *   const user = await ctx.services.db.getUser(params.userId);
+ *   return user;
+ * };
+ * ```
+ *
+ * @example POST with events
+ * ```typescript
+ * const handler: RouteHandler = async ({ ctx, logger, eventBus }) => {
+ *   logger.info('Creating user', { email: ctx.body.email });
+ *
+ *   const user = await ctx.services.db.createUser(ctx.body);
+ *
+ *   await eventBus.publish('user:created', {
+ *     userId: user.id,
+ *     email: user.email,
+ *   });
+ *
+ *   return user;
+ * };
+ * ```
+ *
+ * @example With typed events
+ * ```typescript
+ * type UserEvents = {
+ *   'user:created': { userId: string; email: string };
+ * };
+ *
+ * const handler: RouteHandler<
+ *   any, any, any, any, any, any, UserEvents
+ * > = async ({ ctx, eventBus }) => {
+ *   const user = await createUser(ctx.body);
+ *
+ *   // TypeScript enforces event data shape
+ *   await eventBus.publish('user:created', {
+ *     userId: user.id,
+ *     email: user.email,
+ *   });
+ *
+ *   return user;
+ * };
+ * ```
  */
 export type RouteHandler<
   TParams = Record<string, string>,
   TQuery = Record<string, string | string[] | undefined>,
   TBody = unknown,
   TResponse = unknown,
-  TState extends State = State, // NEW in v0.4.0
+  TState extends State = State,
   TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
 > = (
-  ctx: Context<TState, TServices, TBody, TQuery>,
-  params: TParams,
-  logger: BlaizeLogger
+  hc: HandlerContext<TState, TServices, TBody, TQuery, TParams, TEvents>
 ) => Promise<TResponse> | TResponse;
 
 /**
@@ -150,7 +219,11 @@ export interface RouterOptions {
  */
 export interface Router {
   /** Handle an incoming request */
-  handleRequest: (ctx: Context, logger: BlaizeLogger) => Promise<void>;
+  handleRequest: (
+    ctx: Context,
+    logger: BlaizeLogger,
+    eventBus: TypedEventBus<EventSchemas>
+  ) => Promise<void>;
 
   /** Get all registered routes */
   getRoutes: () => Route[];
@@ -315,13 +388,17 @@ export interface FindRouteFilesOptions {
 }
 
 /**
- * GET route creator with state and services support
- * Now returns a higher-order function to handle generics properly
+ * Configuration for route methods that don't accept a request body
+ * Used by: GET, HEAD, DELETE, OPTIONS
  */
-export type CreateGetRoute = <
+export type RouteConfigWithoutBody<
+  P = never,
+  Q = never,
+  R = never,
   TState extends State = State,
   TServices extends Services = Services,
->() => <P = never, Q = never, R = never>(config: {
+  TEvents extends EventSchemas = EventSchemas,
+> = {
   schema?: {
     params?: P extends never ? never : P;
     query?: Q extends never ? never : Q;
@@ -330,30 +407,29 @@ export type CreateGetRoute = <
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
     Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never, // GET never has body
+    never, // No body
     [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
     TState,
-    TServices
+    TServices,
+    TEvents
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
-}) => {
-  GET: RouteMethodOptions<
-    P extends never ? never : P extends z.ZodType ? P : never,
-    Q extends never ? never : Q extends z.ZodType ? Q : never,
-    never,
-    R extends never ? never : R extends z.ZodType ? R : never
-  >;
-  path: string;
 };
 
 /**
- * POST route creator with state and services support
+ * Configuration for route methods that accept a request body
+ * Used by: POST, PUT, PATCH
  */
-export type CreatePostRoute = <
+export type RouteConfigWithBody<
+  P = never,
+  Q = never,
+  B = never,
+  R = never,
   TState extends State = State,
   TServices extends Services = Services,
->() => <P = never, Q = never, B = never, R = never>(config: {
+  TEvents extends EventSchemas = EventSchemas,
+> = {
   schema?: {
     params?: P extends never ? never : P;
     query?: Q extends never ? never : Q;
@@ -366,11 +442,70 @@ export type CreatePostRoute = <
     B extends z.ZodType ? Infer<B> : unknown,
     [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
     TState,
-    TServices
+    TServices,
+    TEvents
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
-}) => {
+};
+
+/**
+ * GET route creator with state, services, and event schemas support
+ *
+ * **NEW IN v1.0.0:** Added TEvents generic for typed EventBus
+ *
+ * @template TState - Accumulated state from middleware
+ * @template TServices - Accumulated services from middleware and plugins
+ * @template TEvents - Event schemas for typed EventBus (NEW)
+ *
+ * @example With typed events
+ * ```typescript
+ * type UserEvents = {
+ *   'user:viewed': { userId: string; timestamp: number };
+ * };
+ *
+ * export const GET = createGetRoute<any, any, UserEvents>()({
+ *   handler: async ({ params, eventBus }) => {
+ *     await eventBus.publish('user:viewed', {
+ *       userId: params.userId,
+ *       timestamp: Date.now(),
+ *     });
+ *
+ *     return { userId: params.userId };
+ *   },
+ * });
+ * ```
+ */
+export type CreateGetRoute = <
+  TState extends State = State,
+  TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
+>() => <P = never, Q = never, R = never>(
+  config: RouteConfigWithoutBody<P, Q, R, TState, TServices, TEvents>
+) => {
+  GET: RouteMethodOptions<
+    P extends never ? never : P extends z.ZodType ? P : never,
+    Q extends never ? never : Q extends z.ZodType ? Q : never,
+    never,
+    R extends never ? never : R extends z.ZodType ? R : never
+  >;
+  path: string;
+};
+
+/**
+ * POST route creator with state, services, and event schemas support
+ *
+ * @template TState - Accumulated state from middleware
+ * @template TServices - Accumulated services from middleware and plugins
+ * @template TEvents - Event schemas for typed EventBus (NEW)
+ */
+export type CreatePostRoute = <
+  TState extends State = State,
+  TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
+>() => <P = never, Q = never, B = never, R = never>(
+  config: RouteConfigWithBody<P, Q, B, R, TState, TServices, TEvents>
+) => {
   POST: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
@@ -386,24 +521,10 @@ export type CreatePostRoute = <
 export type CreatePutRoute = <
   TState extends State = State,
   TServices extends Services = Services,
->() => <P = never, Q = never, B = never, R = never>(config: {
-  schema?: {
-    params?: P extends never ? never : P;
-    query?: Q extends never ? never : Q;
-    body?: B extends never ? never : B;
-    response?: R extends never ? never : R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    B extends z.ZodType ? Infer<B> : unknown,
-    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
-    TState,
-    TServices
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
+  TEvents extends EventSchemas = EventSchemas,
+>() => <P = never, Q = never, B = never, R = never>(
+  config: RouteConfigWithBody<P, Q, B, R, TState, TServices, TEvents>
+) => {
   PUT: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
@@ -419,23 +540,10 @@ export type CreatePutRoute = <
 export type CreateDeleteRoute = <
   TState extends State = State,
   TServices extends Services = Services,
->() => <P = never, Q = never, R = never>(config: {
-  schema?: {
-    params?: P extends never ? never : P;
-    query?: Q extends never ? never : Q;
-    response?: R extends never ? never : R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never, // DELETE never has body
-    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
-    TState,
-    TServices
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
+  TEvents extends EventSchemas = EventSchemas,
+>() => <P = never, Q = never, R = never>(
+  config: RouteConfigWithoutBody<P, Q, R, TState, TServices, TEvents>
+) => {
   DELETE: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
@@ -451,24 +559,10 @@ export type CreateDeleteRoute = <
 export type CreatePatchRoute = <
   TState extends State = State,
   TServices extends Services = Services,
->() => <P = never, Q = never, B = never, R = never>(config: {
-  schema?: {
-    params?: P extends never ? never : P;
-    query?: Q extends never ? never : Q;
-    body?: B extends never ? never : B;
-    response?: R extends never ? never : R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    B extends z.ZodType ? Infer<B> : unknown,
-    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
-    TState,
-    TServices
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
+  TEvents extends EventSchemas = EventSchemas,
+>() => <P = never, Q = never, B = never, R = never>(
+  config: RouteConfigWithoutBody<P, Q, R, TState, TServices, TEvents>
+) => {
   PATCH: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
@@ -484,23 +578,10 @@ export type CreatePatchRoute = <
 export type CreateHeadRoute = <
   TState extends State = State,
   TServices extends Services = Services,
->() => <P = never, Q = never, R = never>(config: {
-  schema?: {
-    params?: P extends never ? never : P;
-    query?: Q extends never ? never : Q;
-    response?: R extends never ? never : R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never, // HEAD never has body
-    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
-    TState,
-    TServices
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
+  TEvents extends EventSchemas = EventSchemas,
+>() => <P = never, Q = never, R = never>(
+  config: RouteConfigWithoutBody<P, Q, R, TState, TServices, TEvents>
+) => {
   HEAD: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
@@ -516,23 +597,10 @@ export type CreateHeadRoute = <
 export type CreateOptionsRoute = <
   TState extends State = State,
   TServices extends Services = Services,
->() => <P = never, Q = never, R = never>(config: {
-  schema?: {
-    params?: P extends never ? never : P;
-    query?: Q extends never ? never : Q;
-    response?: R extends never ? never : R;
-  };
-  handler: RouteHandler<
-    P extends z.ZodType ? Infer<P> : Record<string, string>,
-    Q extends z.ZodType ? Infer<Q> : QueryParams,
-    never, // OPTIONS never has body
-    [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
-    TState,
-    TServices
-  >;
-  middleware?: Middleware[];
-  options?: Record<string, unknown>;
-}) => {
+  TEvents extends EventSchemas = EventSchemas,
+>() => <P = never, Q = never, R = never>(
+  config: RouteConfigWithoutBody<P, Q, R, TState, TServices, TEvents>
+) => {
   OPTIONS: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,

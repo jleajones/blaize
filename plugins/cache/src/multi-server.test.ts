@@ -1,17 +1,26 @@
 /**
  * Integration Tests for Multi-Server Cache Coordination
  *
- * Tests cache synchronization across multiple servers using Redis pub/sub.
+ * Tests cache synchronization across multiple servers using EventBus with Redis.
  *
  * Run with: pnpm test multi-server.test.ts
  * Requires: docker compose -f compose.test.yaml up
  */
+import { MemoryEventBus } from 'blaizejs';
+
+// ✅ Import Redis adapters from adapter-redis package
+import {
+  createRedisClient,
+  RedisCacheAdapter,
+  RedisEventBusAdapter,
+} from '@blaizejs/adapter-redis';
+import type { RedisClient } from '@blaizejs/adapter-redis';
 import { createMockLogger } from '@blaizejs/testing-utils';
 
 import { CacheService } from './cache-service';
-import { RedisAdapter } from './storage/redis';
 
-import type { CacheChangeEvent, RedisAdapterConfig } from './types';
+import type { CacheChangeEvent } from './types';
+import type { EventBus } from 'blaizejs';
 
 // ============================================================================
 // Test Configuration
@@ -20,7 +29,7 @@ import type { CacheChangeEvent, RedisAdapterConfig } from './types';
 const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 
-const TEST_CONFIG: RedisAdapterConfig = {
+const TEST_REDIS_CONFIG = {
   host: REDIS_HOST,
   port: REDIS_PORT,
   db: 13, // Use db 13 for tests
@@ -38,19 +47,72 @@ function wait(ms: number): Promise<void> {
 }
 
 /**
- * Create test cache service
+ * Create shared EventBus using RedisEventBusAdapter
+ *
+ * All test servers share this EventBus to simulate multi-server coordination
  */
-async function createTestService(serverId: string): Promise<CacheService> {
-  const adapter = new RedisAdapter(TEST_CONFIG);
+async function createSharedEventBus(): Promise<EventBus> {
+  const logger = createMockLogger();
+  // Create Redis client for EventBus
+  const redisClient = createRedisClient(TEST_REDIS_CONFIG);
+  await redisClient.connect();
+
+  // Create RedisEventBusAdapter
+  const adapter = new RedisEventBusAdapter(redisClient, {
+    channelPrefix: 'test:cache:events',
+    logger,
+  });
   await adapter.connect();
 
-  const pubsub = adapter.createPubSub(serverId);
-  await pubsub.connect();
+  // Create EventBus with Redis adapter
+  const eventBus = new MemoryEventBus('server-id', logger);
 
+  return eventBus;
+}
+
+/**
+ * Disconnect and cleanup EventBus
+ */
+async function cleanupEventBus(eventBus: EventBus): Promise<void> {
+  // Get the adapter and disconnect
+  const adapter = (eventBus as any).adapter as RedisEventBusAdapter;
+  if (adapter && typeof adapter.disconnect === 'function') {
+    await adapter.disconnect();
+  }
+
+  // Get the Redis client and disconnect
+  const client = (adapter as any)?.client as RedisClient;
+  if (client && typeof client.disconnect === 'function') {
+    await client.disconnect();
+  }
+}
+
+/**
+ * Create test cache service with shared EventBus
+ *
+ * IMPORTANT: All servers must share the same EventBus instance
+ * to simulate multi-server coordination (via Redis)
+ */
+async function createTestService(
+  serverId: string,
+  sharedEventBus: EventBus
+): Promise<CacheService> {
+  // Create Redis client for cache storage
+  const redisClient = createRedisClient(TEST_REDIS_CONFIG);
+  await redisClient.connect();
+
+  // Create RedisCacheAdapter from adapter-redis package
+  const cacheAdapter = new RedisCacheAdapter(redisClient, {
+    keyPrefix: 'test:cache:',
+    logger: createMockLogger(),
+  });
+  await cacheAdapter.connect();
+
+  // Create CacheService
   const logger = createMockLogger();
   const service = new CacheService({
-    adapter,
-    pubsub,
+    adapter: cacheAdapter, // ✅ Using RedisCacheAdapter from adapter-redis
+    eventBus: sharedEventBus, // ✅ Shared EventBus (with Redis adapter)
     serverId,
     logger,
   });
@@ -66,39 +128,44 @@ async function createTestService(serverId: string): Promise<CacheService> {
 describe('Multi-Server Cache Coordination', () => {
   let serviceA: CacheService;
   let serviceB: CacheService;
+  let sharedEventBus: EventBus;
 
-  // ✅ ADD THIS: Clean database before test suite
+  // Clean database before test suite
   beforeAll(async () => {
-    // Create temporary adapter for cleanup
-    const cleanupAdapter = new RedisAdapter(TEST_CONFIG);
-    await cleanupAdapter.connect();
-
-    // Get the Redis client
-    const client = (cleanupAdapter as any).client;
+    // Create temporary client for cleanup
+    const cleanupClient = createRedisClient(TEST_REDIS_CONFIG);
+    await cleanupClient.connect();
 
     // Flush this database to ensure clean start
-    await client.flushdb();
+    await cleanupClient.getConnection().flushdb();
 
-    // Disconnect cleanup adapter
-    await cleanupAdapter.disconnect();
+    // Disconnect cleanup client
+    await cleanupClient.disconnect();
 
     // Wait for cleanup to complete
     await wait(200);
   });
 
   beforeEach(async () => {
-    serviceA = await createTestService('server-a');
-    serviceB = await createTestService('server-b');
+    // Create ONE shared EventBus with RedisEventBusAdapter
+    // This connects all test servers via Redis pub/sub
+    sharedEventBus = await createSharedEventBus();
+
+    serviceA = await createTestService('server-a', sharedEventBus);
+    serviceB = await createTestService('server-b', sharedEventBus);
   });
 
   afterEach(async () => {
     if (serviceA) await serviceA.disconnect();
     if (serviceB) await serviceB.disconnect();
 
+    // Cleanup shared EventBus and Redis connections
+    if (sharedEventBus) await cleanupEventBus(sharedEventBus);
+
     await wait(500);
   });
 
-  // ✅ ADD THIS: Ensure complete cleanup after suite
+  // Ensure complete cleanup after suite
   afterAll(async () => {
     // Final wait to ensure all connections are closed
     await wait(1000);
@@ -189,7 +256,7 @@ describe('Multi-Server Cache Coordination', () => {
   // ==========================================================================
 
   describe('Own Event Filtering', () => {
-    test('server A does not receive its own events', async () => {
+    test('server A does not receive its own events from EventBus', async () => {
       const eventsOnA: CacheChangeEvent[] = [];
 
       serviceA.watch(/.*/, event => {
@@ -202,10 +269,10 @@ describe('Multi-Server Cache Coordination', () => {
       await wait(100);
 
       // Server A should only see the LOCAL event (from emit)
-      // NOT the pub/sub event (filtered by serverId)
+      // NOT the EventBus event (filtered by serverId)
       const ownEvents = eventsOnA.filter(e => e.serverId === 'server-a');
 
-      // Should have exactly 1 event (local emit)
+      // Should have exactly 1 event (local emit only)
       expect(ownEvents).toHaveLength(1);
     });
 
@@ -388,15 +455,25 @@ describe('Multi-Server Cache Coordination', () => {
   });
 
   // ==========================================================================
-  // Local Mode (No Pub/Sub)
+  // Local Mode (No EventBus)
   // ==========================================================================
 
-  describe('Local Mode (No Pub/Sub)', () => {
-    test('works without pubsub', async () => {
-      const adapter = new RedisAdapter(TEST_CONFIG);
-      await adapter.connect();
+  describe('Local Mode (No EventBus)', () => {
+    test('works without eventBus', async () => {
+      // Create Redis client and adapter
+      const redisClient = createRedisClient(TEST_REDIS_CONFIG);
+      await redisClient.connect();
 
-      const localService = new CacheService({ adapter, logger: createMockLogger() });
+      const cacheAdapter = new RedisCacheAdapter(redisClient, {
+        keyPrefix: 'test:local:',
+      });
+      await cacheAdapter.connect();
+
+      // No eventBus provided - local mode (single server)
+      const localService = new CacheService({
+        adapter: cacheAdapter,
+        logger: createMockLogger(),
+      });
 
       const events: CacheChangeEvent[] = [];
       localService.watch(/.*/, event => {
@@ -405,18 +482,30 @@ describe('Multi-Server Cache Coordination', () => {
 
       await localService.set('local:key', 'local:value');
 
-      // Should still emit events locally
+      // Should still emit events locally (via EventEmitter)
       expect(events).toHaveLength(1);
       expect(events[0]!.key).toBe('local:key');
 
       await localService.disconnect();
+      await cacheAdapter.disconnect();
+      await redisClient.disconnect();
     });
 
     test('no serverId means no filtering', async () => {
-      const adapter = new RedisAdapter(TEST_CONFIG);
-      await adapter.connect();
+      // Create Redis client and adapter
+      const redisClient = createRedisClient(TEST_REDIS_CONFIG);
+      await redisClient.connect();
 
-      const localService = new CacheService({ adapter, logger: createMockLogger() });
+      const cacheAdapter = new RedisCacheAdapter(redisClient, {
+        keyPrefix: 'test:local2:',
+      });
+      await cacheAdapter.connect();
+
+      // No serverId provided - local mode
+      const localService = new CacheService({
+        adapter: cacheAdapter,
+        logger: createMockLogger(),
+      });
 
       const events: CacheChangeEvent[] = [];
       localService.watch(/.*/, event => {
@@ -425,11 +514,13 @@ describe('Multi-Server Cache Coordination', () => {
 
       await localService.set('test:key', 'value');
 
-      // Event has no serverId
+      // Event has no serverId (local mode)
       expect(events).toHaveLength(1);
       expect(events[0]!.serverId).toBeUndefined();
 
       await localService.disconnect();
+      await cacheAdapter.disconnect();
+      await redisClient.disconnect();
     });
   });
 
@@ -439,7 +530,8 @@ describe('Multi-Server Cache Coordination', () => {
 
   describe('Three Server Scenario', () => {
     test('events propagate to all three servers', async () => {
-      const serviceC = await createTestService('server-c');
+      // Create third server with SAME shared EventBus
+      const serviceC = await createTestService('server-c', sharedEventBus);
 
       const eventsOnA: CacheChangeEvent[] = [];
       const eventsOnB: CacheChangeEvent[] = [];
@@ -476,7 +568,8 @@ describe('Multi-Server Cache Coordination', () => {
     });
 
     test('each server filters its own events', async () => {
-      const serviceC = await createTestService('server-c');
+      // Create third server with SAME shared EventBus
+      const serviceC = await createTestService('server-c', sharedEventBus);
 
       const eventsFromOthersA: CacheChangeEvent[] = [];
       const eventsFromOthersB: CacheChangeEvent[] = [];
@@ -532,7 +625,7 @@ describe('Multi-Server Cache Coordination', () => {
   // ==========================================================================
 
   describe('Error Handling', () => {
-    test('service continues after pub/sub error', async () => {
+    test('service continues after EventBus publish error', async () => {
       const events: CacheChangeEvent[] = [];
 
       serviceA.watch(/.*/, event => {

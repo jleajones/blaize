@@ -15,7 +15,7 @@ export const getUserRoute = appRouter.get({
       userId: z.coerce.number(),
     }),
   },
-  handler: async (_ctx, params) => {
+  handler: async ({ params }) => {
     const user = users.find(user => user.id === Number(params.userId));
     if (!user) {
       throw new NotFoundError('User not found', {
@@ -43,7 +43,7 @@ export const postUserRoute = appRouter.post({
       userId: z.string(),
     }),
   },
-  handler: async (ctx, params) => {
+  handler: async ({ params }) => {
     return {
       message: `hello user ${params.userId}`,
       timestamp: Date.now(),

@@ -8,9 +8,7 @@ import { InternalServerError } from '../../errors/internal-server-error';
 import { ValidationError } from '../../errors/validation-error';
 import { create as createMiddleware } from '../../middleware/create';
 
-import type { Context } from '@blaize-types/context';
-import type { BlaizeLogger } from '@blaize-types/logger';
-import type { Middleware, NextFunction } from '@blaize-types/middleware';
+import type { Middleware } from '@blaize-types/middleware';
 import type { RouteSchema } from '@blaize-types/router';
 
 /**
@@ -20,7 +18,7 @@ export function createRequestValidator(schema: RouteSchema, debug: boolean = fal
   return createMiddleware({
     name: 'RequestValidator',
     debug,
-    handler: async (ctx: Context, next: NextFunction, _logger: BlaizeLogger) => {
+    handler: async ({ ctx, next }) => {
       if (schema.params && ctx.request.params) {
         try {
           ctx.request.params = validateParams(ctx.request.params, schema.params);
@@ -96,7 +94,7 @@ export function createResponseValidator<T>(
 ): Middleware {
   return createMiddleware({
     name: 'ResponseValidator',
-    handler: async (ctx: Context, next: NextFunction) => {
+    handler: async ({ ctx, next }) => {
       const originalJson = ctx.response.json;
       let validatorActive = true; // Track if validator should run
 

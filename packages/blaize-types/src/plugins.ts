@@ -4,7 +4,8 @@
  *
  * Provides the plugin system for extending framework functionality.
  */
-import type { BlaizeLogger } from './logger';
+import type { Services, State } from './context';
+import type { PluginSetupContext } from './handler-context';
 import type { Server } from './server';
 import type { Server as HttpServer } from 'node:http';
 import type { Http2Server } from 'node:http2';
@@ -27,7 +28,7 @@ export interface PluginOptions<_T = any> {
  * 4. onServerStop() - Stop background work
  * 5. terminate() - Cleanup resources
  */
-export interface PluginHooks<TState = {}, TServices = {}> {
+export interface PluginHooks<TState extends State = State, TServices extends Services = Services> {
   /**
    * Called when plugin is registered to server
    *
@@ -128,7 +129,11 @@ export interface PluginHooks<TState = {}, TServices = {}> {
  * @template TState - State added to context
  * @template TServices - Services added to context
  */
-export interface CreatePluginOptions<TConfig, TState = {}, TServices = {}> {
+export interface CreatePluginOptions<
+  TConfig,
+  TState extends State = State,
+  TServices extends Services = Services,
+> {
   /**
    * Plugin name (e.g., '@blaizejs/metrics')
    * Must be unique within a server instance
@@ -180,13 +185,14 @@ export interface CreatePluginOptions<TConfig, TState = {}, TServices = {}> {
    * }
    * ```
    */
-  setup: (config: TConfig, logger: BlaizeLogger) => Partial<PluginHooks<TState, TServices>>;
+  setup: (sc: PluginSetupContext<TConfig>) => Partial<PluginHooks<TState, TServices>>;
 }
 
 /**
  * Plugin interface
  */
-export interface Plugin<TState = {}, TServices = {}> extends PluginHooks<TState, TServices> {
+export interface Plugin<TState extends State = State, TServices extends Services = Services>
+  extends PluginHooks<TState, TServices> {
   /** Plugin name */
   name: string;
 
@@ -214,9 +220,11 @@ export interface Plugin<TState = {}, TServices = {}> extends PluginHooks<TState,
 /**
  * Plugin factory function
  */
-export type PluginFactory<TConfig = any, TState = {}, TServices = {}> = (
-  options?: Partial<TConfig>
-) => Plugin<TState, TServices>;
+export type PluginFactory<
+  TConfig = any,
+  TState extends State = State,
+  TServices extends Services = Services,
+> = (options?: Partial<TConfig>) => Plugin<TState, TServices>;
 
 export interface PluginLifecycleManager {
   initializePlugins(server: Server<any, any>): Promise<void>;

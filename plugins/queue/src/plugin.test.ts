@@ -4,7 +4,7 @@
  * Tests plugin lifecycle, middleware injection,
  * storage adapter lifecycle, and logger integration.
  */
-import { createMockContext } from '@blaizejs/testing-utils';
+import { createMockContext, createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 
 import { createQueuePlugin, QueueService } from './plugin';
 import { InMemoryStorage } from './storage/memory';
@@ -25,6 +25,7 @@ function createMockServer() {
     use: vi.fn((mw: unknown) => {
       middleware.push(mw);
     }),
+    eventBus: createMockEventBus(),
   };
 }
 
@@ -299,7 +300,7 @@ describe('createQueuePlugin', () => {
       // Get the registered middleware
       const middleware = server.middleware[0] as {
         name: string;
-        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+        execute: (mc: any) => Promise<void>;
       };
 
       // Create mock context and next
@@ -307,7 +308,12 @@ describe('createQueuePlugin', () => {
       const next = vi.fn().mockResolvedValue(undefined);
 
       // Execute middleware
-      await middleware.execute(ctx, next);
+      await middleware.execute({
+        ctx,
+        next,
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       // Queue service should be injected
       expect(ctx.services.queue).toBeDefined();
@@ -324,13 +330,18 @@ describe('createQueuePlugin', () => {
 
       // Get the registered middleware
       const middleware = server.middleware[0] as {
-        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+        execute: (mc: any) => Promise<void>;
       };
 
       const ctx = createMockContext();
       const next = vi.fn().mockResolvedValue(undefined);
 
-      await middleware.execute(ctx, next);
+      await middleware.execute({
+        ctx,
+        next,
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       // Queue service should have expected methods
       const queueService = ctx.services.queue as QueueService;
@@ -350,11 +361,16 @@ describe('createQueuePlugin', () => {
       await hooks.initialize?.();
 
       const middleware = server.middleware[0] as {
-        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+        execute: (mc: any) => Promise<void>;
       };
 
       const ctx = createMockContext();
-      await middleware.execute(ctx, vi.fn());
+      await middleware.execute({
+        ctx,
+        next: vi.fn(),
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       const queueService = ctx.services.queue as QueueService;
       const queues = queueService.listQueues();
@@ -405,11 +421,16 @@ describe('createQueuePlugin', () => {
 
       // Get queue service from middleware
       const middleware = server.middleware[0] as {
-        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+        execute: (mc: any) => Promise<void>;
       };
 
       const ctx = createMockContext();
-      await middleware.execute(ctx, vi.fn());
+      await middleware.execute({
+        ctx,
+        next: vi.fn(),
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       const queueService = ctx.services.queue as QueueService;
 
@@ -446,11 +467,16 @@ describe('createQueuePlugin', () => {
 
       // Get queue service
       const middleware = server.middleware[0] as {
-        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+        execute: (mc: any) => Promise<void>;
       };
 
       const ctx = createMockContext();
-      await middleware.execute(ctx, vi.fn());
+      await middleware.execute({
+        ctx,
+        next: vi.fn(),
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       const queueService = ctx.services.queue as QueueService;
       expect(queueService.listQueues()).toContain('minimal');
@@ -474,11 +500,16 @@ describe('createQueuePlugin', () => {
 
       // Get queue service and verify it works (which means storage is working)
       const middleware = server.middleware[0] as {
-        execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+        execute: (mc: any) => Promise<void>;
       };
 
       const ctx = createMockContext();
-      await middleware.execute(ctx, vi.fn());
+      await middleware.execute({
+        ctx,
+        next: vi.fn(),
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       const queueService = ctx.services.queue as QueueService;
       queueService.registerHandler('emails', 'test:job', async () => ({}));
@@ -567,9 +598,14 @@ describe('Handler Registration via Config', () => {
     const ctx = createMockContext();
     // Get queue service and verify it works (which means storage is working)
     const middleware = server.middleware[0] as {
-      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      execute: (mc: any) => Promise<void>;
     };
-    middleware.execute(ctx, vi.fn());
+    middleware.execute({
+      ctx,
+      next: vi.fn(),
+      logger: createMockLogger(),
+      eventBus: createMockEventBus(),
+    });
     const queueService = ctx.services.queue as QueueService;
 
     // Add jobs - handlers should already be registered
@@ -622,9 +658,14 @@ describe('Handler Registration via Config', () => {
     const ctx = createMockContext();
     // Get queue service and verify it works (which means storage is working)
     const middleware = server.middleware[0] as {
-      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      execute: (mc: any) => Promise<void>;
     };
-    middleware.execute(ctx, vi.fn());
+    middleware.execute({
+      ctx,
+      next: vi.fn(),
+      logger: createMockLogger(),
+      eventBus: createMockEventBus(),
+    });
     const queueService = ctx.services.queue as QueueService;
 
     await queueService.add('emails', 'send', { to: 'a@test.com' });
@@ -660,9 +701,14 @@ describe('Handler Registration via Config', () => {
     const ctx = createMockContext();
     // Get queue service and verify it works (which means storage is working)
     const middleware = server.middleware[0] as {
-      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      execute: (mc: any) => Promise<void>;
     };
-    middleware.execute(ctx, vi.fn());
+    middleware.execute({
+      ctx,
+      next: vi.fn(),
+      logger: createMockLogger(),
+      eventBus: createMockEventBus(),
+    });
     const queueService = ctx.services.queue as QueueService;
 
     // Can still register handlers manually
@@ -704,9 +750,14 @@ describe('Handler Registration via Config', () => {
     const ctx = createMockContext();
     // Get queue service and verify it works (which means storage is working)
     const middleware = server.middleware[0] as {
-      execute: (ctx: any, next: () => Promise<void>) => Promise<void>;
+      execute: (mc: any) => Promise<void>;
     };
-    middleware.execute(ctx, vi.fn());
+    middleware.execute({
+      ctx,
+      next: vi.fn(),
+      logger: createMockLogger(),
+      eventBus: createMockEventBus(),
+    });
     const queueService = ctx.services.queue as QueueService;
 
     await queueService.add('test', 'process', { value: 42 });

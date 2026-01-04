@@ -13,6 +13,7 @@ import type {
   Router,
   State,
   Services,
+  EventSchemas,
 } from '../../../blaize-types/src/index';
 
 /**
@@ -71,11 +72,12 @@ export function createMockRoutes(count: number, basePath = '/test'): Route[] {
 
 /**
  * Mock implementation of createGetRoute for testing
- * Now returns a function that accepts state/services generics
+ * Now returns a function that accepts state/services/events generics
  */
 export const mockGetRoute: CreateGetRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
@@ -89,11 +91,12 @@ export const mockGetRoute: CreateGetRoute = <
 
 /**
  * Mock implementation of createPostRoute for testing
- * Now returns a function that accepts state/services generics
+ * Now returns a function that accepts state/services/events generics
  */
 export const mockPostRoute: CreatePostRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
@@ -107,11 +110,12 @@ export const mockPostRoute: CreatePostRoute = <
 
 /**
  * Mock implementation of createPutRoute for testing
- * Now returns a function that accepts state/services generics
+ * Now returns a function that accepts state/services/events generics
  */
 export const mockPutRoute: CreatePutRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
@@ -125,11 +129,12 @@ export const mockPutRoute: CreatePutRoute = <
 
 /**
  * Mock implementation of createDeleteRoute for testing
- * Now returns a function that accepts state/services generics
+ * Now returns a function that accepts state/services/events generics
  */
 export const mockDeleteRoute: CreateDeleteRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
@@ -143,11 +148,12 @@ export const mockDeleteRoute: CreateDeleteRoute = <
 
 /**
  * Mock implementation of createPatchRoute for testing
- * Now returns a function that accepts state/services generics
+ * Now returns a function that accepts state/services/events generics
  */
 export const mockPatchRoute: CreatePatchRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
@@ -161,11 +167,12 @@ export const mockPatchRoute: CreatePatchRoute = <
 
 /**
  * Mock implementation of createHeadRoute for testing
- * Now returns a function that accepts state/services generics
+ * Now returns a function that accepts state/services/events generics
  */
 export const mockHeadRoute: CreateHeadRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
@@ -179,11 +186,12 @@ export const mockHeadRoute: CreateHeadRoute = <
 
 /**
  * Mock implementation of createOptionsRoute for testing
- * Now returns a function that accepts state/services generics
+ * Now returns a function that accepts state/services/events generics
  */
 export const mockOptionsRoute: CreateOptionsRoute = <
   _TState extends State = State,
   _TServices extends Services = Services,
+  _TEvents extends EventSchemas = EventSchemas,
 >() => {
   return (config: any) => {
     const handler = config.handler || vi.fn().mockResolvedValue({ message: 'mock response' });
@@ -209,24 +217,26 @@ export function withPath<T extends { path: string }>(route: T, path: string): T 
 export function createMockRouteFactory<
   TState extends State = State,
   TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
 >() {
   return {
-    get: mockGetRoute<TState, TServices>(),
-    post: mockPostRoute<TState, TServices>(),
-    put: mockPutRoute<TState, TServices>(),
-    delete: mockDeleteRoute<TState, TServices>(),
-    patch: mockPatchRoute<TState, TServices>(),
-    head: mockHeadRoute<TState, TServices>(),
-    options: mockOptionsRoute<TState, TServices>(),
+    get: mockGetRoute<TState, TServices, TEvents>(),
+    post: mockPostRoute<TState, TServices, TEvents>(),
+    put: mockPutRoute<TState, TServices, TEvents>(),
+    delete: mockDeleteRoute<TState, TServices, TEvents>(),
+    patch: mockPatchRoute<TState, TServices, TEvents>(),
+    head: mockHeadRoute<TState, TServices, TEvents>(),
+    options: mockOptionsRoute<TState, TServices, TEvents>(),
   } as const;
 }
 
 /**
  * Create a set of commonly used mock routes for testing
- * Now uses the updated mock route creators with state/services support
+ * Now uses the updated mock route creators with state/services/events support
+ * IMPORTANT: All handlers now use NEW signature ({ ctx, params, logger, eventBus })
  */
 export function createMockRoutesSet() {
-  // Create route creators with default state/services
+  // Create route creators with default state/services/events
   const routes = createMockRouteFactory();
 
   return {
@@ -239,6 +249,7 @@ export function createMockRoutesSet() {
             timestamp: z.number(),
           }),
         },
+        // NEW SIGNATURE: handler receives context object
         handler: async () => ({ status: 'ok', timestamp: Date.now() }),
       }),
       '/health'
@@ -257,8 +268,9 @@ export function createMockRoutesSet() {
             }),
           }),
         },
-        handler: async () => ({
-          user: { id: '123', name: 'John Doe', email: 'john@example.com' },
+        // NEW SIGNATURE: destructure params from context object
+        handler: async ({ params }: any) => ({
+          user: { id: params.userId, name: 'John Doe', email: 'john@example.com' },
         }),
       }),
       '/users/:userId'
@@ -280,8 +292,9 @@ export function createMockRoutesSet() {
             }),
           }),
         },
-        handler: async () => ({
-          user: { id: '456', name: 'Jane Doe', email: 'jane@example.com' },
+        // NEW SIGNATURE: destructure ctx to access body
+        handler: async ({ ctx }: any) => ({
+          user: { id: '456', name: ctx.body.name, email: ctx.body.email },
         }),
       }),
       '/users'
@@ -306,6 +319,7 @@ export function createMockRoutesSet() {
             total: z.number(),
           }),
         },
+        // NEW SIGNATURE: can access ctx.query if needed
         handler: async () => ({
           users: [],
           total: 0,
@@ -332,8 +346,13 @@ export function createMockRoutesSet() {
             }),
           }),
         },
-        handler: async () => ({
-          user: { id: '123', name: 'John Updated', email: 'john.updated@example.com' },
+        // NEW SIGNATURE: destructure multiple properties
+        handler: async ({ params, ctx }: any) => ({
+          user: {
+            id: params.userId,
+            name: ctx.body.name || 'John Updated',
+            email: ctx.body.email || 'john.updated@example.com',
+          },
         }),
       }),
       '/users/:userId'
@@ -348,8 +367,9 @@ export function createMockRoutesSet() {
 export function createTypedMockRoutesSet<
   TState extends State = State,
   TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
 >() {
-  const routes = createMockRouteFactory<TState, TServices>();
+  const routes = createMockRouteFactory<TState, TServices, TEvents>();
 
   return {
     typedRoute: routes.get({
@@ -358,6 +378,7 @@ export function createTypedMockRoutesSet<
           success: z.boolean(),
         }),
       },
+      // NEW SIGNATURE: destructure ctx to access state and services
       handler: async () => {
         // ctx.state and ctx.services will be typed as TState and TServices
         return { success: true };
@@ -383,7 +404,8 @@ export function createStateAwareRoute<
         serviceExists: z.boolean(),
       }),
     },
-    handler: async ctx => {
+    // NEW SIGNATURE: destructure ctx
+    handler: async ({ ctx }: any) => {
       return {
         stateValue: ctx.state[stateKey],
         serviceExists: serviceKey in ctx.services,
