@@ -32,19 +32,20 @@ export { CacheService } from './cache-service';
  * Memory cache adapter with LRU eviction and TTL support
  */
 export { MemoryAdapter } from './storage';
-export { RedisAdapter } from './storage';
 
 /**
  * Route schema for cache management
  */
 export {
+  cacheEventsQuerySchema,
   cacheStatsResponseSchema,
   cacheDashboardQuerySchema,
-  cacheDeleteEventSchema,
-  cacheEventsQuerySchema,
-  cacheEventsSchema,
-  cacheEvictionEventSchema,
-  cacheSetEventSchema,
+  cacheSseDeleteEventSchema,
+  cacheSseEventSchemas,
+  cacheSseEvictionEventSchema,
+  cacheSseSetEventSchema,
+  cacheInvalidationEventSchema,
+  cacheEventBusSchemas,
 } from './schema';
 
 /**

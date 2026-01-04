@@ -10,7 +10,7 @@
  * - Error handling
  */
 
-import { createMockContext } from '@blaizejs/testing-utils';
+import { createMockContext, createMockEventBus } from '@blaizejs/testing-utils';
 
 import { createCachePlugin } from './plugin';
 import { MemoryAdapter } from './storage';
@@ -24,6 +24,7 @@ import type { CacheAdapter } from './types';
 interface MockServer {
   use: ReturnType<typeof vi.fn>;
   middleware: unknown[];
+  eventBus: ReturnType<typeof createMockEventBus>;
 }
 
 function createMockServer(): MockServer {
@@ -34,6 +35,7 @@ function createMockServer(): MockServer {
       middleware.push(mw);
     }),
     middleware,
+    eventBus: createMockEventBus(),
   };
 }
 
@@ -43,7 +45,7 @@ function createMockServer(): MockServer {
 function getPluginHooks(plugin: unknown) {
   const hooks = plugin as {
     register?: (server: unknown) => Promise<void>;
-    initialize?: () => Promise<void>;
+    initialize?: (server: unknown) => Promise<void>;
     onServerStart?: () => Promise<void>;
     onServerStop?: () => Promise<void>;
     terminate?: () => Promise<void>;
@@ -135,7 +137,7 @@ describe('createCachePlugin', () => {
       const hooks = getPluginHooks(plugin);
 
       await hooks.register?.(createMockServer());
-      await expect(hooks.initialize?.()).resolves.toBeUndefined();
+      await expect(hooks.initialize?.(createMockServer())).resolves.toBeUndefined();
     });
 
     test('creates MemoryAdapter when no adapter provided', async () => {
@@ -147,7 +149,7 @@ describe('createCachePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Should have created service successfully
       expect(hooks.initialize).toBeDefined();
@@ -159,9 +161,10 @@ describe('createCachePlugin', () => {
         adapter: customAdapter,
       });
       const hooks = getPluginHooks(plugin);
+      const ms = createMockServer();
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      await hooks.register?.(ms);
+      await hooks.initialize?.(ms);
 
       // Should not throw
       expect(hooks.initialize).toBeDefined();
@@ -182,9 +185,10 @@ describe('createCachePlugin', () => {
         adapter: mockAdapter,
       });
       const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
 
       expect(mockAdapter.connect).toHaveBeenCalled();
     });
@@ -204,9 +208,11 @@ describe('createCachePlugin', () => {
         adapter: mockAdapter,
       });
       const hooks = getPluginHooks(plugin);
-      await hooks.register?.(createMockServer());
 
-      await expect(hooks.initialize?.()).resolves.toBeUndefined();
+      const server = createMockServer();
+      await hooks.register?.(server);
+
+      await expect(hooks.initialize?.(server)).resolves.toBeUndefined();
     });
   });
 
@@ -218,18 +224,20 @@ describe('createCachePlugin', () => {
     test('completes without error', async () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
       await expect(hooks.onServerStart?.()).resolves.toBeUndefined();
     });
 
     test('performs health check on start', async () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
 
       // Should complete (health check runs internally)
@@ -245,9 +253,10 @@ describe('createCachePlugin', () => {
     test('completes without error', async () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
       await expect(hooks.onServerStop?.()).resolves.toBeUndefined();
     });
   });
@@ -272,9 +281,10 @@ describe('createCachePlugin', () => {
         adapter: mockAdapter,
       });
       const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
       await hooks.terminate?.();
 
       expect(mockAdapter.disconnect).toHaveBeenCalled();
@@ -295,9 +305,9 @@ describe('createCachePlugin', () => {
         adapter: mockAdapter,
       });
       const hooks = getPluginHooks(plugin);
-
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      const server = createMockServer();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
       await expect(hooks.terminate?.()).resolves.toBeUndefined();
     });
 
@@ -305,8 +315,9 @@ describe('createCachePlugin', () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      const server = createMockServer();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
       await hooks.terminate?.();
 
       // Second call should not throw
@@ -323,8 +334,9 @@ describe('createCachePlugin', () => {
       const plugin = createCachePlugin({});
       const hooks = getPluginHooks(plugin);
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      const server = createMockServer();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
 
       // Should use default (1000)
       expect(hooks.initialize).toBeDefined();
@@ -336,8 +348,9 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      const server = createMockServer();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
 
       // Should use custom value
       expect(hooks.initialize).toBeDefined();
@@ -349,8 +362,9 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      const server = createMockServer();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
 
       // Should use custom TTL
       expect(hooks.initialize).toBeDefined();
@@ -362,8 +376,9 @@ describe('createCachePlugin', () => {
       });
       const hooks = getPluginHooks(plugin);
 
-      await hooks.register?.(createMockServer());
-      await hooks.initialize?.();
+      const server = createMockServer();
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
 
       // Should accept serverId
       expect(hooks.initialize).toBeDefined();
@@ -388,7 +403,7 @@ describe('createCachePlugin', () => {
       expect(server.middleware).toHaveLength(1);
 
       // 2. Initialize
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // 3. Server start
       await hooks.onServerStart?.();
@@ -422,7 +437,7 @@ describe('createCachePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
       await hooks.onServerStop?.();
       await hooks.terminate?.();
@@ -444,7 +459,7 @@ describe('createCachePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Get middleware with execute method
       const middleware = server.middleware[0] as {
@@ -486,7 +501,7 @@ describe('createCachePlugin', () => {
       await hooks.register!(server);
 
       // Should propagate error
-      await expect(hooks.initialize?.()).rejects.toThrow('Connection failed');
+      await expect(hooks.initialize?.(server)).rejects.toThrow('Connection failed');
     });
 
     test('handles adapter disconnection failure gracefully', async () => {
@@ -508,7 +523,7 @@ describe('createCachePlugin', () => {
       const hooks = getPluginHooks(plugin);
 
       await hooks.register!(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Should propagate error
       await expect(hooks.terminate?.()).rejects.toThrow('Disconnect failed');

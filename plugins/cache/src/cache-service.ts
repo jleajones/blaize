@@ -1,20 +1,20 @@
 /**
- * Cache service with automatic event emission
+ * Cache service with automatic event emission via EventBus
  *
  * @packageDocumentation
  */
 
 import { EventEmitter } from 'node:events';
 
+import type { CacheInvalidationEvent } from './schema';
 import type {
   CacheAdapter,
   CacheStats,
-  RedisPubSub,
   CacheChangeEvent,
   CacheWatchHandler,
   CacheServiceOptions,
 } from './types';
-import type { BlaizeLogger } from 'blaizejs';
+import type { BlaizeLogger, EventBus } from 'blaizejs';
 
 /**
  * Cache service with automatic event emission
@@ -22,14 +22,14 @@ import type { BlaizeLogger } from 'blaizejs';
  * Extends EventEmitter to provide:
  * - Automatic event emission on all mutations (set, delete, mset)
  * - Pattern-based watching (exact string or regex)
- * - Multi-server coordination via Redis pub/sub
+ * - Multi-server coordination via EventBus
  * - SSE integration
  *
  * **Multi-Server Coordination:**
- * When pubsub is provided, cache changes are propagated to all servers.
+ * When eventBus is provided, cache changes are propagated to all servers.
  * Each server filters its own events by serverId to prevent echoes.
  *
- * **IMPORTANT:** Call `init()` after construction to set up pub/sub subscriptions.
+ * **IMPORTANT:** Call `init()` after construction to set up event subscriptions.
  *
  * @example Local mode (single server)
  * ```typescript
@@ -43,31 +43,27 @@ import type { BlaizeLogger } from 'blaizejs';
  * });
  * ```
  *
- * @example Multi-server mode
+ * @example Multi-server mode with EventBus
  * ```typescript
- * const adapter = new RedisAdapter({ host: 'localhost' });
- * const pubsub = adapter.createPubSub('server-a');
- * await pubsub.connect();
- *
  * const service = new CacheService({
  *   adapter,
- *   pubsub,
+ *   eventBus: server.eventBus,
  *   serverId: 'server-a',
  *   logger
  * });
  * await service.init();
  *
- * // Changes propagate to all servers
+ * // Changes propagate to all servers via EventBus
  * await service.set('user:123', 'data');
  * ```
  */
 export class CacheService extends EventEmitter {
   private adapter: CacheAdapter;
-  private pubsub?: RedisPubSub;
+  private eventBus?: EventBus;
   private serverId?: string;
   private logger: BlaizeLogger;
   private sequence: number = 0;
-  private pubsubCleanup?: () => void;
+  private eventBusUnsubscribe?: () => void;
 
   /**
    * Create a new CacheService
@@ -85,15 +81,11 @@ export class CacheService extends EventEmitter {
    * await service.init();
    * ```
    *
-   * @example Multi-server mode
+   * @example Multi-server mode with EventBus
    * ```typescript
-   * const adapter = new RedisAdapter({ host: 'localhost' });
-   * const pubsub = adapter.createPubSub('server-a');
-   * await pubsub.connect();
-   *
    * const service = new CacheService({
    *   adapter,
-   *   pubsub,
+   *   eventBus: server.eventBus,
    *   serverId: 'server-a',
    *   logger
    * });
@@ -103,7 +95,7 @@ export class CacheService extends EventEmitter {
   constructor(options: CacheServiceOptions) {
     super();
     this.adapter = options.adapter;
-    this.pubsub = options.pubsub;
+    this.eventBus = options.eventBus;
     this.serverId = options.serverId;
     this.logger = options.logger.child({
       service: 'CacheService',
@@ -117,31 +109,31 @@ export class CacheService extends EventEmitter {
   /**
    * Initialize the cache service
    *
-   * Sets up pub/sub subscriptions if configured.
+   * Sets up EventBus subscriptions if configured.
    * Must be called after construction before using the service.
    *
-   * @throws {Error} If pub/sub setup fails
+   * @throws {Error} If EventBus setup fails
    *
    * @example
    * ```typescript
-   * const service = new CacheService({ adapter, pubsub, serverId, logger });
+   * const service = new CacheService({ adapter, eventBus, serverId, logger });
    * await service.init();  // ← Call this before using
    * await service.set('key', 'value');
    * ```
    */
   async init(): Promise<void> {
     this.logger.debug('Initializing cache service', {
-      hasPubSub: !!this.pubsub,
+      hasEventBus: !!this.eventBus,
       serverId: this.serverId,
     });
 
-    // Subscribe to pub/sub events if available
-    if (this.pubsub) {
-      await this.setupPubSub();
+    // Setup EventBus subscriptions if available
+    if (this.eventBus) {
+      await this.setupEventBus();
     }
 
     this.logger.info('Cache service initialized', {
-      multiServer: !!this.pubsub,
+      multiServer: !!this.eventBus,
     });
   }
 
@@ -161,7 +153,7 @@ export class CacheService extends EventEmitter {
    * Set value with optional TTL
    *
    * Automatically emits 'cache:change' event after successful write.
-   * In multi-server mode, event propagates to all connected servers.
+   * In multi-server mode, event propagates to all connected servers via EventBus.
    *
    * @param key - Cache key
    * @param value - Value to store
@@ -185,7 +177,7 @@ export class CacheService extends EventEmitter {
    * Delete key from cache
    *
    * Automatically emits 'cache:change' event if key existed.
-   * In multi-server mode, event propagates to all connected servers.
+   * In multi-server mode, event propagates to all connected servers via EventBus.
    *
    * @param key - Cache key
    * @returns true if key existed and was deleted, false otherwise
@@ -223,7 +215,7 @@ export class CacheService extends EventEmitter {
    * Set multiple keys
    *
    * Automatically emits 'cache:change' event for each key.
-   * In multi-server mode, events propagate to all connected servers.
+   * In multi-server mode, events propagate to all connected servers via EventBus.
    *
    * @param entries - Array of [key, value, ttl?] tuples
    */
@@ -365,32 +357,17 @@ export class CacheService extends EventEmitter {
    * Disconnect from adapter
    *
    * Calls adapter's disconnect method if available.
-   * Also removes all event listeners and cleans up pub/sub.
+   * Also removes all event listeners and cleans up EventBus subscriptions.
    *
    * Errors during disconnect are logged but do not throw.
    */
   async disconnect(): Promise<void> {
     this.logger.debug('Disconnecting cache service');
 
-    // Cleanup pub/sub subscription
-    if (this.pubsubCleanup) {
-      this.pubsubCleanup();
-      this.pubsubCleanup = undefined;
-    }
-
-    // Disconnect pub/sub
-    if (this.pubsub) {
-      try {
-        await this.pubsub.disconnect();
-      } catch (error) {
-        this.logger.error('Error disconnecting pub/sub', {
-          error: {
-            message: (error as Error).message,
-            stack: (error as Error).stack,
-            name: (error as Error).name,
-          },
-        });
-      }
+    // Cleanup EventBus subscription
+    if (this.eventBusUnsubscribe) {
+      this.eventBusUnsubscribe();
+      this.eventBusUnsubscribe = undefined;
     }
 
     // Disconnect adapter
@@ -419,57 +396,68 @@ export class CacheService extends EventEmitter {
   // ========================================================================
 
   /**
-   * Set up Redis pub/sub subscription
+   * Set up EventBus subscription
    *
-   * Subscribes to cache events from other servers and emits them locally.
+   * Subscribes to cache invalidation events from other servers and applies them locally.
    * Filters out own events by serverId to prevent echoes.
    *
-   * @throws {Error} If pub/sub subscription fails
+   * @throws {Error} If EventBus subscription fails
    * @private
    */
-  private async setupPubSub(): Promise<void> {
-    if (!this.pubsub) return;
+  private async setupEventBus(): Promise<void> {
+    if (!this.eventBus) return;
 
-    this.logger.debug('Setting up pub/sub subscription', {
-      pattern: 'cache:*',
+    this.logger.debug('Setting up EventBus subscription', {
+      event: 'cache:invalidated',
     });
 
-    // Subscribe to all cache events
-    this.pubsubCleanup = await this.pubsub.subscribe('cache:*', event => {
+    // Subscribe to cache invalidation events
+    this.eventBusUnsubscribe = this.eventBus.subscribe('cache:invalidated', event => {
+      const data = event.data as CacheInvalidationEvent;
       // Filter out own events to prevent echoes
-      if (event.serverId === this.serverId) {
+      if (data.serverId === this.serverId) {
         return;
       }
 
-      this.logger.debug('Received pub/sub event from other server', {
-        serverId: event.serverId,
-        type: event.type,
-        key: event.key,
+      this.logger.debug('Received cache invalidation event from other server', {
+        serverId: data.serverId,
+        operation: data.operation,
+        key: data.key,
       });
+
+      // Convert EventBus event to CacheChangeEvent format for local watchers
+      const cacheEvent: CacheChangeEvent = {
+        type: data.operation,
+        key: data.key,
+        value: data.value,
+        timestamp: new Date(data.timestamp).toISOString(),
+        serverId: data.serverId,
+        sequence: data.sequence,
+      };
 
       // Emit event locally for watchers
       // This allows other servers' changes to trigger local watches
       try {
-        this.emit('cache:change', event);
+        this.emit('cache:change', cacheEvent);
       } catch (error) {
-        this.logger.error('Error emitting pub/sub event locally', {
+        this.logger.error('Error emitting EventBus event locally', {
           error: {
             message: (error as Error).message,
             stack: (error as Error).stack,
             name: (error as Error).name,
           },
-          event,
+          event: cacheEvent,
         });
       }
     });
 
-    this.logger.info('Pub/sub subscription established');
+    this.logger.info('EventBus subscription established');
   }
 
   /**
    * Emit cache change event
    *
-   * Emits event locally and publishes to other servers if pubsub is available.
+   * Emits event locally and publishes to other servers via EventBus.
    * Errors are logged but do not throw (non-critical operation).
    *
    * @param event - Cache change event
@@ -490,18 +478,27 @@ export class CacheService extends EventEmitter {
       });
     }
 
-    // Publish to other servers if pubsub available
-    if (this.pubsub) {
-      this.pubsub.publish('cache:*', event).catch(error => {
-        this.logger.error('Error publishing event to pub/sub', {
-          error: {
-            message: (error as Error).message,
-            stack: (error as Error).stack,
-            name: (error as Error).name,
-          },
-          event,
+    // Publish to other servers via EventBus
+    if (this.eventBus && this.serverId) {
+      this.eventBus
+        .publish('cache:invalidated', {
+          operation: event.type,
+          key: event.key,
+          value: event.value,
+          timestamp: Date.now(),
+          serverId: this.serverId,
+          sequence: event.sequence,
+        })
+        .catch(error => {
+          this.logger.error('Error publishing event to EventBus', {
+            error: {
+              message: (error as Error).message,
+              stack: (error as Error).stack,
+              name: (error as Error).name,
+            },
+            event,
+          });
         });
-      });
     }
   }
 }

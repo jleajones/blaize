@@ -4,7 +4,7 @@
  * @packageDocumentation
  */
 import type { CacheService } from './cache-service';
-import type { BlaizeLogger, Services } from 'blaizejs';
+import type { BlaizeLogger, EventBus, Services } from 'blaizejs';
 
 /**
  * Cache adapter statistics
@@ -162,7 +162,7 @@ export interface CacheEntry {
  */
 export interface CacheChangeEvent {
   /** Event type */
-  type: 'set' | 'delete';
+  type: 'set' | 'delete' | 'eviction';
 
   /** Cache key */
   key: string;
@@ -192,10 +192,35 @@ export interface CacheServiceOptions {
   /** Cache adapter implementation */
   adapter: CacheAdapter;
 
-  /** Redis pub/sub for multi-server coordination (optional) */
-  pubsub?: RedisPubSub;
+  /**
+   * EventBus for cross-server cache invalidation
+   *
+   * Use server.eventBus for multi-server coordination.
+   * Events published: `cache:invalidated`
+   *
+   * @example
+   * ```typescript
+   * const service = new CacheService({
+   *   adapter,
+   *   eventBus: server.eventBus,
+   *   serverId: 'server-a',
+   *   logger
+   * });
+   * ```
+   */
+  eventBus?: EventBus;
 
-  /** Server ID for multi-server coordination (optional) */
+  /**
+   * Server ID for multi-server setups
+   *
+   * Required when using eventBus to prevent event echoes.
+   * Should be unique per server instance.
+   *
+   * @example
+   * ```typescript
+   * serverId: `server-${process.env.POD_NAME || 'local'}`
+   * ```
+   */
   serverId?: string;
 
   /** Logger instance for structured logging */
@@ -215,7 +240,24 @@ export interface CachePluginConfig {
   /** Default TTL in seconds (only for MemoryAdapter) */
   defaultTtl?: number;
 
-  /** Server ID for multi-server coordination (optional) */
+  /**
+   * Server ID for multi-server coordination
+   *
+   * Required when using EventBus for cross-server cache invalidation.
+   * Should be unique per server instance.
+   *
+   * When provided, the plugin automatically uses server.eventBus for
+   * cross-server cache coordination. No additional setup needed!
+   *
+   * @example
+   * ```typescript
+   * createCachePlugin({
+   *   adapter: new RedisAdapter({ host: 'localhost' }),
+   *   serverId: `server-${process.env.POD_NAME || 'local'}`,
+   *   // EventBus from server.eventBus is used automatically
+   * })
+   * ```
+   */
   serverId?: string;
 }
 

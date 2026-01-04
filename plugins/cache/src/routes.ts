@@ -62,7 +62,7 @@ import type { CacheService } from './cache-service';
 import type {
   CacheDashboardQuery,
   CacheEventsQuery,
-  cacheEventsSchema,
+  cacheSseEventSchemas,
   CacheStatsResponse,
 } from './schema';
 import type { TypedSSEStream, Context, BlaizeLogger } from 'blaizejs';
@@ -100,7 +100,7 @@ function getCacheServiceOrThrow(ctx: Context): CacheService {
 }
 
 // Create a type alias for your specific stream type
-export type CacheSSEStream = TypedSSEStream<typeof cacheEventsSchema>;
+export type CacheSSEStream = TypedSSEStream<typeof cacheSseEventSchemas>;
 
 // ============================================================================
 // Route Handlers
