@@ -20,6 +20,11 @@ export type {
 // Error types
 export { RedisConnectionError, RedisOperationError, CircuitBreakerOpenError } from './errors';
 export type {
+  JobPriority,
+  QueueJob,
+  JobError,
+  JobFilters,
+  QueueStats,
   RedisConnectionErrorDetails,
   RedisOperationErrorDetails,
   CircuitBreakerErrorDetails,

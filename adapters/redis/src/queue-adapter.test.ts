@@ -208,8 +208,8 @@ describe('RedisQueueAdapter', () => {
     });
 
     it('should handle high priority jobs (lower score)', async () => {
-      const lowPriorityJob = createTestJob({ priority: 10 });
-      const highPriorityJob = createTestJob({ priority: 1 });
+      const lowPriorityJob = createTestJob({ priority: 1 });
+      const highPriorityJob = createTestJob({ priority: 10 });
 
       await adapter.enqueue('default', highPriorityJob);
       await adapter.enqueue('default', lowPriorityJob);
@@ -408,7 +408,7 @@ describe('RedisQueueAdapter', () => {
         maxRetries: '3',
         timeout: '60000',
         result: JSON.stringify({ done: true }),
-        error: 'Some error',
+        error: JSON.stringify({ message: 'Some error' }),
         metadata: JSON.stringify({ custom: 'data' }),
       });
 
@@ -420,7 +420,7 @@ describe('RedisQueueAdapter', () => {
       expect(result?.priority).toBe(7);
       expect(result?.progress).toBe(50);
       expect(result?.result).toEqual({ done: true });
-      expect(result?.error).toBe('Some error');
+      expect(result?.error).toEqual({ message: 'Some error' });
       expect(result?.metadata).toEqual({ custom: 'data' });
     });
 
@@ -584,12 +584,10 @@ describe('RedisQueueAdapter', () => {
           queuedAt: '1000',
           startedAt: '',
           completedAt: '',
-          failedAt: '',
           retries: '0',
           maxRetries: '3',
           timeout: '30000',
           result: '',
-          error: '',
           metadata: '{}',
         })
         .mockResolvedValueOnce({
@@ -603,12 +601,10 @@ describe('RedisQueueAdapter', () => {
           queuedAt: '2000',
           startedAt: '',
           completedAt: '',
-          failedAt: '',
           retries: '0',
           maxRetries: '3',
           timeout: '30000',
           result: '',
-          error: '',
           metadata: '{}',
         });
 
@@ -639,12 +635,10 @@ describe('RedisQueueAdapter', () => {
           queuedAt: '1000',
           startedAt: '',
           completedAt: '',
-          failedAt: '',
           retries: '0',
           maxRetries: '3',
           timeout: '30000',
           result: '',
-          error: '',
           metadata: '{}',
         })
         .mockResolvedValueOnce({
@@ -658,12 +652,10 @@ describe('RedisQueueAdapter', () => {
           queuedAt: '2000',
           startedAt: '',
           completedAt: '',
-          failedAt: '',
           retries: '0',
           maxRetries: '3',
           timeout: '30000',
           result: '',
-          error: '',
           metadata: '{}',
         })
         .mockResolvedValueOnce({
@@ -677,12 +669,10 @@ describe('RedisQueueAdapter', () => {
           queuedAt: '3000',
           startedAt: '',
           completedAt: '',
-          failedAt: '',
           retries: '0',
           maxRetries: '3',
           timeout: '30000',
           result: '',
-          error: '',
           metadata: '{}',
         });
 
@@ -713,12 +703,10 @@ describe('RedisQueueAdapter', () => {
           queuedAt: '1000',
           startedAt: '',
           completedAt: '',
-          failedAt: '',
           retries: '0',
           maxRetries: '3',
           timeout: '30000',
           result: '',
-          error: '',
           metadata: '{}',
         })
         .mockResolvedValueOnce({
@@ -732,12 +720,10 @@ describe('RedisQueueAdapter', () => {
           queuedAt: '2000',
           startedAt: '',
           completedAt: '',
-          failedAt: '',
           retries: '0',
           maxRetries: '3',
           timeout: '30000',
           result: '',
-          error: '',
           metadata: '{}',
         });
 
@@ -1041,6 +1027,7 @@ describe('RedisQueueAdapter', () => {
         retries: 0,
         maxRetries: 3,
         timeout: 30000,
+        metadata: {},
         // No startedAt, completedAt, failedAt, result, error
       };
 
@@ -1058,9 +1045,7 @@ describe('RedisQueueAdapter', () => {
         timeout: '30000',
         startedAt: '',
         completedAt: '',
-        failedAt: '',
         result: '',
-        error: '',
         metadata: '{}',
       });
 
@@ -1068,7 +1053,6 @@ describe('RedisQueueAdapter', () => {
 
       expect(retrieved?.startedAt).toBeUndefined();
       expect(retrieved?.completedAt).toBeUndefined();
-      expect(retrieved?.failedAt).toBeUndefined();
       expect(retrieved?.result).toBeUndefined();
       expect(retrieved?.error).toBeUndefined();
     });

@@ -327,6 +327,18 @@ export interface RedisEventBusAdapterOptions {
   logger?: BlaizeLogger;
 }
 
+export interface JobError {
+  message: string;
+  code?: string;
+  stack?: string;
+}
+
+/**
+ * Job priority levels (1-10)
+ * Higher number = higher priority
+ */
+export type JobPriority = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
 // These types are from @blaize-plugins/queue but we define minimal versions here
 // to avoid circular dependencies. In real usage, they'd be imported.
 export interface QueueJob {
@@ -335,18 +347,18 @@ export interface QueueJob {
   queueName: string;
   data: unknown;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-  priority: number;
+  priority: JobPriority;
   progress: number;
+  progressMessage?: string;
   queuedAt: number;
   startedAt?: number;
   completedAt?: number;
-  failedAt?: number;
   retries: number;
   maxRetries: number;
   timeout: number;
   result?: unknown;
-  error?: string;
-  metadata?: Record<string, unknown>;
+  error?: JobError;
+  metadata: Record<string, unknown>;
 }
 
 export interface JobFilters {

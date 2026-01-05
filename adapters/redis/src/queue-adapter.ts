@@ -15,15 +15,17 @@
  * @since 0.1.0
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
 
 import { createLogger } from 'blaizejs';
 
 import { RedisOperationError } from './errors';
 
 import type {
+  JobError,
   JobFilters,
+  JobPriority,
   QueueJob,
   QueueStats,
   RedisClient,
@@ -41,9 +43,26 @@ const DEFAULT_OPTIONS = {
 /**
  * Load Lua script from file
  */
-function loadLuaScript(filename: string): string {
-  const scriptPath = join(__dirname, 'lua', filename);
-  return readFileSync(scriptPath, 'utf-8');
+function loadLuaScript({ filename, logger }: { filename: string; logger?: BlaizeLogger }): string {
+  const possiblePaths = [
+    // Try dist first (after build)
+    path.join(__dirname, '../dist/lua', filename),
+    // Try src (during tests/development)
+    path.join(__dirname, '../src/lua', filename),
+  ];
+
+  for (const scriptPath of possiblePaths) {
+    try {
+      if (existsSync(scriptPath)) {
+        logger?.debug('Loading Lua script', { scriptPath });
+        return readFileSync(scriptPath, 'utf-8');
+      }
+    } catch {
+      // Try next path
+    }
+  }
+
+  throw new Error(`Lua script not found: ${filename}. Tried: ${possiblePaths.join(', ')}`);
 }
 
 /**
@@ -105,9 +124,9 @@ export class RedisQueueAdapter {
 
     // Load Lua scripts from files and define as custom commands
     try {
-      this.dequeueScript = loadLuaScript('dequeue.lua');
-      this.completeScript = loadLuaScript('complete.lua');
-      this.failScript = loadLuaScript('fail.lua');
+      this.dequeueScript = loadLuaScript({ filename: 'dequeue.lua', logger: this.logger });
+      this.completeScript = loadLuaScript({ filename: 'complete.lua', logger: this.logger });
+      this.failScript = loadLuaScript({ filename: 'fail.lua', logger: this.logger });
 
       this.logger.debug('Lua scripts loaded from files');
 
@@ -169,10 +188,10 @@ export class RedisQueueAdapter {
     const queueKey = this.buildQueueKey(queueName, job.status);
 
     try {
-      // Calculate score: -priority + (timestamp / 1e13)
+      // Calculate score: priority + (timestamp / 1e13)
       // This ensures: higher priority = lower score = processed first
       // Same priority: earlier timestamp = FIFO
-      const score = job.priority + job.queuedAt / 1e13;
+      const score = -job.priority + job.queuedAt / 1e13;
 
       // Use pipeline for atomicity
       const pipeline = connection.pipeline();
@@ -467,10 +486,15 @@ export class RedisQueueAdapter {
 
         pipeline.zrem(oldQueueKey, jobId);
 
-        const priority = updates.priority ?? currentJob.priority;
-        const timestamp = updates.queuedAt ?? currentJob.queuedAt;
-        const score = priority + timestamp / 1e13;
-        pipeline.zadd(newQueueKey, score, jobId);
+        const isRetry =
+          oldStatus === 'running' && newStatus === 'queued' && updates.retries !== undefined;
+
+        if (!isRetry) {
+          const priority = updates.priority ?? currentJob.priority;
+          const timestamp = updates.queuedAt ?? currentJob.queuedAt;
+          const score = -priority + timestamp / 1e13;
+          pipeline.zadd(newQueueKey, score, jobId);
+        }
       }
 
       await pipeline.exec();
@@ -649,6 +673,10 @@ export class RedisQueueAdapter {
     const jobKeyPrefix = 'job:';
 
     try {
+      const jobError: JobError = {
+        message: errorMessage,
+      };
+      const errorJson = JSON.stringify(jobError);
       // Execute Lua script using custom command
       const result = (await connection.evalsha(
         this.failSha!,
@@ -659,7 +687,7 @@ export class RedisQueueAdapter {
         jobKeyPrefix,
         jobId,
         Date.now().toString(),
-        errorMessage
+        errorJson
       )) as 'retry' | 'failed' | null;
 
       if (result === 'retry') {
@@ -819,12 +847,11 @@ export class RedisQueueAdapter {
       queuedAt: job.queuedAt.toString(),
       startedAt: job.startedAt?.toString() || '',
       completedAt: job.completedAt?.toString() || '',
-      failedAt: job.failedAt?.toString() || '',
       retries: job.retries.toString(),
       maxRetries: job.maxRetries.toString(),
       timeout: job.timeout.toString(),
       result: job.result ? JSON.stringify(job.result) : '',
-      error: job.error || '',
+      error: job.error ? JSON.stringify(job.error) : '',
       metadata: job.metadata ? JSON.stringify(job.metadata) : '{}',
     };
   }
@@ -841,17 +868,16 @@ export class RedisQueueAdapter {
       queueName: hash.queueName ?? '',
       data: hash.data ? JSON.parse(hash.data) : undefined,
       status: hash.status as QueueJob['status'],
-      priority: hash.priority ? parseInt(hash.priority, 10) : 0,
+      priority: hash.priority ? (parseInt(hash.priority, 10) as JobPriority) : (1 as JobPriority),
       progress: hash.progress ? parseInt(hash.progress, 10) : 0,
       queuedAt: hash.queuedAt ? parseInt(hash.queuedAt, 10) : 0,
       startedAt: hash.startedAt ? parseInt(hash.startedAt, 10) : undefined,
       completedAt: hash.completedAt ? parseInt(hash.completedAt, 10) : undefined,
-      failedAt: hash.failedAt ? parseInt(hash.failedAt, 10) : undefined,
       retries: hash.retries ? parseInt(hash.retries, 10) : 0,
       maxRetries: hash.maxRetries ? parseInt(hash.maxRetries, 10) : 0,
       timeout: hash.timeout ? parseInt(hash.timeout, 10) : 0,
       result: hash.result ? JSON.parse(hash.result) : undefined,
-      error: hash.error || undefined,
+      error: hash.error ? JSON.parse(hash.error) : undefined,
       metadata: hash.metadata ? JSON.parse(hash.metadata) : {},
     };
   }

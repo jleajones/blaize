@@ -186,13 +186,13 @@ describe('RedisQueueAdapter - Integration Tests', { timeout: TEST_TIMEOUT }, () 
 
   describe('Priority Handling (higher priority first)', () => {
     it('should dequeue higher priority jobs first', async () => {
-      // Enqueue jobs with different priorities (lower number = higher priority)
-      const lowPriority = createTestJob({ priority: 10, data: { priority: 'low' } });
+      // Enqueue jobs with different priorities (lower number = lower priority)
+      const lowPriority = createTestJob({ priority: 1, data: { priority: 'low' } });
       await adapter.enqueue('test-queue', lowPriority);
 
       await sleep(50); // Ensure different timestamps
 
-      const highPriority = createTestJob({ priority: 1, data: { priority: 'high' } });
+      const highPriority = createTestJob({ priority: 10, data: { priority: 'high' } });
       await adapter.enqueue('test-queue', highPriority);
 
       await sleep(50);
@@ -238,11 +238,11 @@ describe('RedisQueueAdapter - Integration Tests', { timeout: TEST_TIMEOUT }, () 
       await adapter.enqueue('test-queue', job1);
 
       await sleep(50);
-      const job2 = createTestJob({ priority: 10, data: { id: 2 } });
+      const job2 = createTestJob({ priority: 1, data: { id: 2 } });
       await adapter.enqueue('test-queue', job2);
 
       // Update job2 to have higher priority
-      await adapter.updateJob(job2.id, { priority: 1 });
+      await adapter.updateJob(job2.id, { priority: 10 });
 
       // job2 should now dequeue first
       const first = await adapter.dequeue('test-queue');
@@ -293,8 +293,7 @@ describe('RedisQueueAdapter - Integration Tests', { timeout: TEST_TIMEOUT }, () 
 
       const fetched = await adapter.getJob(running!.id);
       expect(fetched?.status).toBe('failed');
-      expect(fetched?.failedAt).toBeDefined();
-      expect(fetched?.error).toBe('Test error');
+      expect(fetched?.error).toEqual({ message: 'Test error' });
     });
 
     it('should retry failed jobs when retries available', async () => {
@@ -309,7 +308,7 @@ describe('RedisQueueAdapter - Integration Tests', { timeout: TEST_TIMEOUT }, () 
       const fetched = await adapter.getJob(running!.id);
       expect(fetched?.status).toBe('queued');
       expect(fetched?.retries).toBe(1);
-      expect(fetched?.error).toBe('First failure');
+      expect(fetched?.error).toEqual({ message: 'First failure' });
 
       // Job should be back in queue
       const retried = await adapter.dequeue('test-queue');
@@ -493,11 +492,12 @@ describe('RedisQueueAdapter - Integration Tests', { timeout: TEST_TIMEOUT }, () 
       await sleep(10);
 
       // Create some failed jobs
-      const failJob = createTestJob({ maxRetries: 0, priority: 1 });
+      const failJob = createTestJob({ maxRetries: 0, priority: 10 });
       await adapter.enqueue('test-queue', failJob);
       await sleep(10);
       const running = await adapter.dequeue('test-queue');
       await adapter.failJob(running!.id, 'Test failure');
+
       await sleep(10);
     });
 
@@ -553,7 +553,7 @@ describe('RedisQueueAdapter - Integration Tests', { timeout: TEST_TIMEOUT }, () 
         sortOrder: 'asc',
       });
 
-      // Should be sorted by priority ascending (1, 5, 10)
+      // Should be sorted by priority ascending (10, 5, 1)
       const priorities = jobs.map(j => j.priority);
       expect(priorities[0]).toBeLessThanOrEqual(priorities[1]!);
       expect(priorities[1]).toBeLessThanOrEqual(priorities[2]!);
