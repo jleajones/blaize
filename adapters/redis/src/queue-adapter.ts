@@ -16,7 +16,8 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import path from 'node:path';
+import path, { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createLogger } from 'blaizejs';
 
@@ -39,6 +40,9 @@ import type { BlaizeLogger } from 'blaizejs';
 const DEFAULT_OPTIONS = {
   keyPrefix: 'queue:',
 };
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Load Lua script from file
@@ -259,7 +263,6 @@ export class RedisQueueAdapter {
       )) as string | null;
 
       if (!jobId) {
-        this.logger.debug('Dequeue: queue empty', { queueName });
         return null;
       }
 

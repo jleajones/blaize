@@ -34,6 +34,7 @@ describe('RedisCacheAdapter', () => {
       isConnected: vi.fn().mockReturnValue(true),
       connect: vi.fn().mockResolvedValue(undefined),
       healthCheck: vi.fn().mockResolvedValue({ healthy: true, latency: 5 }),
+      getConfig: vi.fn().mockReturnValue({ keyPrefix: 'test:' }),
     };
 
     // Create mock logger

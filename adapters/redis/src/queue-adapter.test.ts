@@ -312,9 +312,6 @@ describe('RedisQueueAdapter', () => {
       const result = await adapter.dequeue('default');
 
       expect(result).toBeNull();
-      expect(mockLogger.debug).toHaveBeenCalledWith('Dequeue: queue empty', {
-        queueName: 'default',
-      });
     });
 
     it('should throw if not connected', async () => {

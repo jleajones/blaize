@@ -13,6 +13,8 @@
 
 import { createLogger } from 'blaizejs';
 
+import type { CacheAdapter } from '@blaizejs/plugin-cache';
+
 import { RedisOperationError } from './errors';
 
 import type { RedisClient, RedisCacheAdapterOptions, CacheStats } from './types';
@@ -34,7 +36,7 @@ const DEFAULT_OPTIONS = {
  * - Bulk operations with pipelining
  * - Statistics tracking
  */
-export class RedisCacheAdapter {
+export class RedisCacheAdapter implements CacheAdapter {
   private readonly client: RedisClient;
   private readonly keyPrefix: string;
   private readonly logger: BlaizeLogger;
@@ -319,6 +321,117 @@ export class RedisCacheAdapter {
   }
 
   /**
+   * List keys matching a pattern
+   */
+  async keys(pattern: string = '*'): Promise<string[]> {
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    const connection = this.client.getConnection();
+
+    const clientPrefix = this.client.getConfig().keyPrefix || '';
+    const fullSearchPattern = clientPrefix + this.keyPrefix + pattern;
+    try {
+      const fullKeys = await connection.keys(fullSearchPattern);
+
+      // Remove prefix from keys
+      return fullKeys.map(fullKey =>
+        fullKey.startsWith(this.keyPrefix) ? fullKey.slice(this.keyPrefix.length) : fullKey
+      );
+    } catch (error) {
+      this.logger.error('KEYS failed', {
+        pattern,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('KEYS failed', {
+        operation: 'KEYS',
+        key: fullSearchPattern,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Clear keys matching a pattern
+   */
+  async clear(pattern: string = '*'): Promise<number> {
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    const connection = this.client.getConnection();
+
+    const clientPrefix = this.client.getConfig().keyPrefix || '';
+    const fullSearchPattern = clientPrefix + this.keyPrefix + pattern;
+
+    try {
+      const fullKeys = await connection.keys(fullSearchPattern);
+
+      if (fullKeys.length === 0) {
+        return 0;
+      }
+
+      // Delete all matching keys
+      const deletedCount = await connection.del(...fullKeys);
+
+      // Track evictions
+      this.stats.evictions += deletedCount;
+
+      this.logger.debug('Cache clear', { pattern, deletedCount });
+
+      return deletedCount;
+    } catch (error) {
+      this.logger.error('CLEAR failed', {
+        pattern,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('CLEAR failed', {
+        operation: 'DEL',
+        key: fullSearchPattern,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Get TTL for a key (in seconds, null if no TTL)
+   */
+  async getTTL(key: string): Promise<number | null> {
+    if (!this.isConnected) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+
+    const fullKey = this.buildKey(key); // ✅ Fixed: use buildKey
+
+    try {
+      const connection = this.client.getConnection();
+      const ttl = await connection.ttl(fullKey);
+
+      // Redis returns -2 if key doesn't exist, -1 if no expiry
+      if (ttl === -2) return null; // Key doesn't exist
+      if (ttl === -1) return null; // No expiry
+
+      this.logger.debug('Got TTL', { key, ttl });
+
+      return ttl;
+    } catch (error) {
+      this.logger.error('TTL failed', {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new RedisOperationError('TTL failed', {
+        operation: 'TTL',
+        key: fullKey,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
    * Get adapter statistics
    *
    * Note: Redis doesn't expose memory usage per prefix, so we use DBSIZE
@@ -341,6 +454,9 @@ export class RedisCacheAdapter {
     try {
       const connection = this.client.getConnection();
 
+      const clientPrefix = this.client.getConfig().keyPrefix || '';
+      const fullPattern = clientPrefix + this.keyPrefix + '*';
+
       // Get approximate entry count using SCAN with prefix
       let entryCount = 0;
       let cursor = '0';
@@ -349,7 +465,7 @@ export class RedisCacheAdapter {
         const [nextCursor, keys] = await connection.scan(
           cursor,
           'MATCH',
-          `${this.keyPrefix}*`,
+          fullPattern,
           'COUNT',
           100
         );

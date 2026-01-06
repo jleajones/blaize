@@ -8,19 +8,21 @@ export type RedisCommand =
   | 'SET'
   | 'SETEX'
   | 'DEL'
+  | 'EVALSHA'
   | 'MGET'
   | 'MSET'
   | 'HSET'
   | 'HGETALL'
+  | 'KEYS'
   | 'PUBLISH'
   | 'SUBSCRIBE'
   | 'LPUSH'
   | 'RPOP'
+  | 'TTL'
   | 'ZADD'
   | 'ZRANGE'
   | 'ZCARD'
-  | 'ZREM'
-  | 'EVALSHA';
+  | 'ZREM';
 
 /**
  * Configuration options for circuit breaker

@@ -5,7 +5,7 @@ export default createTsupConfig({
   entry: ['src/index.ts'],
   tsconfig: './tsconfig.json',
   // Output both ESM and CommonJS for maximum compatibility
-  format: ['esm', 'cjs'],
+  format: ['esm'],
 
   // External packages not to bundle
   external: ['zod', 'chokidar', 'selfsigned'],
