@@ -31,7 +31,27 @@ export async function gatherDashboardData(cache: CacheService): Promise<Dashboar
 
   // Get recent keys (implementation depends on adapter capabilities)
   // For now, return empty array - adapters can extend this
-  const recentKeys: DashboardData['recentKeys'] = [];
+  let recentKeys: DashboardData['recentKeys'] = [];
+  try {
+    // Get all keys (limited to 50 most recent)
+    const allKeys = await cache.keys('*');
+    const keysToShow = allKeys.slice(0, 50);
+
+    // Fetch value and TTL for each key
+    recentKeys = await Promise.all(
+      keysToShow.map(async key => {
+        const result = await cache.getWithTTL(key);
+        return {
+          key,
+          size: result.value ? result.value.length : 0,
+          ttl: result.ttl,
+        };
+      })
+    );
+  } catch (error) {
+    // If adapter doesn't support keys(), recentKeys stays empty
+    console.error('Failed to fetch cache keys:', error);
+  }
 
   return {
     stats,

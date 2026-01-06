@@ -318,6 +318,9 @@ describe('CachePluginConfig', () => {
       delete: async () => false,
       mget: async () => [],
       mset: async () => {},
+      getTTL: async () => null,
+      keys: async () => [],
+      clear: async () => 0,
       getStats: async () => ({
         hits: 0,
         misses: 0,

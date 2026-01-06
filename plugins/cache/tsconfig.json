@@ -10,6 +10,11 @@
       "@blaize-types/*": ["../blaize-types/src/*"]
     }
   },
-  "include": ["package.json", "src/**/*.ts", "../blaize-types/src/**/*.ts"],
+  "include": [
+    "package.json",
+    "src/**/*.ts",
+    "../blaize-types/src/**/*.ts",
+    "../../adapters/redis/src/multi-server-cache.test.ts"
+  ],
   "exclude": ["node_modules", "dist", "dist/**/*"]
 }

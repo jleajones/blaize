@@ -237,6 +237,68 @@ export class CacheService extends EventEmitter {
   }
 
   /**
+   * List keys matching a pattern
+   *
+   * Does not emit events (read-only operation).
+   *
+   * @param pattern - Glob pattern (default: '*' for all keys)
+   * @returns Array of matching cache keys
+   */
+  async keys(pattern?: string): Promise<string[]> {
+    return this.adapter.keys(pattern);
+  }
+
+  /**
+   * Clear keys matching a pattern
+   *
+   * Automatically emits 'cache:change' event for each deleted key.
+   * In multi-server mode, events propagate to all connected servers via EventBus.
+   *
+   * @param pattern - Glob pattern (default: '*' for all keys)
+   * @returns Number of keys deleted
+   */
+  async clear(pattern?: string): Promise<number> {
+    // Get keys before deletion so we can emit events
+    const keysToDelete = await this.adapter.keys(pattern);
+
+    // Delete via adapter
+    const deletedCount = await this.adapter.clear(pattern);
+
+    // Emit events for each deleted key
+    const timestamp = new Date().toISOString();
+    for (const key of keysToDelete) {
+      this.emitChange({
+        type: 'delete',
+        key,
+        timestamp,
+        serverId: this.serverId,
+        sequence: ++this.sequence,
+      });
+    }
+
+    return deletedCount;
+  }
+
+  /**
+   * Get value with TTL information
+   *
+   * @param key - Cache key
+   * @returns Object with value and TTL
+   */
+  async getWithTTL(key: string): Promise<{ value: string | null; ttl: number | null }> {
+    const value = await this.adapter.get(key);
+
+    if (!value) {
+      return { value: null, ttl: null };
+    }
+
+    // Get TTL if adapter supports it
+    const ttl = this.adapter.getTTL ? await this.adapter.getTTL(key) : null;
+
+    return { value, ttl };
+  }
+
+  /**
    * Watch for cache changes matching pattern
    *
    * Supports both exact string matching and regex patterns.

@@ -177,7 +177,10 @@ describe('createCachePlugin', () => {
         delete: vi.fn(),
         mget: vi.fn(),
         mset: vi.fn(),
+        keys: vi.fn(),
+        getTTL: vi.fn(),
         getStats: vi.fn(),
+        clear: vi.fn(),
         connect: vi.fn().mockResolvedValue(undefined),
       };
 
@@ -200,6 +203,8 @@ describe('createCachePlugin', () => {
         delete: vi.fn(),
         mget: vi.fn(),
         mset: vi.fn(),
+        keys: vi.fn(),
+        clear: vi.fn(),
         getStats: vi.fn(),
         // No connect method
       };
@@ -274,6 +279,8 @@ describe('createCachePlugin', () => {
         mget: vi.fn(),
         mset: vi.fn(),
         getStats: vi.fn(),
+        keys: vi.fn(),
+        clear: vi.fn(),
         disconnect: vi.fn().mockResolvedValue(undefined),
       };
 
@@ -297,6 +304,8 @@ describe('createCachePlugin', () => {
         delete: vi.fn(),
         mget: vi.fn(),
         mset: vi.fn(),
+        clear: vi.fn(),
+        keys: vi.fn(),
         getStats: vi.fn(),
         // No disconnect method
       };
@@ -426,6 +435,9 @@ describe('createCachePlugin', () => {
         mget: vi.fn(),
         mset: vi.fn(),
         getStats: vi.fn(),
+        getTTL: vi.fn(),
+        keys: vi.fn(),
+        clear: vi.fn(),
         connect: vi.fn().mockResolvedValue(undefined),
         disconnect: vi.fn().mockResolvedValue(undefined),
       };
@@ -488,6 +500,9 @@ describe('createCachePlugin', () => {
         delete: vi.fn(),
         mget: vi.fn(),
         mset: vi.fn(),
+        getTTL: vi.fn(),
+        keys: vi.fn(),
+        clear: vi.fn(),
         getStats: vi.fn(),
         connect: vi.fn().mockRejectedValue(new Error('Connection failed')),
       };
@@ -512,6 +527,9 @@ describe('createCachePlugin', () => {
         mget: vi.fn(),
         mset: vi.fn(),
         getStats: vi.fn(),
+        getTTL: vi.fn(),
+        keys: vi.fn(),
+        clear: vi.fn(),
         disconnect: vi.fn().mockRejectedValue(new Error('Disconnect failed')),
       };
 
