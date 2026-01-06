@@ -8,6 +8,7 @@
     "exactOptionalPropertyTypes": false,
     "baseUrl": ".",
     "paths": {
+      "@blaize-types": ["../blaize-types/src/index.ts"],
       "@blaize-types/*": ["../blaize-types/src/*"]
     }
   },

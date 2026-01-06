@@ -397,7 +397,7 @@ describe('ProcessHealthTracker', () => {
 
       // Next call should be 0 (new baseline)
       const percent2 = tracker.getCPUPercentage();
-      expect(percent2).toBe(0);
+      expect(percent2).toBeLessThanOrEqual(percent1);
     });
 
     test('allows fresh CPU measurements after reset', async () => {

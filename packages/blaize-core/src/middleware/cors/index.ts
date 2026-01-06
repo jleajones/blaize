@@ -13,8 +13,7 @@ import { validateCorsOptions, mergeCorsOptions, validateOriginSecurity } from '.
 
 import type { Context } from '@blaize-types/context';
 import type { CorsOptions } from '@blaize-types/cors';
-import type { BlaizeLogger } from '@blaize-types/logger';
-import type { Middleware, NextFunction } from '@blaize-types/middleware';
+import type { Middleware } from '@blaize-types/middleware';
 
 /**
  * Set CORS headers for simple (non-preflight) requests
@@ -109,7 +108,7 @@ export function cors(userOptions?: CorsOptions | boolean): Middleware {
   // Create the middleware using createMiddleware
   return createMiddleware({
     name: 'cors',
-    handler: async (ctx: Context, next: NextFunction) => {
+    handler: async ({ ctx, next }) => {
       // Extract origin from request
       const origin = ctx.request.header('origin') || ctx.request.header('Origin');
 
@@ -182,10 +181,10 @@ export function corsDevelopment(): Middleware {
   // Create a wrapper middleware that adds the warning
   return createMiddleware({
     name: 'cors-development',
-    handler: async (ctx: Context, next: NextFunction, logger: BlaizeLogger) => {
+    handler: async ({ ctx, next, logger, eventBus }) => {
       logger.warn('[CORS] Running in development mode - all origins allowed');
       // Execute the base CORS middleware
-      await baseMiddleware.execute(ctx, next, logger);
+      await baseMiddleware.execute({ ctx, next, logger, eventBus });
     },
     debug: baseMiddleware.debug,
   });

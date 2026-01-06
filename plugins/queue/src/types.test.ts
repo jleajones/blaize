@@ -164,7 +164,7 @@ describe('Core Types', () => {
   describe('JobContext', () => {
     it('should have all required fields', () => {
       // This is a type test - we verify the shape
-      type ContextShape = {
+      type _ContextShape = {
         jobId: string;
         data: unknown;
         logger: { info: (msg: string) => void }; // BlaizeLogger shape
@@ -316,10 +316,10 @@ describe('Configuration Types', () => {
 
   describe('QueueInstanceConfig', () => {
     it('should require all fields', () => {
-      const mockLogger = createMockLogger();
+      const _mockLogger = createMockLogger();
 
       // Mock storage adapter
-      const mockStorage: QueueStorageAdapter = {
+      const _mockStorage: QueueStorageAdapter = {
         enqueue: async () => {},
         dequeue: async () => null,
         peek: async () => null,
@@ -338,7 +338,7 @@ describe('Configuration Types', () => {
       };
 
       // Mock job types with schema
-      const mockJobTypes = {
+      const _mockJobTypes = {
         'test:job': {
           schema: {
             safeParse: (data: unknown) => ({ success: true as const, data }),

@@ -1,12 +1,13 @@
-# Docker Compose Test Infrastructure for Cache Plugin
+# Docker Compose Test Infrastructure for Redis Adapter Package
 #
 # This configuration provides an isolated Redis instance for integration testing.
-# The cache plugin tests run against this Redis instance to validate adapter behavior.
+# The adapter tests run against this Redis instance to validate all three adapters:
+# EventBus, Cache, and Queue.
 #
 # Usage:
-#   Start services:  docker-compose -f compose.test.yml up -d
-#   Stop services:   docker-compose -f compose.test.yml down
-#   Full cleanup:    docker-compose -f compose.test.yml down -v
+#   Start services:  docker-compose -f compose.test.yaml up -d
+#   Stop services:   docker-compose -f compose.test.yaml down
+#   Full cleanup:    docker-compose -f compose.test.yaml down -v
 #
 # Connection Details:
 #   Redis: redis://localhost:6379
@@ -15,11 +16,11 @@
 
 services:
   # ==========================================================================
-  # Redis Cache Service
+  # Redis Service
   # ==========================================================================
   redis:
     image: redis:8-alpine
-    container_name: blaize-cache-redis-test
+    container_name: blaize-adapter-redis-test
 
     ports:
       - '6379:6379'
@@ -32,6 +33,9 @@ services:
       retries: 5
       start_period: 10s
 
+    # Enable append-only file for data persistence during test runs
+    command: redis-server --appendonly yes
+
     # Memory limit for testing environment
     deploy:
       resources:
@@ -41,12 +45,12 @@ services:
     # Restart policy for CI environments
     restart: unless-stopped
 
-    networks: [blaize-cache-test]
+    networks: [blaize-adapter-redis-test]
 
 # ==========================================================================
 # Isolated Test Network
 # ==========================================================================
-# Prevents port conflicts with other plugin test environments
+# Prevents port conflicts with other package test environments
 networks:
-  blaize-cache-test:
+  blaize-adapter-redis-test:
     driver: bridge

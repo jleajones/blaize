@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
 import { EventEmitter } from 'node:events';
 
-import type { Context, QueryParams, Services, State } from '../../../blaize-types/src';
+import type { Context, QueryParams, Services, State } from '@blaize-types';
 
 /**
  * Configuration options for creating test contexts
@@ -241,8 +241,8 @@ export function createSSEMockContext<
   S extends State = State,
   Svc extends Services = Services,
   TQuery = QueryParams,
->(config: TestContextConfig = {}): Context<S, Svc, unknown, TQuery> {
-  return createMockContext<S, Svc, unknown, TQuery>({
+>(config: TestContextConfig = {}): Context<S, Svc, never, TQuery> {
+  return createMockContext<S, Svc, never, TQuery>({
     ...config,
     withEventEmitter: true,
     headers: {

@@ -1,6 +1,7 @@
 import { compose } from '../../middleware/compose';
 import { createRequestValidator, createResponseValidator } from '../validation';
 
+import type { TypedEventBus, EventSchemas } from '@blaize-types';
 import type { Context } from '@blaize-types/context';
 import type { BlaizeLogger } from '@blaize-types/logger';
 import type { RouteMethodOptions } from '@blaize-types/router';
@@ -12,7 +13,8 @@ export async function executeHandler(
   ctx: Context,
   routeOptions: RouteMethodOptions,
   params: Record<string, string>,
-  baseLogger: BlaizeLogger
+  baseLogger: BlaizeLogger,
+  eventBus: TypedEventBus<EventSchemas>
 ): Promise<void> {
   // Set up middleware chain
   const middleware = [...(routeOptions.middleware || [])];
@@ -32,21 +34,22 @@ export async function executeHandler(
   const handler = compose([...middleware]);
 
   // Execute the middleware chain
-  await handler(
+  await handler({
     ctx,
-    async () => {
+    next: async () => {
       const routeLogger = baseLogger.child({
         route: ctx.request.path,
         method: ctx.request.method,
       });
       // Execute the handler with the new argument style
-      const result = await routeOptions.handler(ctx, params, routeLogger);
+      const result = await routeOptions.handler({ ctx, params, logger: routeLogger, eventBus });
 
       // Handle the result if it wasn't already handled by the handler
       if (!ctx.response.sent && result !== undefined) {
         ctx.response.json(result);
       }
     },
-    baseLogger
-  );
+    logger: baseLogger,
+    eventBus,
+  });
 }

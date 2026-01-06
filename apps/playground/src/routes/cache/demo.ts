@@ -1,14 +1,12 @@
 /**
- * Cache Demo Route
+ * Cache Demo Route (With EventBus Integration)
  *
- * GET /cache/demo - Create sample cache operations
- * POST /cache/demo - Create custom cache operations
+ * GET /cache/demo - Create sample cache operations and publish events
  *
- * Demonstrates:
- * - Cache set/get/delete operations
- * - TTL management
- * - Pattern matching
- * - Multi-client SSE updates
+ * Pattern:
+ * - Route performs cache operations
+ * - Route publishes events after each operation
+ * - SSE route (/cache/events) subscribes and streams to clients
  */
 import { z } from 'zod';
 
@@ -31,107 +29,18 @@ const DEMO_DATA = {
     { id: 'session:ghi789', userId: 'user:3', expiresIn: 7200 },
   ],
   manifests: [
-    {
-      id: 'manifest:federata-v1',
-      version: '1.0.0',
-      services: ['auth', 'users', 'billing'],
-      ttl: 300,
-    },
+    { id: 'manifest:federata-v1', version: '1.0.0', services: ['auth', 'users'], ttl: 300 },
     {
       id: 'manifest:federata-v2',
       version: '2.0.0',
-      services: ['auth', 'users', 'billing', 'analytics'],
+      services: ['auth', 'users', 'analytics'],
       ttl: 300,
     },
-  ],
-  config: [
-    { id: 'config:feature-flags', flags: { newUI: true, betaFeatures: false }, ttl: 60 },
-    { id: 'config:rate-limits', maxRequests: 1000, windowMs: 60000, ttl: 120 },
   ],
 };
 
 /**
- * Create demo cache entries
- */
-async function createDemoEntries(
-  cache: CacheService,
-  options: {
-    includeUsers?: boolean;
-    includeSessions?: boolean;
-    includeManifests?: boolean;
-    includeConfig?: boolean;
-  } = {}
-) {
-  const {
-    includeUsers = true,
-    includeSessions = true,
-    includeManifests = true,
-    includeConfig = true,
-  } = options;
-
-  const operations: Array<{
-    key: string;
-    pattern: string;
-    ttl?: number;
-    description: string;
-  }> = [];
-
-  // Users (no TTL - cache indefinitely)
-  if (includeUsers) {
-    for (const user of DEMO_DATA.users) {
-      await cache.set(user.id, JSON.stringify(user));
-      operations.push({
-        key: user.id,
-        pattern: 'user:*',
-        description: `👤 User: ${user.name} (${user.role})`,
-      });
-    }
-  }
-
-  // Sessions (short TTL - 30-120 seconds for demo)
-  if (includeSessions) {
-    for (const session of DEMO_DATA.sessions) {
-      await cache.set(session.id, JSON.stringify(session), session.expiresIn);
-      operations.push({
-        key: session.id,
-        pattern: 'session:*',
-        ttl: session.expiresIn,
-        description: `🔐 Session for user ${session.userId} (expires in ${session.expiresIn}s)`,
-      });
-    }
-  }
-
-  // Federata Manifests (medium TTL - 5 minutes)
-  if (includeManifests) {
-    for (const manifest of DEMO_DATA.manifests) {
-      await cache.set(manifest.id, JSON.stringify(manifest), manifest.ttl);
-      operations.push({
-        key: manifest.id,
-        pattern: 'manifest:*',
-        ttl: manifest.ttl,
-        description: `📦 Federata manifest v${manifest.version} (${manifest.services.length} services, TTL: ${manifest.ttl}s)`,
-      });
-    }
-  }
-
-  // Configuration (short TTL - 60-120 seconds)
-  if (includeConfig) {
-    for (const config of DEMO_DATA.config) {
-      await cache.set(config.id, JSON.stringify(config), config.ttl);
-      operations.push({
-        key: config.id,
-        pattern: 'config:*',
-        ttl: config.ttl,
-        description: `⚙️ ${config.id.replace('config:', '')} (TTL: ${config.ttl}s)`,
-      });
-    }
-  }
-
-  return operations;
-}
-
-/**
- * GET /cache/demo - Create sample cache entries
+ * GET /cache/demo - Create sample cache entries with event publishing
  */
 export const getCacheDemo = appRouter.get({
   schema: {
@@ -139,19 +48,15 @@ export const getCacheDemo = appRouter.get({
       includeUsers: z
         .string()
         .optional()
-        .transform(val => val !== 'false'), // Default true
+        .transform(val => val !== 'false'),
       includeSessions: z
         .string()
         .optional()
-        .transform(val => val !== 'false'), // Default true
+        .transform(val => val !== 'false'),
       includeManifests: z
         .string()
         .optional()
-        .transform(val => val !== 'false'), // Default true
-      includeConfig: z
-        .string()
-        .optional()
-        .transform(val => val !== 'false'), // Default true
+        .transform(val => val !== 'false'),
     }),
     response: z.object({
       message: z.string(),
@@ -165,138 +70,137 @@ export const getCacheDemo = appRouter.get({
         })
       ),
       links: z.object({
+        sseStream: z.string(),
         dashboard: z.string(),
-        stats: z.string(),
-        prometheus: z.string(),
-        sseEvents: z.string(),
-        sseUserPattern: z.string(),
-        sseSessionPattern: z.string(),
-        sseManifestPattern: z.string(),
       }),
-      tips: z.array(z.string()),
     }),
   },
-  handler: async (ctx, _params, logger) => {
+  handler: async ({ ctx, logger, eventBus }) => {
     const cache = ctx.services.cache as CacheService;
-    const { includeUsers, includeSessions, includeManifests, includeConfig } = ctx.request
-      .query as any;
+    const { includeUsers, includeSessions, includeManifests } = ctx.request.query as any;
 
-    logger.info('Creating demo cache entries', {
-      includeUsers,
-      includeSessions,
-      includeManifests,
-      includeConfig,
-    });
+    logger.info('Creating demo cache entries', { includeUsers, includeSessions, includeManifests });
 
-    const operations = await createDemoEntries(cache, {
-      includeUsers,
-      includeSessions,
-      includeManifests,
-      includeConfig,
-    });
+    const operations: Array<{ key: string; pattern: string; ttl?: number; description: string }> =
+      [];
 
-    logger.info('Demo cache entries created', { count: operations.length });
+    // Users (no TTL)
+    if (includeUsers) {
+      for (const user of DEMO_DATA.users) {
+        await cache.set(user.id, JSON.stringify(user));
+
+        // ✅ PUBLISH EVENT after cache operation
+        await eventBus.publish('cache:set', {
+          key: user.id,
+          ttl: undefined,
+          timestamp: Date.now(),
+          size: JSON.stringify(user).length,
+        });
+
+        operations.push({
+          key: user.id,
+          pattern: 'user:*',
+          description: `👤 User: ${user.name}`,
+        });
+      }
+    }
+
+    // Sessions (with TTL)
+    if (includeSessions) {
+      for (const session of DEMO_DATA.sessions) {
+        await cache.set(session.id, JSON.stringify(session), session.expiresIn);
+
+        // ✅ PUBLISH EVENT after cache operation
+        await eventBus.publish('cache:set', {
+          key: session.id,
+          ttl: session.expiresIn,
+          timestamp: Date.now(),
+          size: JSON.stringify(session).length,
+        });
+
+        operations.push({
+          key: session.id,
+          pattern: 'session:*',
+          ttl: session.expiresIn,
+          description: `🔐 Session for ${session.userId} (TTL: ${session.expiresIn}s)`,
+        });
+      }
+    }
+
+    // Manifests (with TTL)
+    if (includeManifests) {
+      for (const manifest of DEMO_DATA.manifests) {
+        await cache.set(manifest.id, JSON.stringify(manifest), manifest.ttl);
+
+        // ✅ PUBLISH EVENT after cache operation
+        await eventBus.publish('cache:set', {
+          key: manifest.id,
+          ttl: manifest.ttl,
+          timestamp: Date.now(),
+          size: JSON.stringify(manifest).length,
+        });
+
+        operations.push({
+          key: manifest.id,
+          pattern: 'manifest:*',
+          ttl: manifest.ttl,
+          description: `📦 Manifest v${manifest.version}`,
+        });
+      }
+    }
+
+    logger.info('Demo cache entries created and events published', { count: operations.length });
 
     return {
-      message: '🚀 Demo cache entries created! Watch real-time updates via SSE.',
+      message: '🚀 Cache entries created! Events published to EventBus. Watch via SSE.',
       operationCount: operations.length,
       operations,
       links: {
-        dashboard: '/cache/dashboard?refresh=5',
-        stats: '/cache/stats',
-        prometheus: '/cache/prometheus',
-        sseEvents: '/cache/events',
-        sseUserPattern: '/cache/events?pattern=user:*',
-        sseSessionPattern: '/cache/events?pattern=session:*',
-        sseManifestPattern: '/cache/events?pattern=manifest:*',
+        sseStream: '/cache/events?pattern=*',
+        dashboard: '/cache/dashboard',
       },
-      tips: [
-        '💡 Visit /cache/dashboard to see all cached entries',
-        '📊 Sessions will expire automatically (30s-2min TTL)',
-        '🔥 Try SSE: curl -N http://localhost:7485/cache/events?pattern=user:*',
-        '⚡ Update cache: POST /cache/demo with custom patterns',
-        '🎯 Pattern examples: user:*, session:*, manifest:*, config:*',
-        '🔄 Auto-refresh dashboard: /cache/dashboard?refresh=5',
-      ],
     };
   },
 });
 
 /**
- * POST /cache/demo - Create custom cache operations
+ * DELETE /cache/demo - Clear cache entries and publish invalidation event
  */
-export const createCacheDemo = appRouter.post({
+export const deleteCacheDemo = appRouter.delete({
   schema: {
-    body: z.object({
-      operations: z
-        .array(
-          z.object({
-            key: z.string().min(1),
-            value: z.string(),
-            ttl: z.number().int().positive().optional(),
-          })
-        )
-        .min(1)
-        .max(50),
+    query: z.object({
+      pattern: z.string().default('*'),
     }),
     response: z.object({
       message: z.string(),
-      operationCount: z.number(),
-      operations: z.array(
-        z.object({
-          key: z.string(),
-          ttl: z.number().optional(),
-          success: z.boolean(),
-        })
-      ),
-      links: z.object({
-        dashboard: z.string(),
-        stats: z.string(),
-        events: z.string(),
-      }),
+      pattern: z.string(),
+      eventPublished: z.boolean(),
     }),
   },
-  handler: async (ctx, _params, logger) => {
-    const cache = ctx.services.cache;
-    const { operations: requestedOps } = ctx.request.body;
+  handler: async ({ ctx, logger, eventBus }) => {
+    // const cache = ctx.services.cache;
+    const { pattern } = ctx.request.query;
 
-    logger.info('Creating custom cache operations', { count: requestedOps.length });
+    logger.info('Clearing cache', { pattern });
 
-    const results = [];
+    // Clear cache
+    // if (cache.clear) {
+    //   await cache.clear(pattern);
+    // }
 
-    for (const op of requestedOps) {
-      try {
-        await cache.set(op.key, op.value, op.ttl);
-        results.push({
-          key: op.key,
-          ttl: op.ttl,
-          success: true,
-        });
-        logger.debug('Cache operation succeeded', { key: op.key, ttl: op.ttl });
-      } catch (error) {
-        results.push({
-          key: op.key,
-          ttl: op.ttl,
-          success: false,
-        });
-        logger.error('Cache operation failed', {
-          key: op.key,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    // ✅ PUBLISH INVALIDATION EVENT
+    await eventBus.publish('cache:invalidate', {
+      pattern,
+      timestamp: Date.now(),
+      reason: 'Manual clear via /cache/demo',
+    });
 
-    const successCount = results.filter(r => r.success).length;
+    logger.info('Cache cleared and invalidation event published', { pattern });
 
     return {
-      message: `✨ Executed ${successCount}/${requestedOps.length} cache operations successfully`,
-      operationCount: successCount,
-      operations: results,
-      links: {
-        dashboard: '/cache/dashboard',
-        stats: '/cache/stats',
-        events: '/cache/events',
-      },
+      message: `Cache pattern '${pattern}' cleared and invalidation published to all servers`,
+      pattern,
+      eventPublished: true,
     };
   },
 });

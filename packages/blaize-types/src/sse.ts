@@ -6,6 +6,8 @@ import { z } from 'zod';
  */
 
 import type { Context, QueryParams, Services, State } from './context';
+import type { EventSchemas, TypedEventBus } from './events';
+import type { SSEHandlerContext } from './handler-context';
 import type { BlaizeLogger } from './logger';
 import type { Middleware } from './middleware';
 import type { Infer } from './router';
@@ -377,52 +379,77 @@ export interface SSERouteSchema<
 }
 
 /**
- * SSE route handler function with stream as first parameter
- * This is the user-facing API - they write handlers with this signature
+ * SSE route handler function with context object
+ *
+ * @template TStream - SSE stream type (TypedSSEStream or SSEStreamExtended)
+ * @template TState - Application state type (accumulated from middleware)
+ * @template TServices - Application services type (accumulated from middleware)
+ * @template TQuery - Query parameters type (from schema validation)
+ * @template TParams - URL parameters type (from schema validation)
+ * @template TEvents - Event schemas for typed event bus
+ *
+ * @example
+ * ```typescript
+ * const handler: SSERouteHandler = async ({ stream, ctx, params, logger, eventBus }) => {
+ *   logger.info('SSE connection established', { userId: params.userId });
+ *
+ *   eventBus.subscribe('user:*', (event) => {
+ *     stream.send('user-event', event.data);
+ *   });
+ * };
+ * ```
  */
 export type SSERouteHandler<
   TStream extends SSEStreamExtended = SSEStreamExtended,
   TParams = Record<string, string>,
-  TQuery = Record<string, string | string[] | undefined>,
+  TQuery = QueryParams,
   TState extends State = State,
   TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
 > = (
-  stream: TStream,
-  ctx: Context<TState, TServices, never, TQuery>, // SSE never has body
-  params: TParams,
-  logger: BlaizeLogger
+  hc: SSEHandlerContext<TStream, TState, TServices, TQuery, TParams, TEvents>
 ) => Promise<void> | void;
 
 /**
- * SSE route creator with state and services support
- * Returns a higher-order function to handle generics properly
+ * SSE route creator
  *
- * The return type matches what the implementation actually returns:
- * - A route object with a GET property
- * - The GET property contains the wrapped handler and schemas
- * - The wrapped handler has the standard (ctx, params) signature expected by the router
+ * @template TState - Application state type
+ * @template TServices - Application services type
+ * @template TEvents - Event schemas for typed event bus
  */
 export type CreateSSERoute = <
   TState extends State = State,
   TServices extends Services = Services,
+  TEvents extends EventSchemas = EventSchemas,
 >() => <P = never, Q = never, E = never>(config: {
   schema?: {
     params?: P extends never ? never : P;
     query?: Q extends never ? never : Q;
-    events?: E extends never ? never : E; // SSE-specific event schemas
+    events?: E extends never ? never : E;
   };
   handler: SSERouteHandler<
     E extends Record<string, z.ZodType> ? TypedSSEStream<E> : SSEStreamExtended,
     P extends z.ZodType ? Infer<P> : Record<string, string>,
     Q extends z.ZodType ? Infer<Q> : QueryParams,
     TState,
-    TServices
+    TServices,
+    TEvents
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
 }) => {
   GET: {
-    handler: (ctx: any, params: any, logger: BlaizeLogger) => Promise<void>; // Wrapped handler with standard signature
+    handler: ({
+      ctx,
+      params,
+      logger,
+      eventBus,
+    }: {
+      ctx: Context<TState, TServices, never, any>;
+      params: any;
+      logger: BlaizeLogger;
+      eventBus: TypedEventBus<TEvents>;
+    }) => Promise<void>;
     schema?: {
       params?: P extends never ? undefined : P;
       query?: Q extends never ? undefined : Q;

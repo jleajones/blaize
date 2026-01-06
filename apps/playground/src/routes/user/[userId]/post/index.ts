@@ -25,7 +25,7 @@ export const getUserPosts = appRouter.get({
     }),
     // Note: Response schema is not defined here becuase the handler returns HTML directly
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params }) => {
     ctx.services.metrics.increment('get_user_posts_called');
     const user = {
       id: params.userId,

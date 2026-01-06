@@ -2,6 +2,8 @@
  * Tests for metrics plugin factory
  */
 
+import { createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
+
 import { createMetricsPlugin } from './index';
 
 import type { MetricsPluginConfig, MetricsPluginState, MetricsPluginServices } from './types';
@@ -237,7 +239,12 @@ describe('createMetricsPlugin', () => {
       const middleware = mockServer.use.mock.calls[0]![0];
       const mockContext = createMockContext('/api/test', 'GET');
 
-      await middleware.execute(mockContext, async () => {});
+      await middleware.execute({
+        ctx: mockContext,
+        next: async () => {},
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       expect(mockContext.services.metrics).toBeDefined();
     });
@@ -252,7 +259,12 @@ describe('createMetricsPlugin', () => {
       const middleware = mockServer.use.mock.calls[0]![0];
       const mockContext = createMockContext('/api/test', 'GET');
 
-      await middleware.execute(mockContext, async () => {});
+      await middleware.execute({
+        ctx: mockContext,
+        next: async () => {},
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       const { MetricsCollectorImpl } = await import('./collector');
       const collector = (MetricsCollectorImpl as any).mock.results[0]?.value;
@@ -279,7 +291,12 @@ describe('createMetricsPlugin', () => {
       const middleware = mockServer.use.mock.calls[0]![0];
       const mockContext = createMockContext('/health', 'GET');
 
-      await middleware.execute(mockContext, async () => {});
+      await middleware.execute({
+        ctx: mockContext,
+        next: async () => {},
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
 
       const { MetricsCollectorImpl } = await import('./collector');
       const collector = (MetricsCollectorImpl as any).mock.results[0]?.value;
@@ -301,8 +318,13 @@ describe('createMetricsPlugin', () => {
       (error as any).status = 500;
 
       await expect(
-        middleware.execute(mockContext, async () => {
-          throw error;
+        middleware.execute({
+          ctx: mockContext,
+          next: async () => {
+            throw error;
+          },
+          logger: createMockLogger(),
+          eventBus: createMockEventBus(),
         })
       ).rejects.toThrow('Test error');
 
@@ -387,13 +409,18 @@ describe('createMetricsPlugin', () => {
       const middleware = mockServer.use.mock.calls[0]![0];
       const mockContext = createMockContext('/api/test', 'POST');
 
-      await middleware.execute(mockContext, async () => {
-        const { metrics } = mockContext.services!;
-        metrics.increment('orders.created');
-        metrics.gauge('queue.size', 42);
-        metrics.histogram('order.value', 99.99);
-        const stopTimer = metrics.startTimer('processing');
-        stopTimer();
+      await middleware.execute({
+        ctx: mockContext,
+        next: async () => {
+          const { metrics } = mockContext.services!;
+          metrics.increment('orders.created');
+          metrics.gauge('queue.size', 42);
+          metrics.histogram('order.value', 99.99);
+          const stopTimer = metrics.startTimer('processing');
+          stopTimer();
+        },
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
       });
 
       const { MetricsCollectorImpl } = await import('./collector');

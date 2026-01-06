@@ -5,6 +5,7 @@
  * They use Vitest's expectTypeOf to ensure types are properly defined.
  */
 
+import type { EventSchemas, TypedEventBus } from '@blaize-types';
 import type { Context } from '@blaize-types/context';
 import type { BlaizeLogger } from '@blaize-types/logger';
 import type {
@@ -17,21 +18,22 @@ import type {
 describe('Middleware Types', () => {
   describe('MiddlewareFunction', () => {
     it('should accept 3 parameters: ctx, next, logger', () => {
-      const middleware: MiddlewareFunction = (ctx, next, logger) => {
+      const middleware: MiddlewareFunction = ({ ctx, next, logger, eventBus }) => {
         expectTypeOf(ctx).toEqualTypeOf<Context>();
         expectTypeOf(next).toEqualTypeOf<NextFunction>();
         expectTypeOf(logger).toEqualTypeOf<BlaizeLogger>();
+        expectTypeOf(eventBus).toEqualTypeOf<TypedEventBus<EventSchemas>>();
       };
 
       expectTypeOf(middleware).toEqualTypeOf<MiddlewareFunction>();
     });
 
     it('should return Promise<void> or void', () => {
-      const asyncMiddleware: MiddlewareFunction = async (ctx, next, _logger) => {
+      const asyncMiddleware: MiddlewareFunction = async ({ next }) => {
         await next();
       };
 
-      const syncMiddleware: MiddlewareFunction = (_ctx, _next, _logger) => {
+      const syncMiddleware: MiddlewareFunction = () => {
         // sync
       };
 
@@ -67,7 +69,7 @@ describe('Middleware Types', () => {
     it('should have required properties', () => {
       const middleware: Middleware = {
         name: 'test',
-        execute: (_ctx, _next, _logger) => {},
+        execute: () => {},
         debug: false,
       };
 
@@ -79,7 +81,7 @@ describe('Middleware Types', () => {
     it('should have optional skip function', () => {
       const middleware: Middleware = {
         name: 'test',
-        execute: (_ctx, _next, _logger) => {},
+        execute: () => {},
         debug: false,
         skip: ctx => ctx.request.method === 'GET',
       };
@@ -93,7 +95,7 @@ describe('Middleware Types', () => {
 
       const middleware: Middleware<CustomState, CustomServices> = {
         name: 'test',
-        execute: (_ctx, _next, _logger) => {},
+        execute: () => {},
         debug: false,
       };
 
@@ -105,14 +107,14 @@ describe('Middleware Types', () => {
   describe('MiddlewareOptions interface', () => {
     it('should require handler function', () => {
       const options: MiddlewareOptions = {
-        handler: (_ctx, _next, _logger) => {},
+        handler: () => {},
       };
       expectTypeOf(options.handler).toEqualTypeOf<MiddlewareFunction>();
     });
     it('should have optional properties', () => {
       const options: MiddlewareOptions = {
         name: 'test',
-        handler: (_ctx, _next, _logger) => {},
+        handler: () => {},
         skip: _ctx => false,
         debug: true,
       };
@@ -125,7 +127,7 @@ describe('Middleware Types', () => {
 
     it('should allow optional properties to be omitted', () => {
       const minimalOptions: MiddlewareOptions = {
-        handler: (_ctx, _next, _logger) => {},
+        handler: () => {},
       };
       expectTypeOf(minimalOptions).toBeObject();
       expectTypeOf(minimalOptions.handler).toEqualTypeOf<MiddlewareFunction>();

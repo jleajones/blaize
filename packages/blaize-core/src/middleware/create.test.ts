@@ -1,16 +1,22 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 import type { MockLogger } from '@blaizejs/testing-utils';
 
 import { create, serviceMiddleware, stateMiddleware } from './create';
 
-import type { Context } from '@blaize-types/context';
-import type { MiddlewareOptions, MiddlewareFunction } from '@blaize-types/middleware';
+import type {
+  EventSchemas,
+  TypedEventBus,
+  Context,
+  MiddlewareOptions,
+  MiddlewareFunction,
+} from '@blaize-types';
 
 describe('createMiddleware', () => {
   let mockContext: Context;
   let mockNext: ReturnType<typeof vi.fn>;
   let mockLogger: MockLogger;
+  let mockEventBus: TypedEventBus<EventSchemas>;
 
   beforeEach(() => {
     mockContext = {
@@ -19,11 +25,12 @@ describe('createMiddleware', () => {
     } as Context;
     mockNext = vi.fn(async () => {});
     mockLogger = createMockLogger();
+    mockEventBus = createMockEventBus();
   });
 
   // Helper to create a test middleware function with 3 parameters
   function createTestMiddlewareFunction(): MiddlewareFunction {
-    return vi.fn((_ctx, next, _logger) => next()); // ← Now has 3 parameters
+    return vi.fn(({ next }) => next()); // ← Now has 3 parameters
   }
 
   // Helper to create test middleware options with all fields
@@ -75,16 +82,26 @@ describe('createMiddleware', () => {
   });
 
   test('middleware handler receives logger parameter', async () => {
-    const handlerSpy = vi.fn(async (ctx, next, logger) => {
+    const handlerSpy = vi.fn(async ({ next, logger }) => {
       expect(logger).toBeDefined();
       await next();
     });
 
     const middleware = create({ name: 'test', handler: handlerSpy });
 
-    await middleware.execute(mockContext, mockNext, mockLogger);
+    await middleware.execute({
+      ctx: mockContext,
+      next: mockNext,
+      logger: mockLogger,
+      eventBus: mockEventBus,
+    });
 
-    expect(handlerSpy).toHaveBeenCalledWith(mockContext, mockNext, mockLogger);
+    expect(handlerSpy).toHaveBeenCalledWith({
+      ctx: mockContext,
+      next: mockNext,
+      logger: mockLogger,
+      eventBus: mockEventBus,
+    });
   });
 
   test('creates middleware with skip function', () => {
@@ -98,39 +115,59 @@ describe('createMiddleware', () => {
   });
 
   test('function shorthand works with 3 parameters', async () => {
-    const handler = vi.fn(async (_ctx, next, logger) => {
+    const handler = vi.fn(async ({ next, logger }) => {
       logger.info('test');
       await next();
     });
 
     const middleware = create(handler);
-    await middleware.execute(mockContext, mockNext, mockLogger);
+    await middleware.execute({
+      ctx: mockContext,
+      next: mockNext,
+      logger: mockLogger,
+      eventBus: mockEventBus,
+    });
 
-    expect(handler).toHaveBeenCalledWith(mockContext, mockNext, mockLogger);
+    expect(handler).toHaveBeenCalledWith({
+      ctx: mockContext,
+      next: mockNext,
+      logger: mockLogger,
+      eventBus: mockEventBus,
+    });
     expect(mockLogger.info).toHaveBeenCalledWith('test');
   });
 
   test('stateMiddleware helper works with logger', async () => {
-    const middleware = stateMiddleware<{ value: string }>(async (ctx, next, logger) => {
+    const middleware = stateMiddleware<{ value: string }>(async ({ ctx, next, logger }) => {
       ctx.state.value = 'test';
       logger.debug('Setting state');
       await next();
     });
 
-    await middleware.execute(mockContext, mockNext, mockLogger);
+    await middleware.execute({
+      ctx: mockContext,
+      next: mockNext,
+      logger: mockLogger,
+      eventBus: mockEventBus,
+    });
 
     expect((mockContext.state as any).value).toBe('test');
     expect(mockLogger.debug).toHaveBeenCalledWith('Setting state');
   });
 
   test('serviceMiddleware helper works with logger', async () => {
-    const middleware = serviceMiddleware<{ service: string }>(async (ctx, next, logger) => {
+    const middleware = serviceMiddleware<{ service: string }>(async ({ ctx, next, logger }) => {
       (ctx.services as any).service = 'test-service';
       logger.debug('Adding service');
       await next();
     });
 
-    await middleware.execute(mockContext, mockNext, mockLogger);
+    await middleware.execute({
+      ctx: mockContext,
+      next: mockNext,
+      logger: mockLogger,
+      eventBus: mockEventBus,
+    });
 
     expect((mockContext.services as any).service).toBe('test-service');
     expect(mockLogger.debug).toHaveBeenCalledWith('Adding service');
@@ -140,7 +177,7 @@ describe('createMiddleware', () => {
     test('preserves state type parameter', () => {
       type TestState = { userId: string };
 
-      const middleware = create<TestState, {}>(async (ctx, next, _logger) => {
+      const middleware = create<TestState, {}>(async ({ ctx, next }) => {
         ctx.state.userId = '123';
         await next();
       });
@@ -151,7 +188,7 @@ describe('createMiddleware', () => {
     test('preserves service type parameter', () => {
       type TestServices = { db: { query: () => void } };
 
-      const middleware = create<{}, TestServices>(async (_ctx, next, _logger) => {
+      const middleware = create<{}, TestServices>(async ({ next }) => {
         await next();
       });
 
@@ -186,7 +223,7 @@ describe('createMiddleware', () => {
     });
 
     test('function shorthand creates anonymous middleware', () => {
-      const handler = vi.fn((_ctx, next, _logger) => next());
+      const handler = vi.fn(({ next }) => next());
       const middleware = create(handler);
 
       expect(middleware.name).toBe('anonymous');

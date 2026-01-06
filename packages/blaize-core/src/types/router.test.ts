@@ -11,8 +11,8 @@ import type { RouteHandler, HttpMethod } from '@blaize-types/router';
 
 describe('Router Types', () => {
   describe('RouteHandler', () => {
-    it('should accept 3 parameters: ctx, params, logger', () => {
-      const handler: RouteHandler = (ctx, params, logger) => {
+    it('should accept 1 handler context parameters w/ ctx, params, logger', () => {
+      const handler: RouteHandler = ({ ctx, params, logger }) => {
         expectTypeOf(ctx).toEqualTypeOf<Context>();
         expectTypeOf(params).toEqualTypeOf<Record<string, string>>();
         expectTypeOf(logger).toEqualTypeOf<BlaizeLogger>();
@@ -25,15 +25,11 @@ describe('Router Types', () => {
     it('should return Promise<TResponse> or TResponse', () => {
       type UserResponse = { user: { id: string; name: string } };
 
-      const asyncHandler: RouteHandler<any, any, any, UserResponse> = async (
-        _ctx,
-        _params,
-        _logger
-      ) => {
+      const asyncHandler: RouteHandler<any, any, any, UserResponse> = async () => {
         return { user: { id: '1', name: 'Test' } };
       };
 
-      const syncHandler: RouteHandler<any, any, any, UserResponse> = (_ctx, _params, _logger) => {
+      const syncHandler: RouteHandler<any, any, any, UserResponse> = () => {
         return { user: { id: '1', name: 'Test' } };
       };
 
@@ -47,11 +43,10 @@ describe('Router Types', () => {
       type UserBody = { name: string; email: string };
       type UserResponse = { user: { id: string; name: string; email: string } };
 
-      const handler: RouteHandler<UserParams, UserQuery, UserBody, UserResponse> = (
-        ctx,
+      const handler: RouteHandler<UserParams, UserQuery, UserBody, UserResponse> = ({
         params,
-        _logger
-      ) => {
+        ctx,
+      }) => {
         expectTypeOf(params).toEqualTypeOf<UserParams>();
         expectTypeOf(params.userId).toEqualTypeOf<string>();
 
@@ -73,11 +68,7 @@ describe('Router Types', () => {
       type CustomState = { userId: string; sessionId: string };
       type CustomServices = { db: { query: () => void }; cache: { get: () => void } };
 
-      const handler: RouteHandler<any, any, any, any, CustomState, CustomServices> = (
-        ctx,
-        _params,
-        _logger
-      ) => {
+      const handler: RouteHandler<any, any, any, any, CustomState, CustomServices> = ({ ctx }) => {
         expectTypeOf(ctx.state).toEqualTypeOf<CustomState>();
         expectTypeOf(ctx.services).toEqualTypeOf<CustomServices>();
 

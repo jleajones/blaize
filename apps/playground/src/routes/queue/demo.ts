@@ -246,7 +246,7 @@ export const GET = appRouter.get({
       tips: z.array(z.string()),
     }),
   },
-  handler: async (ctx, _params, logger) => {
+  handler: async ({ ctx, logger }) => {
     const queue = ctx.services.queue as QueueService;
     const { includeUnreliable, includeLongRunning } = ctx.request.query as any;
 
@@ -316,7 +316,7 @@ export const POST = appRouter.post({
       }),
     }),
   },
-  handler: async (ctx, _params, logger) => {
+  handler: async ({ ctx, logger }) => {
     const queue = ctx.services.queue as QueueService;
     const { count, includeUnreliable, includeLongRunning } = ctx.request.body;
 

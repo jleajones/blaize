@@ -16,7 +16,7 @@ export default appRouter.get({
       q: z.string().optional(),
     }),
   },
-  handler: async ctx => {
+  handler: async ({ ctx }) => {
     const { q } = ctx.request.query;
     if (q) {
       // Filter users based on query

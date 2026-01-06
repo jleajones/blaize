@@ -178,12 +178,15 @@ export type JobSSEStream = TypedSSEStream<typeof jobEventsSchema>;
  * @param params - Route parameters (unused, job ID comes from query)
  * @param logger - BlaizeJS logger instance
  */
-export const jobStreamHandler = async (
-  stream: JobSSEStream,
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<void> => {
+export const jobStreamHandler = async ({
+  stream,
+  ctx,
+  logger,
+}: {
+  stream: JobSSEStream;
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<void> => {
   // Get queue service from context
   const queue = getQueueServiceOrThrow(ctx);
 
@@ -417,11 +420,13 @@ interface QueueStatusResponse {
  * @param logger - BlaizeJS logger instance
  * @returns Queue status response
  */
-export const queueStatusHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<QueueStatusResponse> => {
+export const queueStatusHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<QueueStatusResponse> => {
   const queue = getQueueServiceOrThrow(ctx);
   const { queueName, status, limit } = ctx.request.query as unknown as QueueStatusQuery;
 
@@ -475,11 +480,13 @@ export const queueStatusHandler = async (
  * @param params - Route parameters (unused)
  * @param logger - BlaizeJS logger instance
  */
-export const queuePrometheusHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<void> => {
+export const queuePrometheusHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<void> => {
   const queue = getQueueServiceOrThrow(ctx);
 
   logger.debug('Generating Prometheus metrics');
@@ -524,11 +531,13 @@ export const queuePrometheusHandler = async (
  * @param params - Route parameters (unused)
  * @param logger - BlaizeJS logger instance
  */
-export const queueDashboardHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<void> => {
+export const queueDashboardHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<void> => {
   const queue = getQueueServiceOrThrow(ctx);
   const { queueName, refresh } = ctx.request.query as unknown as QueueDashboardQuery;
   const refreshInterval = refresh ? parseInt(refresh, 10) : undefined;
@@ -598,11 +607,13 @@ interface CreateJobResponse {
  * @param logger - BlaizeJS logger instance
  * @returns Created job response
  */
-export const createJobHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<CreateJobResponse> => {
+export const createJobHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<CreateJobResponse> => {
   const queue = getQueueServiceOrThrow(ctx);
   const body = ctx.request.body as CreateJobBody;
 
@@ -682,11 +693,13 @@ interface CancelJobResponse {
  * @returns Cancel job response
  * @throws NotFoundError if job not found or already completed
  */
-export const cancelJobHandler = async (
-  ctx: Context,
-  params: Record<string, string>,
-  logger: BlaizeLogger
-): Promise<CancelJobResponse> => {
+export const cancelJobHandler = async ({
+  ctx,
+  logger,
+}: {
+  ctx: Context;
+  logger: BlaizeLogger;
+}): Promise<CancelJobResponse> => {
   const queue = getQueueServiceOrThrow(ctx);
   const body = ctx.request.body as CancelJobBody;
 

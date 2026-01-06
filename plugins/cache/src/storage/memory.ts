@@ -201,6 +201,90 @@ export class MemoryAdapter implements CacheAdapter {
   }
 
   /**
+   * List keys matching a pattern
+   *
+   * Supports glob patterns with * wildcard.
+   * Does not include expired keys.
+   *
+   * @param pattern - Glob pattern (default: '*' for all keys)
+   * @returns Array of matching keys
+   */
+  async keys(pattern: string = '*'): Promise<string[]> {
+    const allKeys = Array.from(this.store.keys());
+
+    // Filter out expired keys
+    const validKeys: string[] = [];
+    for (const key of allKeys) {
+      const entry = this.store.get(key);
+      if (entry && (entry.expiresAt === 0 || Date.now() < entry.expiresAt)) {
+        validKeys.push(key);
+      }
+    }
+
+    // If pattern is *, return all valid keys
+    if (pattern === '*') {
+      return validKeys;
+    }
+
+    // Convert glob pattern to regex
+    const regex = this.globToRegex(pattern);
+    return validKeys.filter(key => regex.test(key));
+  }
+
+  /**
+   * Clear keys matching a pattern
+   *
+   * @param pattern - Glob pattern (default: '*' for all keys)
+   * @returns Number of keys deleted
+   */
+  async clear(pattern: string = '*'): Promise<number> {
+    const keysToDelete = await this.keys(pattern);
+
+    for (const key of keysToDelete) {
+      await this.delete(key);
+    }
+
+    return keysToDelete.length;
+  }
+
+  /**
+   * Get TTL for a key
+   *
+   * @param key - Cache key
+   * @returns TTL in seconds, null if no expiry or key doesn't exist
+   */
+  async getTTL(key: string): Promise<number | null> {
+    const entry = this.store.get(key);
+
+    if (!entry || entry.expiresAt === 0) {
+      return null;
+    }
+
+    const remainingMs = entry.expiresAt - Date.now();
+
+    if (remainingMs <= 0) {
+      return null;
+    }
+
+    return Math.ceil(remainingMs / 1000);
+  }
+
+  /**
+   * Convert glob pattern to regex
+   *
+   * @param pattern - Glob pattern (e.g., 'user:*')
+   * @returns Regular expression
+   */
+  private globToRegex(pattern: string): RegExp {
+    const escaped = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+      .replace(/\*/g, '.*') // * becomes .*
+      .replace(/\?/g, '.'); // ? becomes .
+
+    return new RegExp(`^${escaped}$`);
+  }
+
+  /**
    * Get adapter statistics
    *
    * @returns Cache statistics including hits, misses, evictions, memory usage

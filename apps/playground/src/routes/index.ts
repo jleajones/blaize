@@ -8,7 +8,7 @@ export const getHello = appRouter.get({
       name: z.string(),
     }),
   },
-  handler: async (ctx, params, logger) => {
+  handler: async ({ ctx, logger }) => {
     ctx.services.queue.add('emails', 'sendGreetingEmail', { email: 'testing@test.com' });
     logger.info('Handling hello route');
     return {
@@ -26,7 +26,7 @@ export const postHello = appRouter.post({
       name: z.string(),
     }),
   },
-  handler: async (ctx, params, logger) => {
+  handler: async ({ ctx, params, logger }) => {
     logger.info('Handling hello POST route', params);
     ctx.services.queue.add('emails', 'sendGreetingEmail', { email: ctx.request.body.name });
     return {

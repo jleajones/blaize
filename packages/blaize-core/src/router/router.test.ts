@@ -44,7 +44,7 @@ vi.mock('./utils/matching-helpers', () => ({
   updateRouteInMatcher: vi.fn(),
 }));
 
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 
 import { findRoutes } from './discovery';
 import { clearFileCache } from './discovery/cache';
@@ -67,6 +67,7 @@ import {
 import { ErrorType } from '../../../blaize-types/src';
 import { NotFoundError } from '../errors/not-found-error';
 
+import type { TypedEventBus, EventSchemas } from '@blaize-types';
 import type { Context } from '@blaize-types/context';
 import type { RouteMethodOptions, Route, RouterOptions } from '@blaize-types/router';
 
@@ -83,6 +84,7 @@ describe('Router', () => {
   let mockRoutes: Route[];
   let mockContext: Context;
   let mockWatcher: any;
+  let mockEventBus: TypedEventBus<EventSchemas>;
 
   beforeEach(() => {
     // Setup fake timers
@@ -174,6 +176,8 @@ describe('Router', () => {
 
     // Ensure executeHandler is properly mocked
     (executeHandler as any).mockImplementation(() => Promise.resolve());
+
+    mockEventBus = createMockEventBus();
   });
 
   afterEach(() => {
@@ -224,7 +228,7 @@ describe('Router', () => {
     });
 
     // Force initialization by handling a request
-    await router.handleRequest(mockContext, mockLogger);
+    await router.handleRequest(mockContext, mockLogger, mockEventBus);
 
     // Assert
     expect(watchRoutes).toHaveBeenCalled();
@@ -275,7 +279,7 @@ describe('Router', () => {
     mockMatcher.match.mockReturnValue(matchResult);
 
     // Act
-    await router.handleRequest(mockContext, mockLogger);
+    await router.handleRequest(mockContext, mockLogger, mockEventBus);
 
     // Assert
     expect(mockMatcher.match).toHaveBeenCalledWith('/users', 'PUT');
@@ -284,7 +288,8 @@ describe('Router', () => {
       mockContext,
       matchResult.route,
       matchResult.params,
-      mockLogger
+      mockLogger,
+      mockEventBus
     );
   });
 
@@ -299,11 +304,13 @@ describe('Router', () => {
     mockMatcher.match.mockReturnValue(null);
 
     // Act & Assert - Router should throw error, not handle it manually
-    await expect(router.handleRequest(mockContext, mockLogger)).rejects.toThrow(NotFoundError);
+    await expect(router.handleRequest(mockContext, mockLogger, mockEventBus)).rejects.toThrow(
+      NotFoundError
+    );
 
     // Verify the thrown error has correct properties
     try {
-      await router.handleRequest(mockContext, mockLogger);
+      await router.handleRequest(mockContext, mockLogger, mockEventBus);
     } catch (error) {
       expect(error).toBeInstanceOf(NotFoundError);
       expect((error as NotFoundError).type).toBe(ErrorType.NOT_FOUND);
@@ -327,7 +334,7 @@ describe('Router', () => {
     });
 
     // Act
-    await router.handleRequest(mockContext, mockLogger);
+    await router.handleRequest(mockContext, mockLogger, mockEventBus);
 
     // Assert - Current implementation uses manual response (should be changed)
     expect(mockContext.response.status).toHaveBeenCalledWith(405);
@@ -354,14 +361,17 @@ describe('Router', () => {
     (executeHandler as any).mockImplementation(() => Promise.reject(mockError));
 
     // Act & Assert - Router should let error bubble up, not catch it
-    await expect(router.handleRequest(mockContext, mockLogger)).rejects.toThrow('Handler failed');
+    await expect(router.handleRequest(mockContext, mockLogger, mockEventBus)).rejects.toThrow(
+      'Handler failed'
+    );
 
     // Verify executeHandler was called
     expect(executeHandler).toHaveBeenCalledWith(
       mockContext,
       matchResult.route,
       matchResult.params,
-      mockLogger
+      mockLogger,
+      mockEventBus
     );
   });
 
@@ -378,7 +388,7 @@ describe('Router', () => {
     mockMatcher.match.mockReturnValue(matchResult);
 
     // Act
-    await router.handleRequest(mockContext, mockLogger);
+    await router.handleRequest(mockContext, mockLogger, mockEventBus);
 
     // Assert
     expect(mockContext.request.params).toEqual({ userId: '123', orgId: '456' });
@@ -386,7 +396,8 @@ describe('Router', () => {
       mockContext,
       matchResult.route,
       matchResult.params,
-      mockLogger
+      mockLogger,
+      mockEventBus
     );
   });
 
@@ -408,7 +419,7 @@ describe('Router', () => {
     expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
 
     // Additional test: handling request should work without additional initialization
-    await router.handleRequest(mockContext, mockLogger);
+    await router.handleRequest(mockContext, mockLogger, mockEventBus);
 
     // Should not have called loadInitialRoutesParallel again
     expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(1);
@@ -628,7 +639,7 @@ describe('Router', () => {
       const router = createRouter({ routesDir: './routes', watchMode: true });
 
       // Force initialization to set up watchers
-      await router.handleRequest(mockContext, mockLogger);
+      await router.handleRequest(mockContext, mockLogger, mockEventBus);
 
       // Act & Assert
       expect(router.close).toBeInstanceOf(Function);

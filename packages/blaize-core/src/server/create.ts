@@ -1,11 +1,14 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import EventEmitter from 'node:events';
 
 import { setRuntimeConfig } from '../config';
 import { startServer } from './start';
 import { registerSignalHandlers, stopServer } from './stop';
 import { validateServerOptions } from './validation';
+import { MemoryEventBus } from '../events/memory-event-bus';
+import { createTypedEventBus } from '../events/typed-event-bus';
 import { configureGlobalLogger, createLogger } from '../logger';
 import { createPluginLifecycleManager } from '../plugins/lifecycle';
 import { validatePlugin } from '../plugins/validation';
@@ -36,6 +39,7 @@ export const DEFAULT_OPTIONS: ServerOptions = {
   http2: {
     enabled: true,
   },
+  eventSchemas: {},
   middleware: [],
   plugins: [],
   bodyLimits: {
@@ -66,6 +70,7 @@ function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
       keyFile: options.http2?.keyFile,
       certFile: options.http2?.certFile,
     },
+    eventSchemas: options.eventSchemas || DEFAULT_OPTIONS.eventSchemas,
     middleware: options.middleware ?? DEFAULT_OPTIONS.middleware,
     plugins: options.plugins ?? DEFAULT_OPTIONS.plugins,
     correlation: options.correlation,
@@ -93,6 +98,7 @@ function createServerOptions(options: ServerOptionsInput = {}): ServerOptions {
         }
       : DEFAULT_OPTIONS.bodyLimits,
     logging: options.logging || DEFAULT_OPTIONS.logging,
+    serverId: options.serverId,
   };
   try {
     const validated = validateServerOptions(mergedOptions);
@@ -257,7 +263,17 @@ export function create<
   const validatedOptions = createServerOptions(options);
 
   // Extract options and prepare initial components
-  const { port, host, middleware, plugins, cors, bodyLimits } = validatedOptions;
+  const {
+    port,
+    host,
+    middleware,
+    plugins,
+    cors,
+    bodyLimits,
+    serverId: configServerId,
+  } = validatedOptions;
+
+  const serverId = configServerId || randomUUID();
 
   // Create server logger (internal only, not middleware)
   const serverLogger = createLogger(validatedOptions.logging || {});
@@ -278,6 +294,14 @@ export function create<
     continueOnError: true,
   });
   const events = new EventEmitter();
+
+  // Create MemoryEventBus with serverId and logger
+  const baseBus = new MemoryEventBus(serverId, serverLogger);
+  const eventBus = createTypedEventBus(
+    baseBus,
+    { schemas: validatedOptions.eventSchemas },
+    serverLogger
+  );
 
   // Type alias for the accumulated types
   type AccumulatedState = ComposeMiddlewareStates<TMw> & ComposePluginStates<TP>;
@@ -302,6 +326,8 @@ export function create<
     close: async () => {},
     router,
     pluginManager,
+    eventBus,
+    serverId,
   };
 
   // Add methods to the server instance

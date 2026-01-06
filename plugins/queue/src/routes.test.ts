@@ -267,11 +267,6 @@ describe('jobStreamQuerySchema', () => {
 // ============================================================================
 
 describe('jobStreamHandler signature', () => {
-  it('should have 4-param signature (stream, ctx, params, logger)', () => {
-    // Function should accept exactly 4 parameters
-    expect(jobStreamHandler.length).toBe(4);
-  });
-
   it('should be an async function', () => {
     // Async functions return Promise
     expect(jobStreamHandler.constructor.name).toBe('AsyncFunction');
@@ -291,7 +286,7 @@ describe('jobStreamHandler error handling', () => {
     );
     const logger = createMockLogger();
 
-    await expect(jobStreamHandler(stream, ctx, {}, logger)).rejects.toThrow(
+    await expect(jobStreamHandler({ stream, ctx, logger })).rejects.toThrow(
       'Queue service unavailable'
     );
   });
@@ -302,7 +297,7 @@ describe('jobStreamHandler error handling', () => {
     const ctx = createMockContext({ jobId: '550e8400-e29b-41d4-a716-446655440000' }, queueService);
     const logger = createMockLogger();
 
-    await expect(jobStreamHandler(stream, ctx, {}, logger)).rejects.toThrow(
+    await expect(jobStreamHandler({ stream, ctx, logger })).rejects.toThrow(
       'Job 550e8400-e29b-41d4-a716-446655440000 not found'
     );
 
@@ -317,7 +312,7 @@ describe('jobStreamHandler error handling', () => {
     const logger = createMockLogger();
 
     try {
-      await jobStreamHandler(stream, ctx, {}, logger);
+      await jobStreamHandler({ stream, ctx, logger });
       expect.fail('Should have thrown');
     } catch (error: any) {
       expect(error.message).toContain(jobId);
@@ -362,7 +357,7 @@ describe('jobStreamHandler progress events', () => {
     const ctx = createMockContext({ jobId }, queueService);
 
     // Start handler (non-blocking)
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
 
     // Start queue processing
     await queueService.startAll();
@@ -398,7 +393,7 @@ describe('jobStreamHandler progress events', () => {
     const jobId = await queueService.add('default', 'progress:message', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -435,7 +430,7 @@ describe('jobStreamHandler completion events', () => {
     const jobId = await queueService.add('default', 'complete:test', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -458,7 +453,7 @@ describe('jobStreamHandler completion events', () => {
     const jobId = await queueService.add('default', 'complete:close', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -500,7 +495,7 @@ describe('jobStreamHandler failure events', () => {
     );
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -534,7 +529,7 @@ describe('jobStreamHandler failure events', () => {
     );
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -563,7 +558,7 @@ describe('jobStreamHandler failure events', () => {
     );
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -607,7 +602,7 @@ describe('jobStreamHandler cancellation events', () => {
     const ctx = createMockContext({ jobId }, queueService);
 
     // Subscribe to job events via handler (non-blocking)
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
 
     // Give a moment for subscription to be set up
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -654,7 +649,7 @@ describe('jobStreamHandler cancellation events', () => {
     const jobId = await queueService.add('default', 'cancel:close', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
 
     // Give a moment for subscription
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -710,7 +705,7 @@ describe('jobStreamHandler cleanup', () => {
     const jobId = await queueService.add('default', 'cleanup:test', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
 
     // Wait for job to start
@@ -748,7 +743,7 @@ describe('jobStreamHandler cleanup', () => {
     const jobId = await queueService.add('default', 'cleanup:noevents', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
 
     // Wait for a few progress events
@@ -810,7 +805,7 @@ describe('jobStreamHandler initial state', () => {
     const newStream = createMockStream();
     const ctx = createMockContext({ jobId }, queueService);
 
-    await jobStreamHandler(newStream, ctx, {}, logger);
+    await jobStreamHandler({ stream: newStream, ctx, logger });
 
     // Should immediately send completed event
     const completedEvent = newStream.events.find(e => e.event === 'job.completed');
@@ -851,7 +846,7 @@ describe('jobStreamHandler initial state', () => {
     const newStream = createMockStream();
     const ctx = createMockContext({ jobId }, queueService);
 
-    await jobStreamHandler(newStream, ctx, {}, logger);
+    await jobStreamHandler({ stream: newStream, ctx, logger });
 
     const failedEvent = newStream.events.find(e => e.event === 'job.failed');
     expect(failedEvent).toBeDefined();
@@ -883,7 +878,7 @@ describe('jobStreamHandler logging', () => {
     const jobId = await queueService.add('default', 'log:open', {});
     const ctx = createMockContext({ jobId, queueName: 'default' }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -902,7 +897,7 @@ describe('jobStreamHandler logging', () => {
     const jobId = await queueService.add('default', 'log:complete', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -927,7 +922,7 @@ describe('jobStreamHandler logging', () => {
     const jobId = await queueService.add('default', 'log:close', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
 
     await waitFor(() => handlerStarted);
@@ -967,7 +962,7 @@ describe('jobStreamHandler edge cases', () => {
     const jobId = await queueService.add('default', 'edge:undefined', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -986,7 +981,7 @@ describe('jobStreamHandler edge cases', () => {
     const jobId = await queueService.add('default', 'edge:null', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -1009,7 +1004,7 @@ describe('jobStreamHandler edge cases', () => {
     const jobId = await queueService.add('default', 'edge:rapid', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await queueService.startAll();
     await waitFor(() => stream.closed, 10000);
     await handlerPromise;
@@ -1044,7 +1039,7 @@ describe('jobStreamHandler edge cases', () => {
     const logger = createMockLogger();
     const ctx = createMockContext({ jobId, queueName: 'emails' }, multiQueueService);
 
-    const handlerPromise = jobStreamHandler(stream, ctx, {}, logger);
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
     await multiQueueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -1189,15 +1184,11 @@ describe('cancelJobBodySchema', () => {
 // ============================================================================
 
 describe('queueStatusHandler', () => {
-  it('should have 3-param signature', () => {
-    expect(queueStatusHandler.length).toBe(3);
-  });
-
   it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
     const ctx = createMockContext({});
     const logger = createMockLogger();
 
-    await expect(queueStatusHandler(ctx, {}, logger)).rejects.toThrow('Queue service unavailable');
+    await expect(queueStatusHandler({ ctx, logger })).rejects.toThrow('Queue service unavailable');
   });
 
   it('should return queue status for all queues', async () => {
@@ -1216,7 +1207,7 @@ describe('queueStatusHandler', () => {
     const ctx = createMockContext({ limit: '20' }, queueService);
     const logger = createMockLogger();
 
-    const result = await queueStatusHandler(ctx, {}, logger);
+    const result = await queueStatusHandler({ ctx, logger });
 
     expect(result.queues).toHaveLength(1);
     expect(result.queues[0]!.name).toBe('default');
@@ -1244,7 +1235,7 @@ describe('queueStatusHandler', () => {
     const ctx = createMockContext({ queueName: 'emails', limit: '20' }, queueService);
     const logger = createMockLogger();
 
-    const result = await queueStatusHandler(ctx, {}, logger);
+    const result = await queueStatusHandler({ ctx, logger });
 
     expect(result.queues).toHaveLength(1);
     expect(result.queues[0]!.name).toBe('emails');
@@ -1263,22 +1254,18 @@ describe('queueStatusHandler', () => {
     const ctx = createMockContext({ limit: '20' }, queueService);
     const logger = createMockLogger();
 
-    await queueStatusHandler(ctx, {}, logger);
+    await queueStatusHandler({ ctx, logger });
 
     expect(logger.debug).toHaveBeenCalledWith('Fetching queue status', expect.any(Object));
   });
 });
 
 describe('queuePrometheusHandler', () => {
-  it('should have 3-param signature', () => {
-    expect(queuePrometheusHandler.length).toBe(3);
-  });
-
   it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
     const ctx = createMockContext({});
     const logger = createMockLogger();
 
-    await expect(queuePrometheusHandler(ctx, {}, logger)).rejects.toThrow(
+    await expect(queuePrometheusHandler({ ctx, logger })).rejects.toThrow(
       'Queue service unavailable'
     );
   });
@@ -1299,7 +1286,7 @@ describe('queuePrometheusHandler', () => {
     const ctx = createMockContext({}, queueService);
     const logger = createMockLogger();
 
-    await queuePrometheusHandler(ctx, {}, logger);
+    await queuePrometheusHandler({ ctx, logger });
 
     const response = ctx._getResponse();
     expect(response.contentType).toBe('text/plain; version=0.0.4; charset=utf-8');
@@ -1321,7 +1308,7 @@ describe('queuePrometheusHandler', () => {
     const ctx = createMockContext({}, queueService);
     const logger = createMockLogger();
 
-    await queuePrometheusHandler(ctx, {}, logger);
+    await queuePrometheusHandler({ ctx, logger });
 
     const response = ctx._getResponse();
     expect(response.content).toContain('status="queued"');
@@ -1333,15 +1320,11 @@ describe('queuePrometheusHandler', () => {
 });
 
 describe('queueDashboardHandler', () => {
-  it('should have 3-param signature', () => {
-    expect(queueDashboardHandler.length).toBe(3);
-  });
-
   it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
     const ctx = createMockContext({});
     const logger = createMockLogger();
 
-    await expect(queueDashboardHandler(ctx, {}, logger)).rejects.toThrow(
+    await expect(queueDashboardHandler({ ctx, logger })).rejects.toThrow(
       'Queue service unavailable'
     );
   });
@@ -1359,7 +1342,7 @@ describe('queueDashboardHandler', () => {
     const ctx = createMockContext({}, queueService);
     const logger = createMockLogger();
 
-    await queueDashboardHandler(ctx, {}, logger);
+    await queueDashboardHandler({ ctx, logger });
 
     const response = ctx._getResponse();
     expect(response.contentType).toBe('text/html; charset=utf-8');
@@ -1381,7 +1364,7 @@ describe('queueDashboardHandler', () => {
     const ctx = createMockContext({ refresh: '30' }, queueService);
     const logger = createMockLogger();
 
-    await queueDashboardHandler(ctx, {}, logger);
+    await queueDashboardHandler({ ctx, logger });
 
     const response = ctx._getResponse();
     expect(response.content).toContain('http-equiv="refresh"');
@@ -1401,7 +1384,7 @@ describe('queueDashboardHandler', () => {
     const ctx = createMockContext({}, queueService);
     const logger = createMockLogger();
 
-    await queueDashboardHandler(ctx, {}, logger);
+    await queueDashboardHandler({ ctx, logger });
 
     const response = ctx._getResponse();
     expect(response.content).toContain('🔥');
@@ -1410,10 +1393,6 @@ describe('queueDashboardHandler', () => {
 });
 
 describe('createJobHandler', () => {
-  it('should have 3-param signature', () => {
-    expect(createJobHandler.length).toBe(3);
-  });
-
   it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
     const ctx = createMockContext({}, undefined, {
       queueName: 'emails',
@@ -1421,7 +1400,7 @@ describe('createJobHandler', () => {
     });
     const logger = createMockLogger();
 
-    await expect(createJobHandler(ctx, {}, logger)).rejects.toThrow('Queue service unavailable');
+    await expect(createJobHandler({ ctx, logger })).rejects.toThrow('Queue service unavailable');
   });
 
   it('should create job and return response', async () => {
@@ -1443,7 +1422,7 @@ describe('createJobHandler', () => {
     });
     const logger = createMockLogger();
 
-    const result = await createJobHandler(ctx, {}, logger);
+    const result = await createJobHandler({ ctx, logger });
 
     expect(result.jobId).toBeDefined();
     expect(result.queueName).toBe('emails');
@@ -1469,7 +1448,7 @@ describe('createJobHandler', () => {
     });
     const logger = createMockLogger();
 
-    await createJobHandler(ctx, {}, logger);
+    await createJobHandler({ ctx, logger });
 
     expect(logger.info).toHaveBeenCalledWith('Creating job', expect.any(Object));
     expect(logger.info).toHaveBeenCalledWith('Job created', expect.any(Object));
@@ -1477,17 +1456,13 @@ describe('createJobHandler', () => {
 });
 
 describe('cancelJobHandler', () => {
-  it('should have 3-param signature', () => {
-    expect(cancelJobHandler.length).toBe(3);
-  });
-
   it('should throw ServiceNotAvailableError when queue service unavailable', async () => {
     const ctx = createMockContext({}, undefined, {
       jobId: '550e8400-e29b-41d4-a716-446655440000',
     });
     const logger = createMockLogger();
 
-    await expect(cancelJobHandler(ctx, {}, logger)).rejects.toThrow('Queue service unavailable');
+    await expect(cancelJobHandler({ ctx, logger })).rejects.toThrow('Queue service unavailable');
   });
 
   it('should cancel queued job and return response', async () => {
@@ -1510,7 +1485,7 @@ describe('cancelJobHandler', () => {
     });
     const logger = createMockLogger();
 
-    const result = await cancelJobHandler(ctx, {}, logger);
+    const result = await cancelJobHandler({ ctx, logger });
 
     expect(result.jobId).toBe(jobId);
     expect(result.cancelled).toBe(true);
@@ -1534,7 +1509,7 @@ describe('cancelJobHandler', () => {
     });
     const logger = createMockLogger();
 
-    await expect(cancelJobHandler(ctx, {}, logger)).rejects.toThrow(
+    await expect(cancelJobHandler({ ctx, logger })).rejects.toThrow(
       'not found or already completed'
     );
   });
@@ -1558,7 +1533,7 @@ describe('cancelJobHandler', () => {
     });
     const logger = createMockLogger();
 
-    await cancelJobHandler(ctx, {}, logger);
+    await cancelJobHandler({ ctx, logger });
 
     expect(logger.info).toHaveBeenCalledWith('Cancelling job', expect.any(Object));
     expect(logger.info).toHaveBeenCalledWith('Job cancelled', expect.any(Object));

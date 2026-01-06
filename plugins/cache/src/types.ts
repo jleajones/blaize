@@ -4,7 +4,7 @@
  * @packageDocumentation
  */
 import type { CacheService } from './cache-service';
-import type { BlaizeLogger } from 'blaizejs';
+import type { BlaizeLogger, EventBus, Services } from 'blaizejs';
 
 /**
  * Cache adapter statistics
@@ -91,6 +91,30 @@ export interface CacheAdapter {
   mset(entries: [string, string, number?][]): Promise<void>;
 
   /**
+   * List all keys matching a pattern
+   *
+   * @param pattern - Glob pattern (e.g., 'user:*') or '*' for all keys
+   * @returns Array of matching cache keys
+   */
+  keys(pattern?: string): Promise<string[]>;
+
+  /**
+   * Clear keys matching a pattern
+   *
+   * @param pattern - Glob pattern (e.g., 'user:*') or '*' for all keys
+   * @returns Number of keys deleted
+   */
+  clear(pattern?: string): Promise<number>;
+
+  /**
+   * Get TTL for a key in seconds
+   *
+   * @param key - Cache key
+   * @returns TTL in seconds, null if no expiry or key doesn't exist
+   */
+  getTTL?(key: string): Promise<number | null>;
+
+  /**
    * Get adapter statistics
    *
    * @returns Cache statistics
@@ -162,7 +186,7 @@ export interface CacheEntry {
  */
 export interface CacheChangeEvent {
   /** Event type */
-  type: 'set' | 'delete';
+  type: 'set' | 'delete' | 'eviction';
 
   /** Cache key */
   key: string;
@@ -192,10 +216,35 @@ export interface CacheServiceOptions {
   /** Cache adapter implementation */
   adapter: CacheAdapter;
 
-  /** Redis pub/sub for multi-server coordination (optional) */
-  pubsub?: RedisPubSub;
+  /**
+   * EventBus for cross-server cache invalidation
+   *
+   * Use server.eventBus for multi-server coordination.
+   * Events published: `cache:invalidated`
+   *
+   * @example
+   * ```typescript
+   * const service = new CacheService({
+   *   adapter,
+   *   eventBus: server.eventBus,
+   *   serverId: 'server-a',
+   *   logger
+   * });
+   * ```
+   */
+  eventBus?: EventBus;
 
-  /** Server ID for multi-server coordination (optional) */
+  /**
+   * Server ID for multi-server setups
+   *
+   * Required when using eventBus to prevent event echoes.
+   * Should be unique per server instance.
+   *
+   * @example
+   * ```typescript
+   * serverId: `server-${process.env.POD_NAME || 'local'}`
+   * ```
+   */
   serverId?: string;
 
   /** Logger instance for structured logging */
@@ -215,14 +264,31 @@ export interface CachePluginConfig {
   /** Default TTL in seconds (only for MemoryAdapter) */
   defaultTtl?: number;
 
-  /** Server ID for multi-server coordination (optional) */
+  /**
+   * Server ID for multi-server coordination
+   *
+   * Required when using EventBus for cross-server cache invalidation.
+   * Should be unique per server instance.
+   *
+   * When provided, the plugin automatically uses server.eventBus for
+   * cross-server cache coordination. No additional setup needed!
+   *
+   * @example
+   * ```typescript
+   * createCachePlugin({
+   *   adapter: new RedisAdapter({ host: 'localhost' }),
+   *   serverId: `server-${process.env.POD_NAME || 'local'}`,
+   *   // EventBus from server.eventBus is used automatically
+   * })
+   * ```
+   */
   serverId?: string;
 }
 
 /**
  * Services provided by cache plugin
  */
-export interface CachePluginServices {
+export interface CachePluginServices extends Services {
   /** Cache service instance */
   cache: CacheService;
 }
@@ -386,146 +452,6 @@ export interface RedisAdapterConfig {
    * @default true
    */
   enableOfflineQueue?: boolean;
-}
-
-/**
- * Redis Pub/Sub interface for cross-server event propagation
- *
- * Enables cache invalidation events to propagate across multiple servers
- * connected to the same Redis instance.
- *
- * **Pattern Subscriptions:**
- * - Uses Redis PSUBSCRIBE for pattern matching
- * - Patterns like "cache:*" match all cache events
- * - Each subscriber creates a separate Redis connection
- *
- * **Event Flow:**
- * 1. Server A: `cache.set('user:123', data)` → publishes event
- * 2. Redis: Broadcasts event to all subscribers
- * 3. Server B: Receives event → invalidates local cache
- *
- * @example Basic pub/sub
- * ```typescript
- * const pubsub = adapter.createPubSub('server-a');
- * await pubsub.connect();
- *
- * // Subscribe to all cache events
- * const unsubscribe = pubsub.subscribe('cache:*', (event) => {
- *   console.log('Cache change:', event.key);
- * });
- *
- * // Publish an event
- * await pubsub.publish('cache:*', {
- *   type: 'set',
- *   key: 'user:123',
- *   value: 'data',
- *   timestamp: Date.now(),
- *   serverId: 'server-a'
- * });
- *
- * // Cleanup
- * unsubscribe();
- * await pubsub.disconnect();
- * ```
- *
- * @example Multi-server coordination
- * ```typescript
- * // Server A
- * const pubsubA = adapterA.createPubSub('server-a');
- * await pubsubA.connect();
- * pubsubA.subscribe('cache:*', (event) => {
- *   if (event.serverId !== 'server-a') {
- *     // Event from another server - invalidate local cache
- *     localCache.delete(event.key);
- *   }
- * });
- *
- * // Server B
- * const pubsubB = adapterB.createPubSub('server-b');
- * await pubsubB.connect();
- * pubsubB.subscribe('cache:*', (event) => {
- *   if (event.serverId !== 'server-b') {
- *     localCache.delete(event.key);
- *   }
- * });
- * ```
- */
-export interface RedisPubSub {
-  /**
-   * Publish event to pattern
-   *
-   * Broadcasts event to all servers subscribed to the pattern.
-   * Event is serialized to JSON before publishing.
-   *
-   * @param pattern - Redis pattern (e.g., "cache:*")
-   * @param event - Cache change event
-   *
-   * @throws {CacheOperationError} If publish fails
-   *
-   * @example
-   * ```typescript
-   * await pubsub.publish('cache:*', {
-   *   type: 'set',
-   *   key: 'user:123',
-   *   value: '{"name":"Alice"}',
-   *   timestamp: Date.now(),
-   *   serverId: 'server-a'
-   * });
-   * ```
-   */
-  publish(pattern: string, event: CacheChangeEvent): Promise<void>;
-
-  /**
-   * Subscribe to pattern
-   *
-   * Receives events from all servers publishing to the pattern.
-   * Uses Redis PSUBSCRIBE for pattern matching.
-   *
-   * **Important:** Subscriptions are maintained across reconnections.
-   *
-   * @param pattern - Redis pattern (e.g., "cache:*")
-   * @param handler - Event handler function
-   * @returns Cleanup function to unsubscribe
-   *
-   * @example
-   * ```typescript
-   * const unsubscribe = pubsub.subscribe('cache:user:*', (event) => {
-   *   console.log(`User ${event.key} changed:`, event.type);
-   * });
-   *
-   * // Later: cleanup
-   * unsubscribe();
-   * ```
-   */
-  subscribe(pattern: string, handler: (event: CacheChangeEvent) => void): Promise<() => void>;
-
-  /**
-   * Connect to Redis pub/sub
-   *
-   * Creates a separate Redis connection for pub/sub.
-   * **Note:** This is separate from the main adapter connection.
-   *
-   * @throws {CacheConnectionError} If connection fails
-   *
-   * @example
-   * ```typescript
-   * const pubsub = adapter.createPubSub('server-a');
-   * await pubsub.connect();
-   * ```
-   */
-  connect(): Promise<void>;
-
-  /**
-   * Disconnect from Redis pub/sub
-   *
-   * Closes the pub/sub connection and cleans up subscriptions.
-   *
-   * @example
-   * ```typescript
-   * await pubsub.disconnect();
-   * ```
-   */
-  disconnect(): Promise<void>;
 }
 
 /**

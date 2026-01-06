@@ -7,6 +7,7 @@
 import { z } from 'zod';
 
 import {
+  createMockEventBus,
   createMockLogger,
   createMockMiddleware,
   createSSEMockContext,
@@ -15,8 +16,14 @@ import {
 import { createSSERoute } from './create';
 import { SSENotAcceptableError } from '../errors/sse-not-acceptable-error';
 
-import type { State, Services } from '@blaize-types/context';
-import type { BlaizeLogger } from '@blaize-types/logger';
+import type {
+  TypedEventBus,
+  EventSchemas,
+  BlaizeEvent,
+  State,
+  Services,
+  BlaizeLogger,
+} from '@blaize-types';
 
 // ============================================================================
 // Mock Setup
@@ -49,8 +56,10 @@ vi.mock('../router/create', () => ({
 
 describe('createSSERoute', () => {
   let mockLogger: BlaizeLogger;
+  let mockEventBus: TypedEventBus<EventSchemas>;
   beforeEach(() => {
     mockLogger = createMockLogger();
+    mockEventBus = createMockEventBus();
     vi.clearAllMocks();
   });
 
@@ -213,21 +222,16 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
       const params = { id: '123' };
-      route.GET.handler(ctx, params, mockLogger);
+      route.GET.handler({ ctx, params, logger: mockLogger, eventBus: mockEventBus });
 
       expect(createSSEStream).toHaveBeenCalledWith(ctx, undefined);
       expect(userHandler).toHaveBeenCalledWith(
         expect.objectContaining({
-          send: expect.any(Function),
-          close: expect.any(Function),
-        }),
-        ctx,
-        params,
-        expect.objectContaining({
-          // ← Change this
-          info: expect.any(Function),
-          error: expect.any(Function),
-          child: expect.any(Function),
+          stream: expect.any(Object),
+          ctx: expect.any(Object),
+          params: expect.objectContaining({ id: '123' }),
+          logger: expect.any(Object),
+          eventBus: expect.any(Object),
         })
       );
     });
@@ -241,7 +245,9 @@ describe('createSSERoute', () => {
         headers: { accept: 'application/json' }, // Wrong accept header
       });
 
-      await expect(route.GET.handler(ctx, {}, mockLogger)).rejects.toThrow(SSENotAcceptableError);
+      await expect(
+        route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow(SSENotAcceptableError);
     });
 
     test('allows wildcard accept header', async () => {
@@ -253,7 +259,9 @@ describe('createSSERoute', () => {
         headers: { accept: '*/*' },
       });
 
-      await expect(route.GET.handler(ctx, {}, mockLogger)).resolves.not.toThrow();
+      await expect(
+        route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus })
+      ).resolves.not.toThrow();
     });
 
     test('allows missing accept header', async () => {
@@ -265,7 +273,9 @@ describe('createSSERoute', () => {
         headers: {}, // No accept header
       });
 
-      await expect(route.GET.handler(ctx, {}, mockLogger)).resolves.not.toThrow();
+      await expect(
+        route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus })
+      ).resolves.not.toThrow();
     });
 
     test('registers close handler on client disconnect', async () => {
@@ -303,7 +313,7 @@ describe('createSSERoute', () => {
         return ctx.request.raw;
       });
 
-      await route.GET.handler(ctx, {}, mockLogger);
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
 
       expect(ctx.request.raw.on).toHaveBeenCalledWith('close', expect.any(Function));
 
@@ -340,7 +350,9 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await expect(route.GET.handler(ctx, {}, mockLogger)).rejects.toThrow(error);
+      await expect(
+        route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus })
+      ).rejects.toThrow(error);
       expect(mockStream.sendError).toHaveBeenCalledWith(error);
       expect(mockStream.close).toHaveBeenCalled();
     });
@@ -359,7 +371,7 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {}, mockLogger);
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
 
       expect(createSSEStream).toHaveBeenCalledWith(ctx, options);
     });
@@ -402,25 +414,21 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {}, mockLogger);
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
 
       // Check that handler received a stream
       expect(userHandler).toHaveBeenCalledWith(
         expect.objectContaining({
-          send: expect.any(Function),
-        }),
-        ctx,
-        {},
-        expect.objectContaining({
-          // ← Change this
-          info: expect.any(Function),
-          error: expect.any(Function),
-          child: expect.any(Function),
+          stream: expect.any(Object),
+          ctx: expect.any(Object),
+          logger: expect.any(Object),
+          eventBus: expect.any(Object),
         })
       );
 
       // Get the typed stream passed to handler
-      const typedStream = userHandler.mock.calls[0]![0];
+      const handlerContext = userHandler.mock.calls[0]![0];
+      const typedStream = handlerContext.stream;
 
       // Test validation works
       typedStream.send('message', { text: 'hello' });
@@ -462,9 +470,10 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {}, mockLogger);
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
 
-      const stream = userHandler.mock.calls[0]![0];
+      const handlerContext = userHandler.mock.calls[0]![0];
+      const stream = handlerContext.stream;
       expect(stream).toBe(baseStream);
     });
 
@@ -499,9 +508,10 @@ describe('createSSERoute', () => {
         headers: { accept: 'text/event-stream' },
       });
 
-      await route.GET.handler(ctx, {}, mockLogger);
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
 
-      const typedStream = userHandler.mock.calls[0]![0];
+      const handlerContext = userHandler.mock.calls[0]![0];
+      const typedStream = handlerContext.stream;
 
       // Send event not in schema - should pass through without validation
       typedStream.send('unknown', { any: 'data' });
@@ -522,7 +532,7 @@ describe('createSSERoute', () => {
 
       createSSERoute()({
         schema: { params: paramSchema },
-        handler: (stream, ctx, params) => {
+        handler: ({ params }) => {
           // TypeScript should know params shape
           const _userId: string = params.userId;
           const _postId: string = params.postId;
@@ -542,7 +552,7 @@ describe('createSSERoute', () => {
 
       createSSERoute()({
         schema: { query: querySchema },
-        handler: (_stream, ctx) => {
+        handler: ({ ctx }) => {
           // TypeScript should know query shape
           const _page: string | undefined = ctx.request.query.page;
           const _limit: string | undefined = ctx.request.query.limit;
@@ -560,7 +570,7 @@ describe('createSSERoute', () => {
 
       createSSERoute()({
         schema: { events: eventSchemas },
-        handler: stream => {
+        handler: ({ stream }) => {
           // TypeScript should know valid events
           stream.send('message', { content: 'hi', author: 'bot' });
           stream.send('typing', { userId: '123', isTyping: true });
@@ -594,7 +604,7 @@ describe('createSSERoute', () => {
 
     test('preserves state and services types', () => {
       createSSERoute<TestState, TestServices>()({
-        handler: (stream, ctx) => {
+        handler: ({ ctx }) => {
           // State should be typed
           const _user = ctx.state.user;
           const _requestId: string = ctx.state.requestId;
@@ -610,7 +620,7 @@ describe('createSSERoute', () => {
 
     test('state and services are accessible in handler', async () => {
       const route = createSSERoute<TestState, TestServices>()({
-        handler: (stream, ctx) => {
+        handler: ({ ctx }) => {
           expect(ctx.state.requestId).toBe('req-123');
           expect(ctx.services.database).toBeDefined();
           expect(ctx.services.cache).toBeDefined();
@@ -627,7 +637,7 @@ describe('createSSERoute', () => {
         },
       });
 
-      await route.GET.handler(ctx, {}, mockLogger);
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
     });
   });
 
@@ -751,7 +761,7 @@ describe('createSSERoute', () => {
           }),
           events: eventSchemas,
         },
-        handler: async (stream, ctx, params) => {
+        handler: async ({ stream, ctx, params }) => {
           // Simulate chat room logic
           expect(params.roomId).toBeDefined();
           expect(ctx.request.query.since).toBeDefined();
@@ -780,7 +790,12 @@ describe('createSSERoute', () => {
         query: { since: '2024-01-01', limit: '50' },
       });
 
-      await result.GET.handler(ctx, { roomId: 'room123' }, mockLogger);
+      await result.GET.handler({
+        ctx,
+        params: { roomId: 'room123' },
+        logger: mockLogger,
+        eventBus: mockEventBus,
+      });
 
       // Verify the typed stream was created and events were sent
       const _handler = vi.mocked(result.GET.handler);
@@ -805,7 +820,7 @@ describe('createSSERoute', () => {
             }),
           },
         },
-        handler: async (stream, _ctx) => {
+        handler: async ({ stream }) => {
           // Simulate long-running task
           // eslint-disable-next-line prefer-const
           let heartbeatInterval: NodeJS.Timeout;
@@ -840,6 +855,81 @@ describe('createSSERoute', () => {
 
       expect(result.GET).toBeDefined();
       expect(typeof result.GET.handler).toBe('function');
+    });
+  });
+
+  // ==========================================================================
+  // Event Bus Integration
+  // ==========================================================================
+  describe('EventBus integration', () => {
+    it('provides eventBus to handler', async () => {
+      const { createSSEStream } = await import('./stream');
+      const baseStream = {
+        close: vi.fn(),
+        onClose: vi.fn(),
+        isWritable: true,
+        send: vi.fn(),
+        sendError: vi.fn(),
+        ping: vi.fn(),
+        setRetry: vi.fn(),
+        flush: vi.fn(),
+        state: 'connected',
+        bufferSize: 0,
+      };
+      vi.mocked(createSSEStream).mockReturnValueOnce(baseStream as any);
+
+      const handler = vi.fn(async ({ eventBus }) => {
+        await eventBus.publish('test', { data: 'test' });
+      });
+
+      const route = createSSERoute()({ handler });
+      const ctx = createSSEMockContext({
+        headers: { accept: 'text/event-stream' },
+      });
+
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
+
+      expect(handler.mock.calls[0]![0].eventBus).toBe(mockEventBus);
+    });
+
+    it('supports subscriptions with cleanup', async () => {
+      const { createSSEStream } = await import('./stream');
+      const baseStream = {
+        close: vi.fn(),
+        onClose: vi.fn(),
+        isWritable: true,
+        send: vi.fn(),
+        sendError: vi.fn(),
+        ping: vi.fn(),
+        setRetry: vi.fn(),
+        flush: vi.fn(),
+        state: 'connected',
+        bufferSize: 0,
+      };
+      vi.mocked(createSSEStream).mockReturnValueOnce(baseStream as any);
+
+      const unsubscribe = vi.fn();
+      vi.spyOn(mockEventBus, 'subscribe').mockReturnValue(unsubscribe);
+
+      const handler = vi.fn(async ({ eventBus, stream }) => {
+        const unsub = eventBus.subscribe('user:*', (event: BlaizeEvent) => {
+          stream.send('user-event', event.data);
+        });
+        stream.onClose(unsub);
+      });
+
+      const route = createSSERoute()({ handler });
+      const ctx = createSSEMockContext({
+        headers: { accept: 'text/event-stream' },
+      });
+
+      await route.GET.handler({ ctx, params: {}, logger: mockLogger, eventBus: mockEventBus });
+
+      expect(mockEventBus.subscribe).toHaveBeenCalled();
+      expect(baseStream.onClose).toHaveBeenCalled();
+
+      baseStream.onClose.mock.calls[0]![0]();
+      expect(unsubscribe).toHaveBeenCalled();
     });
   });
 });
