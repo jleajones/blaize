@@ -23,7 +23,7 @@
 import {
   cacheEventsHandler,
   cacheEventsQuerySchema,
-  cacheEventsSchema,
+  cacheSseEventSchemas,
 } from '@blaizejs/plugin-cache';
 
 import { appRouter } from '../../app-router';
@@ -31,7 +31,7 @@ import { appRouter } from '../../app-router';
 export const getCacheEvents = appRouter.sse({
   schema: {
     query: cacheEventsQuerySchema,
-    events: cacheEventsSchema,
+    events: cacheSseEventSchemas,
   },
   handler: cacheEventsHandler,
 });
