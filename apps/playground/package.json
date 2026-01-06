@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "blaizejs": "workspace:*",
+    "@blaizejs/adapter-redis": "workspace:*",
     "@blaizejs/client": "workspace:*",
     "@blaizejs/middleware-security": "workspace:*",
     "@blaizejs/plugin-cache": "workspace:*",

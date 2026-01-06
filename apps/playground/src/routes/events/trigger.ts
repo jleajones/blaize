@@ -1,17 +1,19 @@
 import { z } from 'zod';
 
 import { appRouter } from '../../app-router';
+import { playgroundEvents } from '../../events';
+
+// ✅ Extract all valid event types from schemas
+type PlaygroundEventType = keyof typeof playgroundEvents;
+const validEventTypes = Object.keys(playgroundEvents) as [
+  PlaygroundEventType,
+  ...PlaygroundEventType[],
+];
 
 export const POST = appRouter.post({
   schema: {
     body: z.object({
-      eventType: z.enum([
-        'user:created',
-        'user:login',
-        'order:placed',
-        'order:shipped',
-        'system:alert',
-      ]),
+      eventType: z.enum(validEventTypes),
       data: z.record(z.unknown()),
     }),
     response: z.object({

@@ -3,11 +3,18 @@ import { fileURLToPath } from 'node:url';
 
 import { Blaize } from 'blaizejs';
 
+import {
+  createRedisClient,
+  RedisCacheAdapter,
+  RedisEventBusAdapter,
+  RedisQueueAdapter,
+} from '@blaizejs/adapter-redis';
 import { createSecurityMiddleware } from '@blaizejs/middleware-security';
 import { createCachePlugin } from '@blaizejs/plugin-cache';
 import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
 import { createQueuePlugin } from '@blaizejs/plugin-queue';
 
+import { REDIS_CONFIG } from './config';
 import { playgroundEvents } from './events';
 import {
   dataSyncHandler,
@@ -26,6 +33,36 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Create Redis clients for each adapter
+Blaize.logger.info('Connecting to Redis', REDIS_CONFIG);
+const redisClient = createRedisClient(REDIS_CONFIG);
+Blaize.logger.info('✅ All Redis clients connected');
+
+// ============================================================================
+// Redis Adapters
+// ============================================================================
+
+// EventBus Adapter - Distributed event propagation
+const eventBusAdapter = new RedisEventBusAdapter(redisClient, {
+  channelPrefix: 'playground:events',
+  logger: Blaize.logger,
+});
+await eventBusAdapter.connect();
+
+// Cache Adapter - Distributed caching with TTL
+const cacheAdapter = new RedisCacheAdapter(redisClient, {
+  keyPrefix: 'cache:',
+  logger: Blaize.logger,
+});
+
+// Queue Adapter - Distributed job queue with priority
+const queueAdapter = new RedisQueueAdapter(redisClient, {
+  keyPrefix: 'queue:',
+  logger: Blaize.logger,
+});
+
+Blaize.logger.info('✅ All Redis adapters configured');
+
 // ===========================================================================
 // Metrics Plugin
 // ===========================================================================
@@ -39,6 +76,7 @@ const metricsPlugin = createMetricsPlugin({
   labels: {
     service: 'playground-app',
     environment: process.env.NODE_ENV || 'development',
+    redis: 'enabled',
   },
 });
 
@@ -46,6 +84,7 @@ const metricsPlugin = createMetricsPlugin({
 // Queue Plugin
 // ============================================================================
 const queuePlugin = createQueuePlugin({
+  storage: queueAdapter,
   // Define queues with different configurations
   queues: {
     // Email queue - medium concurrency, fast jobs
@@ -124,13 +163,19 @@ const queuePlugin = createQueuePlugin({
 // ============================================================================
 // Cache Plugin
 // ============================================================================
-const cachePlugin = createCachePlugin({});
+const cachePlugin = createCachePlugin({
+  // Use Redis adapter for distributed caching
+  adapter: cacheAdapter,
+});
 
 // ============================================================================
 // Security Middleware
 // ============================================================================
 const securityMiddleware = createSecurityMiddleware();
 
+// ============================================================================
+// Create and Start the Server
+// ============================================================================
 export const server = Blaize.createServer({
   port: 7485,
   routesDir: path.resolve(__dirname, './routes'),
@@ -148,12 +193,29 @@ export const server = Blaize.createServer({
   eventSchemas: playgroundEvents,
 });
 
+server.eventBus.setAdapter(eventBusAdapter);
+Blaize.logger.info('✅ EventBus Redis adapter configured');
+
 try {
   Blaize.logger.info(path.resolve(__dirname, './routes'));
   // Create the server instance
 
   // Start the server
   server.listen();
+  Blaize.logger.info('🚀 Playground server ready!');
+  Blaize.logger.info('');
+  Blaize.logger.info('📖 Try these demos:');
+  Blaize.logger.info('   Dashboard: GET  http://localhost:7485');
+  Blaize.logger.info('   Cache:     GET  http://localhost:7485/cache/demo');
+  Blaize.logger.info('   Queue:     GET  http://localhost:7485/queue/demo');
+  Blaize.logger.info('   Events:    POST http://localhost:7485/events/trigger');
+  Blaize.logger.info('   SSE Cache: GET  http://localhost:7485/cache/events');
+  Blaize.logger.info('   SSE Queue: GET  http://localhost:7485/queue/stream?jobId=<id>');
+  Blaize.logger.info('   SSE User:  GET  http://localhost:7485/user/:userId/notifications');
+  Blaize.logger.info('');
+  Blaize.logger.info('🔄 Events published from route handlers');
+  Blaize.logger.info('📡 SSE routes subscribe and stream events to clients');
+  Blaize.logger.info('');
 
   // Handle process termination signals
   ['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => {
