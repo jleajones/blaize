@@ -9,7 +9,7 @@
 // ✅ Import from adapter-redis package
 import { createRedisClient, RedisQueueAdapter } from '@blaizejs/adapter-redis';
 import type { RedisClient } from '@blaizejs/adapter-redis';
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
 
 import { QueueService } from './queue-service';
 
@@ -58,6 +58,8 @@ async function createTestQueueService(): Promise<{
   });
   await adapter.connect();
 
+  const eventBus = createWorkingMockEventBus();
+
   // Create QueueService
   const service = new QueueService({
     queues: {
@@ -67,6 +69,7 @@ async function createTestQueueService(): Promise<{
     },
     storage: adapter,
     logger: createMockLogger(),
+    eventBus,
   });
 
   return { service, redisClient, adapter };

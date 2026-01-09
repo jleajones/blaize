@@ -21,9 +21,11 @@ import {
   createMockLogger,
   MockLogger,
   createMockEventBus,
+  createWorkingMockEventBus,
 } from './mocks';
 
 export {
+  createWorkingMockEventBus,
   createMockEventBus,
   MockLogger,
   createMockLogger,

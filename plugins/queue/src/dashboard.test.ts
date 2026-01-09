@@ -4,6 +4,8 @@
  * Unit tests for the HTML dashboard renderer and helpers.
  */
 
+import { createWorkingMockEventBus } from '@blaizejs/testing-utils';
+
 import {
   renderDashboard,
   gatherDashboardData,
@@ -490,12 +492,14 @@ describe('renderDashboard', () => {
 describe('gatherDashboardData', () => {
   it('should gather data from queue service', async () => {
     const storage = new InMemoryStorage();
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send', async () => 'sent');
@@ -513,6 +517,8 @@ describe('gatherDashboardData', () => {
 
   it('should gather data from multiple queues', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
@@ -522,6 +528,7 @@ describe('gatherDashboardData', () => {
       },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send', async () => 'sent');
@@ -538,12 +545,15 @@ describe('gatherDashboardData', () => {
 
   it('should return empty jobs for empty queue', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { empty: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const data = await gatherDashboardData(queueService, ['empty']);

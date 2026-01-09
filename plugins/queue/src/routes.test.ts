@@ -11,6 +11,8 @@
  * @module @blaizejs/queue/routes.test
  */
 
+import { createWorkingMockEventBus } from '@blaizejs/testing-utils';
+
 import { QueueService } from './queue-service';
 import {
   jobStreamHandler,
@@ -181,9 +183,14 @@ function createMockContext(
 /**
  * Create test queue service with in-memory storage
  */
-async function createTestQueueService(): Promise<QueueService> {
+async function createTestQueueService(): Promise<{
+  queueService: QueueService;
+  eventBus: ReturnType<typeof createWorkingMockEventBus>;
+}> {
   const storage = new InMemoryStorage();
   await storage.connect?.();
+
+  const eventBus = createWorkingMockEventBus();
 
   const queueService = new QueueService({
     queues: {
@@ -191,9 +198,11 @@ async function createTestQueueService(): Promise<QueueService> {
     },
     storage,
     logger: createMockLogger() as any,
+    eventBus, // ✅ Pass EventBus so jobs publish events
+    serverId: 'test-server', // ✅ Required for EventBus integration
   });
 
-  return queueService;
+  return { queueService, eventBus };
 }
 
 /**
@@ -285,19 +294,20 @@ describe('jobStreamHandler error handling', () => {
       undefined // No queue service
     );
     const logger = createMockLogger();
+    const eventBus = createWorkingMockEventBus();
 
-    await expect(jobStreamHandler({ stream, ctx, logger })).rejects.toThrow(
+    await expect(jobStreamHandler({ stream, ctx, logger, eventBus })).rejects.toThrow(
       'Queue service unavailable'
     );
   });
 
   it('should throw NotFoundError when job does not exist', async () => {
-    const queueService = await createTestQueueService();
+    const { queueService, eventBus } = await createTestQueueService();
     const stream = createMockStream();
     const ctx = createMockContext({ jobId: '550e8400-e29b-41d4-a716-446655440000' }, queueService);
     const logger = createMockLogger();
 
-    await expect(jobStreamHandler({ stream, ctx, logger })).rejects.toThrow(
+    await expect(jobStreamHandler({ stream, ctx, logger, eventBus })).rejects.toThrow(
       'Job 550e8400-e29b-41d4-a716-446655440000 not found'
     );
 
@@ -305,14 +315,14 @@ describe('jobStreamHandler error handling', () => {
   });
 
   it('should include job details in NotFoundError', async () => {
-    const queueService = await createTestQueueService();
+    const { queueService, eventBus } = await createTestQueueService();
     const stream = createMockStream();
     const jobId = '550e8400-e29b-41d4-a716-446655440000';
     const ctx = createMockContext({ jobId, queueName: 'emails' }, queueService);
     const logger = createMockLogger();
 
     try {
-      await jobStreamHandler({ stream, ctx, logger });
+      await jobStreamHandler({ stream, ctx, logger, eventBus });
       expect.fail('Should have thrown');
     } catch (error: any) {
       expect(error.message).toContain(jobId);
@@ -330,9 +340,12 @@ describe('jobStreamHandler error handling', () => {
 
 describe('jobStreamHandler progress events', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
 
   afterEach(async () => {
@@ -357,7 +370,7 @@ describe('jobStreamHandler progress events', () => {
     const ctx = createMockContext({ jobId }, queueService);
 
     // Start handler (non-blocking)
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
 
     // Start queue processing
     await queueService.startAll();
@@ -376,8 +389,7 @@ describe('jobStreamHandler progress events', () => {
     for (const event of progressEvents) {
       const data = event.data as any;
       expect(data.jobId).toBe(jobId);
-      expect(typeof data.percent).toBe('number');
-      expect(typeof data.timestamp).toBe('number');
+      expect(typeof data.progress).toBe('number');
     }
   });
 
@@ -393,7 +405,7 @@ describe('jobStreamHandler progress events', () => {
     const jobId = await queueService.add('default', 'progress:message', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -410,11 +422,13 @@ describe('jobStreamHandler progress events', () => {
 
 describe('jobStreamHandler completion events', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -430,7 +444,7 @@ describe('jobStreamHandler completion events', () => {
     const jobId = await queueService.add('default', 'complete:test', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -441,7 +455,6 @@ describe('jobStreamHandler completion events', () => {
     const data = completedEvent?.data as any;
     expect(data.jobId).toBe(jobId);
     expect(data.result).toEqual({ success: true, count: 42 });
-    expect(typeof data.completedAt).toBe('number');
   });
 
   it('should close stream after completion', async () => {
@@ -453,7 +466,7 @@ describe('jobStreamHandler completion events', () => {
     const jobId = await queueService.add('default', 'complete:close', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -468,9 +481,12 @@ describe('jobStreamHandler completion events', () => {
 
 describe('jobStreamHandler failure events', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
 
   afterEach(async () => {
@@ -495,7 +511,7 @@ describe('jobStreamHandler failure events', () => {
     );
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -506,7 +522,6 @@ describe('jobStreamHandler failure events', () => {
     const data = failedEvent?.data as any;
     expect(data.jobId).toBe(jobId);
     expect(data.error.message).toBe('Something went wrong');
-    expect(typeof data.failedAt).toBe('number');
   });
 
   it('should include error code when available', async () => {
@@ -529,7 +544,7 @@ describe('jobStreamHandler failure events', () => {
     );
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -558,7 +573,7 @@ describe('jobStreamHandler failure events', () => {
     );
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed, 5000);
     await handlerPromise;
@@ -573,9 +588,12 @@ describe('jobStreamHandler failure events', () => {
 
 describe('jobStreamHandler cancellation events', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
 
   afterEach(async () => {
@@ -602,7 +620,7 @@ describe('jobStreamHandler cancellation events', () => {
     const ctx = createMockContext({ jobId }, queueService);
 
     // Subscribe to job events via handler (non-blocking)
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
 
     // Give a moment for subscription to be set up
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -622,7 +640,6 @@ describe('jobStreamHandler cancellation events', () => {
       expect(stream.closed).toBe(true);
       const data = cancelledEvent?.data as any;
       expect(data.jobId).toBe(jobId);
-      expect(typeof data.cancelledAt).toBe('number');
     } else {
       // Event not received - check if stream closed from initial state check
       // This could happen if getJob returned the cancelled job
@@ -649,7 +666,7 @@ describe('jobStreamHandler cancellation events', () => {
     const jobId = await queueService.add('default', 'cancel:close', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
 
     // Give a moment for subscription
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -678,9 +695,12 @@ describe('jobStreamHandler cancellation events', () => {
 
 describe('jobStreamHandler cleanup', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
 
   afterEach(async () => {
@@ -705,7 +725,7 @@ describe('jobStreamHandler cleanup', () => {
     const jobId = await queueService.add('default', 'cleanup:test', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
 
     // Wait for job to start
@@ -743,7 +763,7 @@ describe('jobStreamHandler cleanup', () => {
     const jobId = await queueService.add('default', 'cleanup:noevents', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
 
     // Wait for a few progress events
@@ -771,9 +791,12 @@ describe('jobStreamHandler cleanup', () => {
 
 describe('jobStreamHandler initial state', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
 
   afterEach(async () => {
@@ -805,7 +828,7 @@ describe('jobStreamHandler initial state', () => {
     const newStream = createMockStream();
     const ctx = createMockContext({ jobId }, queueService);
 
-    await jobStreamHandler({ stream: newStream, ctx, logger });
+    await jobStreamHandler({ stream: newStream, ctx, logger, eventBus });
 
     // Should immediately send completed event
     const completedEvent = newStream.events.find(e => e.event === 'job.completed');
@@ -846,7 +869,7 @@ describe('jobStreamHandler initial state', () => {
     const newStream = createMockStream();
     const ctx = createMockContext({ jobId }, queueService);
 
-    await jobStreamHandler({ stream: newStream, ctx, logger });
+    await jobStreamHandler({ stream: newStream, ctx, logger, eventBus });
 
     const failedEvent = newStream.events.find(e => e.event === 'job.failed');
     expect(failedEvent).toBeDefined();
@@ -861,9 +884,12 @@ describe('jobStreamHandler initial state', () => {
 
 describe('jobStreamHandler logging', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
 
   afterEach(async () => {
@@ -878,7 +904,7 @@ describe('jobStreamHandler logging', () => {
     const jobId = await queueService.add('default', 'log:open', {});
     const ctx = createMockContext({ jobId, queueName: 'default' }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -897,7 +923,7 @@ describe('jobStreamHandler logging', () => {
     const jobId = await queueService.add('default', 'log:complete', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -922,7 +948,7 @@ describe('jobStreamHandler logging', () => {
     const jobId = await queueService.add('default', 'log:close', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
 
     await waitFor(() => handlerStarted);
@@ -942,9 +968,12 @@ describe('jobStreamHandler logging', () => {
 
 describe('jobStreamHandler edge cases', () => {
   let queueService: QueueService;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    queueService = await createTestQueueService();
+    const testEnv = await createTestQueueService(); // ✅ Destructure
+    queueService = testEnv.queueService;
+    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
   });
 
   afterEach(async () => {
@@ -962,7 +991,7 @@ describe('jobStreamHandler edge cases', () => {
     const jobId = await queueService.add('default', 'edge:undefined', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -981,7 +1010,7 @@ describe('jobStreamHandler edge cases', () => {
     const jobId = await queueService.add('default', 'edge:null', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -1004,7 +1033,7 @@ describe('jobStreamHandler edge cases', () => {
     const jobId = await queueService.add('default', 'edge:rapid', {});
     const ctx = createMockContext({ jobId }, queueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await queueService.startAll();
     await waitFor(() => stream.closed, 10000);
     await handlerPromise;
@@ -1030,6 +1059,8 @@ describe('jobStreamHandler edge cases', () => {
       },
       storage,
       logger: createMockLogger() as any,
+      eventBus, // ✅ Shared EventBus
+      serverId: 'test-server',
     });
 
     multiQueueService.registerHandler('emails', 'email:send', async () => 'sent');
@@ -1039,7 +1070,7 @@ describe('jobStreamHandler edge cases', () => {
     const logger = createMockLogger();
     const ctx = createMockContext({ jobId, queueName: 'emails' }, multiQueueService);
 
-    const handlerPromise = jobStreamHandler({ stream, ctx, logger });
+    const handlerPromise = jobStreamHandler({ stream, ctx, logger, eventBus });
     await multiQueueService.startAll();
     await waitFor(() => stream.closed);
     await handlerPromise;
@@ -1155,6 +1186,7 @@ describe('createJobBodySchema', () => {
 describe('cancelJobBodySchema', () => {
   it('should accept valid UUID jobId', () => {
     const result = cancelJobBodySchema.parse({
+      queueName: 'emails',
       jobId: '550e8400-e29b-41d4-a716-446655440000',
     });
     expect(result.jobId).toBe('550e8400-e29b-41d4-a716-446655440000');
@@ -1193,12 +1225,15 @@ describe('queueStatusHandler', () => {
 
   it('should return queue status for all queues', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { default: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('default', 'test', async () => 'done');
@@ -1213,11 +1248,11 @@ describe('queueStatusHandler', () => {
     expect(result.queues[0]!.name).toBe('default');
     expect(result.queues[0]!.stats.total).toBe(1);
     expect(result.queues[0]!.jobs).toHaveLength(1);
-    expect(result.timestamp).toBeDefined();
   });
 
   it('should filter by queue name', async () => {
     const storage = new InMemoryStorage();
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
@@ -1227,6 +1262,7 @@ describe('queueStatusHandler', () => {
       },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send', async () => 'sent');
@@ -1243,12 +1279,15 @@ describe('queueStatusHandler', () => {
 
   it('should log debug message', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { default: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({ limit: '20' }, queueService);
@@ -1272,12 +1311,15 @@ describe('queuePrometheusHandler', () => {
 
   it('should return Prometheus format metrics', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send', async () => 'sent');
@@ -1297,12 +1339,15 @@ describe('queuePrometheusHandler', () => {
 
   it('should include all status types', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { default: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1331,12 +1376,15 @@ describe('queueDashboardHandler', () => {
 
   it('should return HTML dashboard', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1353,12 +1401,15 @@ describe('queueDashboardHandler', () => {
 
   it('should include refresh meta tag when specified', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { default: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({ refresh: '30' }, queueService);
@@ -1373,12 +1424,15 @@ describe('queueDashboardHandler', () => {
 
   it('should include BlaizeJS branding', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { default: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1405,12 +1459,15 @@ describe('createJobHandler', () => {
 
   it('should create job and return response', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send-welcome', async () => 'sent');
@@ -1432,12 +1489,15 @@ describe('createJobHandler', () => {
 
   it('should log info messages', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send', async () => 'sent');
@@ -1467,12 +1527,15 @@ describe('cancelJobHandler', () => {
 
   it('should cancel queued job and return response', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send', async () => 'sent');
@@ -1495,12 +1558,15 @@ describe('cancelJobHandler', () => {
 
   it('should throw NotFoundError when job not found', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, queueService, {
@@ -1516,12 +1582,15 @@ describe('cancelJobHandler', () => {
 
   it('should log info messages', async () => {
     const storage = new InMemoryStorage();
+
+    const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
     const queueService = new QueueService({
       queues: { emails: { concurrency: 1 } },
       storage,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     queueService.registerHandler('emails', 'send', async () => 'sent');

@@ -13,7 +13,7 @@
 
 import { QueueService } from './queue-service';
 
-import type { BlaizeLogger, Services } from 'blaizejs';
+import type { BlaizeLogger, EventBus, Services } from 'blaizejs';
 import type { z } from 'zod';
 
 // ============================================================================
@@ -302,6 +302,13 @@ export interface JobContext<TData = unknown> {
    * ```
    */
   progress(percent: number, message?: string): Promise<void>;
+
+  /**
+   * EventBus instance for publishing custom events
+   *
+   * Use to publish domain events during job execution
+   */
+  eventBus: EventBus;
 }
 
 // ============================================================================
@@ -735,6 +742,22 @@ export interface QueuePluginConfig {
    * ```
    */
   handlers?: Record<string, Record<string, JobHandler<any, any>>>;
+
+  /**
+   * Server ID for multi-server coordination
+   *
+   * When provided, enables EventBus integration for cross-server job visibility.
+   * Should be unique per server instance (e.g., pod name, hostname).
+   *
+   * @example
+   * ```typescript
+   * createQueuePlugin({
+   *   serverId: `server-${process.env.POD_NAME || 'local'}`,
+   *   queues: { emails: { concurrency: 5 } },
+   * })
+   * ```
+   */
+  serverId?: string;
 }
 
 // ============================================================================
@@ -815,6 +838,18 @@ export interface QueueServiceConfig {
 
   /** Logger instance from plugin */
   logger: BlaizeLogger;
+
+  /**
+   * EventBus for cross-server job coordination
+   * Events published: `queue:job:state-change`
+   */
+  eventBus: EventBus;
+
+  /**
+   * Server ID for multi-server setups
+   * Required when using eventBus to track which server processed jobs.
+   */
+  serverId?: string;
 }
 
 // ============================================================================
@@ -1213,4 +1248,52 @@ export interface DashboardData {
 export interface DashboardOptions {
   /** Auto-refresh interval in seconds (adds meta refresh tag) */
   refreshInterval?: number;
+}
+
+/**
+ * Formatted job for API responses
+ *
+ * Serializable representation of a job with all relevant fields.
+ * Used by queueStatusHandler and other JSON endpoints.
+ */
+export interface FormattedJob {
+  id: string;
+  type: string;
+  queueName: string;
+  status: JobStatus;
+  priority: number;
+  data: unknown;
+  result?: unknown;
+  error?: {
+    message: string;
+    code?: string;
+  };
+  progress?: number;
+  retries: number;
+  maxRetries: number;
+  queuedAt: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+/**
+ * Queue status response shape
+ */
+export interface QueueStatusResponse {
+  queues: Array<{
+    name: string;
+    stats: QueueStats;
+    jobs: FormattedJob[];
+  }>;
+  timestamp: number;
+}
+
+/**
+ * Create job response shape
+ */
+export interface CreateJobResponse {
+  jobId: string;
+  queueName: string;
+  jobType: string;
+  createdAt: number;
 }

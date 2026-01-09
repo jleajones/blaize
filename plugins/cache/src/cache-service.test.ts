@@ -1,352 +1,289 @@
 /**
- * Tests for CacheService
+ * Tests for CacheService (EventBus Integration)
  *
  * Covers:
- * - Event emission on mutations
- * - Pattern matching (string and regex)
- * - Watch subscription and cleanup
- * - Error handling in listeners
- * - Multi-server coordination
+ * - EventBus event publishing on mutations
  * - Adapter delegation
+ * - Error handling
+ * - Lifecycle methods
  */
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockLogger, createMockEventBus } from '@blaizejs/testing-utils';
 
 import { CacheService } from './cache-service';
 import { MemoryAdapter } from './storage/memory';
 
-import type { CacheAdapter, CacheChangeEvent } from './types';
+import type { CacheAdapter } from './types';
+import type { EventBus } from 'blaizejs';
 
 describe('CacheService', () => {
   let service: CacheService;
   let adapter: CacheAdapter;
+  let mockEventBus: EventBus;
+  let mockLogger: ReturnType<typeof createMockLogger>;
 
   beforeEach(() => {
     adapter = new MemoryAdapter({ maxEntries: 100 });
-    service = new CacheService({ adapter, logger: createMockLogger() });
+    mockEventBus = createMockEventBus();
+    mockLogger = createMockLogger();
   });
 
   afterEach(async () => {
-    await service.disconnect();
+    if (service) {
+      await service.disconnect();
+    }
   });
 
   // ==========================================================================
   // Basic Operations (Adapter Delegation)
   // ==========================================================================
 
-  describe('get()', () => {
-    test('delegates to adapter', async () => {
+  describe('Adapter Delegation', () => {
+    beforeEach(() => {
+      service = new CacheService({ adapter, logger: mockLogger });
+    });
+
+    test('get() delegates to adapter', async () => {
       await adapter.set('key1', 'value1');
       const result = await service.get('key1');
       expect(result).toBe('value1');
     });
 
-    test('returns null for missing key', async () => {
+    test('get() returns null for missing key', async () => {
       const result = await service.get('missing');
       expect(result).toBeNull();
     });
 
-    test('does not emit events (read-only)', async () => {
-      const handler = vi.fn();
-      service.on('cache:change', handler);
-
-      await service.get('key1');
-
-      expect(handler).not.toHaveBeenCalled();
+    test('set() delegates to adapter', async () => {
+      await service.set('key1', 'value1');
+      expect(await adapter.get('key1')).toBe('value1');
     });
-  });
 
-  describe('mget()', () => {
-    test('delegates to adapter', async () => {
+    test('set() with TTL delegates to adapter', async () => {
+      await service.set('key1', 'value1', 3600);
+      expect(await adapter.get('key1')).toBe('value1');
+    });
+
+    test('delete() delegates to adapter', async () => {
+      await adapter.set('key1', 'value1');
+      const deleted = await service.delete('key1');
+      expect(deleted).toBe(true);
+      expect(await adapter.get('key1')).toBeNull();
+    });
+
+    test('delete() returns false for non-existent key', async () => {
+      const deleted = await service.delete('missing');
+      expect(deleted).toBe(false);
+    });
+
+    test('mget() delegates to adapter', async () => {
       await adapter.set('key1', 'value1');
       await adapter.set('key2', 'value2');
 
       const results = await service.mget(['key1', 'key2', 'missing']);
-
       expect(results).toEqual(['value1', 'value2', null]);
     });
 
-    test('does not emit events (read-only)', async () => {
-      const handler = vi.fn();
-      service.on('cache:change', handler);
-
-      await service.mget(['key1', 'key2']);
-
-      expect(handler).not.toHaveBeenCalled();
-    });
-  });
-
-  // ==========================================================================
-  // Event Emission on Mutations
-  // ==========================================================================
-
-  describe('set() event emission', () => {
-    test('emits cache:change event on set', async () => {
-      const events: CacheChangeEvent[] = [];
-      service.on('cache:change', event => events.push(event));
-
-      await service.set('key1', 'value1', 60);
-
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'set',
-        key: 'key1',
-        value: 'value1',
-      });
-      expect(events[0]!.timestamp).toBeDefined();
-    });
-
-    test('includes serverId if provided', async () => {
-      const serviceWithId = new CacheService({
-        adapter,
-        serverId: 'server-123',
-        logger: createMockLogger(),
-      });
-      const events: CacheChangeEvent[] = [];
-      serviceWithId.on('cache:change', event => events.push(event));
-
-      await serviceWithId.set('key1', 'value1');
-
-      expect(events[0]!.serverId).toBe('server-123');
-
-      await serviceWithId.disconnect();
-    });
-
-    test('emits event after successful write', async () => {
-      const events: CacheChangeEvent[] = [];
-      service.on('cache:change', event => events.push(event));
-
-      await service.set('key1', 'value1');
-
-      // Value should be stored
-      expect(await service.get('key1')).toBe('value1');
-      // Event should be emitted
-      expect(events).toHaveLength(1);
-    });
-
-    test('does not emit event if adapter throws', async () => {
-      const mockAdapter = {
-        ...adapter,
-        set: vi.fn().mockRejectedValue(new Error('Adapter error')),
-      } as unknown as CacheAdapter;
-
-      const serviceWithMock = new CacheService({
-        adapter: mockAdapter,
-        logger: createMockLogger(),
-      });
-      const events: CacheChangeEvent[] = [];
-      serviceWithMock.on('cache:change', event => events.push(event));
-
-      await expect(serviceWithMock.set('key1', 'value1')).rejects.toThrow('Adapter error');
-
-      expect(events).toHaveLength(0);
-
-      await serviceWithMock.disconnect();
-    });
-  });
-
-  describe('delete() event emission', () => {
-    test('emits cache:change event when key exists', async () => {
-      await service.set('key1', 'value1');
-
-      const events: CacheChangeEvent[] = [];
-      service.on('cache:change', event => events.push(event));
-
-      const existed = await service.delete('key1');
-
-      expect(existed).toBe(true);
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'delete',
-        key: 'key1',
-      });
-      expect(events[0]!.value).toBeUndefined();
-    });
-
-    test('does not emit event when key does not exist', async () => {
-      const events: CacheChangeEvent[] = [];
-      service.on('cache:change', event => events.push(event));
-
-      const existed = await service.delete('missing');
-
-      expect(existed).toBe(false);
-      expect(events).toHaveLength(0);
-    });
-
-    test('includes serverId if provided', async () => {
-      const serviceWithId = new CacheService({
-        adapter,
-        serverId: 'server-456',
-        logger: createMockLogger(),
-      });
-      await serviceWithId.set('key1', 'value1');
-
-      const events: CacheChangeEvent[] = [];
-      serviceWithId.on('cache:change', event => events.push(event));
-
-      await serviceWithId.delete('key1');
-
-      expect(events[0]!.serverId).toBe('server-456');
-
-      await serviceWithId.disconnect();
-    });
-  });
-
-  describe('mset() event emission', () => {
-    test('emits event for each entry', async () => {
-      const events: CacheChangeEvent[] = [];
-      service.on('cache:change', event => events.push(event));
-
+    test('mset() delegates to adapter', async () => {
       await service.mset([
         ['key1', 'value1'],
-        ['key2', 'value2'],
-        ['key3', 'value3', 60],
+        ['key2', 'value2', 60],
       ]);
 
-      expect(events).toHaveLength(3);
-      expect(events[0]!.key).toBe('key1');
-      expect(events[1]!.key).toBe('key2');
-      expect(events[2]!.key).toBe('key3');
-
-      // All events should have same timestamp (batched)
-      expect(events[0]!.timestamp).toBe(events[1]!.timestamp);
-      expect(events[1]!.timestamp).toBe(events[2]!.timestamp);
+      expect(await adapter.get('key1')).toBe('value1');
+      expect(await adapter.get('key2')).toBe('value2');
     });
 
-    test('stores values correctly', async () => {
-      await service.mset([
-        ['key1', 'value1'],
-        ['key2', 'value2'],
-      ]);
+    test('keys() delegates to adapter', async () => {
+      await adapter.set('user:1', 'data1');
+      await adapter.set('user:2', 'data2');
+      await adapter.set('session:1', 'data3');
 
-      expect(await service.get('key1')).toBe('value1');
-      expect(await service.get('key2')).toBe('value2');
-    });
-  });
-
-  // ==========================================================================
-  // Pattern Matching
-  // ==========================================================================
-
-  describe('watch() with string patterns', () => {
-    test('matches exact string', async () => {
-      const handler = vi.fn();
-      service.watch('user:123', handler);
-
-      await service.set('user:123', 'data');
-
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'set',
-          key: 'user:123',
-        })
-      );
+      const keys = await service.keys('user:*');
+      expect(keys).toContain('user:1');
+      expect(keys).toContain('user:2');
+      expect(keys).not.toContain('session:1');
     });
 
-    test('does not match different keys', async () => {
-      const handler = vi.fn();
-      service.watch('user:123', handler);
+    test('clear() delegates to adapter', async () => {
+      await adapter.set('user:1', 'data1');
+      await adapter.set('user:2', 'data2');
 
-      await service.set('user:456', 'data');
-      await service.set('session:123', 'data');
-
-      expect(handler).not.toHaveBeenCalled();
+      const count = await service.clear('user:*');
+      expect(count).toBe(2);
+      expect(await adapter.get('user:1')).toBeNull();
     });
 
-    test('matches on delete events', async () => {
-      const handler = vi.fn();
-      service.watch('user:123', handler);
-
-      await service.set('user:123', 'data');
-      await service.delete('user:123');
-
-      expect(handler).toHaveBeenCalledTimes(2);
-      expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: 'set' }));
-      expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({ type: 'delete' }));
-    });
-  });
-
-  describe('watch() with regex patterns', () => {
-    test('matches regex pattern', async () => {
-      const handler = vi.fn();
-      service.watch(/^user:/, handler);
-
-      await service.set('user:123', 'data1');
-      await service.set('user:456', 'data2');
-      await service.set('session:789', 'data3');
-
-      expect(handler).toHaveBeenCalledTimes(2);
-      expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({ key: 'user:123' }));
-      expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({ key: 'user:456' }));
-    });
-
-    test('supports complex regex patterns', async () => {
-      const handler = vi.fn();
-      service.watch(/^(user|session):\d+$/, handler);
-
-      await service.set('user:123', 'data');
-      await service.set('session:456', 'data');
-      await service.set('admin:789', 'data');
-      await service.set('user:abc', 'data');
-
-      expect(handler).toHaveBeenCalledTimes(2);
+    test('getStats() delegates to adapter', async () => {
+      const stats = await service.getStats();
+      expect(stats).toHaveProperty('hits');
+      expect(stats).toHaveProperty('misses');
+      expect(stats).toHaveProperty('entryCount');
     });
   });
 
   // ==========================================================================
-  // Watch Cleanup
+  // EventBus Integration
   // ==========================================================================
 
-  describe('watch() cleanup', () => {
-    test('returns unsubscribe function', async () => {
-      const handler = vi.fn();
-      const unsubscribe = service.watch('key1', handler);
-
-      expect(typeof unsubscribe).toBe('function');
+  describe('EventBus Integration', () => {
+    beforeEach(() => {
+      service = new CacheService({
+        adapter,
+        eventBus: mockEventBus,
+        serverId: 'test-server',
+        logger: mockLogger,
+      });
     });
 
-    test('stops receiving events after unsubscribe', async () => {
-      const handler = vi.fn();
-      const unsubscribe = service.watch('key1', handler);
+    describe('get() events', () => {
+      test('publishes cache:hit when key exists', async () => {
+        await adapter.set('key1', 'value1');
+        await service.get('key1');
 
-      await service.set('key1', 'value1');
-      unsubscribe();
-      await service.set('key1', 'value2');
+        expect(mockEventBus.publish).toHaveBeenCalledWith('cache:hit', {
+          key: 'key1',
+        });
+      });
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      test('publishes cache:miss when key does not exist', async () => {
+        await service.get('missing');
+
+        expect(mockEventBus.publish).toHaveBeenCalledWith('cache:miss', {
+          key: 'missing',
+        });
+      });
     });
 
-    test('handles multiple unsubscribe calls gracefully', async () => {
-      const handler = vi.fn();
-      const unsubscribe = service.watch('key1', handler);
+    describe('set() events', () => {
+      test('publishes cache:set event', async () => {
+        await service.set('key1', 'value1');
 
-      expect(() => {
-        unsubscribe();
-        unsubscribe();
-        unsubscribe();
-      }).not.toThrow();
+        expect(mockEventBus.publish).toHaveBeenCalledWith('cache:set', {
+          key: 'key1',
+          ttl: undefined,
+          timestamp: expect.any(Number),
+          size: 6, // 'value1'.length
+        });
+      });
+
+      test('publishes cache:set with TTL', async () => {
+        await service.set('key1', 'value1', 3600);
+
+        expect(mockEventBus.publish).toHaveBeenCalledWith('cache:set', {
+          key: 'key1',
+          ttl: 3600,
+          timestamp: expect.any(Number),
+          size: 6,
+        });
+      });
+
+      test('still sets value if EventBus publish fails', async () => {
+        mockEventBus.publish = vi.fn().mockRejectedValue(new Error('EventBus error'));
+
+        await service.set('key1', 'value1');
+
+        // Value should still be set despite EventBus error
+        expect(await adapter.get('key1')).toBe('value1');
+      });
     });
 
-    test('multiple watchers work independently', async () => {
-      const handler1 = vi.fn();
-      const handler2 = vi.fn();
+    describe('delete() events', () => {
+      test('publishes cache:delete when key exists', async () => {
+        await adapter.set('key1', 'value1');
+        await service.delete('key1');
 
-      const unsub1 = service.watch('key1', handler1);
-      const unsub2 = service.watch('key1', handler2);
+        expect(mockEventBus.publish).toHaveBeenCalledWith('cache:delete', {
+          key: 'key1',
+          timestamp: expect.any(Number),
+        });
+      });
 
-      await service.set('key1', 'value1');
+      test('does not publish when key does not exist', async () => {
+        await service.delete('missing');
 
-      expect(handler1).toHaveBeenCalledTimes(1);
-      expect(handler2).toHaveBeenCalledTimes(1);
+        expect(mockEventBus.publish).not.toHaveBeenCalled();
+      });
+    });
 
-      unsub1();
+    describe('mset() events', () => {
+      test('publishes cache:set for each entry', async () => {
+        await service.mset([
+          ['key1', 'value1'],
+          ['key2', 'value2', 60],
+        ]);
 
-      await service.set('key1', 'value2');
+        expect(mockEventBus.publish).toHaveBeenCalledTimes(2);
+        expect(mockEventBus.publish).toHaveBeenNthCalledWith(1, 'cache:set', {
+          key: 'key1',
+          ttl: undefined,
+          timestamp: expect.any(Number),
+          size: 6,
+        });
+        expect(mockEventBus.publish).toHaveBeenNthCalledWith(2, 'cache:set', {
+          key: 'key2',
+          ttl: 60,
+          timestamp: expect.any(Number),
+          size: 6,
+        });
+      });
+    });
 
-      expect(handler1).toHaveBeenCalledTimes(1); // Still 1
-      expect(handler2).toHaveBeenCalledTimes(2); // Incremented
+    describe('clear() events', () => {
+      test('publishes cache:delete for each deleted key', async () => {
+        await adapter.set('user:1', 'data1');
+        await adapter.set('user:2', 'data2');
 
-      unsub2();
+        await service.clear('user:*');
+
+        expect(mockEventBus.publish).toHaveBeenCalledTimes(2);
+        expect(mockEventBus.publish).toHaveBeenCalledWith('cache:delete', {
+          key: 'user:1',
+          timestamp: expect.any(Number),
+        });
+        expect(mockEventBus.publish).toHaveBeenCalledWith('cache:delete', {
+          key: 'user:2',
+          timestamp: expect.any(Number),
+        });
+      });
+
+      test('does not publish if no keys deleted', async () => {
+        await service.clear('nonexistent:*');
+
+        expect(mockEventBus.publish).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  // ==========================================================================
+  // Without EventBus
+  // ==========================================================================
+
+  describe('Without EventBus', () => {
+    beforeEach(() => {
+      service = new CacheService({
+        adapter,
+        logger: mockLogger,
+        // No eventBus provided
+      });
+    });
+
+    test('set() works without EventBus', async () => {
+      await expect(service.set('key1', 'value1')).resolves.toBeUndefined();
+      expect(await adapter.get('key1')).toBe('value1');
+    });
+
+    test('delete() works without EventBus', async () => {
+      await adapter.set('key1', 'value1');
+      await expect(service.delete('key1')).resolves.toBe(true);
+    });
+
+    test('mset() works without EventBus', async () => {
+      await expect(service.mset([['key1', 'value1']])).resolves.toBeUndefined();
+    });
+
+    test('clear() works without EventBus', async () => {
+      await adapter.set('key1', 'value1');
+      await expect(service.clear('*')).resolves.toBe(1);
     });
   });
 
@@ -354,182 +291,141 @@ describe('CacheService', () => {
   // Error Handling
   // ==========================================================================
 
-  describe('error handling in listeners', () => {
-    test('continues operation even if listener throws', async () => {
-      const handler1 = vi.fn(() => {
-        throw new Error('Handler 1 error');
-      });
-      const handler2 = vi.fn();
-
-      service.on('error', () => {}); // Suppress error output
-
-      service.watch('key1', handler1);
-      service.watch('key1', handler2);
-
-      await service.set('key1', 'value1');
-
-      // Both handlers should be called despite error in first
-      expect(handler1).toHaveBeenCalled();
-      expect(handler2).toHaveBeenCalled();
-
-      // Value should still be set
-      expect(await service.get('key1')).toBe('value1');
-    });
-  });
-
-  // ==========================================================================
-  // Statistics and Health
-  // ==========================================================================
-
-  describe('getStats()', () => {
-    test('delegates to adapter', async () => {
-      await service.set('key1', 'value1');
-      await service.get('key1');
-
-      const stats = await service.getStats();
-
-      expect(stats.entryCount).toBe(1);
-      expect(stats.hits).toBeGreaterThan(0);
-    });
-  });
-
-  describe('healthCheck()', () => {
-    test('delegates to adapter if available', async () => {
-      const health = await service.healthCheck();
-
-      expect(health.healthy).toBe(true);
-      expect(health.message).toBeDefined();
-    });
-
-    test('returns default healthy if adapter has no healthCheck', async () => {
-      const mockAdapter = {
+  describe('Error Handling', () => {
+    test('adapter errors are propagated', async () => {
+      const errorAdapter = {
         ...adapter,
-        healthCheck: undefined,
+        set: vi.fn().mockRejectedValue(new Error('Adapter error')),
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService({
-        adapter: mockAdapter,
-        logger: createMockLogger(),
+      service = new CacheService({
+        adapter: errorAdapter,
+        eventBus: mockEventBus,
+        logger: mockLogger,
       });
-      const health = await serviceWithMock.healthCheck();
 
-      expect(health.healthy).toBe(true);
-      expect(health.message).toContain('does not implement healthCheck');
+      await expect(service.set('key1', 'value1')).rejects.toThrow('Adapter error');
 
-      await serviceWithMock.disconnect();
+      // EventBus publish should not be called if adapter fails
+      expect(mockEventBus.publish).not.toHaveBeenCalled();
+    });
+
+    test('EventBus publish errors do not fail operation', async () => {
+      mockEventBus.publish = vi.fn().mockRejectedValue(new Error('EventBus error'));
+
+      service = new CacheService({
+        adapter,
+        eventBus: mockEventBus,
+        serverId: 'test-server',
+        logger: mockLogger,
+      });
+
+      // Operation should succeed despite EventBus error
+      await expect(service.set('key1', 'value1')).resolves.toBeUndefined();
+      expect(await adapter.get('key1')).toBe('value1');
     });
   });
 
   // ==========================================================================
-  // Lifecycle
+  // Lifecycle Methods
   // ==========================================================================
 
-  describe('connect()', () => {
-    test('calls adapter connect if available', async () => {
+  describe('Lifecycle', () => {
+    test('connect() calls adapter.connect if available', async () => {
       const mockAdapter = {
         ...adapter,
         connect: vi.fn().mockResolvedValue(undefined),
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService({
+      service = new CacheService({
         adapter: mockAdapter,
-        logger: createMockLogger(),
+        logger: mockLogger,
       });
 
-      await serviceWithMock.connect();
-
+      await service.connect();
       expect(mockAdapter.connect).toHaveBeenCalled();
-
-      await serviceWithMock.disconnect();
     });
 
-    test('succeeds if adapter has no connect method', async () => {
-      const mockAdapter = {
-        ...adapter,
-        connect: undefined,
-      } as unknown as CacheAdapter;
-
-      const serviceWithMock = new CacheService({
-        adapter: mockAdapter,
-        logger: createMockLogger(),
-      });
-
-      await expect(serviceWithMock.connect()).resolves.toBeUndefined();
-
-      await serviceWithMock.disconnect();
+    test('connect() succeeds if adapter has no connect method', async () => {
+      service = new CacheService({ adapter, logger: mockLogger });
+      await expect(service.connect()).resolves.toBeUndefined();
     });
-  });
 
-  describe('disconnect()', () => {
-    test('calls adapter disconnect if available', async () => {
+    test('disconnect() calls adapter.disconnect if available', async () => {
       const mockAdapter = {
         ...adapter,
         disconnect: vi.fn().mockResolvedValue(undefined),
       } as unknown as CacheAdapter;
 
-      const serviceWithMock = new CacheService({
+      service = new CacheService({
         adapter: mockAdapter,
-        logger: createMockLogger(),
+        logger: mockLogger,
       });
 
-      await serviceWithMock.disconnect();
-
+      await service.disconnect();
       expect(mockAdapter.disconnect).toHaveBeenCalled();
     });
 
-    test('removes all event listeners', async () => {
-      const handler = vi.fn();
-      service.watch('key1', handler);
+    test('disconnect() logs but does not throw on adapter error', async () => {
+      const mockAdapter = {
+        ...adapter,
+        disconnect: vi.fn().mockRejectedValue(new Error('Disconnect error')),
+      } as unknown as CacheAdapter;
 
-      await service.disconnect();
-
-      // Try to emit event (should not reach handler)
-      service.emit('cache:change', {
-        type: 'set',
-        key: 'key1',
-        value: 'value1',
-        timestamp: Date.now(),
+      service = new CacheService({
+        adapter: mockAdapter,
+        logger: mockLogger,
       });
 
-      expect(handler).not.toHaveBeenCalled();
+      await expect(service.disconnect()).resolves.toBeUndefined();
+    });
+
+    test('healthCheck() delegates to adapter if available', async () => {
+      service = new CacheService({ adapter, logger: mockLogger });
+      const health = await service.healthCheck();
+
+      expect(health.healthy).toBe(true);
+    });
+
+    test('healthCheck() returns default if adapter has no healthCheck', async () => {
+      const mockAdapter = {
+        ...adapter,
+        healthCheck: undefined,
+      } as unknown as CacheAdapter;
+
+      service = new CacheService({
+        adapter: mockAdapter,
+        logger: mockLogger,
+      });
+
+      const health = await service.healthCheck();
+      expect(health.healthy).toBe(true);
+      expect(health.message).toContain('does not implement healthCheck');
     });
   });
 
   // ==========================================================================
-  // Integration Scenarios
+  // Additional Methods
   // ==========================================================================
 
-  describe('integration scenarios', () => {
-    test('multiple operations emit correct events', async () => {
-      const events: CacheChangeEvent[] = [];
-      service.on('cache:change', event => events.push(event));
+  describe('getWithTTL()', () => {
+    beforeEach(() => {
+      // ✅ Create service before each test
+      service = new CacheService({ adapter, logger: mockLogger });
+    });
+    test('returns value and TTL when key exists', async () => {
+      await service.set('key1', 'value1', 3600);
 
-      await service.set('key1', 'value1');
-      await service.set('key2', 'value2');
-      await service.delete('key1');
-      await service.mset([['key3', 'value3']]);
-
-      expect(events).toHaveLength(4);
-      expect(events[0]!.type).toBe('set');
-      expect(events[1]!.type).toBe('set');
-      expect(events[2]!.type).toBe('delete');
-      expect(events[3]!.type).toBe('set');
+      const { value } = await service.getWithTTL('key1');
+      expect(value).toBe('value1');
+      // TTL depends on adapter implementation
     });
 
-    test('pattern watchers receive filtered events', async () => {
-      const userHandler = vi.fn();
-      const sessionHandler = vi.fn();
-
-      service.watch(/^user:/, userHandler);
-      service.watch(/^session:/, sessionHandler);
-
-      await service.set('user:1', 'data');
-      await service.set('session:1', 'data');
-      await service.set('user:2', 'data');
-      await service.set('admin:1', 'data');
-
-      expect(userHandler).toHaveBeenCalledTimes(2);
-      expect(sessionHandler).toHaveBeenCalledTimes(1);
+    test('returns null for missing key', async () => {
+      service = new CacheService({ adapter, logger: mockLogger });
+      const { value, ttl } = await service.getWithTTL('missing');
+      expect(value).toBeNull();
+      expect(ttl).toBeNull();
     });
   });
 });

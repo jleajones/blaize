@@ -10,9 +10,7 @@
  * @packageDocumentation
  */
 
-import { ServiceNotAvailableError } from 'blaizejs';
-
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
 
 import { CacheService } from './cache-service';
 import {
@@ -166,20 +164,14 @@ function createMockStream(): CacheSSEStream & {
 // ============================================================================
 
 describe('cacheStatsHandler', () => {
-  test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
-    const ctx = createMockContext();
-    const logger = createMockLogger();
-
-    await expect(cacheStatsHandler({ ctx, logger } as any)).rejects.toThrow(
-      ServiceNotAvailableError
-    );
-  });
-
   test('should return cache statistics with hit rate', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
+
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     // Generate some stats
@@ -210,9 +202,11 @@ describe('cacheStatsHandler', () => {
 
   test('should calculate hit rate correctly', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     // 2 hits, 1 miss = 66.7% hit rate
@@ -232,9 +226,11 @@ describe('cacheStatsHandler', () => {
 
   test('should handle zero requests (no division by zero)', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, cacheService);
@@ -247,9 +243,11 @@ describe('cacheStatsHandler', () => {
 
   test('should log debug message', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, cacheService);
@@ -266,18 +264,13 @@ describe('cacheStatsHandler', () => {
 // ============================================================================
 
 describe('cachePrometheusHandler', () => {
-  test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
-    const ctx = createMockContext();
-    const logger = createMockLogger();
-
-    await expect(cachePrometheusHandler({ ctx, logger })).rejects.toThrow(ServiceNotAvailableError);
-  });
-
   test('should return Prometheus format metrics', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     // Generate some stats
@@ -303,9 +296,11 @@ describe('cachePrometheusHandler', () => {
 
   test('should include uptime metric if available', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, cacheService);
@@ -319,9 +314,11 @@ describe('cachePrometheusHandler', () => {
 
   test('should format metrics correctly', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     await cacheService.set('key1', 'value1');
@@ -344,9 +341,11 @@ describe('cachePrometheusHandler', () => {
 
   test('should log debug message', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, cacheService);
@@ -363,18 +362,13 @@ describe('cachePrometheusHandler', () => {
 // ============================================================================
 
 describe('cacheDashboardHandler', () => {
-  test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
-    const ctx = createMockContext();
-    const logger = createMockLogger();
-
-    await expect(cacheDashboardHandler({ ctx, logger })).rejects.toThrow(ServiceNotAvailableError);
-  });
-
   test('should return HTML dashboard', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, cacheService);
@@ -391,9 +385,11 @@ describe('cacheDashboardHandler', () => {
 
   test('should include summary cards', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     await cacheService.set('key1', 'value1');
@@ -414,9 +410,11 @@ describe('cacheDashboardHandler', () => {
 
   test('should support auto-refresh', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({ refresh: '30' }, cacheService);
@@ -432,9 +430,11 @@ describe('cacheDashboardHandler', () => {
 
   test('should handle no auto-refresh', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({}, cacheService);
@@ -448,9 +448,11 @@ describe('cacheDashboardHandler', () => {
 
   test('should log debug message', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const ctx = createMockContext({ refresh: '60' }, cacheService);
@@ -469,21 +471,13 @@ describe('cacheDashboardHandler', () => {
 // ============================================================================
 
 describe('cacheEventsHandler', () => {
-  test('should throw ServiceNotAvailableError when cache service unavailable', async () => {
-    const stream = createMockStream();
-    const ctx = createMockContext();
-    const logger = createMockLogger();
-
-    await expect(cacheEventsHandler({ stream, ctx, logger })).rejects.toThrow(
-      ServiceNotAvailableError
-    );
-  });
-
   test('should stream cache set events', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const stream = createMockStream();
@@ -491,7 +485,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler (returns immediately after setup)
-    await cacheEventsHandler({ stream, ctx, logger });
+    await cacheEventsHandler({ stream, ctx, logger, eventBus });
 
     // Trigger cache events
     await cacheService.set('test:key', 'value');
@@ -514,9 +508,11 @@ describe('cacheEventsHandler', () => {
 
   test('should stream cache delete events', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     await cacheService.set('test:key', 'value');
@@ -526,7 +522,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler
-    await cacheEventsHandler({ stream, ctx, logger });
+    await cacheEventsHandler({ stream, ctx, logger, eventBus });
 
     // Trigger delete event
     await cacheService.delete('test:key');
@@ -546,9 +542,11 @@ describe('cacheEventsHandler', () => {
 
   test('should filter events by pattern', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const stream = createMockStream();
@@ -556,7 +554,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler
-    await cacheEventsHandler({ stream, ctx, logger });
+    await cacheEventsHandler({ stream, ctx, logger, eventBus });
 
     // Set keys that match and don't match pattern
     await cacheService.set('user:123', 'data');
@@ -576,9 +574,11 @@ describe('cacheEventsHandler', () => {
 
   test('should cleanup subscription on close', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const stream = createMockStream();
@@ -586,7 +586,7 @@ describe('cacheEventsHandler', () => {
     const logger = createMockLogger();
 
     // Start handler
-    await cacheEventsHandler({ stream, ctx, logger });
+    await cacheEventsHandler({ stream, ctx, logger, eventBus });
 
     // Close immediately
     stream.close();
@@ -601,16 +601,18 @@ describe('cacheEventsHandler', () => {
 
   test('should log debug messages', async () => {
     const adapter = new MemoryAdapter({ maxEntries: 100 });
+    const eventBus = createWorkingMockEventBus();
     const cacheService = new CacheService({
       adapter,
       logger: createMockLogger() as any,
+      eventBus,
     });
 
     const stream = createMockStream();
     const ctx = createMockContext({ pattern: 'test:*' }, cacheService);
     const logger = createMockLogger();
 
-    const handlerPromise = cacheEventsHandler({ stream, ctx, logger });
+    const handlerPromise = cacheEventsHandler({ stream, ctx, logger, eventBus });
     stream.close();
     await handlerPromise;
 

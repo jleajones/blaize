@@ -139,7 +139,7 @@ export const getNotifications = appRouter.sse({
 
     // ✅ Subscribe to queue events (optional - useful for debugging)
     unsubscribers.push(
-      eventBus.subscribe('queue:*', event => {
+      eventBus.subscribe('queue:job:*', event => {
         logger.debug('Broadcasting queue event to SSE', { type: event.type });
 
         stream.send('notification', {

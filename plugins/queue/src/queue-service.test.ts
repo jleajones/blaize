@@ -4,7 +4,12 @@
  * Tests multi-queue management, cross-queue job search,
  * event subscription, and lifecycle management.
  */
-import { createMockLogger, MockLogger } from '@blaizejs/testing-utils';
+import {
+  createMockEventBus,
+  createMockLogger,
+  createWorkingMockEventBus,
+  MockLogger,
+} from '@blaizejs/testing-utils';
 
 import { QueueNotFoundError } from './errors';
 import { QueueService } from './queue-service';
@@ -20,10 +25,12 @@ describe('QueueService', () => {
   let service: QueueService;
   let storage: InMemoryStorage;
   let logger: MockLogger;
+  let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(() => {
     storage = new InMemoryStorage();
     logger = createMockLogger();
+    eventBus = createWorkingMockEventBus();
     service = new QueueService({
       queues: {
         emails: { concurrency: 5, defaultMaxRetries: 0 },
@@ -31,6 +38,7 @@ describe('QueueService', () => {
       },
       storage,
       logger,
+      eventBus,
     });
   });
 
@@ -609,6 +617,26 @@ describe('QueueService', () => {
       // Both queues use the same storage, so total should be 2
       const allStats = await service.getAllStats();
       expect(allStats.total).toBe(2);
+    });
+  });
+
+  describe('EventBus Integration', () => {
+    it('should accept and store eventBus and serverId', () => {
+      const eventBus = createMockEventBus();
+
+      const service = new QueueService({
+        queues: {
+          test: { concurrency: 1 },
+        },
+        storage,
+        logger,
+        eventBus,
+        serverId: 'test-server',
+      });
+
+      // Just verify the service was created successfully with eventBus config
+      // The actual publishing is tested in QueueInstance tests
+      expect(service).toBeDefined();
     });
   });
 });

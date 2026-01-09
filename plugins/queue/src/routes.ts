@@ -67,13 +67,20 @@ import type { QueueService } from './queue-service';
 import type {
   CancelJobBody,
   CreateJobBody,
-  jobEventsSchema,
+  jobSseEventSchemas,
   JobStreamQuery,
   QueueDashboardQuery,
   QueueStatusQuery,
 } from './schema';
-import type { Job, JobStatus, QueueStats, JobOptions } from './types';
-import type { TypedSSEStream, Context, BlaizeLogger } from 'blaizejs';
+import type {
+  Job,
+  JobStatus,
+  JobOptions,
+  FormattedJob,
+  QueueStatusResponse,
+  CreateJobResponse,
+} from './types';
+import type { TypedSSEStream, Context, BlaizeLogger, EventBus } from 'blaizejs';
 
 // ============================================================================
 // Helper Functions
@@ -113,7 +120,7 @@ function getQueueServiceOrThrow(ctx: Context): QueueService {
 // ============================================================================
 
 // Create a type alias for your specific stream type
-export type JobSSEStream = TypedSSEStream<typeof jobEventsSchema>;
+export type JobSSEStream = TypedSSEStream<typeof jobSseEventSchemas>;
 
 /**
  * SSE job monitoring handler
@@ -178,14 +185,17 @@ export type JobSSEStream = TypedSSEStream<typeof jobEventsSchema>;
  * @param params - Route parameters (unused, job ID comes from query)
  * @param logger - BlaizeJS logger instance
  */
+
 export const jobStreamHandler = async ({
   stream,
   ctx,
   logger,
+  eventBus,
 }: {
   stream: JobSSEStream;
   ctx: Context;
   logger: BlaizeLogger;
+  eventBus: EventBus;
 }): Promise<void> => {
   // Get queue service from context
   const queue = getQueueServiceOrThrow(ctx);
@@ -210,137 +220,251 @@ export const jobStreamHandler = async ({
     );
   }
 
-  // Track if stream is still active
-  let isStreamActive = true;
+  // Track unsubscribe functions for cleanup
+  const unsubscribers: (() => void)[] = [];
 
-  // Subscribe to job events
-  const unsubscribe = queue.subscribe(jobId, {
-    onProgress: (percent, message) => {
-      if (!isStreamActive) return;
+  // Subscribe to enqueued events
+  unsubscribers.push(
+    eventBus.subscribe('queue:job:enqueued', event => {
+      const data = event.data as any;
 
-      stream.send('job.progress', {
-        jobId,
-        percent,
-        message,
-        timestamp: Date.now(),
-      });
-    },
+      // Filter by jobId
+      if (data.jobId !== jobId) return;
 
-    onCompleted: result => {
-      if (!isStreamActive) return;
+      // Filter by queueName if specified
+      if (queueName && data.queueName !== queueName) return;
 
-      stream.send('job.completed', {
-        jobId,
-        result,
-        completedAt: Date.now(),
-      });
+      try {
+        stream.send('job.enqueued', {
+          type: 'enqueued',
+          jobId: data.jobId,
+          queueName: data.queueName,
+          jobType: data.jobType,
+          priority: data.priority,
+          timestamp: data.timestamp,
+          serverId: data.serverId,
+        });
+      } catch (error) {
+        logger.error('Failed to send enqueued event', {
+          error,
+          jobId: data.jobId,
+        });
+      }
+    })
+  );
 
-      // Auto-close stream after completion
-      logger.debug('Job completed, closing SSE stream', { jobId });
-      stream.close();
-    },
+  // Subscribe to started events
+  unsubscribers.push(
+    eventBus.subscribe('queue:job:started', event => {
+      const data = event.data as any;
 
-    onFailed: error => {
-      if (!isStreamActive) return;
+      if (data.jobId !== jobId) return;
+      if (queueName && data.queueName !== queueName) return;
 
-      stream.send('job.failed', {
-        jobId,
-        error: {
-          message: error.message,
-          code: error.code,
-        },
-        failedAt: Date.now(),
-      });
+      try {
+        stream.send('job.started', {
+          type: 'started',
+          jobId: data.jobId,
+          queueName: data.queueName,
+          jobType: data.jobType,
+          timestamp: data.timestamp,
+          serverId: data.serverId,
+        });
+      } catch (error) {
+        logger.error('Failed to send started event', {
+          error,
+          jobId: data.jobId,
+        });
+      }
+    })
+  );
 
-      // Auto-close stream after failure
-      logger.debug('Job failed, closing SSE stream', { jobId });
-      stream.close();
-    },
+  // Subscribe to progress events
+  unsubscribers.push(
+    eventBus.subscribe('queue:job:progress', event => {
+      const data = event.data as any;
 
-    onCancelled: reason => {
-      if (!isStreamActive) return;
+      if (data.jobId !== jobId) return;
 
-      stream.send('job.cancelled', {
-        jobId,
-        reason,
-        cancelledAt: Date.now(),
-      });
+      try {
+        stream.send('job.progress', {
+          type: 'progress',
+          jobId: data.jobId,
+          queueName: queueName || '', // Progress events don't include queueName
+          progress: data.progress || 0, // Already 0-1 from EventBus
+          message: data.message,
+          timestamp: data.timestamp,
+          serverId: '', // Progress events don't include serverId
+        });
+      } catch (error) {
+        logger.error('Failed to send progress event', {
+          error,
+          jobId: data.jobId,
+        });
+      }
+    })
+  );
 
-      // Auto-close stream after cancellation
-      logger.debug('Job cancelled, closing SSE stream', { jobId });
-      stream.close();
-    },
-  });
+  // Subscribe to completed events
+  unsubscribers.push(
+    eventBus.subscribe('queue:job:completed', event => {
+      const data = event.data as any;
 
-  // Cleanup on client disconnect
+      if (data.jobId !== jobId) return;
+      if (queueName && data.queueName !== queueName) return;
+
+      try {
+        stream.send('job.completed', {
+          type: 'completed',
+          jobId: data.jobId,
+          queueName: data.queueName,
+          jobType: data.jobType,
+          result: data.result,
+          timestamp: data.timestamp, // ✅ Use completedAt
+          serverId: data.serverId,
+        });
+        logger.debug('Job completed, closing SSE stream', { jobId: data.jobId }); // ✅ Correct log message
+        stream.close();
+      } catch (error) {
+        logger.error('Failed to send completed event', {
+          error,
+          jobId: data.jobId,
+        });
+      }
+    })
+  );
+
+  // Subscribe to failed events
+  unsubscribers.push(
+    eventBus.subscribe('queue:job:failed', async event => {
+      const data = event.data as any;
+
+      if (data.jobId !== jobId) return;
+      if (queueName && data.queueName !== queueName) return;
+
+      try {
+        const failedJob = await queue.getJob(data.jobId, data.queueName);
+
+        stream.send('job.failed', {
+          type: 'failed',
+          jobId: data.jobId,
+          queueName: data.queueName,
+          jobType: data.jobType,
+          error: {
+            message:
+              typeof data.error === 'string' ? data.error : data.error?.message || 'Unknown error',
+            code: failedJob?.error?.code, // ✅ Extract error code
+          },
+          timestamp: data.timestamp, // ✅ Use failedAt
+          serverId: data.serverId,
+        });
+        stream.close();
+      } catch (error) {
+        logger.error('Failed to send failed event', {
+          error,
+          jobId: data.jobId,
+        });
+      }
+    })
+  );
+
+  // Subscribe to cancelled events
+  unsubscribers.push(
+    eventBus.subscribe('queue:job:cancelled', event => {
+      const data = event.data as any;
+
+      if (data.jobId !== jobId) return;
+      if (queueName && data.queueName !== queueName) return;
+
+      try {
+        stream.send('job.cancelled', {
+          type: 'cancelled',
+          jobId: data.jobId,
+          queueName: data.queueName,
+          reason: data.reason,
+          timestamp: data.timestamp, // ✅ Use cancelledAt
+          serverId: data.serverId,
+        });
+        stream.close();
+      } catch (error) {
+        logger.error('Failed to send cancelled event', {
+          error,
+          jobId: data.jobId,
+        });
+      }
+    })
+  );
+
+  // Cleanup on stream close
   stream.onClose(() => {
-    isStreamActive = false;
-    logger.debug('SSE stream closed for job', { jobId });
-    unsubscribe();
+    logger.debug('SSE stream closed for job', { jobId, queueName });
+    unsubscribers.forEach(unsubscribe => unsubscribe());
   });
 
-  // Send initial state if job is already in terminal state
+  // ✅ Handle initial state - send event immediately for already-terminal jobs
   if (job.status === 'completed') {
-    stream.send('job.completed', {
-      jobId,
-      result: job.result,
-      completedAt: job.completedAt ?? Date.now(),
-    });
-    stream.close();
+    try {
+      stream.send('job.completed', {
+        type: 'completed',
+        jobId: job.id,
+        queueName: job.queueName,
+        jobType: job.type,
+        result: job.result,
+        timestamp: job.completedAt || Date.now(),
+        serverId: '', // Not available from storage
+      });
+      logger.debug('Job completed, closing SSE stream', { jobId: job.id });
+      stream.close();
+    } catch (error) {
+      logger.error('Failed to send completed event for already-completed job', {
+        error,
+        jobId,
+      });
+    }
   } else if (job.status === 'failed') {
-    stream.send('job.failed', {
-      jobId,
-      error: {
-        message: job.error?.message ?? 'Unknown error',
-        code: job.error?.code,
-      },
-      failedAt: job.completedAt ?? Date.now(),
-    });
-    stream.close();
+    try {
+      stream.send('job.failed', {
+        type: 'failed',
+        jobId: job.id,
+        queueName: job.queueName,
+        jobType: job.type,
+        error: {
+          message: job.error?.message || 'Unknown error',
+          code: job.error?.code, // ✅ Get code from stored job error
+        },
+        timestamp: job.completedAt || Date.now(),
+        serverId: '', // Not available from storage
+      });
+      stream.close();
+    } catch (error) {
+      logger.error('Failed to send failed event for already-failed job', {
+        error,
+        jobId,
+      });
+    }
   } else if (job.status === 'cancelled') {
-    stream.send('job.cancelled', {
-      jobId,
-      reason: undefined, // Job interface doesn't store cancellation reason
-      cancelledAt: job.completedAt ?? Date.now(),
-    });
-    stream.close();
+    try {
+      stream.send('job.cancelled', {
+        type: 'cancelled',
+        jobId: job.id,
+        queueName: job.queueName,
+        reason: 'Job was cancelled', // ✅ Provide a reason
+        timestamp: job.completedAt || Date.now(),
+        serverId: '', // Not available from storage
+      });
+      stream.close();
+    } catch (error) {
+      logger.error('Failed to send cancelled event for already-cancelled job', {
+        error,
+        jobId,
+      });
+    }
   }
-
-  // For running/queued jobs, the subscription handles events
-  // The function returns but the stream stays open until:
-  // 1. Client disconnects (onClose callback)
-  // 2. Job reaches terminal state (onCompleted/onFailed/onCancelled)
 };
 
 // ============================================================================
 // HTTP Handlers (3-param signature)
-// ============================================================================
-
-/**
- * Formatted job for API responses
- *
- * Serializable representation of a job with all relevant fields.
- * Used by queueStatusHandler and other JSON endpoints.
- */
-interface FormattedJob {
-  id: string;
-  type: string;
-  queueName: string;
-  status: JobStatus;
-  priority: number;
-  data: unknown;
-  result?: unknown;
-  error?: {
-    message: string;
-    code?: string;
-  };
-  progress?: number;
-  retries: number;
-  maxRetries: number;
-  queuedAt: number;
-  startedAt?: number;
-  completedAt?: number;
-}
+// ===========================================================================
 
 /**
  * Format a Job for JSON response
@@ -371,18 +495,6 @@ function formatJob(job: Job): FormattedJob {
     startedAt: job.startedAt,
     completedAt: job.completedAt,
   };
-}
-
-/**
- * Queue status response shape
- */
-interface QueueStatusResponse {
-  queues: Array<{
-    name: string;
-    stats: QueueStats;
-    jobs: FormattedJob[];
-  }>;
-  timestamp: number;
 }
 
 /**
@@ -553,16 +665,6 @@ export const queueDashboardHandler = async ({
 
   ctx.response.type('text/html; charset=utf-8').html(html);
 };
-
-/**
- * Create job response shape
- */
-interface CreateJobResponse {
-  jobId: string;
-  queueName: string;
-  jobType: string;
-  createdAt: number;
-}
 
 /**
  * Create job handler

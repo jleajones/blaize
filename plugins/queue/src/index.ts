@@ -135,6 +135,14 @@ export {
   jobDetailsResponseSchema,
   createJobResponseSchema,
   cancelJobResponseSchema,
+  // Event Bus Schemas Map
+  queueEventBusSchemas,
+  jobEnqueuedEventSchema,
+  jobStartedEventSchema,
+  jobProgressEventBusSchema,
+  jobCompletedEventBusSchema,
+  jobFailedEventBusSchema,
+  jobCancelledEventBusSchema,
 } from './schema';
 
 export type {
@@ -164,6 +172,13 @@ export type {
   JobDetailsResponse,
   CreateJobResponse,
   CancelJobResponse,
+  // Event Bus Schemas Map
+  JobEnqueuedEvent,
+  JobStartedEvent,
+  JobProgressEventBus,
+  JobCompletedEventBus,
+  JobFailedEventBus,
+  JobCancelledEventBus,
 } from './schema';
 
 // ============================================================================

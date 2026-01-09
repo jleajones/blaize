@@ -19,7 +19,6 @@ import {
   cacheSseDeleteEventSchema,
   cacheSseEvictionEventSchema,
   cacheSseEventSchemas,
-  cacheInvalidationEventSchema,
   cacheEventBusSchemas,
 } from './schema';
 
@@ -30,7 +29,6 @@ import type {
   CacheSseSetEvent,
   CacheSseDeleteEvent,
   CacheSseEvictionEvent,
-  CacheInvalidationEvent,
 } from './schema';
 
 // ============================================================================
@@ -612,132 +610,99 @@ describe('cacheSseEventSchemas', () => {
     const deleteResult = cacheSseEventSchemas['cache.delete'].safeParse(wrongTypeEvent);
     expect(deleteResult.success).toBe(true);
   });
-});
+  // ============================================================================
+  // EventBus Event Schemas (Server → Server Coordination)
+  // ============================================================================
+  describe('EventBus Event Schemas', () => {
+    describe('cache:set schema', () => {
+      const validSetEvent = {
+        key: 'user:123',
+        ttl: 3600,
+        timestamp: Date.now(),
+        size: 256,
+      };
 
-// ============================================================================
-// EventBus Event Schemas (Server → Server Coordination)
-// ============================================================================
-
-describe('cacheInvalidationEventSchema', () => {
-  const validEvent = {
-    operation: 'set' as const,
-    key: 'user:123',
-    value: '{"name":"Alice"}',
-    timestamp: Date.now(),
-    serverId: 'server-a',
-    sequence: 42,
-  };
-
-  describe('valid inputs', () => {
-    test('should accept complete invalidation event', () => {
-      const result = cacheInvalidationEventSchema.safeParse(validEvent);
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.operation).toBe('set');
-        expect(result.data.key).toBe('user:123');
-        expect(result.data.value).toBe('{"name":"Alice"}');
-        expect(result.data.serverId).toBe('server-a');
-      }
-    });
-
-    test('should accept all operation types', () => {
-      const operations: Array<'set' | 'delete' | 'eviction'> = ['set', 'delete', 'eviction'];
-
-      operations.forEach(operation => {
-        const event = { ...validEvent, operation };
-        const result = cacheInvalidationEventSchema.safeParse(event);
+      test('should accept complete set event', () => {
+        const result = cacheEventBusSchemas['cache:set'].safeParse(validSetEvent);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.data.operation).toBe(operation);
+          expect(result.data.key).toBe('user:123');
+          expect(result.data.ttl).toBe(3600);
+          expect(result.data.size).toBe(256);
         }
+      });
+
+      test('should accept set event without optional fields', () => {
+        const minimalEvent = {
+          key: 'user:123',
+          timestamp: Date.now(),
+        };
+        const result = cacheEventBusSchemas['cache:set'].safeParse(minimalEvent);
+        expect(result.success).toBe(true);
+      });
+
+      test('should reject missing required key', () => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { key, ...eventWithoutKey } = validSetEvent;
+        const result = cacheEventBusSchemas['cache:set'].safeParse(eventWithoutKey);
+        expect(result.success).toBe(false);
+      });
+
+      test('should reject missing timestamp', () => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { timestamp, ...eventWithoutTimestamp } = validSetEvent;
+        const result = cacheEventBusSchemas['cache:set'].safeParse(eventWithoutTimestamp);
+        expect(result.success).toBe(false);
       });
     });
 
-    test('should accept event without optional value', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { value, ...eventWithoutValue } = validEvent;
-      const result = cacheInvalidationEventSchema.safeParse(eventWithoutValue);
-      expect(result.success).toBe(true);
+    describe('cache:delete schema', () => {
+      const validDeleteEvent = {
+        key: 'user:123',
+        timestamp: Date.now(),
+      };
+
+      test('should accept complete delete event', () => {
+        const result = cacheEventBusSchemas['cache:delete'].safeParse(validDeleteEvent);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.key).toBe('user:123');
+          expect(result.data.timestamp).toBeGreaterThan(0);
+        }
+      });
+
+      test('should reject missing key', () => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { key, ...eventWithoutKey } = validDeleteEvent;
+        const result = cacheEventBusSchemas['cache:delete'].safeParse(eventWithoutKey);
+        expect(result.success).toBe(false);
+      });
     });
 
-    test('should accept event without optional sequence', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { sequence, ...eventWithoutSequence } = validEvent;
-      const result = cacheInvalidationEventSchema.safeParse(eventWithoutSequence);
-      expect(result.success).toBe(true);
-    });
-  });
+    describe('cache:hit schema', () => {
+      test('should accept hit event', () => {
+        const event = { key: 'user:123' };
+        const result = cacheEventBusSchemas['cache:hit'].safeParse(event);
+        expect(result.success).toBe(true);
+      });
 
-  describe('invalid inputs', () => {
-    test('should reject missing operation', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { operation, ...eventWithoutOperation } = validEvent;
-      const result = cacheInvalidationEventSchema.safeParse(eventWithoutOperation);
-      expect(result.success).toBe(false);
+      test('should reject missing key', () => {
+        const result = cacheEventBusSchemas['cache:hit'].safeParse({});
+        expect(result.success).toBe(false);
+      });
     });
 
-    test('should reject invalid operation', () => {
-      const invalidOperation = { ...validEvent, operation: 'update' };
-      const result = cacheInvalidationEventSchema.safeParse(invalidOperation);
-      expect(result.success).toBe(false);
+    describe('cache:miss schema', () => {
+      test('should accept miss event', () => {
+        const event = { key: 'user:456' };
+        const result = cacheEventBusSchemas['cache:miss'].safeParse(event);
+        expect(result.success).toBe(true);
+      });
+
+      test('should reject missing key', () => {
+        const result = cacheEventBusSchemas['cache:miss'].safeParse({});
+        expect(result.success).toBe(false);
+      });
     });
-
-    test('should reject missing key', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { key, ...eventWithoutKey } = validEvent;
-      const result = cacheInvalidationEventSchema.safeParse(eventWithoutKey);
-      expect(result.success).toBe(false);
-    });
-
-    test('should reject missing timestamp', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { timestamp, ...eventWithoutTimestamp } = validEvent;
-      const result = cacheInvalidationEventSchema.safeParse(eventWithoutTimestamp);
-      expect(result.success).toBe(false);
-    });
-
-    test('should reject missing serverId', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { serverId, ...eventWithoutServerId } = validEvent;
-      const result = cacheInvalidationEventSchema.safeParse(eventWithoutServerId);
-      expect(result.success).toBe(false);
-    });
-
-    test('should reject non-number timestamp', () => {
-      const stringTimestamp = { ...validEvent, timestamp: new Date().toISOString() };
-      const result = cacheInvalidationEventSchema.safeParse(stringTimestamp);
-      expect(result.success).toBe(false);
-    });
-  });
-
-  describe('type inference', () => {
-    test('should infer correct type', () => {
-      const data: CacheInvalidationEvent = validEvent;
-      const result = cacheInvalidationEventSchema.safeParse(data);
-      expect(result.success).toBe(true);
-    });
-  });
-});
-
-describe('cacheEventBusSchemas', () => {
-  test('should contain cache:invalidated event', () => {
-    expect(cacheEventBusSchemas).toHaveProperty('cache:invalidated');
-  });
-
-  test('should validate invalidation event', () => {
-    const event = {
-      operation: 'set' as const,
-      key: 'user:123',
-      value: 'data',
-      timestamp: Date.now(),
-      serverId: 'server-a',
-    };
-
-    const result = cacheEventBusSchemas['cache:invalidated'].safeParse(event);
-    expect(result.success).toBe(true);
-  });
-
-  test('should be the same as cacheInvalidationEventSchema', () => {
-    expect(cacheEventBusSchemas['cache:invalidated']).toBe(cacheInvalidationEventSchema);
   });
 });
