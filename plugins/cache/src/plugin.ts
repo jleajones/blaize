@@ -166,9 +166,6 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
           logger: pluginLogger,
         });
 
-        // Initialize service
-        await cacheService.init();
-
         pluginLogger.info('Cache plugin initialized', {
           adapter: adapter.constructor.name,
           multiServer: !!server.eventBus && !!config.serverId,

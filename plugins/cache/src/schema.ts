@@ -193,107 +193,31 @@ export const cacheSseEventSchemas = {
 // EventBus Event Schemas (Server → Server Coordination)
 // ============================================================================
 
-/**
- * Cache invalidation event schema
- *
- * Published when cache entries are modified (set, delete, eviction).
- * Used for cross-server cache coordination via EventBus.
- *
- * @example
- * ```typescript
- * // Server A sets a key
- * await server.eventBus.publish('cache:invalidated', {
- *   operation: 'set',
- *   key: 'user:123',
- *   value: '{"name":"Alice"}',
- *   timestamp: Date.now(),
- *   serverId: 'server-a',
- * });
- *
- * // Server B receives the event and updates its local cache
- * server.eventBus.subscribe('cache:invalidated', async (event) => {
- *   if (event.data.operation === 'delete') {
- *     await localCache.delete(event.data.key);
- *   }
- * });
- * ```
- */
-export const cacheInvalidationEventSchema = z.object({
-  /**
-   * Type of cache operation that triggered invalidation
-   */
-  operation: z.enum(['set', 'delete', 'eviction']),
-
-  /**
-   * Cache key that was invalidated
-   */
+export const cacheSetEventSchema = z.object({
   key: z.string(),
-
-  /**
-   * New value (for 'set' operations only)
-   */
-  value: z.string().optional(),
-
-  /**
-   * Timestamp when invalidation occurred (milliseconds since epoch)
-   */
+  ttl: z.number().optional(),
   timestamp: z.number(),
-
-  /**
-   * ID of server that triggered the invalidation
-   */
-  serverId: z.string(),
-
-  /**
-   * Sequence number for ordering events from same server
-   */
-  sequence: z.number().optional(),
+  size: z.number().optional(),
 });
 
-/**
- * EventBus schemas for server-to-server cache coordination
- *
- * Export these schemas to include in your server configuration.
- * The server will automatically type the EventBus with all provided schemas.
- *
- * @example Include in server config
- * ```typescript
- * import { createServer } from 'blaizejs';
- * import { cacheEventBusSchemas } from '@blaizejs/plugin-cache';
- *
- * const server = createServer({
- *   eventSchemas: {
- *     ...cacheEventBusSchemas,     // Cache plugin events
- *     // ... other plugin schemas
- *     // ... your app schemas
- *   },
- *   plugins: [
- *     createCachePlugin({ serverId: 'server-a' }),
- *   ],
- * });
- *
- * // server.eventBus is now fully typed with cache events!
- * server.eventBus.subscribe('cache:invalidated', (event) => {
- *   // event.data is automatically typed as CacheInvalidationEvent
- *   console.log(event.data.operation);
- * });
- * ```
- *
- * @example Type extraction for utilities
- * ```typescript
- * import type { CacheInvalidationEvent } from '@blaizejs/plugin-cache';
- *
- * function handleCacheInvalidation(data: CacheInvalidationEvent) {
- *   if (data.operation === 'delete') {
- *     console.log('Cache deleted:', data.key);
- *   }
- * }
- * ```
- */
-export const cacheEventBusSchemas = {
-  'cache:invalidated': cacheInvalidationEventSchema,
-} as const;
+export const cacheDeleteEventSchema = z.object({
+  key: z.string(),
+  timestamp: z.number(),
+});
 
+export const cacheHitEventSchema = z.object({
+  key: z.string(),
+});
+
+export const cacheMissEventSchema = z.object({
+  key: z.string(),
+});
+export const cacheEventBusSchemas = {
+  'cache:set': cacheSetEventSchema,
+  'cache:delete': cacheDeleteEventSchema,
+  'cache:hit': cacheHitEventSchema,
+  'cache:miss': cacheMissEventSchema,
+} as const;
 // ============================================================================
 // Inferred TypeScript Types
 // ============================================================================
@@ -328,7 +252,7 @@ export type CacheSseDeleteEvent = z.infer<typeof cacheSseDeleteEventSchema>;
  */
 export type CacheSseEvictionEvent = z.infer<typeof cacheSseEvictionEventSchema>;
 
-/**
- * Cache invalidation event for EventBus (inferred from schema)
- */
-export type CacheInvalidationEvent = z.infer<typeof cacheInvalidationEventSchema>;
+export type CacheSetEvent = z.infer<typeof cacheSetEventSchema>;
+export type CacheDeleteEvent = z.infer<typeof cacheDeleteEventSchema>;
+export type CacheHitEvent = z.infer<typeof cacheHitEventSchema>;
+export type CacheMissEvent = z.infer<typeof cacheMissEventSchema>;

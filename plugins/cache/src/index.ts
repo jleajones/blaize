@@ -44,7 +44,6 @@ export {
   cacheSseEventSchemas,
   cacheSseEvictionEventSchema,
   cacheSseSetEventSchema,
-  cacheInvalidationEventSchema,
   cacheEventBusSchemas,
 } from './schema';
 

@@ -65,7 +65,7 @@ import type {
   cacheSseEventSchemas,
   CacheStatsResponse,
 } from './schema';
-import type { TypedSSEStream, Context, BlaizeLogger } from 'blaizejs';
+import type { TypedSSEStream, Context, BlaizeLogger, EventBus } from 'blaizejs';
 
 // ============================================================================
 // Helper Functions
@@ -388,66 +388,74 @@ export const cacheDashboardHandler = async ({
  * @param ctx - BlaizeJS request context
  * @param params - Route parameters (unused)
  * @param logger - BlaizeJS logger instance
+ * @param eventBus - BlaizeJS event bus instance
  * @throws ServiceNotAvailableError if cache service unavailable
  */
 export const cacheEventsHandler = async ({
   stream,
   ctx,
   logger,
+  eventBus,
 }: {
   stream: CacheSSEStream;
   ctx: Context;
   logger: BlaizeLogger;
+  eventBus: EventBus;
 }): Promise<void> => {
-  const cache = getCacheServiceOrThrow(ctx);
   const { pattern } = ctx.request.query as unknown as CacheEventsQuery;
 
-  // Default pattern matches all keys
-  const watchPattern = pattern || '.*';
-
   logger.debug('Starting cache events stream', {
-    pattern: watchPattern,
+    pattern,
     correlationId: getCorrelationId(),
   });
 
-  // Convert glob pattern to regex if needed
+  // Convert pattern to regex for key filtering
+  const watchPattern = pattern || '.*';
   const regex = watchPattern.includes('*')
     ? new RegExp('^' + watchPattern.replace(/\*/g, '.*') + '$')
     : new RegExp(watchPattern);
 
-  // Subscribe to cache changes
-  const unsubscribe = cache.watch(regex, async event => {
-    try {
-      // Map event type to SSE event name
-      const eventName =
-        event.type === 'set'
-          ? 'cache.set'
-          : event.type === 'delete'
-            ? 'cache.delete'
-            : 'cache.eviction';
+  const unsubscribers: (() => void)[] = [];
 
-      await stream.send(eventName as any, event);
+  unsubscribers.push(
+    eventBus.subscribe('cache:set', event => {
+      const data = event.data as any;
 
-      logger.debug('Cache event sent', {
-        eventType: eventName,
-        key: event.key,
-        correlationId: getCorrelationId(),
+      // ✅ Filter by key pattern
+      if (!regex.test(data.key)) {
+        return; // Skip non-matching keys
+      }
+
+      stream.send('cache.set', {
+        type: 'set' as const,
+        key: data.key,
+        value: data.value,
+        timestamp: new Date(data.timestamp).toISOString(),
+        serverId: event.serverId,
       });
-    } catch (error) {
-      logger.error('Error sending cache event', {
-        error: {
-          message: (error as Error).message,
-          stack: (error as Error).stack,
-        },
-        event,
-        correlationId: getCorrelationId(),
-      });
-    }
-  });
+    })
+  );
 
-  // Handle client disconnect
+  unsubscribers.push(
+    eventBus.subscribe('cache:delete', event => {
+      const data = event.data as any;
+
+      // ✅ Filter by key pattern
+      if (!regex.test(data.key)) {
+        return; // Skip non-matching keys
+      }
+
+      stream.send('cache.delete', {
+        type: 'delete' as const,
+        key: data.key,
+        timestamp: new Date(data.timestamp).toISOString(),
+        serverId: event.serverId,
+      });
+    })
+  );
+
   stream.onClose(() => {
-    unsubscribe();
+    unsubscribers.forEach(unsub => unsub());
     logger.debug('Cache events stream closed', {
       pattern: watchPattern,
       correlationId: getCorrelationId(),

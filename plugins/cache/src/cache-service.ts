@@ -4,16 +4,7 @@
  * @packageDocumentation
  */
 
-import { EventEmitter } from 'node:events';
-
-import type { CacheInvalidationEvent } from './schema';
-import type {
-  CacheAdapter,
-  CacheStats,
-  CacheChangeEvent,
-  CacheWatchHandler,
-  CacheServiceOptions,
-} from './types';
+import type { CacheAdapter, CacheStats, CacheServiceOptions } from './types';
 import type { BlaizeLogger, EventBus } from 'blaizejs';
 
 /**
@@ -57,12 +48,11 @@ import type { BlaizeLogger, EventBus } from 'blaizejs';
  * await service.set('user:123', 'data');
  * ```
  */
-export class CacheService extends EventEmitter {
+export class CacheService {
   private adapter: CacheAdapter;
   private eventBus?: EventBus;
   private serverId?: string;
   private logger: BlaizeLogger;
-  private sequence: number = 0;
   private eventBusUnsubscribe?: () => void;
 
   /**
@@ -93,7 +83,6 @@ export class CacheService extends EventEmitter {
    * ```
    */
   constructor(options: CacheServiceOptions) {
-    super();
     this.adapter = options.adapter;
     this.eventBus = options.eventBus;
     this.serverId = options.serverId;
@@ -101,40 +90,35 @@ export class CacheService extends EventEmitter {
       service: 'CacheService',
       serverId: options.serverId,
     });
-
-    // Increase listener limit for SSE subscriptions
-    this.setMaxListeners(1000);
   }
 
   /**
-   * Initialize the cache service
+   * Publish cache event to EventBus
    *
-   * Sets up EventBus subscriptions if configured.
-   * Must be called after construction before using the service.
-   *
-   * @throws {Error} If EventBus setup fails
-   *
-   * @example
-   * ```typescript
-   * const service = new CacheService({ adapter, eventBus, serverId, logger });
-   * await service.init();  // ← Call this before using
-   * await service.set('key', 'value');
-   * ```
+   * @param type - Event type to publish
+   * @param data - Event data payload
+   * @private
    */
-  async init(): Promise<void> {
-    this.logger.debug('Initializing cache service', {
-      hasEventBus: !!this.eventBus,
-      serverId: this.serverId,
-    });
-
-    // Setup EventBus subscriptions if available
-    if (this.eventBus) {
-      await this.setupEventBus();
+  private async publishEvent(type: string, data: unknown): Promise<void> {
+    if (!this.eventBus) {
+      return; // EventBus not configured, skip silently
     }
 
-    this.logger.info('Cache service initialized', {
-      multiServer: !!this.eventBus,
-    });
+    try {
+      await this.eventBus.publish(type, data);
+
+      this.logger.debug('Cache event published', {
+        eventType: type,
+        serverId: this.serverId,
+      });
+    } catch (error) {
+      this.logger.error('Failed to publish cache event', {
+        eventType: type,
+        serverId: this.serverId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't rethrow - cache operation succeeded even if event publish failed
+    }
   }
 
   /**
@@ -146,7 +130,14 @@ export class CacheService extends EventEmitter {
    * @returns Value if exists, null otherwise
    */
   async get(key: string): Promise<string | null> {
-    return this.adapter.get(key);
+    const value = await this.adapter.get(key);
+    // ✅ Publish hit or miss
+    if (value !== null) {
+      await this.publishEvent('cache:hit', { key });
+    } else {
+      await this.publishEvent('cache:miss', { key });
+    }
+    return value;
   }
 
   /**
@@ -162,14 +153,11 @@ export class CacheService extends EventEmitter {
   async set(key: string, value: string, ttl?: number): Promise<void> {
     await this.adapter.set(key, value, ttl);
 
-    // Emit event after successful write
-    this.emitChange({
-      type: 'set',
+    await this.publishEvent('cache:set', {
       key,
-      value,
-      timestamp: new Date().toISOString(),
-      serverId: this.serverId,
-      sequence: ++this.sequence,
+      ttl,
+      timestamp: Date.now(),
+      size: value.length,
     });
   }
 
@@ -183,20 +171,17 @@ export class CacheService extends EventEmitter {
    * @returns true if key existed and was deleted, false otherwise
    */
   async delete(key: string): Promise<boolean> {
-    const existed = await this.adapter.delete(key);
+    const deleted = await this.adapter.delete(key);
 
     // Only emit event if key actually existed
-    if (existed) {
-      this.emitChange({
-        type: 'delete',
+    if (deleted) {
+      await this.publishEvent('cache:delete', {
         key,
-        timestamp: new Date().toISOString(),
-        serverId: this.serverId,
-        sequence: ++this.sequence,
+        timestamp: Date.now(),
       });
     }
 
-    return existed;
+    return deleted;
   }
 
   /**
@@ -222,16 +207,12 @@ export class CacheService extends EventEmitter {
   async mset(entries: [string, string, number?][]): Promise<void> {
     await this.adapter.mset(entries);
 
-    // Emit event for each entry
-    const timestamp = new Date().toISOString();
-    for (const [key, value] of entries) {
-      this.emitChange({
-        type: 'set',
+    for (const [key, value, ttl] of entries) {
+      await this.publishEvent('cache:set', {
         key,
-        value,
-        timestamp,
-        serverId: this.serverId,
-        sequence: ++this.sequence,
+        ttl,
+        timestamp: Date.now(),
+        size: value.length,
       });
     }
   }
@@ -260,19 +241,12 @@ export class CacheService extends EventEmitter {
   async clear(pattern?: string): Promise<number> {
     // Get keys before deletion so we can emit events
     const keysToDelete = await this.adapter.keys(pattern);
-
-    // Delete via adapter
     const deletedCount = await this.adapter.clear(pattern);
 
-    // Emit events for each deleted key
-    const timestamp = new Date().toISOString();
     for (const key of keysToDelete) {
-      this.emitChange({
-        type: 'delete',
+      await this.publishEvent('cache:delete', {
         key,
-        timestamp,
-        serverId: this.serverId,
-        sequence: ++this.sequence,
+        timestamp: Date.now(),
       });
     }
 
@@ -296,82 +270,6 @@ export class CacheService extends EventEmitter {
     const ttl = this.adapter.getTTL ? await this.adapter.getTTL(key) : null;
 
     return { value, ttl };
-  }
-
-  /**
-   * Watch for cache changes matching pattern
-   *
-   * Supports both exact string matching and regex patterns.
-   * Returns cleanup function for unsubscribing.
-   *
-   * Handler errors are logged but do not crash the service.
-   *
-   * @param pattern - Exact key string or regex pattern
-   * @param handler - Function to call when matching change occurs
-   * @returns Cleanup function to remove listener
-   *
-   * @example
-   * ```typescript
-   * // Exact string match
-   * const unsub1 = service.watch('user:123', (event) => {
-   *   console.log('User 123 changed');
-   * });
-   *
-   * // Regex pattern
-   * const unsub2 = service.watch(/^user:/, (event) => {
-   *   console.log('Any user changed:', event.key);
-   * });
-   *
-   * // Cleanup
-   * unsub1();
-   * unsub2();
-   * ```
-   */
-  watch(pattern: string | RegExp, handler: CacheWatchHandler): () => void {
-    const eventHandler = (event: CacheChangeEvent) => {
-      try {
-        // Pattern matching
-        const matches =
-          typeof pattern === 'string' ? event.key === pattern : pattern.test(event.key);
-
-        if (matches) {
-          // Call handler (may be sync or async)
-          const result = handler(event);
-
-          // Handle async errors
-          if (result instanceof Promise) {
-            result.catch(error => {
-              this.logger.error('Async watch handler error', {
-                error: {
-                  message: error.message,
-                  stack: error.stack,
-                  name: error.name,
-                },
-                pattern: pattern.toString(),
-                event,
-              });
-            });
-          }
-        }
-      } catch (error) {
-        this.logger.error('Watch handler error', {
-          error: {
-            message: (error as Error).message,
-            stack: (error as Error).stack,
-            name: (error as Error).name,
-          },
-          pattern: pattern.toString(),
-          event,
-        });
-      }
-    };
-
-    this.on('cache:change', eventHandler);
-
-    // Return cleanup function
-    return () => {
-      this.off('cache:change', eventHandler);
-    };
   }
 
   /**
@@ -447,120 +345,6 @@ export class CacheService extends EventEmitter {
       }
     }
 
-    // Remove all listeners
-    this.removeAllListeners();
-
     this.logger.info('Cache service disconnected');
-  }
-
-  // ========================================================================
-  // Private Methods
-  // ========================================================================
-
-  /**
-   * Set up EventBus subscription
-   *
-   * Subscribes to cache invalidation events from other servers and applies them locally.
-   * Filters out own events by serverId to prevent echoes.
-   *
-   * @throws {Error} If EventBus subscription fails
-   * @private
-   */
-  private async setupEventBus(): Promise<void> {
-    if (!this.eventBus) return;
-
-    this.logger.debug('Setting up EventBus subscription', {
-      event: 'cache:invalidated',
-    });
-
-    // Subscribe to cache invalidation events
-    this.eventBusUnsubscribe = this.eventBus.subscribe('cache:invalidated', event => {
-      const data = event.data as CacheInvalidationEvent;
-      // Filter out own events to prevent echoes
-      if (data.serverId === this.serverId) {
-        return;
-      }
-
-      this.logger.debug('Received cache invalidation event from other server', {
-        serverId: data.serverId,
-        operation: data.operation,
-        key: data.key,
-      });
-
-      // Convert EventBus event to CacheChangeEvent format for local watchers
-      const cacheEvent: CacheChangeEvent = {
-        type: data.operation,
-        key: data.key,
-        value: data.value,
-        timestamp: new Date(data.timestamp).toISOString(),
-        serverId: data.serverId,
-        sequence: data.sequence,
-      };
-
-      // Emit event locally for watchers
-      // This allows other servers' changes to trigger local watches
-      try {
-        this.emit('cache:change', cacheEvent);
-      } catch (error) {
-        this.logger.error('Error emitting EventBus event locally', {
-          error: {
-            message: (error as Error).message,
-            stack: (error as Error).stack,
-            name: (error as Error).name,
-          },
-          event: cacheEvent,
-        });
-      }
-    });
-
-    this.logger.info('EventBus subscription established');
-  }
-
-  /**
-   * Emit cache change event
-   *
-   * Emits event locally and publishes to other servers via EventBus.
-   * Errors are logged but do not throw (non-critical operation).
-   *
-   * @param event - Cache change event
-   * @private
-   */
-  private emitChange(event: CacheChangeEvent): void {
-    // Emit locally first
-    try {
-      this.emit('cache:change', event);
-    } catch (error) {
-      this.logger.error('Error emitting change event locally', {
-        error: {
-          message: (error as Error).message,
-          stack: (error as Error).stack,
-          name: (error as Error).name,
-        },
-        event,
-      });
-    }
-
-    // Publish to other servers via EventBus
-    if (this.eventBus && this.serverId) {
-      this.eventBus
-        .publish('cache:invalidated', {
-          operation: event.type,
-          key: event.key,
-          value: event.value,
-          timestamp: Date.now(),
-          serverId: this.serverId,
-          sequence: event.sequence,
-        })
-        .catch(error => {
-          this.logger.error('Error publishing event to EventBus', {
-            error: {
-              message: (error as Error).message,
-              stack: (error as Error).stack,
-              name: (error as Error).name,
-            },
-            event,
-          });
-        });
-    }
   }
 }
