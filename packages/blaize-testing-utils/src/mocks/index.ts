@@ -1,5 +1,5 @@
 import { createMockContext, createSSEMockContext } from './context';
-import { createMockEventBus } from './event-bus';
+import { createMockEventBus, createWorkingMockEventBus } from './event-bus';
 import { createMockHttp1Request, createMockHttp2Request, createMockResponse } from './http';
 import { createMockLogger, MockLogger } from './logger';
 import { createMockMiddleware, executeMiddleware, trackMiddlewareOrder } from './middleware';
@@ -27,6 +27,7 @@ import {
 
 export {
   MockLogger,
+  createWorkingMockEventBus,
   createMockEventBus,
   createMockLogger,
   createSSEMockContext,
