@@ -550,52 +550,6 @@ export const jobCancelledEventSchema = z.object({
   }),
 });
 
-/**
- * SSE event schemas for job monitoring
- *
- * Used with BlaizeJS SSE routes for type-safe event sending.
- *
- * @example Usage with SSE route
- * ```typescript
- * import { createSSERoute } from 'blaizejs';
- * import { jobEventsSchema } from '@blaizejs/queue';
- *
- * export default createSSERoute()({
- *   schema: {
- *     events: jobEventsSchema,
- *   },
- *   handler: async (stream, ctx, params, logger) => {
- *     // stream.send('job.progress', { ... }) is type-safe
- *   },
- * });
- * ```
- */
-export const jobEventsSchema = {
-  /**
-   * Progress update event
-   * Sent when handler calls ctx.progress()
-   */
-  'job.progress': jobProgressEventSchema,
-
-  /**
-   * Completion event
-   * Sent when job handler returns successfully
-   */
-  'job.completed': jobCompletedEventSchema,
-
-  /**
-   * Failure event
-   * Sent when job fails after all retries exhausted
-   */
-  'job.failed': jobFailedEventSchema,
-
-  /**
-   * Cancellation event
-   * Sent when job is cancelled manually or due to shutdown
-   */
-  'job.cancelled': jobCancelledEventSchema,
-} as const;
-
 // ============================================================================
 // SSE Event Types (Inferred from Schemas)
 // ============================================================================
@@ -665,7 +619,7 @@ export type JobEvent = JobProgressEvent | JobCompletedEvent | JobFailedEvent | J
 /**
  * Job event names
  */
-export type JobEventName = keyof typeof jobEventsSchema;
+export type JobEventName = keyof typeof jobSseEventSchemas;
 
 // ============================================================================
 // Route Schemas

@@ -14,14 +14,14 @@
  * - job.failed: { jobId, error, failedAt }
  * - job.cancelled: { jobId, reason, cancelledAt }
  */
-import { jobStreamHandler, jobStreamQuerySchema, jobEventsSchema } from '@blaizejs/plugin-queue';
+import { jobStreamHandler, jobStreamQuerySchema, jobSseEventSchemas } from '@blaizejs/plugin-queue';
 
 import { appRouter } from '../../app-router';
 
 export const getQueueStream = appRouter.sse({
   schema: {
     query: jobStreamQuerySchema,
-    events: jobEventsSchema,
+    events: jobSseEventSchemas,
   },
   handler: jobStreamHandler,
 });
