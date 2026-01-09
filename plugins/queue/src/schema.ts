@@ -5,6 +5,8 @@
  * - Job configuration (priority, retries, timeout)
  * - Queue configuration (name, concurrency, job types)
  * - Plugin configuration (queues, storage adapter, defaults)
+ * - SSE events for job monitoring
+ * - EventBus events for cross-server coordination
  *
  * All schemas provide sensible defaults and descriptive error messages.
  * TypeScript types are inferred from schemas for type safety.
@@ -407,7 +409,7 @@ export type PluginConfigSchema = z.infer<typeof pluginConfigSchema>;
 export type PluginConfigInput = z.input<typeof pluginConfigSchema>;
 
 // ============================================================================
-// SSE Event Schemas (T12)
+// SSE Event Schemas (Existing - for job monitoring)
 // ============================================================================
 
 /**
@@ -529,7 +531,7 @@ export const jobFailedEventSchema = z.object({
  * ```json
  * {
  *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
- *   "reason": "User requested cancellation",
+ *   "reason": "User requested",
  *   "cancelledAt": 1699123456789
  * }
  * ```
@@ -538,7 +540,7 @@ export const jobCancelledEventSchema = z.object({
   /** Unique job identifier */
   jobId: z.string().uuid('jobId must be a valid UUID'),
 
-  /** Optional reason for cancellation */
+  /** Reason for cancellation */
   reason: z.string().optional(),
 
   /** Unix timestamp in milliseconds when job was cancelled */
@@ -549,9 +551,8 @@ export const jobCancelledEventSchema = z.object({
 });
 
 /**
- * Combined SSE events schema object
+ * SSE event schemas for job monitoring
  *
- * Contains all job-related SSE event schemas keyed by event name.
  * Used with BlaizeJS SSE routes for type-safe event sending.
  *
  * @example Usage with SSE route
@@ -919,107 +920,41 @@ export const queueStatusResponseSchema = z.object({
  *
  * @example
  * ```typescript
- * const details = jobDetailsResponseSchema.parse({
- *   id: '550e8400-e29b-41d4-a716-446655440000',
- *   type: 'send-email',
- *   queueName: 'emails',
- *   status: 'completed',
- *   progress: 100,
- *   data: { to: 'user@example.com' },
- *   result: { messageId: 'abc123' },
- *   metadata: { userId: '456' },
- *   priority: 5,
- *   queuedAt: 1699123456789,
- *   startedAt: 1699123456800,
- *   completedAt: 1699123457000,
- *   retries: 0,
- *   maxRetries: 3,
- *   timeout: 30000,
+ * const response = jobDetailsResponseSchema.parse({
+ *   job: {
+ *     id: '550e8400-e29b-41d4-a716-446655440000',
+ *     type: 'send-email',
+ *     queueName: 'emails',
+ *     status: 'completed',
+ *     priority: 5,
+ *     data: { to: 'user@example.com', subject: 'Hello' },
+ *     result: { sent: true, messageId: 'msg-123' },
+ *     progress: 100,
+ *     retries: 0,
+ *     maxRetries: 3,
+ *     queuedAt: 1699123456789,
+ *     startedAt: 1699123456800,
+ *     completedAt: 1699123457000,
+ *   },
+ *   timestamp: 1699123457100,
  * });
  * ```
  */
 export const jobDetailsResponseSchema = z.object({
-  /** Unique job identifier (UUID v4) */
-  id: z.string().uuid('id must be a valid UUID'),
+  /** Full job details */
+  job: jobSchema,
 
-  /** Job type identifier */
-  type: z.string({
-    required_error: 'type is required',
-    invalid_type_error: 'type must be a string',
-  }),
-
-  /** Queue name this job belongs to */
-  queueName: z.string({
-    required_error: 'queueName is required',
-    invalid_type_error: 'queueName must be a string',
-  }),
-
-  /** Current job status */
-  status: jobStatusEnumSchema,
-
-  /** Current progress percentage (0-100) */
-  progress: z.number().min(0).max(100),
-
-  /** Optional progress message */
-  progressMessage: z.string().optional(),
-
-  /** Job input data */
-  data: z.unknown(),
-
-  /** Job result (on completion) */
-  result: z.unknown().optional(),
-
-  /** Error details (on failure) */
-  error: jobErrorSchema.optional(),
-
-  /** Custom metadata attached to the job */
-  metadata: z.record(z.unknown()),
-
-  /** Job priority (1-10) */
-  priority: z
-    .number({
-      required_error: 'priority is required',
-      invalid_type_error: 'priority must be a number',
-    })
-    .int()
-    .min(1)
-    .max(10),
-
-  /** Timestamp when job was queued (ms since epoch) */
-  queuedAt: z.number({
-    required_error: 'queuedAt is required',
-    invalid_type_error: 'queuedAt must be a number',
-  }),
-
-  /** Timestamp when job started (ms since epoch) */
-  startedAt: z.number().optional(),
-
-  /** Timestamp when job completed/failed/cancelled (ms since epoch) */
-  completedAt: z.number().optional(),
-
-  /** Number of retry attempts made */
-  retries: z.number({
-    required_error: 'retries is required',
-    invalid_type_error: 'retries must be a number',
-  }),
-
-  /** Maximum retry attempts allowed */
-  maxRetries: z.number({
-    required_error: 'maxRetries is required',
-    invalid_type_error: 'maxRetries must be a number',
-  }),
-
-  /** Job execution timeout in milliseconds */
-  timeout: z.number({
-    required_error: 'timeout is required',
-    invalid_type_error: 'timeout must be a number',
+  /** Timestamp when data was gathered (ms since epoch) */
+  timestamp: z.number({
+    required_error: 'timestamp is required',
+    invalid_type_error: 'timestamp must be a number',
   }),
 });
 
 /**
  * Create job response schema
  *
- * Validates the response returned when creating a new job.
+ * Validates the response from the job creation endpoint.
  *
  * @example
  * ```typescript
@@ -1027,195 +962,45 @@ export const jobDetailsResponseSchema = z.object({
  *   jobId: '550e8400-e29b-41d4-a716-446655440000',
  *   queueName: 'emails',
  *   jobType: 'send-welcome',
- *   createdAt: 1699123456789,
+ *   status: 'queued',
+ *   priority: 5,
+ *   queuedAt: Date.now(),
  * });
  * ```
  */
 export const createJobResponseSchema = z.object({
-  /** Unique ID of the created job */
+  /** Unique identifier for the created job */
   jobId: z.string().uuid('jobId must be a valid UUID'),
 
-  /** Name of the queue the job was added to */
+  /** Queue name where job was added */
   queueName: z.string({
     required_error: 'queueName is required',
     invalid_type_error: 'queueName must be a string',
   }),
 
-  /** Type of the created job */
+  /** Job type identifier */
   jobType: z.string({
     required_error: 'jobType is required',
     invalid_type_error: 'jobType must be a string',
   }),
 
-  /** Timestamp when job was created (ms since epoch) */
-  createdAt: z.number({
-    required_error: 'createdAt is required',
-    invalid_type_error: 'createdAt must be a number',
+  /** Initial job status (always 'queued' for new jobs) */
+  status: z.literal('queued'),
+
+  /** Job priority */
+  priority: z.number().int().min(1).max(10),
+
+  /** Timestamp when job was queued (ms since epoch) */
+  queuedAt: z.number({
+    required_error: 'queuedAt is required',
+    invalid_type_error: 'queuedAt must be a number',
   }),
 });
 
 /**
  * Cancel job response schema
  *
- * Validates the response returned when cancelling a job.
- *
- * @example
- * ```typescript
- * const response = cancelJobResponseSchema.parse({
- *   jobId: '550e8400-e29b-41d4-a716-446655440000',
- *   cancelled: true,
- *   reason: 'User requested cancellation',
- *   cancelledAt: 1699123456789,
- * });
- * ```
- */
-export const cancelJobResponseSchema = z.object({
-  /** ID of the cancelled job */
-  jobId: z.string().uuid('jobId must be a valid UUID'),
-
-  /** Whether the job was successfully cancelled */
-  cancelled: z.boolean({
-    required_error: 'cancelled is required',
-    invalid_type_error: 'cancelled must be a boolean',
-  }),
-
-  /** Optional reason for cancellation */
-  reason: z.string().optional(),
-
-  /** Timestamp when job was cancelled (ms since epoch) */
-  cancelledAt: z.number({
-    required_error: 'cancelledAt is required',
-    invalid_type_error: 'cancelledAt must be a number',
-  }),
-});
-
-// ============================================================================
-// Response Types (Inferred from Schemas)
-// ============================================================================
-
-/**
- * Job status enum type
- *
- * Possible states a job can be in during its lifecycle.
- */
-export type JobStatusEnum = z.infer<typeof jobStatusEnumSchema>;
-
-/**
- * Job error type
- *
- * Error information attached to failed jobs.
- */
-export type JobErrorResponse = z.infer<typeof jobErrorSchema>;
-
-/**
- * Job type for list responses
- *
- * Simplified job representation used in listings.
- *
- * @example
- * ```typescript
- * const job: JobResponse = {
- *   id: '550e8400-e29b-41d4-a716-446655440000',
- *   type: 'send-email',
- *   queueName: 'emails',
- *   status: 'completed',
- *   priority: 5,
- *   data: {},
- *   retries: 0,
- *   maxRetries: 3,
- *   queuedAt: Date.now(),
- * };
- * ```
- */
-export type JobResponse = z.infer<typeof jobSchema>;
-
-/**
- * Queue stats type
- *
- * Statistics for a single queue.
- *
- * @example
- * ```typescript
- * const stats: QueueStatsResponse = {
- *   total: 100,
- *   queued: 10,
- *   running: 5,
- *   completed: 80,
- *   failed: 3,
- *   cancelled: 2,
- * };
- * ```
- */
-export type QueueStatsResponse = z.infer<typeof queueStatsSchema>;
-
-/**
- * Queue with jobs type
- *
- * A queue entry with stats and job list.
- */
-export type QueueWithJobsResponse = z.infer<typeof queueWithJobsSchema>;
-
-/**
- * Queue status response type
- *
- * Full response from the queue status endpoint.
- *
- * @example
- * ```typescript
- * const response: QueueStatusResponse = {
- *   queues: [{ name: 'emails', stats: {...}, jobs: [...] }],
- *   timestamp: Date.now(),
- * };
- * ```
- */
-export type QueueStatusResponse = z.infer<typeof queueStatusResponseSchema>;
-
-/**
- * Job details response type
- *
- * Full job details with all fields.
- *
- * @example
- * ```typescript
- * const details: JobDetailsResponse = {
- *   id: '550e8400-e29b-41d4-a716-446655440000',
- *   type: 'send-email',
- *   queueName: 'emails',
- *   status: 'completed',
- *   progress: 100,
- *   data: {},
- *   metadata: {},
- *   priority: 5,
- *   queuedAt: Date.now(),
- *   retries: 0,
- *   maxRetries: 3,
- *   timeout: 30000,
- * };
- * ```
- */
-export type JobDetailsResponse = z.infer<typeof jobDetailsResponseSchema>;
-
-/**
- * Create job response type
- *
- * Response returned when creating a new job.
- *
- * @example
- * ```typescript
- * const response: CreateJobResponse = {
- *   jobId: '550e8400-e29b-41d4-a716-446655440000',
- *   queueName: 'emails',
- *   jobType: 'send-welcome',
- *   createdAt: Date.now(),
- * };
- * ```
- */
-export type CreateJobResponse = z.infer<typeof createJobResponseSchema>;
-
-/**
- * Cancel job response type
- *
- * Response returned when cancelling a job.
+ * Validates the response from the job cancellation endpoint.
  *
  * @example
  * ```typescript
@@ -1226,6 +1011,31 @@ export type CreateJobResponse = z.infer<typeof createJobResponseSchema>;
  * };
  * ```
  */
+export const cancelJobResponseSchema = z.object({
+  /** Job ID that was cancelled */
+  jobId: z.string().uuid('jobId must be a valid UUID'),
+
+  /** Whether the job was successfully cancelled */
+  cancelled: z.boolean(),
+
+  /** Timestamp when job was cancelled (ms since epoch) */
+  cancelledAt: z.number({
+    required_error: 'cancelledAt is required',
+    invalid_type_error: 'cancelledAt must be a number',
+  }),
+});
+
+/**
+ * Inferred types for response schemas
+ */
+export type JobStatusEnum = z.infer<typeof jobStatusEnumSchema>;
+export type JobErrorResponse = z.infer<typeof jobErrorSchema>;
+export type JobResponse = z.infer<typeof jobSchema>;
+export type QueueStatsResponse = z.infer<typeof queueStatsSchema>;
+export type QueueWithJobsResponse = z.infer<typeof queueWithJobsSchema>;
+export type QueueStatusResponse = z.infer<typeof queueStatusResponseSchema>;
+export type JobDetailsResponse = z.infer<typeof jobDetailsResponseSchema>;
+export type CreateJobResponse = z.infer<typeof createJobResponseSchema>;
 export type CancelJobResponse = z.infer<typeof cancelJobResponseSchema>;
 
 // ============================================================================
@@ -1267,10 +1077,6 @@ export const jobStreamQuerySchema = z.object({
  */
 export type JobStreamQuery = z.infer<typeof jobStreamQuerySchema>;
 
-// ============================================================================
-// HTTP Query Schemas
-// ============================================================================
-
 /**
  * Query schema for queue status endpoint
  *
@@ -1300,7 +1106,6 @@ export const queueStatusQuerySchema = z.object({
    * @default 20
    */
   limit: z.string().regex(/^\d+$/).optional().default('20'),
-  // limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 /**
@@ -1334,7 +1139,6 @@ export const queueDashboardQuerySchema = z.object({
    * @maximum 300
    */
   refresh: z.string().regex(/^\d+$/).optional(),
-  // refresh: z.coerce.number().int().min(5).max(300).optional(),
 });
 
 /**
@@ -1416,16 +1220,25 @@ export type CreateJobBody = z.infer<typeof createJobBodySchema>;
  * @example Valid body
  * ```json
  * {
- *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
  *   "queueName": "emails",
- *   "reason": "User requested cancellation"
+ *   "jobId": "550e8400-e29b-41d4-a716-446655440000",
+ *   "reason": "User requested"
  * }
  * ```
  */
 export const cancelJobBodySchema = z.object({
   /**
+   * Queue name where job exists (required)
+   */
+  queueName: z
+    .string({
+      required_error: 'queueName is required',
+      invalid_type_error: 'queueName must be a string',
+    })
+    .min(1, 'queueName cannot be empty'),
+
+  /**
    * Job ID to cancel (required)
-   * Must be a valid UUID
    */
   jobId: z
     .string({
@@ -1435,14 +1248,7 @@ export const cancelJobBodySchema = z.object({
     .uuid('jobId must be a valid UUID'),
 
   /**
-   * Queue name (optional)
-   * If not provided, searches all queues
-   */
-  queueName: z.string().optional(),
-
-  /**
-   * Cancellation reason (optional)
-   * Included in job cancelled event
+   * Reason for cancellation (optional)
    */
   reason: z.string().optional(),
 });
@@ -1451,3 +1257,275 @@ export const cancelJobBodySchema = z.object({
  * Inferred type for cancel job body
  */
 export type CancelJobBody = z.infer<typeof cancelJobBodySchema>;
+
+// ============================================================================
+// EventBus Integration - SSE Event Schemas (Server → Browser Clients)
+// ============================================================================
+
+/**
+ * Job enqueued event (job added to queue)
+ *
+ * Sent to browser clients via SSE when jobs are enqueued.
+ */
+export const jobSseEnqueuedEventSchema = z.object({
+  type: z.literal('enqueued'),
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  priority: z.number().int().min(1).max(10),
+  timestamp: z.number(),
+  serverId: z.string().optional(),
+});
+
+/**
+ * Job started event (worker began processing)
+ *
+ * Sent to browser clients via SSE when jobs start processing.
+ */
+export const jobSseStartedEventSchema = z.object({
+  type: z.literal('started'),
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  timestamp: z.number(),
+  serverId: z.string().optional(),
+});
+
+/**
+ * Job progress event (progress update from handler)
+ *
+ * Sent to browser clients via SSE when job reports progress.
+ */
+export const jobSseProgressEventSchema = z.object({
+  type: z.literal('progress'),
+  jobId: z.string(),
+  queueName: z.string(),
+  progress: z.number().min(0).max(1), // 0-1 (percentage as decimal)
+  message: z.string().optional(),
+  timestamp: z.number(),
+  serverId: z.string().optional(),
+});
+
+/**
+ * Job completed event (job finished successfully)
+ *
+ * Sent to browser clients via SSE when jobs complete.
+ */
+export const jobSseCompletedEventSchema = z.object({
+  type: z.literal('completed'),
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  result: z.any().optional(),
+  timestamp: z.number(),
+  serverId: z.string().optional(),
+});
+
+/**
+ * Job failed event (job exhausted retries)
+ *
+ * Sent to browser clients via SSE when jobs fail permanently.
+ */
+export const jobSseFailedEventSchema = z.object({
+  type: z.literal('failed'),
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  error: z.object({
+    message: z.string(),
+    code: z.string().optional(),
+  }),
+  timestamp: z.number(),
+  serverId: z.string().optional(),
+});
+
+/**
+ * Job cancelled event (job was manually cancelled)
+ *
+ * Sent to browser clients via SSE when jobs are cancelled.
+ */
+export const jobSseCancelledEventSchema = z.object({
+  type: z.literal('cancelled'),
+  jobId: z.string(),
+  queueName: z.string(),
+  reason: z.string().optional(),
+  timestamp: z.number(),
+  serverId: z.string().optional(),
+});
+
+/**
+ * SSE event schemas for queue monitoring routes
+ *
+ * Used for Server-Sent Events to browser clients.
+ * Provides real-time job status notifications.
+ *
+ * @example
+ * ```typescript
+ * // SSE route definition
+ * export const getJobEvents = appRouter.sse({
+ *   schema: {
+ *     query: jobEventsQuerySchema,
+ *     events: jobSseEventSchemas,  // ← SSE events for browsers
+ *   },
+ *   handler: jobEventsHandler,
+ * });
+ * ```
+ *
+ * @example Browser client
+ * ```javascript
+ * const eventSource = new EventSource('/queue/events?jobId=job-123');
+ *
+ * eventSource.addEventListener('job.progress', (e) => {
+ *   const data = JSON.parse(e.data);
+ *   console.log(`Progress: ${data.progress * 100}%`, data.message);
+ * });
+ *
+ * eventSource.addEventListener('job.completed', (e) => {
+ *   const data = JSON.parse(e.data);
+ *   console.log('Job completed!', data.result);
+ * });
+ * ```
+ */
+export const jobSseEventSchemas = {
+  'job.enqueued': jobSseEnqueuedEventSchema,
+  'job.started': jobSseStartedEventSchema,
+  'job.progress': jobSseProgressEventSchema,
+  'job.completed': jobSseCompletedEventSchema,
+  'job.failed': jobSseFailedEventSchema,
+  'job.cancelled': jobSseCancelledEventSchema,
+} as const;
+
+// ============================================================================
+// EventBus Integration - EventBus Event Schemas (Server → Server Coordination)
+// ============================================================================
+
+// Add individual event schemas
+export const jobEnqueuedEventSchema = z.object({
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  priority: z.number().int().min(1).max(10),
+});
+
+export const jobStartedEventSchema = z.object({
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  attempt: z.number().optional(),
+});
+
+export const jobProgressEventBusSchema = z.object({
+  jobId: z.string(),
+  progress: z.number().min(0).max(1),
+  message: z.string().optional(),
+});
+
+export const jobCompletedEventBusSchema = z.object({
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  durationMs: z.number().optional(),
+  result: z.unknown().optional(),
+});
+
+export const jobFailedEventBusSchema = z.object({
+  jobId: z.string(),
+  queueName: z.string(),
+  jobType: z.string(),
+  error: z.string(),
+  willRetry: z.boolean(),
+});
+
+export const jobCancelledEventBusSchema = z.object({
+  jobId: z.string(),
+  queueName: z.string(),
+  reason: z.string().optional(),
+});
+
+// Replace the old export with:
+export const queueEventBusSchemas = {
+  'queue:job:enqueued': jobEnqueuedEventSchema,
+  'queue:job:started': jobStartedEventSchema,
+  'queue:job:progress': jobProgressEventBusSchema,
+  'queue:job:completed': jobCompletedEventBusSchema,
+  'queue:job:failed': jobFailedEventBusSchema,
+  'queue:job:cancelled': jobCancelledEventBusSchema,
+} as const;
+
+// Add type exports
+export type JobEnqueuedEvent = z.infer<typeof jobEnqueuedEventSchema>;
+export type JobStartedEvent = z.infer<typeof jobStartedEventSchema>;
+export type JobProgressEventBus = z.infer<typeof jobProgressEventBusSchema>;
+export type JobCompletedEventBus = z.infer<typeof jobCompletedEventBusSchema>;
+export type JobFailedEventBus = z.infer<typeof jobFailedEventBusSchema>;
+export type JobCancelledEventBus = z.infer<typeof jobCancelledEventBusSchema>;
+// ============================================================================
+// EventBus Integration - Query Schemas
+// ============================================================================
+
+/**
+ * Job events SSE query parameters
+ *
+ * @example
+ * ```typescript
+ * // Watch specific job
+ * GET /queue/events?jobId=job-123
+ *
+ * // Watch all jobs in a queue
+ * GET /queue/events?queueName=emails
+ *
+ * // Watch all jobs
+ * GET /queue/events
+ * ```
+ */
+export const jobEventsQuerySchema = z.object({
+  /**
+   * Filter events by job ID
+   */
+  jobId: z.string().optional(),
+
+  /**
+   * Filter events by queue name
+   */
+  queueName: z.string().optional(),
+
+  /**
+   * Filter events by job type
+   */
+  jobType: z.string().optional(),
+});
+
+/**
+ * Job events query parameters (inferred from schema)
+ */
+export type JobEventsQuery = z.infer<typeof jobEventsQuerySchema>;
+
+/**
+ * Job SSE enqueued event (inferred from schema)
+ */
+export type JobSseEnqueuedEvent = z.infer<typeof jobSseEnqueuedEventSchema>;
+
+/**
+ * Job SSE started event (inferred from schema)
+ */
+export type JobSseStartedEvent = z.infer<typeof jobSseStartedEventSchema>;
+
+/**
+ * Job SSE progress event (inferred from schema)
+ */
+export type JobSseProgressEvent = z.infer<typeof jobSseProgressEventSchema>;
+
+/**
+ * Job SSE completed event (inferred from schema)
+ */
+export type JobSseCompletedEvent = z.infer<typeof jobSseCompletedEventSchema>;
+
+/**
+ * Job SSE failed event (inferred from schema)
+ */
+export type JobSseFailedEvent = z.infer<typeof jobSseFailedEventSchema>;
+
+/**
+ * Job SSE cancelled event (inferred from schema)
+ */
+export type JobSseCancelledEvent = z.infer<typeof jobSseCancelledEventSchema>;

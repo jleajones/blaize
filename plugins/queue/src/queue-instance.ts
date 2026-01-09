@@ -28,7 +28,7 @@ import type {
   JobPriority,
   StopOptions,
 } from './types';
-import type { BlaizeLogger } from 'blaizejs';
+import type { BlaizeLogger, EventBus } from 'blaizejs';
 
 // ============================================================================
 // Constants
@@ -152,6 +152,10 @@ export class QueueInstance extends EventEmitter {
   /** Storage adapter for job persistence */
   private readonly storage: QueueStorageAdapter;
 
+  private readonly eventBus: EventBus;
+
+  private readonly serverId?: string;
+
   // ==========================================================================
   // Private Runtime State
   // ==========================================================================
@@ -199,7 +203,13 @@ export class QueueInstance extends EventEmitter {
    * );
    * ```
    */
-  constructor(config: QueueConfig, storage: QueueStorageAdapter, logger: BlaizeLogger) {
+  constructor(
+    config: QueueConfig,
+    storage: QueueStorageAdapter,
+    logger: BlaizeLogger,
+    eventBus: EventBus,
+    serverId?: string
+  ) {
     super();
 
     // Support many SSE subscriptions
@@ -218,6 +228,8 @@ export class QueueInstance extends EventEmitter {
 
     // Injected dependencies
     this.storage = storage;
+    this.eventBus = eventBus;
+    this.serverId = serverId;
 
     // Create child logger with queue context
     this.logger = logger.child({ queue: this.name });
@@ -236,6 +248,98 @@ export class QueueInstance extends EventEmitter {
       defaultTimeout: this.defaultTimeout,
       defaultMaxRetries: this.defaultMaxRetries,
     });
+  }
+
+  /**
+   * Publish job state change to EventBus
+   *
+   * Publishes specific event types based on state:
+   * - queue:job:enqueued
+   * - queue:job:started
+   * - queue:job:progress
+   * - queue:job:completed
+   * - queue:job:failed
+   * - queue:job:cancelled
+   *
+   * @private
+   */
+  private async publishStateChange(data: {
+    jobId: string;
+    jobType: string;
+    state: 'enqueued' | 'started' | 'progress' | 'completed' | 'failed' | 'cancelled';
+    progress?: number;
+    message?: string;
+    result?: unknown;
+    error?: { message: string; code?: string };
+    reason?: string;
+    priority?: number;
+  }): Promise<void> {
+    if (!this.eventBus) return;
+
+    try {
+      const baseEvent = {
+        jobId: data.jobId,
+        jobType: data.jobType,
+        queueName: this.name,
+        timestamp: Date.now(),
+        serverId: this.serverId || 'unknown',
+      };
+
+      // Publish specific event type based on state
+      switch (data.state) {
+        case 'enqueued':
+          await this.eventBus.publish('queue:job:enqueued', {
+            ...baseEvent,
+            priority: data.priority ?? 5,
+          });
+          break;
+
+        case 'started':
+          await this.eventBus.publish('queue:job:started', baseEvent);
+          break;
+
+        case 'progress':
+          await this.eventBus.publish('queue:job:progress', {
+            jobId: data.jobId,
+            progress: data.progress ?? 0,
+            message: data.message,
+          });
+          break;
+
+        case 'completed':
+          await this.eventBus.publish('queue:job:completed', {
+            ...baseEvent,
+            result: data.result,
+            durationMs: undefined, // Can calculate if needed
+          });
+          break;
+
+        case 'failed':
+          await this.eventBus.publish('queue:job:failed', {
+            ...baseEvent,
+            error: data.error?.message ?? 'Unknown error',
+            willRetry: false, // Should be passed from caller
+          });
+          break;
+
+        case 'cancelled':
+          await this.eventBus.publish('queue:job:cancelled', {
+            jobId: data.jobId,
+            queueName: this.name,
+            reason: data.reason,
+          });
+          break;
+      }
+    } catch (error) {
+      this.logger.error('Failed to publish job state change', {
+        error: {
+          message: (error as Error).message,
+          stack: (error as Error).stack,
+        },
+        jobId: data.jobId,
+        state: data.state,
+      });
+    }
   }
 
   // ==========================================================================
@@ -302,6 +406,12 @@ export class QueueInstance extends EventEmitter {
 
     // Enqueue in storage
     await this.storage.enqueue(this.name, job);
+    await this.publishStateChange({
+      jobId: job.id,
+      jobType: job.type,
+      state: 'enqueued',
+      priority: job.priority,
+    });
 
     // Emit event
     this.emit('job:queued', job);
@@ -660,6 +770,12 @@ export class QueueInstance extends EventEmitter {
     const updatedJob = await this.storage.getJob(jobId, this.name);
     if (updatedJob) {
       this.emit('job:cancelled', updatedJob, reason);
+      await this.publishStateChange({
+        jobId: updatedJob.id,
+        jobType: updatedJob.type,
+        state: 'cancelled',
+        reason,
+      });
     }
 
     this.logger.info('Job cancelled', {
@@ -801,6 +917,11 @@ export class QueueInstance extends EventEmitter {
       const runningJob = await this.storage.getJob(jobId, this.name);
       if (runningJob) {
         this.emit('job:started', runningJob);
+        await this.publishStateChange({
+          jobId: job.id,
+          jobType: job.type,
+          state: 'started',
+        });
       }
 
       jobLogger.info('Job started', {
@@ -810,7 +931,7 @@ export class QueueInstance extends EventEmitter {
       });
 
       // Create JobContext for handler execution
-      const ctx = this.createJobContext(job, jobLogger, controller.signal);
+      const ctx = this.createJobContext(job, jobLogger, controller.signal, this.eventBus);
 
       // Execute the handler with timeout
       const result = await this.executeWithTimeout(handler, ctx, job.timeout, controller);
@@ -859,7 +980,8 @@ export class QueueInstance extends EventEmitter {
   private createJobContext(
     job: Job,
     logger: BlaizeLogger,
-    signal: AbortSignal
+    signal: AbortSignal,
+    eventBus: EventBus
   ): JobContext<unknown> {
     const jobId = job.id;
 
@@ -868,6 +990,7 @@ export class QueueInstance extends EventEmitter {
       data: job.data,
       logger,
       signal,
+      eventBus,
       progress: async (percent: number, message?: string): Promise<void> => {
         // Update storage
         await this.storage.updateJob(jobId, {
@@ -877,6 +1000,13 @@ export class QueueInstance extends EventEmitter {
 
         // Emit event
         this.emit('job:progress', jobId, percent, message);
+        await this.publishStateChange({
+          jobId: job.id,
+          jobType: job.type,
+          state: 'progress',
+          progress: percent / 100,
+          message,
+        });
 
         // Log progress
         logger.debug('Job progress updated', { percent, message });
@@ -973,6 +1103,15 @@ export class QueueInstance extends EventEmitter {
     const failedJob = await this.storage.getJob(job.id, this.name);
     if (failedJob) {
       this.emit('job:failed', failedJob, errorObj);
+      await this.publishStateChange({
+        jobId: job.id,
+        jobType: job.type,
+        state: 'failed',
+        error: {
+          message: errorObj.message,
+          code: errorObj.code,
+        },
+      });
     }
 
     this.runningJobs.delete(job.id);
@@ -1011,6 +1150,12 @@ export class QueueInstance extends EventEmitter {
     const completedJob = await this.storage.getJob(job.id, this.name);
     if (completedJob) {
       this.emit('job:completed', completedJob, result);
+      await this.publishStateChange({
+        jobId: job.id,
+        jobType: job.type,
+        state: 'completed',
+        result,
+      });
     }
 
     logger.info('Job completed', {
@@ -1102,6 +1247,15 @@ export class QueueInstance extends EventEmitter {
     const failedJob = await this.storage.getJob(job.id, this.name);
     if (failedJob) {
       this.emit('job:failed', failedJob, errorObj);
+      await this.publishStateChange({
+        jobId: job.id,
+        jobType: job.type,
+        state: 'failed',
+        error: {
+          message: errorObj.message,
+          code: errorObj.code,
+        },
+      });
     }
   }
 

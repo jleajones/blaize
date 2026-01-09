@@ -9,7 +9,7 @@
  *
  * @module @blaizejs/queue/tests/sse-integration
  */
-import { createMockLogger } from '@blaizejs/testing-utils';
+import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
 
 import { QueueService } from './queue-service';
 import {
@@ -35,6 +35,7 @@ function createTestQueueService(options?: {
 }) {
   const storage = options?.storage ?? new InMemoryStorage();
   const logger = createMockLogger();
+  const eventBus = createWorkingMockEventBus();
 
   return new QueueService({
     queues: options?.queues ?? {
@@ -42,6 +43,7 @@ function createTestQueueService(options?: {
     },
     storage,
     logger,
+    eventBus,
   });
 }
 

@@ -22,7 +22,7 @@ import type {
   QueueStats,
   StopOptions,
 } from './types';
-import type { BlaizeLogger } from 'blaizejs';
+import type { BlaizeLogger, EventBus } from 'blaizejs';
 
 // ============================================================================
 // QueueService Class
@@ -103,6 +103,12 @@ export class QueueService {
   /** Map of jobId to queueName for fast lookup */
   private readonly jobQueueMap: Map<string, string>;
 
+  /** EventBus for cross-server coordination */
+  private readonly eventBus: EventBus;
+
+  /** Server ID for multi-server setups (optional) */
+  private readonly serverId?: string;
+
   // ==========================================================================
   // Constructor
   // ==========================================================================
@@ -130,10 +136,12 @@ export class QueueService {
    */
   constructor(config: QueueServiceConfig) {
     this.storage = config.storage;
+    this.eventBus = config.eventBus;
+    this.serverId = config.serverId;
+
     this.logger = config.logger.child({ service: 'QueueService' });
     this.queues = new Map();
     this.jobQueueMap = new Map();
-
     // Create queue instances
     for (const [name, queueConfig] of Object.entries(config.queues)) {
       const queue = new QueueInstance(
@@ -144,7 +152,9 @@ export class QueueService {
           defaultMaxRetries: queueConfig.defaultMaxRetries,
         },
         this.storage,
-        config.logger // QueueInstance creates its own child logger
+        config.logger,
+        this.eventBus,
+        this.serverId
       );
 
       this.queues.set(name, queue);
@@ -153,6 +163,8 @@ export class QueueService {
     this.logger.info('QueueService created', {
       queues: Array.from(this.queues.keys()),
       queueCount: this.queues.size,
+      multiServer: !!this.eventBus,
+      serverId: this.serverId,
     });
   }
 

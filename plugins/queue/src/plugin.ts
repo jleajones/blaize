@@ -171,7 +171,7 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
        * Called before `server.listen()`.
        * Sets up storage adapter and creates QueueService.
        */
-      initialize: async () => {
+      initialize: async (server: Server<any, any>) => {
         pluginLogger.info('Initializing queue plugin', {
           queues: Object.keys(config.queues),
           queueCount: Object.keys(config.queues).length,
@@ -218,7 +218,20 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
           queues: queuesConfig,
           storage,
           logger: pluginLogger,
+          eventBus: server.eventBus, // Pass EventBus if serverId provided
+          serverId: config.serverId ?? 'unknown', // Pass serverId for event attribution
         });
+
+        if (config.serverId) {
+          pluginLogger.info('EventBus integration enabled', {
+            serverId: config.serverId ?? 'unknown',
+            eventBusAvailable: !!server.eventBus,
+          });
+        } else {
+          pluginLogger.info('EventBus integration disabled (no serverId provided)', {
+            note: 'Multi-server job visibility requires serverId in plugin config',
+          });
+        }
 
         // Register handlers from config
         if (config.handlers) {

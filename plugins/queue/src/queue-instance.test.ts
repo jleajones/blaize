@@ -13,13 +13,15 @@
  *
  * @since 0.4.0
  */
-import { createMockLogger, MockLogger } from '@blaizejs/testing-utils';
+
+import { createMockEventBus, createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
 import { HandlerAlreadyRegisteredError } from './errors';
 import { QueueInstance } from './queue-instance';
 import { InMemoryStorage } from './storage/memory';
 
 import type { JobHandler, QueueStorageAdapter, QueueConfig } from './types';
+import type { EventBus } from 'blaizejs';
 
 // ============================================================================
 // Test Helpers
@@ -43,11 +45,13 @@ describe('QueueInstance', () => {
   let storage: QueueStorageAdapter;
   let logger: MockLogger;
   let queue: QueueInstance;
+  let eventBus: EventBus;
 
   beforeEach(() => {
     storage = new InMemoryStorage();
     logger = createMockLogger();
-    queue = new QueueInstance(createTestConfig(), storage, logger);
+    eventBus = createMockEventBus();
+    queue = new QueueInstance(createTestConfig(), storage, logger, eventBus);
   });
 
   afterEach(async () => {
@@ -98,7 +102,8 @@ describe('QueueInstance', () => {
       const q = new QueueInstance(
         createTestConfig({ name: 'custom-queue' }),
         customStorage,
-        logger
+        logger,
+        eventBus
       );
       expect(q.name).toBe('custom-queue');
     });
@@ -401,7 +406,8 @@ describe('QueueInstance', () => {
       const slowQueue = new QueueInstance(
         createTestConfig({ name: 'graceful-slow-queue', concurrency: 1 }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let jobCompleted = false;
@@ -429,7 +435,8 @@ describe('QueueInstance', () => {
       const forceQueue = new QueueInstance(
         createTestConfig({ name: 'force-stop-queue', concurrency: 1 }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let _jobWasCancelled = false;
@@ -469,7 +476,8 @@ describe('QueueInstance', () => {
       const timeoutQueue = new QueueInstance(
         createTestConfig({ name: 'timeout-shutdown-queue', concurrency: 1 }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let jobStarted = false;
@@ -505,7 +513,8 @@ describe('QueueInstance', () => {
       const preventQueue = new QueueInstance(
         createTestConfig({ name: 'prevent-new-jobs-queue', concurrency: 1 }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       const processedJobIds: string[] = [];
@@ -545,7 +554,8 @@ describe('QueueInstance', () => {
       const logQueue = new QueueInstance(
         createTestConfig({ name: 'log-shutdown-queue' }),
         storage,
-        mockLogger
+        mockLogger,
+        eventBus
       );
 
       await logQueue.start();
@@ -570,7 +580,8 @@ describe('QueueInstance', () => {
       const logQueue = new QueueInstance(
         createTestConfig({ name: 'log-duration-queue' }),
         storage,
-        mockLogger
+        mockLogger,
+        eventBus
       );
 
       await logQueue.start();
@@ -597,7 +608,8 @@ describe('QueueInstance', () => {
           defaultMaxRetries: 5,
         }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       retryQueue.registerHandler('fail:job', async () => {
@@ -632,7 +644,8 @@ describe('QueueInstance', () => {
       const immediateQueue = new QueueInstance(
         createTestConfig({ name: 'immediate-flag-queue' }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       await immediateQueue.start();
@@ -745,7 +758,8 @@ describe('QueueInstance', () => {
       const lowConcurrencyQueue = new QueueInstance(
         createTestConfig({ name: 'low-concurrency', concurrency: 2 }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let maxConcurrent = 0;
@@ -782,7 +796,8 @@ describe('QueueInstance', () => {
       const noHandlerQueue = new QueueInstance(
         createTestConfig({ name: 'no-handler' }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       const jobId = await noHandlerQueue.add('unknown:job', { data: 'test' });
@@ -810,7 +825,8 @@ describe('QueueInstance', () => {
       const errorQueue = new QueueInstance(
         createTestConfig({ name: 'error-queue', defaultMaxRetries: 0 }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       errorQueue.registerHandler('failing:job', async () => {
@@ -841,7 +857,8 @@ describe('QueueInstance', () => {
       const progressQueue = new QueueInstance(
         createTestConfig({ name: 'progress-queue' }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       progressQueue.registerHandler('progress:job', async ctx => {
@@ -879,7 +896,8 @@ describe('QueueInstance', () => {
           defaultMaxRetries: 0, // No retries - fail immediately on timeout
         }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       timeoutQueue.registerHandler('slow:job', async () => {
@@ -913,7 +931,8 @@ describe('QueueInstance', () => {
       const signalQueue = new QueueInstance(
         createTestConfig({ name: 'signal-queue' }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let receivedSignal: AbortSignal | undefined;
@@ -946,7 +965,8 @@ describe('QueueInstance', () => {
       const loggerQueue = new QueueInstance(
         createTestConfig({ name: 'logger-queue' }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let receivedLogger: any;
@@ -981,7 +1001,8 @@ describe('QueueInstance', () => {
       const progressQueue = new QueueInstance(
         createTestConfig({ name: 'progress-storage-queue' }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let jobIdCapture: string | undefined;
@@ -1015,7 +1036,8 @@ describe('QueueInstance', () => {
       const cancelQueue = new QueueInstance(
         createTestConfig({ name: 'cancel-queue', concurrency: 1 }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let handlerStarted = false;
@@ -1107,7 +1129,8 @@ describe('QueueInstance', () => {
       const contextQueue = new QueueInstance(
         createTestConfig({ name: 'context-logger-queue' }),
         storage,
-        mockLogger
+        mockLogger,
+        eventBus
       );
 
       let loggerUsed = false;
@@ -1146,7 +1169,8 @@ describe('QueueInstance', () => {
           defaultMaxRetries: 3,
         }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let attempts = 0;
@@ -1193,7 +1217,8 @@ describe('QueueInstance', () => {
           defaultMaxRetries: 2,
         }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       failQueue.registerHandler('always:fail', async () => {
@@ -1236,7 +1261,8 @@ describe('QueueInstance', () => {
           defaultMaxRetries: 3,
         }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       let handlerStarted = false;
@@ -1289,7 +1315,8 @@ describe('QueueInstance', () => {
           defaultMaxRetries: 0,
         }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       noRetryQueue.registerHandler('fail:once', async () => {
@@ -1323,7 +1350,8 @@ describe('QueueInstance', () => {
       const testQueue = new QueueInstance(
         createTestConfig({ name: 'backoff-test' }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       // Use type assertion to access private method
@@ -1365,7 +1393,8 @@ describe('QueueInstance', () => {
           defaultMaxRetries: 2,
         }),
         storage,
-        createMockLogger()
+        createMockLogger(),
+        eventBus
       );
 
       retriesQueue.registerHandler('fail:job', async () => {
@@ -1410,6 +1439,340 @@ describe('QueueInstance', () => {
 
     it('should expose runningJobCount getter', () => {
       expect(queue.runningJobCount).toBe(0);
+    });
+  });
+
+  // ============================================================================
+  // EventBus Integration Tests
+  // ============================================================================
+
+  describe('EventBus Integration', () => {
+    let eventBus: EventBus;
+    let testQueue: QueueInstance | null = null;
+
+    beforeEach(() => {
+      eventBus = createMockEventBus();
+      testQueue = null;
+    });
+
+    afterEach(async () => {
+      // Stop test queue if it was created
+      if (testQueue?.running) {
+        await testQueue.stop({ graceful: false });
+      }
+      testQueue = null;
+      // Clear mock calls for next test
+      vi.clearAllMocks();
+    });
+
+    /**
+     * Helper to wait for a specific event type
+     */
+    async function waitForEvent(
+      eventType:
+        | 'queue:job:enqueued'
+        | 'queue:job:started'
+        | 'queue:job:progress'
+        | 'queue:job:completed'
+        | 'queue:job:failed'
+        | 'queue:job:cancelled',
+      timeoutMs = 2000
+    ): Promise<void> {
+      await vi.waitFor(
+        () => {
+          const calls = vi.mocked(eventBus.publish).mock.calls;
+          return calls.some(call => call[0] === eventType);
+        },
+        { timeout: timeoutMs, interval: 50 }
+      );
+    }
+
+    /**
+     * Helper to get all queue event types that were published
+     */
+    function getEventTypes(): string[] {
+      const publishCalls = vi.mocked(eventBus.publish).mock.calls;
+      const queueCalls = publishCalls.filter(
+        call => typeof call[0] === 'string' && call[0].startsWith('queue:job:')
+      );
+      return queueCalls.map(call => call[0] as string);
+    }
+
+    /**
+     * Helper to find a specific event call by type
+     */
+    function findEventCall(eventType: string): any {
+      const publishCalls = vi.mocked(eventBus.publish).mock.calls;
+      return publishCalls.find(call => call[0] === eventType);
+    }
+
+    /**
+     * Helper to get all calls for a specific event type
+     */
+    function getEventCalls(eventType: string): any[] {
+      const publishCalls = vi.mocked(eventBus.publish).mock.calls;
+      return publishCalls.filter(call => call[0] === eventType);
+    }
+
+    describe('Event Publishing', () => {
+      it('should publish enqueued event when job is added', async () => {
+        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+
+        const jobId = await testQueue.add('test-job', { foo: 'bar' });
+
+        // Wait a tick for async publish
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(eventBus.publish).toHaveBeenCalledWith(
+          'queue:job:enqueued',
+          expect.objectContaining({
+            jobId,
+            queueName: 'test-queue',
+            jobType: 'test-job',
+            priority: expect.any(Number),
+            serverId: 'test-server',
+          })
+        );
+      });
+
+      it('should publish started, progress, completed events during processing', async () => {
+        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+
+        testQueue.registerHandler('test-job', async ctx => {
+          await ctx.progress(50, 'Half done');
+          return { success: true };
+        });
+
+        const jobId = await testQueue.add('test-job', {});
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        await testQueue.start();
+
+        // Wait for job to complete
+        await waitForEvent('queue:job:completed', 2000);
+
+        await testQueue.stop();
+
+        // Check that all expected events were published
+        const eventTypes = getEventTypes();
+        expect(eventTypes).toEqual([
+          'queue:job:enqueued',
+          'queue:job:started',
+          'queue:job:progress',
+          'queue:job:completed',
+        ]);
+
+        // Verify progress event details
+        const progressCall = findEventCall('queue:job:progress');
+        expect(progressCall).toBeDefined();
+        expect(progressCall![1]).toMatchObject({
+          jobId,
+          progress: 0.5,
+          message: 'Half done',
+        });
+      });
+
+      it('should publish failed event when job fails', async () => {
+        testQueue = new QueueInstance(
+          createTestConfig({
+            defaultMaxRetries: 0, // No retries to test immediate failure
+          }),
+          storage,
+          logger,
+          eventBus,
+          'test-server'
+        );
+
+        testQueue.registerHandler('test-job', async () => {
+          throw new Error('Test error');
+        });
+
+        const jobId = await testQueue.add('test-job', {});
+        await testQueue.start();
+
+        // Wait for failed event
+        await waitForEvent('queue:job:failed', 5000);
+
+        await testQueue.stop();
+
+        const failedCall = findEventCall('queue:job:failed');
+        expect(failedCall).toBeDefined();
+        expect(failedCall![1]).toMatchObject({
+          jobId,
+          queueName: 'test-queue',
+          jobType: 'test-job',
+          error: 'Test error', // Error is a string in EventBus events
+          willRetry: false,
+          serverId: 'test-server',
+        });
+      });
+
+      it('should publish cancelled event when job is cancelled', async () => {
+        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+
+        testQueue.registerHandler('test-job', async ctx => {
+          // Long-running job
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          if (ctx.signal.aborted) throw new Error('Cancelled');
+          return { success: true };
+        });
+
+        const jobId = await testQueue.add('test-job', {});
+        await testQueue.start();
+
+        // Wait for job to start
+        await waitForEvent('queue:job:started');
+
+        // Cancel the job
+        await testQueue.cancelJob(jobId, 'User requested');
+
+        // Wait for cancelled event
+        await waitForEvent('queue:job:cancelled');
+
+        const cancelledCall = findEventCall('queue:job:cancelled');
+        expect(cancelledCall).toBeDefined();
+        expect(cancelledCall![1]).toMatchObject({
+          jobId,
+          queueName: 'test-queue',
+          reason: 'User requested',
+        });
+
+        await testQueue.stop({ graceful: false });
+      });
+
+      it('should include serverId in all events', async () => {
+        testQueue = new QueueInstance(
+          createTestConfig(),
+          storage,
+          logger,
+          eventBus,
+          'test-server-123'
+        );
+
+        testQueue.registerHandler('test-job', async () => ({ success: true }));
+
+        await testQueue.add('test-job', {});
+        await testQueue.start();
+
+        await waitForEvent('queue:job:completed');
+
+        // Get all queue job events
+        const queueCalls = vi
+          .mocked(eventBus.publish)
+          .mock.calls.filter(
+            call => typeof call[0] === 'string' && call[0].startsWith('queue:job:')
+          );
+
+        // All events should have serverId
+        expect(queueCalls.length).toBeGreaterThan(0);
+        queueCalls.forEach(call => {
+          const eventData = call[1] as any;
+
+          // Progress events don't have serverId (they're minimal)
+          // All others should have it
+          if (call[0] !== 'queue:job:progress') {
+            expect(eventData.serverId).toBe('test-server-123');
+          }
+        });
+
+        await testQueue.stop();
+      });
+
+      it('should publish multiple progress events', async () => {
+        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+
+        testQueue.registerHandler('test-job', async ctx => {
+          await ctx.progress(25, 'Quarter done');
+          await ctx.progress(50, 'Half done');
+          await ctx.progress(75, 'Three quarters');
+          return { success: true };
+        });
+
+        await testQueue.add('test-job', {});
+        await testQueue.start();
+
+        await waitForEvent('queue:job:completed');
+        await testQueue.stop();
+
+        const progressCalls = getEventCalls('queue:job:progress');
+        expect(progressCalls).toHaveLength(3);
+
+        expect(progressCalls[0]![1]).toMatchObject({
+          progress: 0.25,
+          message: 'Quarter done',
+        });
+
+        expect(progressCalls[1]![1]).toMatchObject({
+          progress: 0.5,
+          message: 'Half done',
+        });
+
+        expect(progressCalls[2]![1]).toMatchObject({
+          progress: 0.75,
+          message: 'Three quarters',
+        });
+      });
+
+      it('should publish completed event with result', async () => {
+        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+
+        const expectedResult = { status: 'success', recordsProcessed: 100 };
+
+        testQueue.registerHandler('test-job', async () => expectedResult);
+
+        await testQueue.add('test-job', {});
+        await testQueue.start();
+
+        await waitForEvent('queue:job:completed');
+        await testQueue.stop();
+
+        const completedCall = findEventCall('queue:job:completed');
+        expect(completedCall).toBeDefined();
+        expect(completedCall![1]).toMatchObject({
+          queueName: 'test-queue',
+          jobType: 'test-job',
+          result: expectedResult,
+          serverId: 'test-server',
+        });
+      });
+    });
+
+    describe('Backward Compatibility', () => {
+      it('should still emit local EventEmitter events', async () => {
+        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+
+        const queuedSpy = vi.fn();
+        const startedSpy = vi.fn();
+        const completedSpy = vi.fn();
+
+        testQueue.on('job:queued', queuedSpy);
+        testQueue.on('job:started', startedSpy);
+        testQueue.on('job:completed', completedSpy);
+
+        testQueue.registerHandler('test-job', async () => ({ success: true }));
+
+        await testQueue.add('test-job', {});
+        await testQueue.start();
+
+        await vi.waitFor(
+          () => {
+            expect(completedSpy).toHaveBeenCalled();
+          },
+          { timeout: 1000, interval: 50 }
+        );
+
+        await testQueue.stop();
+
+        // Verify local events were emitted
+        expect(queuedSpy).toHaveBeenCalledTimes(1);
+        expect(startedSpy).toHaveBeenCalledTimes(1);
+        expect(completedSpy).toHaveBeenCalledTimes(1);
+
+        // Also verify EventBus events were published
+        expect(eventBus.publish).toHaveBeenCalledWith('queue:job:enqueued', expect.any(Object));
+        expect(eventBus.publish).toHaveBeenCalledWith('queue:job:started', expect.any(Object));
+        expect(eventBus.publish).toHaveBeenCalledWith('queue:job:completed', expect.any(Object));
+      });
     });
   });
 });

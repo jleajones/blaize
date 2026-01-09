@@ -75,7 +75,7 @@ function createTestConfig(overrides?: Partial<QueuePluginConfig>): QueuePluginCo
 function getPluginHooks(plugin: unknown) {
   const hooks = plugin as {
     register?: (server: unknown) => Promise<void>;
-    initialize?: () => Promise<void>;
+    initialize?: (server: unknown) => Promise<void>;
     onServerStart?: () => Promise<void>;
     onServerStop?: () => Promise<void>;
     terminate?: () => Promise<void>;
@@ -142,14 +142,14 @@ describe('createQueuePlugin', () => {
   // ==========================================================================
   describe('Lifecycle: initialize()', () => {
     it('should initialize without error when using default storage', async () => {
-      const plugin = createQueuePlugin(createTestConfig());
+      const plugin = createQueuePlugin(createTestConfig({ serverId: 'test-server' }));
       const hooks = getPluginHooks(plugin);
       const server = createMockServer();
 
       await hooks.register?.(server);
 
       // Should not throw
-      await expect(hooks.initialize?.()).resolves.toBeUndefined();
+      await expect(hooks.initialize?.(server)).resolves.toBeUndefined();
     });
 
     it('should call storage.connect() if available', async () => {
@@ -162,7 +162,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       expect(customStorage.connect).toHaveBeenCalled();
     });
@@ -182,7 +182,7 @@ describe('createQueuePlugin', () => {
 
       await hooks.register?.(server);
 
-      await expect(hooks.initialize?.()).rejects.toThrow('Connection failed');
+      await expect(hooks.initialize?.(server)).rejects.toThrow('Connection failed');
     });
   });
 
@@ -196,7 +196,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Should not throw
       await expect(hooks.onServerStart?.()).resolves.toBeUndefined();
@@ -213,7 +213,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
 
       // Should not throw
@@ -234,7 +234,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
       await hooks.onServerStop?.();
 
@@ -258,7 +258,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
 
       // Should not throw even if disconnect fails
@@ -276,7 +276,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
       await hooks.onServerStop?.();
 
@@ -295,7 +295,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Get the registered middleware
       const middleware = server.middleware[0] as {
@@ -326,7 +326,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Get the registered middleware
       const middleware = server.middleware[0] as {
@@ -358,7 +358,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       const middleware = server.middleware[0] as {
         execute: (mc: any) => Promise<void>;
@@ -399,7 +399,7 @@ describe('createQueuePlugin', () => {
 
       // Full lifecycle
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
       await hooks.onServerStop?.();
       await hooks.terminate?.();
@@ -416,7 +416,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
 
       // Get queue service from middleware
@@ -463,7 +463,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Get queue service
       const middleware = server.middleware[0] as {
@@ -496,7 +496,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Get queue service and verify it works (which means storage is working)
       const middleware = server.middleware[0] as {
@@ -537,7 +537,7 @@ describe('createQueuePlugin', () => {
       const server = createMockServer();
 
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
 
       // Verify custom storage was used
       expect(customStorage.connect).toHaveBeenCalled();
@@ -556,7 +556,7 @@ describe('createQueuePlugin', () => {
 
       // Should complete without error
       await hooks.register?.(server);
-      await hooks.initialize?.();
+      await hooks.initialize?.(server);
       await hooks.onServerStart?.();
       await hooks.onServerStop?.();
       await hooks.terminate?.();
@@ -591,7 +591,7 @@ describe('Handler Registration via Config', () => {
     const server = createMockServer();
 
     await hooks.register?.(server);
-    await hooks.initialize?.();
+    await hooks.initialize?.(server);
     await hooks.onServerStart?.();
 
     // Get queue service
@@ -652,7 +652,7 @@ describe('Handler Registration via Config', () => {
     const server = createMockServer();
 
     await hooks.register?.(server);
-    await hooks.initialize?.();
+    await hooks.initialize?.(server);
     await hooks.onServerStart?.();
 
     const ctx = createMockContext();
@@ -695,7 +695,7 @@ describe('Handler Registration via Config', () => {
     const server = createMockServer();
 
     await hooks.register?.(server);
-    await hooks.initialize?.();
+    await hooks.initialize?.(server);
     await hooks.onServerStart?.();
 
     const ctx = createMockContext();
@@ -744,7 +744,7 @@ describe('Handler Registration via Config', () => {
     const server = createMockServer();
 
     await hooks.register?.(server);
-    await hooks.initialize?.();
+    await hooks.initialize?.(server);
     await hooks.onServerStart?.();
 
     const ctx = createMockContext();
