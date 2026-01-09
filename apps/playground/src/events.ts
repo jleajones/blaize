@@ -11,6 +11,9 @@
  */
 
 import { z } from 'zod';
+ 
+import { cacheEventBusSchemas } from '@blaizejs/plugin-cache';
+import { queueEventBusSchemas } from '@blaizejs/plugin-queue';
 
 export const playgroundEvents = {
   // ==========================================================================
@@ -58,73 +61,13 @@ export const playgroundEvents = {
   }),
 
   // ==========================================================================
-  // Cache Events (NEW - Published by Route Handlers)
+  // Cache Events (NEW - Published Cache Plugin)
   // ==========================================================================
-  'cache:set': z.object({
-    key: z.string(),
-    ttl: z.number().optional(),
-    timestamp: z.number(),
-    size: z.number().optional(),
-  }),
-
-  'cache:delete': z.object({
-    key: z.string(),
-    timestamp: z.number(),
-  }),
-
-  'cache:invalidate': z.object({
-    pattern: z.string(),
-    timestamp: z.number(),
-    reason: z.string().optional(),
-  }),
-
-  'cache:hit': z.object({
-    key: z.string(),
-    latencyMs: z.number().optional(),
-  }),
-
-  'cache:miss': z.object({
-    key: z.string(),
-  }),
-
+  ...cacheEventBusSchemas,
   // ==========================================================================
-  // Queue Events (NEW - Published by Route Handlers or Queue Plugin)
+  // Queue Events (NEW - Published Queue Plugin)
   // ==========================================================================
-  'queue:job:added': z.object({
-    jobId: z.string(),
-    queueName: z.string(),
-    jobType: z.string(),
-    priority: z.number(),
-  }),
-
-  'queue:job:started': z.object({
-    jobId: z.string(),
-    queueName: z.string(),
-    jobType: z.string(),
-    attempt: z.number().optional(),
-  }),
-
-  'queue:job:completed': z.object({
-    jobId: z.string(),
-    queueName: z.string(),
-    jobType: z.string(),
-    durationMs: z.number().optional(),
-    result: z.unknown().optional(),
-  }),
-
-  'queue:job:failed': z.object({
-    jobId: z.string(),
-    queueName: z.string(),
-    jobType: z.string(),
-    error: z.string(),
-    willRetry: z.boolean(),
-  }),
-
-  'queue:job:progress': z.object({
-    jobId: z.string(),
-    progress: z.number().min(0).max(100),
-    message: z.string().optional(),
-  }),
+  ...queueEventBusSchemas,
 
   // ==========================================================================
   // Report Events (NEW)

@@ -85,6 +85,7 @@ const metricsPlugin = createMetricsPlugin({
 // ============================================================================
 const queuePlugin = createQueuePlugin({
   storage: queueAdapter,
+  serverId: 'playground-server-1',
   // Define queues with different configurations
   queues: {
     // Email queue - medium concurrency, fast jobs
@@ -201,7 +202,8 @@ try {
   // Create the server instance
 
   // Start the server
-  server.listen();
+  await server.listen();
+
   Blaize.logger.info('🚀 Playground server ready!');
   Blaize.logger.info('');
   Blaize.logger.info('📖 Try these demos:');

@@ -19,38 +19,38 @@ interface SendEmailData {
 export const sendEmailHandler = async (
   ctx: JobContext<SendEmailData>
 ): Promise<{ messageId: string; sentAt: number }> => {
+  const { logger, progress, signal } = ctx;
   const { to, subject } = ctx.data;
 
-  ctx.logger.info('Starting email send', { to, subject });
+  logger.info('Starting email send', { to, subject });
 
   // Step 1: Validate
-  await ctx.progress(10, 'Validating recipient');
+  await progress(10, 'Validating recipient');
   await sleep(300);
 
-  if (ctx.signal.aborted) throw new Error('Job cancelled');
+  if (signal.aborted) throw new Error('Job cancelled');
 
   // Step 2: Prepare
-  await ctx.progress(30, 'Preparing email content');
+  await progress(30, 'Preparing email content');
   await sleep(500);
 
-  if (ctx.signal.aborted) throw new Error('Job cancelled');
+  if (signal.aborted) throw new Error('Job cancelled');
 
   // Step 3: Connect to SMTP
-  await ctx.progress(50, 'Connecting to mail server');
+  await progress(50, 'Connecting to mail server');
   await sleep(400);
 
-  if (ctx.signal.aborted) throw new Error('Job cancelled');
+  if (signal.aborted) throw new Error('Job cancelled');
 
   // Step 4: Send
-  await ctx.progress(80, 'Sending email');
+  await progress(80, 'Sending email');
   await sleep(600);
 
   // Step 5: Verify
-  await ctx.progress(100, 'Email sent successfully');
-
+  await progress(100, 'Email sent successfully');
   const messageId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  ctx.logger.info('Email sent', { messageId, to });
+  logger.info('Email sent', { messageId, to });
 
   return { messageId, sentAt: Date.now() };
 };
