@@ -1,0 +1,1428 @@
+# 🗄️ Database Integration Guide
+
+> Learn how to integrate any database or ORM into your BlaizeJS application using the plugin system. You'll get full control, perfect type safety, and lifecycle management while keeping the flexibility to use your preferred tools.
+
+---
+
+## 🎯 Why BlaizeJS doesn't provide a database plugin
+
+BlaizeJS intentionally does not provide a database plugin because:
+
+1. **Existing ORMs are excellent** — Drizzle, Prisma, and TypeORM are battle-tested with great TypeScript support
+2. **You know your needs best** — Your database setup, migrations, and query patterns are unique to your app
+3. **Teaching > Abstracting** — Understanding how to inject services gives you power to integrate anything
+4. **Type safety** — Using your ORM directly preserves all its TypeScript types
+
+Instead, we'll teach you the **pattern** for integrating any database using BlaizeJS's plugin system. This same pattern works for Redis, message queues, search engines, or any external service.
+
+---
+
+## 📚 What you'll learn
+
+By the end of this guide, you'll be able to:
+
+- ✅ Create a database plugin for lifecycle management
+- ✅ Inject your database into `ctx.services` with full type safety
+- ✅ Handle connections, disconnections, and errors
+- ✅ Publish events for real-time updates
+- ✅ Coordinate across multiple servers
+- ✅ Integrate transactions and complex queries
+
+---
+
+## 📋 Prerequisites
+
+- Basic BlaizeJS knowledge (complete the [Quick Start Guide](./quick-start.md))
+- Familiarity with TypeScript
+- Understanding of SQL/databases
+- Your preferred ORM installed
+
+---
+
+## 🚀 Choose your ORM
+
+Pick your ORM to jump to the quick start:
+
+- [**Drizzle**](#drizzle-integration) (Recommended — functional, type-safe, lightweight)
+- [**Prisma**](#prisma-integration) (Popular, auto-generated client, great DX)
+- [**TypeORM**](#typeorm-integration) (Mature, decorator-based, feature-rich)
+
+---
+
+## 🧠 Core concepts
+
+### Understanding the plugin system
+
+Before we dive into code, let's understand how BlaizeJS plugins work:
+
+**Plugins vs Middleware:**
+- **Middleware** runs on every request — for per-request logic like auth, logging
+- **Plugins** run once at startup/shutdown — for managing expensive resources like database connections
+
+```typescript
+// ❌ WRONG: Creating a database connection on every request
+const dbMiddleware = createMiddleware({
+  handler: async (ctx, next) => {
+    ctx.services.db = await Database.connect(); // Expensive! Every request!
+    await next();
+    await ctx.services.db.close(); // Wasteful!
+  },
+});
+
+// ✅ CORRECT: Plugin connects once, middleware provides access
+const databasePlugin = createPlugin<
+  { connectionString: string }, // Config
+  {}, // State (none)
+  { db: Database } // Services
+>({
+  name: 'database',
+  version: '1.0.0',
+  setup: ({ config, logger }) => {
+    let db: Database; // Singleton in closure
+
+    return {
+      register: async (server) => {
+        server.use(
+          createMiddleware<{}, { db: Database }>({
+            name: 'database',
+            handler: async (ctx, next) => {
+              ctx.services.db = db; // Just a reference — no connection!
+              await next();
+            },
+          })
+        );
+      },
+      initialize: async () => {
+        db = await Database.connect(config.connectionString); // Connect ONCE
+      },
+      terminate: async () => {
+        await db.close(); // Clean up ONCE at shutdown
+      },
+    };
+  },
+});
+```
+
+### Plugin lifecycle hooks
+
+Plugins can implement five lifecycle hooks:
+
+| Hook | When It Runs | Use For |
+|------|--------------|---------|
+| `register` | During `server.register(plugin)` | Adding middleware, routes |
+| `initialize` | Before `server.listen()` | Connecting to resources |
+| `onServerStart` | After server is listening | Verifying connections, starting timers |
+| `onServerStop` | When server begins shutdown | Stopping new work, draining queues |
+| `terminate` | During server shutdown | Closing connections, cleanup |
+
+**Execution order:**
+
+```
+Server Startup:
+  plugin1.register() → plugin2.register() → plugin3.register()
+  plugin1.initialize() → plugin2.initialize() → plugin3.initialize()
+  plugin1.onServerStart() → plugin2.onServerStart() → plugin3.onServerStart()
+
+Server Shutdown (reverse order):
+  plugin3.onServerStop() → plugin2.onServerStop() → plugin1.onServerStop()
+  plugin3.terminate() → plugin2.terminate() → plugin1.terminate()
+```
+
+> ⚠️ **Critical Pattern**: Middleware MUST be registered in the `register` hook, not in the setup function body. This ensures middleware is added during the correct lifecycle phase. Registering middleware in the wrong place will cause the plugin to fail.
+
+### Type parameters explained
+
+When creating a plugin, you specify three type parameters:
+
+```typescript
+createPlugin<TConfig, TState, TServices>({ ... })
+```
+
+| Generic | Purpose | Typical Usage |
+|---------|---------|---------------|
+| `TConfig` | Shape of configuration options | `{ host: string; port: number }` |
+| `TState` | What plugin's middleware adds to `ctx.state` | Usually `{}` — plugins typically add services, not state |
+| `TServices` | What plugin's middleware adds to `ctx.services` | `{ db: Database; cache: CacheService }` |
+
+For middleware within the plugin:
+
+```typescript
+createMiddleware<TState, TServices>({ ... })
+```
+
+The middleware types must match what the plugin declares it will provide.
+
+---
+
+## 📖 Drizzle integration
+
+Drizzle is the recommended ORM for BlaizeJS — it's functional, type-safe, lightweight, and has excellent TypeScript support.
+
+### Step 1: Install dependencies
+
+```bash
+pnpm add drizzle-orm better-sqlite3
+pnpm add -D drizzle-kit @types/better-sqlite3
+```
+
+### Step 2: Define your schema
+
+```typescript
+// src/database/schema.ts
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const posts = sqliteTable('posts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// Export types for use in route handlers
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type Post = typeof posts.$inferSelect;
+export type NewPost = typeof posts.$inferInsert;
+```
+
+**Why this matters:**
+- Drizzle uses a type-safe schema definition
+- Table definitions automatically infer TypeScript types
+- Export types for use in your application
+- Schema is the source of truth for both database and TypeScript
+
+### Step 3: Create database module
+
+```typescript
+// src/database/index.ts
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { users, posts } from './schema';
+
+// Create SQLite connection
+const sqlite = new Database('./data.db');
+
+// Enable WAL mode for better concurrency
+sqlite.pragma('journal_mode = WAL');
+
+// Create Drizzle instance
+export const db = drizzle(sqlite, { 
+  schema: { users, posts },
+});
+
+// Export schema for type inference
+export const schema = { users, posts };
+
+// Export connection for cleanup
+export const connection = sqlite;
+
+// Export type for service injection
+export type Database = typeof db;
+```
+
+**What's happening:**
+- This module creates and configures your database connection
+- WAL mode improves performance for SQLite
+- Export `db` for use in routes
+- Export `connection` for cleanup in plugin
+- Export types for TypeScript integration
+
+### Step 4: Create database plugin
+
+```typescript
+// src/database/plugin.ts
+import { createPlugin, createMiddleware } from 'blaizejs';
+import { db, connection } from './index';
+import type { Database } from './index';
+
+// Define services that this plugin provides
+interface DatabaseServices {
+  db: Database;
+}
+
+/**
+ * Database plugin for BlaizeJS
+ * 
+ * Injects Drizzle database into ctx.services.db
+ * Manages connection lifecycle
+ */
+export const createDatabasePlugin = () => {
+  return createPlugin<{}, {}, DatabaseServices>({
+    name: 'app-database',
+    version: '1.0.0',
+    
+    setup: ({ logger }) => {
+      const pluginLogger = logger.child({ 
+        plugin: 'database' 
+      });
+      
+      return {
+        /**
+         * Register hook - Add middleware to inject db into ctx.services
+         * 
+         * CRITICAL: Middleware MUST be registered here, not in setup body
+         */
+        register: async (server) => {
+          pluginLogger.debug('Registering database middleware');
+          
+          server.use(
+            createMiddleware<{}, DatabaseServices>({
+              name: 'database',
+              handler: async (ctx, next) => {
+                // Inject database into ctx.services
+                ctx.services.db = db;
+                await next();
+              },
+            })
+          );
+          
+          pluginLogger.info('Database middleware registered');
+        },
+        
+        /**
+         * Initialize hook - Verify connection before server starts
+         */
+        initialize: async () => {
+          pluginLogger.info('Initializing database');
+          
+          // Verify database is accessible
+          try {
+            connection.prepare('SELECT 1').get();
+            pluginLogger.info('Database connection verified');
+          } catch (error) {
+            pluginLogger.error('Database connection failed', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        },
+        
+        /**
+         * Server start hook - Log readiness
+         */
+        onServerStart: async () => {
+          pluginLogger.info('Database ready');
+        },
+        
+        /**
+         * Server stop hook - Prepare for shutdown
+         */
+        onServerStop: async () => {
+          pluginLogger.info('Database stopping');
+        },
+        
+        /**
+         * Terminate hook - Close connection
+         */
+        terminate: async () => {
+          pluginLogger.info('Closing database connection');
+          connection.close();
+          pluginLogger.info('Database connection closed');
+        },
+      };
+    },
+  });
+};
+```
+
+**Key points:**
+- Plugin manages the complete lifecycle of the database connection
+- `register` - Adds middleware to inject `db` into `ctx.services`
+- `initialize` - Verifies connection before server starts
+- `terminate` - Closes connection when server shuts down
+- Logger provides structured logging with context
+
+### Step 5: Register the plugin
+
+```typescript
+// src/server.ts
+import { createServer } from 'blaizejs';
+import { createDatabasePlugin } from './database/plugin';
+
+const server = createServer({
+  port: 3000,
+  routesDir: './src/routes',
+})
+  .register(createDatabasePlugin());
+
+await server.listen();
+console.log('Server running on http://localhost:3000');
+```
+
+**What happens:**
+- Import and register your database plugin
+- Plugin will automatically manage connection lifecycle
+- Database is now available in all route handlers
+
+### Step 6: Use in routes
+
+```typescript
+// src/routes/users/create.ts
+import { createPostRoute } from 'blaizejs';
+import { z } from 'zod';
+import { users } from '../../database/schema';
+import type { NewUser } from '../../database/schema';
+
+const createUserSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+});
+
+export const createUser = createPostRoute({
+  schema: {
+    body: createUserSchema,
+  },
+  handler: async (ctx) => {
+    // ctx.services.db is fully typed!
+    const [user] = await ctx.services.db
+      .insert(users)
+      .values({
+        name: ctx.request.body.name,
+        email: ctx.request.body.email,
+      })
+      .returning();
+    
+    return {
+      success: true,
+      user,
+    };
+  },
+});
+```
+
+```typescript
+// src/routes/users/[userId]/get.ts
+import { createGetRoute } from 'blaizejs';
+import { z } from 'zod';
+import { users } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
+import { NotFoundError } from 'blaizejs';
+
+export const getUser = createGetRoute({
+  schema: {
+    params: z.object({ userId: z.string() }),
+  },
+  handler: async (ctx, params) => {
+    const [user] = await ctx.services.db
+      .select()
+      .from(users)
+      .where(eq(users.id, parseInt(params.userId)))
+      .limit(1);
+    
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    
+    return {
+      success: true,
+      user,
+    };
+  },
+});
+```
+
+**What you get:**
+- `ctx.services.db` is available in all route handlers
+- Full TypeScript type safety from Drizzle
+- Use Drizzle's query builder API directly
+- No abstraction layer — just your database
+
+### Step 7: Migrations
+
+```typescript
+// drizzle.config.ts
+import type { Config } from 'drizzle-kit';
+
+export default {
+  schema: './src/database/schema.ts',
+  out: './drizzle',
+  driver: 'better-sqlite',
+  dbCredentials: {
+    url: './data.db',
+  },
+} satisfies Config;
+```
+
+```bash
+# Generate migration
+pnpm drizzle-kit generate:sqlite
+
+# Apply migration
+pnpm drizzle-kit push:sqlite
+```
+
+**Migration workflow:**
+- Migrations are handled by `drizzle-kit` (ORM's own tool)
+- Generate migrations when schema changes
+- Apply migrations to update database structure
+- This is separate from the plugin — handle migrations in your deployment process
+
+---
+
+## 📖 Prisma integration
+
+Prisma is a popular ORM with auto-generated client and excellent developer experience.
+
+### Key differences from Drizzle
+
+| Aspect | Drizzle | Prisma |
+|--------|---------|--------|
+| Schema | TypeScript definitions | `schema.prisma` file |
+| Client | Imported directly | Generated by `prisma generate` |
+| Migrations | `drizzle-kit` | `prisma migrate` |
+| Connection | Lazy (connects on first query) | Lazy (connects on first query) |
+
+### Step 1: Install dependencies
+
+```bash
+pnpm add @prisma/client
+pnpm add -D prisma
+```
+
+### Step 2: Initialize Prisma
+
+```bash
+pnpm prisma init
+```
+
+### Step 3: Define your schema
+
+```prisma
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  posts     Post[]
+}
+
+model Post {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+```
+
+### Step 4: Generate Prisma Client
+
+```bash
+pnpm prisma generate
+```
+
+### Step 5: Create database module
+
+```typescript
+// src/database/index.ts
+import { PrismaClient } from '@prisma/client';
+
+export const prisma = new PrismaClient({
+  log: ['query', 'error', 'warn'],
+});
+
+export type Database = typeof prisma;
+```
+
+### Step 6: Create database plugin
+
+```typescript
+// src/database/plugin.ts
+import { createPlugin, createMiddleware } from 'blaizejs';
+import { prisma } from './index';
+import type { Database } from './index';
+
+interface DatabaseServices {
+  db: Database;
+}
+
+export const createDatabasePlugin = () => {
+  return createPlugin<{}, {}, DatabaseServices>({
+    name: 'app-database',
+    version: '1.0.0',
+    
+    setup: ({ logger }) => {
+      const pluginLogger = logger.child({ plugin: 'database' });
+      
+      return {
+        register: async (server) => {
+          server.use(
+            createMiddleware<{}, DatabaseServices>({
+              name: 'database',
+              handler: async (ctx, next) => {
+                ctx.services.db = prisma;
+                await next();
+              },
+            })
+          );
+          
+          pluginLogger.info('Database middleware registered');
+        },
+        
+        initialize: async () => {
+          // Prisma connects lazily, verify with simple query
+          await prisma.$queryRaw`SELECT 1`;
+          pluginLogger.info('Database connection verified');
+        },
+        
+        onServerStart: async () => {
+          pluginLogger.info('Database ready');
+        },
+        
+        onServerStop: async () => {
+          pluginLogger.info('Database stopping');
+        },
+        
+        terminate: async () => {
+          await prisma.$disconnect();
+          pluginLogger.info('Database connection closed');
+        },
+      };
+    },
+  });
+};
+```
+
+### Step 7: Use in routes
+
+```typescript
+// src/routes/users/create.ts
+import { createPostRoute } from 'blaizejs';
+import { z } from 'zod';
+
+const createUserSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+});
+
+export const createUser = createPostRoute({
+  schema: {
+    body: createUserSchema,
+  },
+  handler: async (ctx) => {
+    const user = await ctx.services.db.user.create({
+      data: {
+        name: ctx.request.body.name,
+        email: ctx.request.body.email,
+      },
+    });
+    
+    return { success: true, user };
+  },
+});
+```
+
+### Step 8: Migrations
+
+```bash
+# Create migration
+pnpm prisma migrate dev --name init
+
+# Apply in production
+pnpm prisma migrate deploy
+```
+
+---
+
+## 📖 TypeORM integration
+
+TypeORM is a mature ORM with decorator-based entities and extensive features.
+
+### Step 1: Install dependencies
+
+```bash
+pnpm add typeorm reflect-metadata better-sqlite3
+pnpm add -D @types/better-sqlite3
+```
+
+### Step 2: Define entities
+
+```typescript
+// src/database/entities/User.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } from 'typeorm';
+import { Post } from './Post';
+
+@Entity()
+export class User {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  name: string;
+
+  @Column({ unique: true })
+  email: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @OneToMany(() => Post, post => post.user)
+  posts: Post[];
+}
+```
+
+```typescript
+// src/database/entities/Post.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne } from 'typeorm';
+import { User } from './User';
+
+@Entity()
+export class Post {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  userId: number;
+
+  @Column()
+  title: string;
+
+  @Column()
+  content: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @ManyToOne(() => User, user => user.posts)
+  user: User;
+}
+```
+
+### Step 3: Create database module
+
+```typescript
+// src/database/index.ts
+import 'reflect-metadata';
+import { DataSource } from 'typeorm';
+import { User } from './entities/User';
+import { Post } from './entities/Post';
+
+export const AppDataSource = new DataSource({
+  type: 'sqlite',
+  database: './data.db',
+  entities: [User, Post],
+  synchronize: true, // Disable in production!
+  logging: true,
+});
+
+export type Database = typeof AppDataSource;
+```
+
+### Step 4: Create database plugin
+
+```typescript
+// src/database/plugin.ts
+import { createPlugin, createMiddleware } from 'blaizejs';
+import { AppDataSource } from './index';
+import type { Database } from './index';
+
+interface DatabaseServices {
+  db: Database;
+}
+
+export const createDatabasePlugin = () => {
+  return createPlugin<{}, {}, DatabaseServices>({
+    name: 'app-database',
+    version: '1.0.0',
+    
+    setup: ({ logger }) => {
+      const pluginLogger = logger.child({ plugin: 'database' });
+      
+      return {
+        register: async (server) => {
+          server.use(
+            createMiddleware<{}, DatabaseServices>({
+              name: 'database',
+              handler: async (ctx, next) => {
+                ctx.services.db = AppDataSource;
+                await next();
+              },
+            })
+          );
+          
+          pluginLogger.info('Database middleware registered');
+        },
+        
+        initialize: async () => {
+          await AppDataSource.initialize();
+          pluginLogger.info('Database connection initialized');
+        },
+        
+        onServerStart: async () => {
+          pluginLogger.info('Database ready');
+        },
+        
+        onServerStop: async () => {
+          pluginLogger.info('Database stopping');
+        },
+        
+        terminate: async () => {
+          await AppDataSource.destroy();
+          pluginLogger.info('Database connection closed');
+        },
+      };
+    },
+  });
+};
+```
+
+### Step 5: Use in routes
+
+```typescript
+// src/routes/users/create.ts
+import { createPostRoute } from 'blaizejs';
+import { z } from 'zod';
+import { User } from '../../database/entities/User';
+
+const createUserSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+});
+
+export const createUser = createPostRoute({
+  schema: {
+    body: createUserSchema,
+  },
+  handler: async (ctx) => {
+    const userRepository = ctx.services.db.getRepository(User);
+    
+    const user = userRepository.create({
+      name: ctx.request.body.name,
+      email: ctx.request.body.email,
+    });
+    
+    await userRepository.save(user);
+    
+    return { success: true, user };
+  },
+});
+```
+
+---
+
+## 🚀 Advanced patterns
+
+### Pattern 1: Event emission for real-time updates
+
+Combine database operations with EventBus to enable real-time updates across your application.
+
+**When to use:**
+- User notifications (new follower, new message)
+- Real-time dashboards (sales updates, user activity)
+- Cache invalidation (multi-server coordination)
+- SSE streaming (live updates to connected clients)
+
+**Example:**
+
+```typescript
+// src/routes/users/create.ts
+import { createPostRoute } from 'blaizejs';
+import { z } from 'zod';
+import { users } from '../../database/schema';
+
+const createUserSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+});
+
+export const createUser = createPostRoute({
+  schema: {
+    body: createUserSchema,
+  },
+  handler: async (ctx) => {
+    // Create user
+    const [user] = await ctx.services.db
+      .insert(users)
+      .values({
+        name: ctx.request.body.name,
+        email: ctx.request.body.email,
+      })
+      .returning();
+    
+    // Publish event for real-time coordination
+    await ctx.eventBus.publish('user:created', {
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      timestamp: Date.now(),
+    });
+    
+    return { success: true, user };
+  },
+});
+```
+
+```typescript
+// src/routes/users/stream.ts - SSE endpoint for real-time updates
+import { createSSERoute } from 'blaizejs';
+
+export const userStream = createSSERoute({
+  handler: async (stream, ctx) => {
+    ctx.logger.info('[SSE] Client connected to user stream');
+    
+    stream.send('connected', {
+      message: 'Connected to user updates',
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Subscribe to user events
+    const unsubscribe = ctx.eventBus.subscribe('user:created', (event) => {
+      stream.send('user-created', {
+        user: event.data,
+        timestamp: new Date(event.timestamp).toISOString(),
+      });
+    });
+    
+    // Heartbeat
+    const heartbeat = setInterval(() => {
+      stream.send('heartbeat', {
+        timestamp: new Date().toISOString(),
+      });
+    }, 30000);
+    
+    // Cleanup on disconnect
+    stream.onClose(() => {
+      ctx.logger.info('[SSE] Client disconnected from user stream');
+      unsubscribe();
+      clearInterval(heartbeat);
+    });
+  },
+});
+```
+
+**Key points:**
+- EventBus is always available in BlaizeJS (core primitive)
+- Publish events after database mutations
+- Subscribe to events in SSE routes for real-time updates
+- Don't forget cleanup (unsubscribe, clear intervals)
+
+### Pattern 2: Helper functions with events
+
+Create helper functions that combine database operations with automatic event emission.
+
+```typescript
+// src/database/helpers.ts
+import { db } from './index';
+import { users } from './schema';
+import { eq } from 'drizzle-orm';
+import type { NewUser, User } from './schema';
+import type { EventBus } from 'blaizejs';
+
+export function createDatabaseHelpers(eventBus: EventBus) {
+  return {
+    users: {
+      async create(data: NewUser): Promise<User> {
+        const [user] = await db
+          .insert(users)
+          .values(data)
+          .returning();
+        
+        // Automatically emit event
+        await eventBus.publish('user:created', {
+          userId: user.id,
+          data: user,
+        });
+        
+        return user;
+      },
+      
+      async update(id: number, data: Partial<NewUser>): Promise<User> {
+        const [user] = await db
+          .update(users)
+          .set(data)
+          .where(eq(users.id, id))
+          .returning();
+        
+        await eventBus.publish('user:updated', {
+          userId: id,
+          data: user,
+        });
+        
+        return user;
+      },
+      
+      async delete(id: number): Promise<void> {
+        await db
+          .delete(users)
+          .where(eq(users.id, id));
+        
+        await eventBus.publish('user:deleted', {
+          userId: id,
+        });
+      },
+    },
+    
+    // Raw database access (no events)
+    db,
+  };
+}
+```
+
+```typescript
+// Update plugin to inject helpers
+register: async (server) => {
+  const dbWithHelpers = createDatabaseHelpers(server.eventBus);
+  
+  server.use(
+    createMiddleware<{}, { db: ReturnType<typeof createDatabaseHelpers> }>({
+      name: 'database',
+      handler: async (ctx, next) => {
+        ctx.services.db = dbWithHelpers;
+        await next();
+      },
+    })
+  );
+}
+```
+
+```typescript
+// Use in routes
+export const createUser = createPostRoute({
+  handler: async (ctx) => {
+    // Helper automatically emits event
+    const user = await ctx.services.db.users.create({
+      name: ctx.request.body.name,
+      email: ctx.request.body.email,
+    });
+    
+    return { success: true, user };
+  },
+});
+```
+
+**Benefits:**
+- Helpers reduce boilerplate
+- Consistent event emission across your app
+- Still have access to raw db for complex queries
+- Update TypeScript types to reflect new service shape
+
+### Pattern 3: Transaction support
+
+Handle multi-step database operations with transaction support.
+
+```typescript
+// src/routes/posts/create.ts
+import { createPostRoute } from 'blaizejs';
+import { z } from 'zod';
+import { posts, users } from '../../database/schema';
+import { eq } from 'drizzle-orm';
+import { NotFoundError } from 'blaizejs';
+
+const createPostSchema = z.object({
+  userId: z.number(),
+  title: z.string().min(1).max(200),
+  content: z.string().min(1),
+});
+
+export const createPost = createPostRoute({
+  schema: {
+    body: createPostSchema,
+  },
+  handler: async (ctx) => {
+    // Use Drizzle's transaction API
+    const result = await ctx.services.db.transaction(async (tx) => {
+      // Verify user exists
+      const [user] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, ctx.request.body.userId))
+        .limit(1);
+      
+      if (!user) {
+        throw new NotFoundError('User not found');
+      }
+      
+      // Create post
+      const [post] = await tx
+        .insert(posts)
+        .values({
+          userId: ctx.request.body.userId,
+          title: ctx.request.body.title,
+          content: ctx.request.body.content,
+        })
+        .returning();
+      
+      return { user, post };
+    });
+    
+    // Transaction committed - emit event AFTER
+    await ctx.eventBus.publish('post:created', {
+      postId: result.post.id,
+      userId: result.user.id,
+      data: result.post,
+    });
+    
+    return {
+      success: true,
+      post: result.post,
+    };
+  },
+});
+```
+
+**Key points:**
+- Use your ORM's transaction API
+- All operations in transaction are atomic
+- Emit events AFTER transaction commits
+- If transaction fails, no events are emitted
+
+### Pattern 4: Multi-server coordination
+
+Use EventBus with Redis adapter for cache invalidation across multiple servers.
+
+**Scenario:** You have 3 servers behind a load balancer. User updates their profile on Server A. Cache needs to be invalidated on all servers.
+
+```typescript
+// Server setup with Redis EventBus
+import { createServer } from 'blaizejs';
+import { createRedisClient, RedisEventBusAdapter } from '@blaizejs/adapter-redis';
+
+const redisClient = createRedisClient({
+  host: 'localhost',
+  port: 6379,
+});
+
+const redisAdapter = new RedisEventBusAdapter(redisClient);
+
+const server = createServer({
+  serverId: process.env.SERVER_ID || 'server-1',
+  routesDir: './src/routes',
+})
+  .register(createDatabasePlugin())
+  .register(createCachePlugin());
+
+// Attach Redis adapter to EventBus
+await server.eventBus.setAdapter(redisAdapter);
+
+await server.listen(3000);
+```
+
+```typescript
+// src/routes/users/[userId]/update.ts
+import { createPutRoute } from 'blaizejs';
+import { z } from 'zod';
+import { users } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
+
+const updateUserSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+});
+
+export const updateUser = createPutRoute({
+  schema: {
+    params: z.object({ userId: z.string() }),
+    body: updateUserSchema,
+  },
+  handler: async (ctx, params) => {
+    const userId = parseInt(params.userId);
+    
+    // Update user in database
+    const [user] = await ctx.services.db
+      .update(users)
+      .set({
+        name: ctx.request.body.name,
+        email: ctx.request.body.email,
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    // Publish event - propagates to ALL servers via Redis
+    await ctx.eventBus.publish('user:updated', {
+      userId,
+      data: user,
+    });
+    
+    return { success: true, user };
+  },
+});
+```
+
+```typescript
+// All servers subscribe to invalidate cache
+server.eventBus.subscribe('user:updated', async (event) => {
+  // This runs on ALL servers
+  await ctx.services.cache.delete(`user:${event.data.userId}`);
+  console.log(`[${server.serverId}] Invalidated cache for user ${event.data.userId}`);
+});
+```
+
+**How it works:**
+- Without Redis adapter: Events only on current server
+- With Redis adapter: Events propagate to all servers
+- Each server independently invalidates its cache
+- Ensures cache consistency across cluster
+
+> 📚 **Learn More:** See [EventBus documentation](./eventbus.md) for Redis adapter setup
+
+---
+
+## 🐛 Troubleshooting
+
+### Issue: "Property 'db' does not exist on type 'Services'"
+
+**Cause:** TypeScript doesn't know about your database service.
+
+**Solution:** Ensure your plugin defines the services interface:
+
+```typescript
+interface DatabaseServices {
+  db: Database;
+}
+
+createPlugin<{}, {}, DatabaseServices>({ ... })
+```
+
+And ensure your middleware uses the same type:
+
+```typescript
+createMiddleware<{}, DatabaseServices>({ ... })
+```
+
+---
+
+### Issue: "Database connection closed" errors
+
+**Cause:** Database disconnected before request completed.
+
+**Solution:** Ensure `terminate` hook is only called on shutdown:
+
+```typescript
+terminate: async () => {
+  // This should only run when server.close() is called
+  await connection.close();
+}
+```
+
+---
+
+### Issue: Middleware not injecting database
+
+**Cause:** Middleware registered in wrong lifecycle hook.
+
+**Solution:** Register middleware in `register` hook, NOT in setup body:
+
+```typescript
+// ✅ Correct
+return {
+  register: async (server) => {
+    server.use(middleware);
+  },
+}
+
+// ❌ Wrong
+setup: ({ logger }) => {
+  server.use(middleware); // server not available here
+  return { ... };
+}
+```
+
+---
+
+### Issue: TypeScript types not working
+
+**Cause:** Database type not exported or imported correctly.
+
+**Solution:**
+
+```typescript
+// Export type from database module
+export type Database = typeof db;
+
+// Import in plugin
+import type { Database } from './index';
+
+// Use in services interface
+interface DatabaseServices {
+  db: Database;
+}
+```
+
+---
+
+## ⚡ Performance optimization
+
+### Connection pooling
+
+**For PostgreSQL/MySQL:**
+
+```typescript
+// PostgreSQL with pool
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+const pool = new Pool({
+  host: 'localhost',
+  port: 5432,
+  database: 'mydb',
+  user: 'postgres',
+  password: 'password',
+  max: 20, // Maximum connections
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+export const db = drizzle(pool, { schema });
+```
+
+**Configuration:**
+- Pool reuses connections
+- `max`: Maximum concurrent connections
+- `idleTimeoutMillis`: Close idle connections
+- `connectionTimeoutMillis`: Fail fast on connection issues
+
+### Query optimization
+
+**Select specific columns:**
+
+```typescript
+// ❌ Don't select everything
+const users = await ctx.services.db.select().from(users);
+
+// ✅ Select only needed columns
+const users = await ctx.services.db
+  .select({
+    id: users.id,
+    name: users.name,
+  })
+  .from(users);
+```
+
+**Use prepared statements:**
+
+```typescript
+// Drizzle automatically uses prepared statements
+const getUserById = ctx.services.db
+  .select()
+  .from(users)
+  .where(eq(users.id, sql.placeholder('id')))
+  .prepare();
+
+// Reuse prepared statement
+const user1 = await getUserById.execute({ id: 1 });
+const user2 = await getUserById.execute({ id: 2 });
+```
+
+### Caching strategies
+
+**Cache frequently accessed data:**
+
+```typescript
+export const getUser = createGetRoute({
+  schema: {
+    params: z.object({ userId: z.string() }),
+  },
+  handler: async (ctx, params) => {
+    const cacheKey = `user:${params.userId}`;
+    
+    // Check cache first
+    let user = await ctx.services.cache.get(cacheKey);
+    
+    if (!user) {
+      // Cache miss - query database
+      const [dbUser] = await ctx.services.db
+        .select()
+        .from(users)
+        .where(eq(users.id, parseInt(params.userId)))
+        .limit(1);
+      
+      if (dbUser) {
+        // Store in cache for 5 minutes
+        await ctx.services.cache.set(cacheKey, JSON.stringify(dbUser), 300);
+        user = dbUser;
+      }
+    } else {
+      user = JSON.parse(user);
+    }
+    
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    
+    return { success: true, user };
+  },
+});
+```
+
+**Invalidate cache on update:**
+
+```typescript
+export const updateUser = createPutRoute({
+  handler: async (ctx, params) => {
+    const userId = parseInt(params.userId);
+    
+    // Update database
+    const [user] = await ctx.services.db
+      .update(users)
+      .set(ctx.request.body)
+      .where(eq(users.id, userId))
+      .returning();
+    
+    // Invalidate cache
+    await ctx.services.cache.delete(`user:${userId}`);
+    
+    // Emit event for multi-server coordination
+    await ctx.eventBus.publish('user:updated', { userId });
+    
+    return { success: true, user };
+  },
+});
+```
+
+---
+
+## 🔗 Related documentation
+
+- [Plugin System](./plugins.md) — Deep dive into plugin architecture
+- [EventBus](./eventbus.md) — Real-time event coordination
+- [SSE](./sse.md) — Server-sent events for real-time updates
+- [Middleware](./middleware.md) — Request/response processing
+- [Type System](./type-system.md) — How types flow through BlaizeJS
+
+---
+
+## ✅ Summary
+
+You've learned how to:
+
+- ✅ Create a database plugin with lifecycle management
+- ✅ Inject services with full type safety
+- ✅ Handle connections and cleanup properly
+- ✅ Publish events for real-time updates
+- ✅ Coordinate across multiple servers
+- ✅ Optimize queries and implement caching
+
+**Next steps:**
+
+1. Choose your ORM (Drizzle recommended)
+2. Follow the integration guide
+3. Add real-time updates with EventBus
+4. Implement caching for performance
+5. Deploy with confidence!
+
+> 💡 **Remember:** This same pattern works for any external service — Redis, message queues, search engines, or custom integrations. You now have the power to integrate anything into BlaizeJS!
