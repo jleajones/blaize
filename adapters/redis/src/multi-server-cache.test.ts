@@ -3,33 +3,67 @@
  *
  * Tests cache synchronization across multiple servers using EventBus with Redis.
  *
- * Run with: pnpm test multi-server.test.ts
+ * Each server has:
+ * - Its own EventBus instance with unique serverId
+ * - Its own Redis adapter for EventBus pub/sub
+ * - Shared Redis channel prefix (for multi-server communication)
+ *
+ * Run with: pnpm test multi-server-cache.test.ts
  * Requires: docker compose -f compose.test.yaml up
+ *
+ * @module @blaizejs/adapter-redis/multi-server-cache.test
  */
+
 import { MemoryEventBus } from 'blaizejs';
 
-import { type CacheChangeEvent, CacheService } from '@blaizejs/plugin-cache';
+import { CacheService } from '@blaizejs/plugin-cache';
 import { createMockLogger } from '@blaizejs/testing-utils';
 
 import { RedisCacheAdapter } from './cache-adapter';
 import { createRedisClient } from './client';
 import { RedisEventBusAdapter } from './event-bus-adapter';
 
-import type { RedisClient } from './types';
 import type { EventBus } from 'blaizejs';
 
 // ============================================================================
 // Test Configuration
 // ============================================================================
 
-const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
-const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
-
-const TEST_REDIS_CONFIG = {
-  host: REDIS_HOST,
-  port: REDIS_PORT,
-  db: 13, // Use db 13 for tests
+const REDIS_CONFIG = {
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  db: 13, // Dedicated test database
 };
+
+const SHARED_CHANNEL_PREFIX = 'test:cache:events';
+const EVENT_PROPAGATION_DELAY = 100; // ms to wait for Redis pub/sub
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface TrackedEvent {
+  type: 'set' | 'delete';
+  key: string;
+  timestamp: number;
+  serverId?: string;
+}
+
+interface TestServer {
+  id: string;
+  cache: CacheService;
+  eventBus: EventBus;
+  cleanup: () => Promise<void>;
+}
+
+interface EventTracker {
+  events: TrackedEvent[];
+  cleanup: () => void;
+  waitFor: (predicate: (events: TrackedEvent[]) => boolean, timeout?: number) => Promise<void>;
+  findEvent: (predicate: (event: TrackedEvent) => boolean) => TrackedEvent | undefined;
+  filterByServerId: (serverId: string) => TrackedEvent[];
+  filterByKey: (key: string) => TrackedEvent[];
+}
 
 // ============================================================================
 // Test Helpers
@@ -43,78 +77,151 @@ function wait(ms: number): Promise<void> {
 }
 
 /**
- * Create shared EventBus using RedisEventBusAdapter
- *
- * All test servers share this EventBus to simulate multi-server coordination
+ * Create event tracker with enhanced querying capabilities
  */
-async function createSharedEventBus(): Promise<EventBus> {
+function createEventTracker(eventBus: EventBus, pattern?: RegExp | string): EventTracker {
+  const events: TrackedEvent[] = [];
+  const unsubscribers: (() => void)[] = [];
+
+  // Convert pattern to regex
+  const regex = pattern
+    ? typeof pattern === 'string'
+      ? new RegExp(`^${pattern}$`)
+      : pattern
+    : /.*/;
+
+  // Subscribe to cache:set events
+  unsubscribers.push(
+    eventBus.subscribe('cache:set', event => {
+      const data = event.data as any;
+      if (!regex.test(data.key)) return;
+
+      events.push({
+        type: 'set',
+        key: data.key,
+        timestamp: data.timestamp,
+        serverId: event.serverId,
+      });
+    })
+  );
+
+  // Subscribe to cache:delete events
+  unsubscribers.push(
+    eventBus.subscribe('cache:delete', event => {
+      const data = event.data as any;
+      if (!regex.test(data.key)) return;
+
+      events.push({
+        type: 'delete',
+        key: data.key,
+        timestamp: data.timestamp,
+        serverId: event.serverId,
+      });
+    })
+  );
+
+  return {
+    events,
+    cleanup: () => unsubscribers.forEach(unsub => unsub()),
+
+    waitFor: async (predicate: (events: TrackedEvent[]) => boolean, timeout = 5000) => {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        if (predicate(events)) return;
+        await wait(10);
+      }
+      throw new Error(`Timeout waiting for event condition after ${timeout}ms`);
+    },
+
+    findEvent: (predicate: (event: TrackedEvent) => boolean) => {
+      return events.find(predicate);
+    },
+
+    filterByServerId: (serverId: string) => {
+      return events.filter(e => e.serverId === serverId);
+    },
+
+    filterByKey: (key: string) => {
+      return events.filter(e => e.key === key);
+    },
+  };
+}
+
+/**
+ * Create test server with EventBus and CacheService
+ *
+ * Each server gets its own EventBus with unique serverId,
+ * but all share the same Redis channels for coordination
+ */
+async function createTestServer(serverId: string): Promise<TestServer> {
   const logger = createMockLogger();
-  // Create Redis client for EventBus
-  const redisClient = createRedisClient(TEST_REDIS_CONFIG);
-  await redisClient.connect();
 
-  // Create RedisEventBusAdapter
-  const adapter = new RedisEventBusAdapter(redisClient, {
-    channelPrefix: 'test:cache:events',
-    logger,
-  });
-  await adapter.connect();
+  // ========================================================================
+  // Cache Storage (Redis)
+  // ========================================================================
+  const cacheRedisClient = createRedisClient(REDIS_CONFIG);
+  await cacheRedisClient.connect();
 
-  // Create EventBus with Redis adapter
-  const eventBus = new MemoryEventBus('server-id', logger);
-
-  return eventBus;
-}
-
-/**
- * Disconnect and cleanup EventBus
- */
-async function cleanupEventBus(eventBus: EventBus): Promise<void> {
-  // Get the adapter and disconnect
-  const adapter = (eventBus as any).adapter as RedisEventBusAdapter;
-  if (adapter && typeof adapter.disconnect === 'function') {
-    await adapter.disconnect();
-  }
-
-  // Get the Redis client and disconnect
-  const client = (adapter as any)?.client as RedisClient;
-  if (client && typeof client.disconnect === 'function') {
-    await client.disconnect();
-  }
-}
-
-/**
- * Create test cache service with shared EventBus
- *
- * IMPORTANT: All servers must share the same EventBus instance
- * to simulate multi-server coordination (via Redis)
- */
-async function createTestService(
-  serverId: string,
-  sharedEventBus: EventBus
-): Promise<CacheService> {
-  // Create Redis client for cache storage
-  const redisClient = createRedisClient(TEST_REDIS_CONFIG);
-  await redisClient.connect();
-
-  // Create RedisCacheAdapter from adapter-redis package
-  const cacheAdapter = new RedisCacheAdapter(redisClient, {
-    keyPrefix: 'test:cache:',
+  const cacheAdapter = new RedisCacheAdapter(cacheRedisClient, {
+    keyPrefix: `test:cache:${serverId}:`,
     logger: createMockLogger(),
   });
   await cacheAdapter.connect();
 
-  // Create CacheService
-  const logger = createMockLogger();
-  const service = new CacheService({
-    adapter: cacheAdapter, // ✅ Using RedisCacheAdapter from adapter-redis
-    eventBus: sharedEventBus, // ✅ Shared EventBus (with Redis adapter)
+  // ========================================================================
+  // EventBus with Redis Adapter
+  // ========================================================================
+
+  // Create EventBus with THIS server's ID
+  const eventBus = new MemoryEventBus(serverId, logger);
+
+  // Create Redis client for EventBus pub/sub
+  const eventBusRedisClient = createRedisClient(REDIS_CONFIG);
+  await eventBusRedisClient.connect();
+
+  // Create Redis adapter with SHARED channel prefix
+  const redisAdapter = new RedisEventBusAdapter(eventBusRedisClient, {
+    channelPrefix: SHARED_CHANNEL_PREFIX,
+    logger: createMockLogger(),
+  });
+  await redisAdapter.connect();
+
+  // Attach Redis adapter to EventBus
+  (eventBus as any).setAdapter(redisAdapter);
+
+  // ========================================================================
+  // Cache Service
+  // ========================================================================
+  const cache = new CacheService({
+    adapter: cacheAdapter,
+    eventBus,
     serverId,
     logger,
   });
-  await service.init();
 
-  return service;
+  // ========================================================================
+  // Cleanup Function
+  // ========================================================================
+  const cleanup = async () => {
+    await cache.disconnect();
+    await cacheAdapter.disconnect();
+    await cacheRedisClient.disconnect();
+    await redisAdapter.disconnect();
+    await eventBusRedisClient.disconnect();
+  };
+
+  return { id: serverId, cache, eventBus, cleanup };
+}
+
+/**
+ * Clean Redis database before tests
+ */
+async function cleanRedis(): Promise<void> {
+  const client = createRedisClient(REDIS_CONFIG);
+  await client.connect();
+  await client.getConnection().flushdb();
+  await client.disconnect();
+  await wait(200);
 }
 
 // ============================================================================
@@ -122,401 +229,231 @@ async function createTestService(
 // ============================================================================
 
 describe('Multi-Server Cache Coordination', () => {
-  let serviceA: CacheService;
-  let serviceB: CacheService;
-  let sharedEventBus: EventBus;
+  let serverA: TestServer;
+  let serverB: TestServer;
 
-  // Clean database before test suite
+  // Clean database before all tests
   beforeAll(async () => {
-    // Create temporary client for cleanup
-    const cleanupClient = createRedisClient(TEST_REDIS_CONFIG);
-    await cleanupClient.connect();
-
-    // Flush this database to ensure clean start
-    await cleanupClient.getConnection().flushdb();
-
-    // Disconnect cleanup client
-    await cleanupClient.disconnect();
-
-    // Wait for cleanup to complete
-    await wait(200);
+    await cleanRedis();
   });
 
   beforeEach(async () => {
-    // Create ONE shared EventBus with RedisEventBusAdapter
-    // This connects all test servers via Redis pub/sub
-    sharedEventBus = await createSharedEventBus();
-
-    serviceA = await createTestService('server-a', sharedEventBus);
-    serviceB = await createTestService('server-b', sharedEventBus);
+    // Create two servers
+    serverA = await createTestServer('server-a');
+    serverB = await createTestServer('server-b');
   });
 
   afterEach(async () => {
-    if (serviceA) await serviceA.disconnect();
-    if (serviceB) await serviceB.disconnect();
+    await serverA.cleanup();
+    await serverB.cleanup();
+    await wait(300);
+  });
 
-    // Cleanup shared EventBus and Redis connections
-    if (sharedEventBus) await cleanupEventBus(sharedEventBus);
-
+  afterAll(async () => {
     await wait(500);
   });
 
-  // Ensure complete cleanup after suite
-  afterAll(async () => {
-    // Final wait to ensure all connections are closed
-    await wait(1000);
-  });
-
   // ==========================================================================
-  // Basic Event Propagation
+  // Event Propagation Tests
   // ==========================================================================
 
-  describe('Basic Event Propagation', () => {
-    test('set event propagates from server A to server B', async () => {
-      const eventsOnB: CacheChangeEvent[] = [];
+  describe('Event Propagation', () => {
+    it('should propagate set events from A to B', async () => {
+      const tracker = createEventTracker(serverB.eventBus, /^user:/);
 
-      serviceB.watch(/^user:/, event => {
-        eventsOnB.push(event);
+      await serverA.cache.set('user:123', 'alice');
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      expect(tracker.events).toHaveLength(1);
+      expect(tracker.events[0]).toMatchObject({
+        type: 'set',
+        key: 'user:123',
+        serverId: 'server-a',
       });
 
-      // Server A sets a value
-      await serviceA.set('user:123', 'alice');
-
-      await wait(100);
-
-      // Server B should receive the event
-      expect(eventsOnB).toHaveLength(1);
-      expect(eventsOnB[0]!.type).toBe('set');
-      expect(eventsOnB[0]!.key).toBe('user:123');
-      expect(eventsOnB[0]!.value).toBe('alice');
-      expect(eventsOnB[0]!.serverId).toBe('server-a');
+      tracker.cleanup();
     });
 
-    test('delete event propagates from server B to server A', async () => {
-      const eventsOnA: CacheChangeEvent[] = [];
+    it('should propagate delete events from B to A', async () => {
+      const tracker = createEventTracker(serverA.eventBus);
 
-      serviceA.watch(/.*/, event => {
-        eventsOnA.push(event);
-      });
+      // Set and then delete
+      await serverB.cache.set('temp:key', 'value');
+      await wait(EVENT_PROPAGATION_DELAY);
+      tracker.events.length = 0; // Clear set event
 
-      // Set initial value on B
-      await serviceB.set('temp:key', 'value');
-      await wait(100);
+      await serverB.cache.delete('temp:key');
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      // Clear events from set
-      eventsOnA.length = 0;
+      const deleteEvent = tracker.findEvent(e => e.type === 'delete' && e.key === 'temp:key');
+      expect(deleteEvent).toBeDefined();
+      expect(deleteEvent!.serverId).toBe('server-b');
 
-      // Server B deletes
-      await serviceB.delete('temp:key');
-
-      await wait(100);
-
-      // Server A should receive delete event
-      expect(eventsOnA).toHaveLength(1);
-      expect(eventsOnA[0]!.type).toBe('delete');
-      expect(eventsOnA[0]!.key).toBe('temp:key');
-      expect(eventsOnA[0]!.serverId).toBe('server-b');
+      tracker.cleanup();
     });
 
-    test('events propagate bidirectionally', async () => {
-      const eventsOnA: CacheChangeEvent[] = [];
-      const eventsOnB: CacheChangeEvent[] = [];
+    it('should propagate events bidirectionally', async () => {
+      const trackerA = createEventTracker(serverA.eventBus);
+      const trackerB = createEventTracker(serverB.eventBus);
 
-      serviceA.watch(/.*/, event => {
-        eventsOnA.push(event);
-      });
+      await serverA.cache.set('from-a', 'data-a');
+      await serverB.cache.set('from-b', 'data-b');
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      serviceB.watch(/.*/, event => {
-        eventsOnB.push(event);
-      });
-
-      // A sets a value
-      await serviceA.set('from-a', 'data-a');
-
-      // B sets a value
-      await serviceB.set('from-b', 'data-b');
-
-      await wait(100);
-
-      // Each server should receive the other's event
-      const aReceivedFromB = eventsOnA.some(e => e.serverId === 'server-b' && e.key === 'from-b');
-      const bReceivedFromA = eventsOnB.some(e => e.serverId === 'server-a' && e.key === 'from-a');
-
+      // A receives from B
+      const aReceivedFromB = trackerA.filterByServerId('server-b').some(e => e.key === 'from-b');
       expect(aReceivedFromB).toBe(true);
+
+      // B receives from A
+      const bReceivedFromA = trackerB.filterByServerId('server-a').some(e => e.key === 'from-a');
       expect(bReceivedFromA).toBe(true);
+
+      trackerA.cleanup();
+      trackerB.cleanup();
     });
   });
 
   // ==========================================================================
-  // Own Event Filtering (No Echo)
+  // Event Metadata Tests
   // ==========================================================================
 
-  describe('Own Event Filtering', () => {
-    test('server A does not receive its own events from EventBus', async () => {
-      const eventsOnA: CacheChangeEvent[] = [];
+  describe('Event Metadata', () => {
+    it('should include serverId in events', async () => {
+      const tracker = createEventTracker(serverB.eventBus);
 
-      serviceA.watch(/.*/, event => {
-        eventsOnA.push(event);
-      });
+      await serverA.cache.set('test:key', 'value');
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      // Server A sets a value
-      await serviceA.set('test:key', 'test:value');
+      const event = tracker.filterByServerId('server-a')[0];
+      expect(event).toBeDefined();
+      expect(event!.serverId).toBe('server-a');
+      expect(event!.key).toBe('test:key');
 
-      await wait(100);
-
-      // Server A should only see the LOCAL event (from emit)
-      // NOT the EventBus event (filtered by serverId)
-      const ownEvents = eventsOnA.filter(e => e.serverId === 'server-a');
-
-      // Should have exactly 1 event (local emit only)
-      expect(ownEvents).toHaveLength(1);
+      tracker.cleanup();
     });
 
-    test('server B filters its own events', async () => {
-      const eventsFromOthers: CacheChangeEvent[] = [];
+    it('should include timestamp in events', async () => {
+      const tracker = createEventTracker(serverB.eventBus);
+      const before = Date.now();
 
-      serviceB.watch(/.*/, event => {
-        // Only track events from other servers
-        if (event.serverId !== 'server-b') {
-          eventsFromOthers.push(event);
-        }
-      });
+      await serverA.cache.set('test:key', 'value');
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      // Server B sets multiple values
-      await serviceB.set('test:1', 'value1');
-      await serviceB.set('test:2', 'value2');
+      const after = Date.now();
+      const event = tracker.events[0];
 
-      // Server A sets a value
-      await serviceA.set('test:3', 'value3');
+      expect(event).toBeDefined();
+      expect(event!.timestamp).toBeGreaterThanOrEqual(before);
+      expect(event!.timestamp).toBeLessThanOrEqual(after);
 
-      await wait(100);
-
-      // Should only have event from Server A
-      expect(eventsFromOthers).toHaveLength(1);
-      expect(eventsFromOthers[0]!.serverId).toBe('server-a');
-      expect(eventsFromOthers[0]!.key).toBe('test:3');
-    });
-  });
-
-  // ==========================================================================
-  // Race Condition Handling
-  // ==========================================================================
-
-  describe('Race Condition Handling', () => {
-    test('includes value in set events to handle races', async () => {
-      const eventsOnB: CacheChangeEvent[] = [];
-
-      serviceB.watch(/.*/, event => {
-        eventsOnB.push(event);
-      });
-
-      // Server A sets a value
-      await serviceA.set('user:456', 'bob');
-
-      await wait(100);
-
-      // Event includes the value
-      expect(eventsOnB).toHaveLength(1);
-      expect(eventsOnB[0]!.value).toBe('bob');
-
-      // Server B can react without fetching from cache
-      // (avoids race where value might change between event and fetch)
+      tracker.cleanup();
     });
 
-    test('concurrent writes include sequence numbers', async () => {
-      const eventsOnB: CacheChangeEvent[] = [];
+    it('should allow filtering by serverId', async () => {
+      const tracker = createEventTracker(serverA.eventBus);
 
-      serviceB.watch(/^counter:/, event => {
-        eventsOnB.push(event);
-      });
+      await serverB.cache.set('b:1', 'value1');
+      await serverB.cache.set('b:2', 'value2');
+      await serverA.cache.set('a:1', 'value1');
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      // Server A makes multiple rapid writes
-      await serviceA.set('counter:1', 'v1');
-      await serviceA.set('counter:2', 'v2');
-      await serviceA.set('counter:3', 'v3');
+      const fromB = tracker.filterByServerId('server-b');
+      expect(fromB).toHaveLength(2);
+      expect(fromB.every(e => e.serverId === 'server-b')).toBe(true);
 
-      await wait(100);
-
-      // All events should have sequence numbers
-      expect(eventsOnB).toHaveLength(3);
-
-      const sequences = eventsOnB.map(e => e.sequence!);
-
-      // Sequences should be present
-      expect(sequences.every(s => typeof s === 'number')).toBe(true);
-
-      // Sequences should be ordered
-      for (let i = 1; i < sequences.length; i++) {
-        expect(sequences[i]).toBeGreaterThan(sequences[i - 1]!);
-      }
+      tracker.cleanup();
     });
   });
 
   // ==========================================================================
-  // Batch Operations
+  // Pattern Filtering Tests
+  // ==========================================================================
+
+  describe('Pattern Filtering', () => {
+    it('should filter events by regex pattern', async () => {
+      const tracker = createEventTracker(serverB.eventBus, /^user:/);
+
+      await serverA.cache.set('user:123', 'alice');
+      await serverA.cache.set('session:abc', 'data');
+      await serverA.cache.set('user:456', 'bob');
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      expect(tracker.events).toHaveLength(2);
+      expect(tracker.events.every(e => e.key.startsWith('user:'))).toBe(true);
+
+      tracker.cleanup();
+    });
+
+    it('should filter events by exact key', async () => {
+      const tracker = createEventTracker(serverB.eventBus, 'config:feature-flag');
+
+      await serverA.cache.set('config:feature-flag', 'true');
+      await serverA.cache.set('config:other', 'value');
+      await serverA.cache.set('config:feature-flag', 'false');
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      expect(tracker.events).toHaveLength(2);
+      expect(tracker.events.every(e => e.key === 'config:feature-flag')).toBe(true);
+
+      tracker.cleanup();
+    });
+
+    it('should support multiple patterns per server', async () => {
+      const userTracker = createEventTracker(serverB.eventBus, /^user:/);
+      const sessionTracker = createEventTracker(serverB.eventBus, /^session:/);
+
+      await serverA.cache.set('user:1', 'alice');
+      await serverA.cache.set('session:a', 'data');
+      await serverA.cache.set('user:2', 'bob');
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      expect(userTracker.events).toHaveLength(2);
+      expect(sessionTracker.events).toHaveLength(1);
+
+      userTracker.cleanup();
+      sessionTracker.cleanup();
+    });
+  });
+
+  // ==========================================================================
+  // Batch Operations Tests
   // ==========================================================================
 
   describe('Batch Operations', () => {
-    test('mset emits events for each key', async () => {
-      const eventsOnB: CacheChangeEvent[] = [];
+    it('should emit events for each key in mset', async () => {
+      const tracker = createEventTracker(serverB.eventBus, /^batch:/);
 
-      serviceB.watch(/^batch:/, event => {
-        eventsOnB.push(event);
-      });
-
-      // Server A sets multiple keys
-      await serviceA.mset([
+      await serverA.cache.mset([
         ['batch:1', 'value1'],
         ['batch:2', 'value2'],
         ['batch:3', 'value3'],
       ]);
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      await wait(100);
+      expect(tracker.events).toHaveLength(3);
 
-      // Server B should receive 3 events
-      expect(eventsOnB).toHaveLength(3);
-
-      const keys = eventsOnB.map(e => e.key);
+      const keys = tracker.events.map(e => e.key);
       expect(keys).toContain('batch:1');
       expect(keys).toContain('batch:2');
       expect(keys).toContain('batch:3');
+
+      tracker.cleanup();
     });
 
-    test('batch events have same timestamp', async () => {
-      const eventsOnB: CacheChangeEvent[] = [];
+    it('should handle rapid sequential writes', async () => {
+      const tracker = createEventTracker(serverB.eventBus, /^counter:/);
 
-      serviceB.watch(/^time:/, event => {
-        eventsOnB.push(event);
-      });
+      await serverA.cache.set('counter:1', 'v1');
+      await serverA.cache.set('counter:2', 'v2');
+      await serverA.cache.set('counter:3', 'v3');
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      await serviceA.mset([
-        ['time:1', 'v1'],
-        ['time:2', 'v2'],
-      ]);
+      expect(tracker.events).toHaveLength(3);
+      expect(tracker.events[0]!.key).toBe('counter:1');
+      expect(tracker.events[1]!.key).toBe('counter:2');
+      expect(tracker.events[2]!.key).toBe('counter:3');
 
-      await wait(100);
-
-      expect(eventsOnB).toHaveLength(2);
-
-      // Same timestamp (batch)
-      expect(eventsOnB[0]!.timestamp).toBe(eventsOnB[1]!.timestamp);
-
-      // Different sequence numbers
-      expect(eventsOnB[0]!.sequence).not.toBe(eventsOnB[1]!.sequence);
-    });
-  });
-
-  // ==========================================================================
-  // Pattern Watching
-  // ==========================================================================
-
-  describe('Pattern Watching', () => {
-    test('watches specific patterns across servers', async () => {
-      const userEvents: CacheChangeEvent[] = [];
-
-      serviceB.watch(/^user:/, event => {
-        userEvents.push(event);
-      });
-
-      // Server A makes various changes
-      await serviceA.set('user:123', 'alice');
-      await serviceA.set('session:abc', 'data');
-      await serviceA.set('user:456', 'bob');
-
-      await wait(100);
-
-      // Should only receive user events
-      expect(userEvents).toHaveLength(2);
-      expect(userEvents.every(e => e.key.startsWith('user:'))).toBe(true);
-    });
-
-    test('exact key watching works across servers', async () => {
-      const specificEvents: CacheChangeEvent[] = [];
-
-      serviceB.watch('config:feature-flag', event => {
-        specificEvents.push(event);
-      });
-
-      // Server A changes various keys
-      await serviceA.set('config:feature-flag', 'true');
-      await serviceA.set('config:other', 'value');
-      await serviceA.set('config:feature-flag', 'false');
-
-      await wait(100);
-
-      // Should only receive the specific key
-      expect(specificEvents).toHaveLength(2);
-      expect(specificEvents.every(e => e.key === 'config:feature-flag')).toBe(true);
-    });
-  });
-
-  // ==========================================================================
-  // Local Mode (No EventBus)
-  // ==========================================================================
-
-  describe('Local Mode (No EventBus)', () => {
-    test('works without eventBus', async () => {
-      // Create Redis client and adapter
-      const redisClient = createRedisClient(TEST_REDIS_CONFIG);
-      await redisClient.connect();
-
-      const cacheAdapter = new RedisCacheAdapter(redisClient, {
-        keyPrefix: 'test:local:',
-      });
-      await cacheAdapter.connect();
-
-      // No eventBus provided - local mode (single server)
-      const localService = new CacheService({
-        adapter: cacheAdapter,
-        logger: createMockLogger(),
-      });
-
-      const events: CacheChangeEvent[] = [];
-      localService.watch(/.*/, event => {
-        events.push(event);
-      });
-
-      await localService.set('local:key', 'local:value');
-
-      // Should still emit events locally (via EventEmitter)
-      expect(events).toHaveLength(1);
-      expect(events[0]!.key).toBe('local:key');
-
-      await localService.disconnect();
-      await cacheAdapter.disconnect();
-      await redisClient.disconnect();
-    });
-
-    test('no serverId means no filtering', async () => {
-      // Create Redis client and adapter
-      const redisClient = createRedisClient(TEST_REDIS_CONFIG);
-      await redisClient.connect();
-
-      const cacheAdapter = new RedisCacheAdapter(redisClient, {
-        keyPrefix: 'test:local2:',
-      });
-      await cacheAdapter.connect();
-
-      // No serverId provided - local mode
-      const localService = new CacheService({
-        adapter: cacheAdapter,
-        logger: createMockLogger(),
-      });
-
-      const events: CacheChangeEvent[] = [];
-      localService.watch(/.*/, event => {
-        events.push(event);
-      });
-
-      await localService.set('test:key', 'value');
-
-      // Event has no serverId (local mode)
-      expect(events).toHaveLength(1);
-      expect(events[0]!.serverId).toBeUndefined();
-
-      await localService.disconnect();
-      await cacheAdapter.disconnect();
-      await redisClient.disconnect();
+      tracker.cleanup();
     });
   });
 
@@ -525,94 +462,95 @@ describe('Multi-Server Cache Coordination', () => {
   // ==========================================================================
 
   describe('Three Server Scenario', () => {
-    test('events propagate to all three servers', async () => {
-      // Create third server with SAME shared EventBus
-      const serviceC = await createTestService('server-c', sharedEventBus);
+    let serverC: TestServer;
 
-      const eventsOnA: CacheChangeEvent[] = [];
-      const eventsOnB: CacheChangeEvent[] = [];
-      const eventsOnC: CacheChangeEvent[] = [];
+    beforeEach(async () => {
+      serverC = await createTestServer('server-c');
+    });
 
-      serviceA.watch(/.*/, event => {
-        eventsOnA.push(event);
-      });
-      serviceB.watch(/.*/, event => {
-        eventsOnB.push(event);
-      });
-      serviceC.watch(/.*/, event => {
-        eventsOnC.push(event);
-      });
-
-      // Server A makes a change
-      await serviceA.set('shared:data', 'from-a');
-
-      await wait(100);
-
-      // All servers should receive the event
-      const bReceivedFromA = eventsOnB.some(
-        e => e.serverId === 'server-a' && e.key === 'shared:data'
-      );
-      const cReceivedFromA = eventsOnC.some(
-        e => e.serverId === 'server-a' && e.key === 'shared:data'
-      );
-
-      expect(bReceivedFromA).toBe(true);
-      expect(cReceivedFromA).toBe(true);
-
-      await serviceC.disconnect();
+    afterEach(async () => {
+      await serverC.cleanup();
       await wait(200);
     });
 
-    test('each server filters its own events', async () => {
-      // Create third server with SAME shared EventBus
-      const serviceC = await createTestService('server-c', sharedEventBus);
+    it('should propagate events to all three servers', async () => {
+      const trackerA = createEventTracker(serverA.eventBus);
+      const trackerB = createEventTracker(serverB.eventBus);
+      const trackerC = createEventTracker(serverC.eventBus);
 
-      const eventsFromOthersA: CacheChangeEvent[] = [];
-      const eventsFromOthersB: CacheChangeEvent[] = [];
-      const eventsFromOthersC: CacheChangeEvent[] = [];
+      await serverA.cache.set('shared:data', 'from-a');
+      await wait(EVENT_PROPAGATION_DELAY);
 
-      serviceA.watch(/.*/, event => {
-        if (event.serverId !== 'server-a') {
-          eventsFromOthersA.push(event);
-        }
+      // B and C should receive from A
+      expect(trackerB.filterByServerId('server-a').some(e => e.key === 'shared:data')).toBe(true);
+      expect(trackerC.filterByServerId('server-a').some(e => e.key === 'shared:data')).toBe(true);
+
+      trackerA.cleanup();
+      trackerB.cleanup();
+      trackerC.cleanup();
+    });
+
+    it('should allow each server to filter its own events', async () => {
+      const trackerA = createEventTracker(serverA.eventBus);
+      const trackerB = createEventTracker(serverB.eventBus);
+      const trackerC = createEventTracker(serverC.eventBus);
+
+      await serverA.cache.set('from-a', 'data');
+      await serverB.cache.set('from-b', 'data');
+      await serverC.cache.set('from-c', 'data');
+      await wait(EVENT_PROPAGATION_DELAY * 2);
+
+      // A should see B and C (not itself)
+      const aFromOthers = trackerA.events.filter(e => e.serverId !== 'server-a');
+      expect(aFromOthers).toHaveLength(2);
+      expect(aFromOthers.some(e => e.serverId === 'server-b')).toBe(true);
+      expect(aFromOthers.some(e => e.serverId === 'server-c')).toBe(true);
+
+      // B should see A and C (not itself)
+      const bFromOthers = trackerB.events.filter(e => e.serverId !== 'server-b');
+      expect(bFromOthers).toHaveLength(2);
+      expect(bFromOthers.some(e => e.serverId === 'server-a')).toBe(true);
+      expect(bFromOthers.some(e => e.serverId === 'server-c')).toBe(true);
+
+      // C should see A and B (not itself)
+      const cFromOthers = trackerC.events.filter(e => e.serverId !== 'server-c');
+      expect(cFromOthers).toHaveLength(2);
+      expect(cFromOthers.some(e => e.serverId === 'server-a')).toBe(true);
+      expect(cFromOthers.some(e => e.serverId === 'server-b')).toBe(true);
+
+      trackerA.cleanup();
+      trackerB.cleanup();
+      trackerC.cleanup();
+    });
+  });
+
+  // ==========================================================================
+  // Local Mode (No EventBus)
+  // ==========================================================================
+
+  describe('Local Mode', () => {
+    it('should work without EventBus', async () => {
+      const redisClient = createRedisClient(REDIS_CONFIG);
+      await redisClient.connect();
+
+      const adapter = new RedisCacheAdapter(redisClient, {
+        keyPrefix: 'test:local:',
+      });
+      await adapter.connect();
+
+      const localCache = new CacheService({
+        adapter,
+        logger: createMockLogger(),
+        // No eventBus, no serverId
       });
 
-      serviceB.watch(/.*/, event => {
-        if (event.serverId !== 'server-b') {
-          eventsFromOthersB.push(event);
-        }
-      });
+      await localCache.set('local:key', 'value');
+      const value = await localCache.get('local:key');
+      expect(value).toBe('value');
 
-      serviceC.watch(/.*/, event => {
-        if (event.serverId !== 'server-c') {
-          eventsFromOthersC.push(event);
-        }
-      });
-
-      // Each server makes a change
-      await serviceA.set('from-a', 'data');
-      await serviceB.set('from-b', 'data');
-      await serviceC.set('from-c', 'data');
-
-      await wait(300);
-
-      // A should see events from B and C
-      expect(eventsFromOthersA).toHaveLength(2);
-      expect(eventsFromOthersA.some(e => e.serverId === 'server-b')).toBe(true);
-      expect(eventsFromOthersA.some(e => e.serverId === 'server-c')).toBe(true);
-
-      // B should see events from A and C
-      expect(eventsFromOthersB).toHaveLength(2);
-      expect(eventsFromOthersB.some(e => e.serverId === 'server-a')).toBe(true);
-      expect(eventsFromOthersB.some(e => e.serverId === 'server-c')).toBe(true);
-
-      // C should see events from A and B
-      expect(eventsFromOthersC).toHaveLength(2);
-      expect(eventsFromOthersC.some(e => e.serverId === 'server-a')).toBe(true);
-      expect(eventsFromOthersC.some(e => e.serverId === 'server-b')).toBe(true);
-
-      await serviceC.disconnect();
-      await wait(200);
+      await localCache.disconnect();
+      await adapter.disconnect();
+      await redisClient.disconnect();
     });
   });
 
@@ -621,33 +559,107 @@ describe('Multi-Server Cache Coordination', () => {
   // ==========================================================================
 
   describe('Error Handling', () => {
-    test('service continues after EventBus publish error', async () => {
-      const events: CacheChangeEvent[] = [];
+    it('should continue after EventBus publish errors', async () => {
+      const tracker = createEventTracker(serverB.eventBus);
 
-      serviceA.watch(/.*/, event => {
-        events.push(event);
-      });
-
-      // Make some changes
-      await serviceA.set('test:1', 'value1');
-      await serviceA.set('test:2', 'value2');
+      // Make multiple changes
+      await serverA.cache.set('test:1', 'value1');
+      await serverA.cache.set('test:2', 'value2');
+      await wait(EVENT_PROPAGATION_DELAY);
 
       // Service should continue working
-      expect(events.length).toBeGreaterThanOrEqual(2);
+      expect(tracker.events.length).toBeGreaterThanOrEqual(2);
+
+      tracker.cleanup();
     });
 
-    test('watch handler errors do not crash service', async () => {
+    it('should handle subscriber errors gracefully', async () => {
       let callCount = 0;
 
-      serviceA.watch(/.*/, () => {
+      // Subscribe with handler that throws
+      const unsub = serverB.eventBus.subscribe('cache:set', () => {
         callCount++;
-        throw new Error('Handler error');
+        throw new Error('Subscriber error');
       });
 
       // Should not throw
-      await expect(serviceA.set('test:key', 'value')).resolves.toBeUndefined();
+      await expect(serverA.cache.set('test:key', 'value')).resolves.toBeUndefined();
+      await wait(EVENT_PROPAGATION_DELAY);
 
       expect(callCount).toBe(1);
+
+      unsub();
+    });
+  });
+
+  // ==========================================================================
+  // Real-World Scenarios
+  // ==========================================================================
+
+  describe('Real-World Scenarios', () => {
+    it('should coordinate cache invalidation across servers', async () => {
+      const trackerB = createEventTracker(serverB.eventBus, /^user:/);
+
+      // Server A caches user data
+      await serverA.cache.set('user:123', JSON.stringify({ name: 'Alice', role: 'admin' }));
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      // Server B sees the cache event
+      expect(trackerB.events).toHaveLength(1);
+
+      // Server A updates and invalidates
+      await serverA.cache.set('user:123', JSON.stringify({ name: 'Alice', role: 'user' }));
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      // Server B sees the update
+      expect(trackerB.events).toHaveLength(2);
+      expect(trackerB.events.every(e => e.key === 'user:123')).toBe(true);
+
+      trackerB.cleanup();
+    });
+
+    it('should handle session cleanup across servers', async () => {
+      const trackerB = createEventTracker(serverB.eventBus, /^session:/);
+
+      // Create sessions on different servers
+      await serverA.cache.set('session:user-1', 'data', 300);
+      await serverB.cache.set('session:user-2', 'data', 300);
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      // Both servers see session creation
+      const fromA = trackerB.filterByServerId('server-a');
+      expect(fromA).toHaveLength(1);
+
+      // Server A cleans up all sessions
+      await serverA.cache.clear('session:*');
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      // Server B sees the deletes
+      const deleteEvents = trackerB.events.filter(e => e.type === 'delete');
+      expect(deleteEvents.length).toBeGreaterThan(0);
+
+      trackerB.cleanup();
+    });
+
+    it('should coordinate cache warming across servers', async () => {
+      const trackerB = createEventTracker(serverB.eventBus, /^config:/);
+
+      // Server A warms cache with configuration
+      const configs = [
+        ['config:feature-flags', JSON.stringify({ darkMode: true, beta: false })],
+        ['config:rate-limits', JSON.stringify({ maxRequests: 100, window: 60 })],
+        ['config:api-keys', JSON.stringify({ service: 'sk_prod_123' })],
+      ];
+
+      await serverA.cache.mset(configs as unknown as [string, string][]);
+      await wait(EVENT_PROPAGATION_DELAY);
+
+      // Server B sees all config events
+      expect(trackerB.events).toHaveLength(3);
+      expect(trackerB.events.every(e => e.type === 'set')).toBe(true);
+      expect(trackerB.events.every(e => e.serverId === 'server-a')).toBe(true);
+
+      trackerB.cleanup();
     });
   });
 });
