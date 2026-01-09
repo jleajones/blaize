@@ -1,0 +1,1889 @@
+# 📡 Event Bus Architecture
+
+> Deep dive into BlaizeJS's event-driven architecture
+
+The event bus is a core architectural primitive in BlaizeJS that enables decoupled communication between components, services, and servers. This guide explores the event bus design, implementation patterns, and best practices for building event-driven applications.
+
+---
+
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Architecture](#-architecture)
+- [Pattern Matching](#-pattern-matching)
+- [Type Safety](#-type-safety)
+- [Distributed Mode](#-distributed-mode)
+- [Plugin Integration](#-plugin-integration)
+- [Middleware Integration](#-middleware-integration)
+- [SSE Integration](#-sse-integration)
+- [Common Patterns](#-common-patterns)
+- [Performance Considerations](#-performance-considerations)
+- [Limitations & Gaps](#-limitations--gaps)
+- [Best Practices](#-best-practices)
+
+---
+
+## 🎯 Overview
+
+The BlaizeJS event bus provides **in-process pub/sub messaging** with optional distributed event propagation across multiple servers. It's designed to:
+
+- ✅ Decouple components and services
+- ✅ Power real-time features via SSE
+- ✅ Enable plugin coordination
+- ✅ Support multi-server deployments
+- ✅ Maintain type safety with validation
+
+### When to Use Events
+
+**✅ Good use cases:**
+
+- Cache invalidation across servers
+- Job status updates streamed to clients
+- Plugin lifecycle notifications
+- Audit logging and metrics collection
+- Real-time notifications
+- Workflow orchestration
+- Multi-step processes
+
+**❌ Not ideal for:**
+
+- Direct service-to-service calls (use regular function calls)
+- Request/response patterns (use routes)
+- Synchronous operations requiring immediate results
+- High-throughput data pipelines (consider message queues)
+
+---
+
+## 🏗️ Architecture
+
+### Component Hierarchy
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      EVENT BUS ARCHITECTURE                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │                      Application Layer                             │  │
+│  │  • Routes (SSE handlers)                                           │  │
+│  │  • Plugins (lifecycle events)                                      │  │
+│  │  • Services (domain events)                                        │  │
+│  │  • Middleware (cross-cutting concerns)                             │  │
+│  └─────────────────────────────┬──────────────────────────────────────┘  │
+│                                │ eventBus.publish() / .subscribe()       │
+│                                ▼                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │                      TypedEventBus                                 │  │
+│  │  • Zod schema validation                                           │  │
+│  │  • Compile-time type safety                                        │  │
+│  │  • Runtime data validation                                         │  │
+│  │  • Unknown event handling                                          │  │
+│  └─────────────────────────────┬──────────────────────────────────────┘  │
+│                                │ Wraps                                    │
+│                                ▼                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │                      MemoryEventBus                                │  │
+│  │  • Pattern matching (exact, glob, regex)                           │  │
+│  │  • Local pub/sub within process                                    │  │
+│  │  • Handler error isolation                                         │  │
+│  │  • Metadata population (timestamp, serverId, correlationId)        │  │
+│  └────────────┬───────────────────────────────────┬──────────────────┘  │
+│               │                                   │                      │
+│               │ Local subscribers                 │ Optional adapter     │
+│               ▼                                   ▼                      │
+│  ┌───────────────────────┐       ┌──────────────────────────────────┐  │
+│  │  Local Handlers       │       │   EventBusAdapter                │  │
+│  │  • Async invocation   │       │   • Cross-server propagation     │  │
+│  │  • Error isolation    │       │   • Redis Pub/Sub                │  │
+│  │  • Fire-and-forget    │       │   • Self-filtering               │  │
+│  └───────────────────────┘       │   • Channel-based routing        │  │
+│                                  │   • Circuit breaker protection   │  │
+│                                  └──────────────────────────────────┘  │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Core Components
+
+#### 1. MemoryEventBus
+
+The default in-memory implementation provides:
+
+```typescript
+import { MemoryEventBus } from 'blaizejs';
+
+const eventBus = new MemoryEventBus('server-1');
+
+// Basic pub/sub
+const unsubscribe = eventBus.subscribe('user:created', async event => {
+  console.log('User created:', event.data);
+});
+
+await eventBus.publish('user:created', { userId: '123' });
+
+// Cleanup
+unsubscribe();
+await eventBus.disconnect();
+```
+
+**Features:**
+
+- ✅ Pattern matching (exact, glob `*`, regex)
+- ✅ Automatic metadata population
+- ✅ Handler error isolation (errors don't crash the bus)
+- ✅ Correlation ID propagation via AsyncLocalStorage
+- ✅ Optional distributed adapter support
+
+**Implementation details:**
+
+- Subscriptions stored in `Map<string, Subscription>`
+- Pattern matchers cached for performance
+- Handlers invoked asynchronously (fire-and-forget)
+- Self-filtering prevents echo when using adapters
+
+#### 2. TypedEventBus
+
+Type-safe wrapper with Zod validation:
+
+```typescript
+import { TypedEventBusImpl } from 'blaizejs';
+import { z } from 'zod';
+
+// Define event schemas
+const schemas = {
+  'user:created': z.object({
+    userId: z.string().uuid(),
+    email: z.string().email(),
+  }),
+  'user:updated': z.object({
+    userId: z.string().uuid(),
+    changes: z.record(z.unknown()),
+  }),
+};
+
+// Create typed bus
+const typedBus = new TypedEventBusImpl(baseBus, {
+  schemas,
+  unknownEventBehavior: 'warn', // 'error' | 'warn' | 'allow'
+});
+
+// Type-safe publish (compile-time + runtime validation)
+await typedBus.publish('user:created', {
+  userId: '123',
+  email: 'user@example.com',
+  // TypeScript error if data doesn't match schema
+});
+
+// Type-safe subscribe (event.data is typed)
+typedBus.subscribe('user:created', async event => {
+  // event.data: { userId: string; email: string }
+  await sendWelcomeEmail(event.data.email);
+});
+```
+
+**Features:**
+
+- ✅ Compile-time type checking
+- ✅ Runtime Zod validation on publish and receive
+- ✅ Automatic field stripping (Zod's `.strip()` behavior)
+- ✅ Unknown event handling (error/warn/allow)
+- ✅ Validation error callbacks
+
+**Validation philosophy:**
+
+- Always validates on **both publish and receive**
+- Zod's default `.strip()` behavior removes extra fields
+- Safe for rolling deployments with schema changes
+- Validation errors are logged but don't crash handlers
+
+#### 3. EventBusAdapter
+
+Interface for distributed event systems:
+
+```typescript
+interface EventBusAdapter {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  publish(event: BlaizeEvent): Promise<void>;
+  subscribe(pattern: string, handler: EventHandler): Promise<Unsubscribe>;
+  healthCheck?(): Promise<{ healthy: boolean; message?: string }>;
+}
+```
+
+**Available adapters:**
+
+- **`@blaizejs/adapter-redis`** — Redis Pub/Sub with pattern subscriptions
+
+**Adapter responsibilities:**
+
+- Connection management to message broker
+- Event serialization/deserialization
+- Cross-server event propagation
+- Health monitoring
+- Channel routing and filtering
+
+---
+
+## 🎯 Pattern Matching
+
+The event bus supports three pattern types for flexible event subscriptions.
+
+### 1. Exact Match
+
+```typescript
+// Subscribe to specific event type
+eventBus.subscribe('user:created', handler);
+
+// Matches: 'user:created'
+// Doesn't match: 'user:updated', 'user:created:verified'
+```
+
+**Use when:**
+
+- You only care about one specific event type
+- Event types are stable and well-defined
+- Maximum performance is needed (exact match is fastest)
+
+### 2. Wildcard (Glob) — Namespace-Aware
+
+```typescript
+// Subscribe to all events in namespace
+eventBus.subscribe('user:*', handler);
+
+// Matches: 'user:created', 'user:updated', 'user:deleted'
+// Doesn't match: 'admin:created', 'user:profile:updated' (nested namespace)
+```
+
+**Rules:**
+
+- `*` matches any characters **except colon** (`:`)
+- Prevents matching across namespace boundaries
+- Single `*` matches everything: `eventBus.subscribe('*', handler)`
+
+**Use when:**
+
+- You want all events from a specific domain/entity
+- Building audit logs or analytics
+- Implementing catch-all handlers
+
+### 3. Regular Expression
+
+```typescript
+// Subscribe with regex pattern
+eventBus.subscribe(/^(user|admin):created$/, handler);
+
+// Matches: 'user:created', 'admin:created'
+// Doesn't match: 'user:updated', 'guest:created'
+```
+
+**Use when:**
+
+- Complex pattern matching needed
+- Multiple namespaces share behavior
+- Dynamic pattern construction required
+
+**Caution:** Regex patterns are more expensive than exact or glob matching.
+
+### Pattern Matching Performance
+
+| Pattern Type | Relative Speed | Use Case            |
+| ------------ | -------------- | ------------------- |
+| Exact match  | 🔥 Fastest     | Single event type   |
+| Glob `*`     | ⚡ Fast        | Namespace filtering |
+| Regex        | 🐌 Slower      | Complex patterns    |
+
+---
+
+## 🔒 Type Safety
+
+### Event Schemas
+
+Define schemas for your events:
+
+```typescript
+// events/schemas.ts
+import { z } from 'zod';
+
+export const appEvents = {
+  // User events
+  'user:created': z.object({
+    userId: z.string().uuid(),
+    email: z.string().email(),
+    createdAt: z.number(),
+  }),
+
+  'user:updated': z.object({
+    userId: z.string().uuid(),
+    changes: z.record(z.unknown()),
+    updatedAt: z.number(),
+  }),
+
+  // Order events
+  'order:placed': z.object({
+    orderId: z.string(),
+    userId: z.string(),
+    total: z.number().positive(),
+    items: z.array(
+      z.object({
+        productId: z.string(),
+        quantity: z.number().positive(),
+      })
+    ),
+  }),
+
+  // System events
+  'system:alert': z.object({
+    severity: z.enum(['low', 'medium', 'high', 'critical']),
+    message: z.string(),
+    metadata: z.record(z.unknown()).optional(),
+  }),
+} as const;
+
+export type AppEvents = typeof appEvents;
+```
+
+### Creating Typed Event Bus
+
+```typescript
+// server.ts
+import { createServer } from 'blaizejs';
+import { appEvents } from './events/schemas';
+
+const server = createServer({
+  // Pass event schemas to server
+  eventSchemas: appEvents,
+});
+
+// Server provides typed event bus
+// server.eventBus: TypedEventBus<AppEvents>
+```
+
+### Type-Safe Publishing
+
+```typescript
+// Route handler
+export const POST = createPostRoute({
+  handler: async ({ ctx, eventBus }) => {
+    // eventBus is TypedEventBus<AppEvents>
+
+    // ✅ Valid publish (matches schema)
+    await eventBus.publish('user:created', {
+      userId: '123',
+      email: 'user@example.com',
+      createdAt: Date.now(),
+    });
+
+    // ❌ TypeScript error: missing required field
+    await eventBus.publish('user:created', {
+      userId: '123',
+      // Missing email and createdAt
+    });
+
+    // ❌ TypeScript error: wrong type
+    await eventBus.publish('user:created', {
+      userId: 123, // Should be string
+      email: 'user@example.com',
+      createdAt: Date.now(),
+    });
+  },
+});
+```
+
+### Type-Safe Subscribing
+
+```typescript
+// Plugin setup
+setup: async ({ eventBus }) => {
+  // Subscribe with type-safe handler
+  eventBus.subscribe('user:created', async event => {
+    // event.data is { userId: string; email: string; createdAt: number }
+    await sendWelcomeEmail(event.data.email);
+
+    // TypeScript error: property doesn't exist
+    console.log(event.data.unknownField);
+  });
+
+  // Wildcard subscriptions get union type
+  eventBus.subscribe('user:*', async event => {
+    // event.data is union of all user:* event data types
+
+    // Type narrowing works
+    if (event.type === 'user:created') {
+      // event.data is { userId: string; email: string; createdAt: number }
+      await auditLog.record('user_creation', event.data.userId);
+    }
+  });
+};
+```
+
+### Unknown Event Handling
+
+Configure how the typed bus handles events not in the schema:
+
+```typescript
+const typedBus = new TypedEventBusImpl(baseBus, {
+  schemas: appEvents,
+  unknownEventBehavior: 'warn', // Options: 'error' | 'warn' | 'allow'
+});
+
+// unknownEventBehavior: 'error'
+// Throws EventValidationError for unknown events
+await typedBus.publish('unknown:event', {}); // ❌ Throws
+
+// unknownEventBehavior: 'warn'
+// Logs warning but allows publish
+await typedBus.publish('unknown:event', {}); // ⚠️ Warning logged
+
+// unknownEventBehavior: 'allow'
+// Silently allows unknown events
+await typedBus.publish('unknown:event', {}); // ✅ No error
+```
+
+### Validation Error Callbacks
+
+Handle validation errors with custom logic:
+
+```typescript
+const typedBus = new TypedEventBusImpl(baseBus, {
+  schemas: appEvents,
+  onValidationError: error => {
+    // Log to monitoring service
+    monitoringService.captureException(error);
+
+    // Alert on critical events
+    if (error.details?.eventType.startsWith('critical:')) {
+      alertService.notify('Event validation failed', error);
+    }
+  },
+});
+```
+
+---
+
+## 🌐 Distributed Mode
+
+For multi-server deployments, attach an adapter to propagate events across instances.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      DISTRIBUTED EVENT FLOW                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Server A (serverId: 'server-a')                                         │
+│      │                                                                   │
+│      │ eventBus.publish('cache:invalidate', { key: 'user:123' })         │
+│      ▼                                                                   │
+│  ┌──────────────────┐                                                    │
+│  │ MemoryEventBus   │                                                    │
+│  │ • Local handlers │ ──────────────────────────┐                        │
+│  │ • Adapter send   │                           │                        │
+│  └────────┬─────────┘                           │                        │
+│           │                                     │                        │
+│           ▼                                     ▼                        │
+│  ┌──────────────────┐               ┌──────────────────────┐             │
+│  │ Local Handlers   │               │ RedisEventBusAdapter │             │
+│  │ (Server A)       │               │ • Serialize event    │             │
+│  └──────────────────┘               │ • Publish to Redis   │             │
+│                                     └──────────┬───────────┘             │
+│                                                │                         │
+│                                                ▼                         │
+│                                      ┌─────────────────┐                 │
+│                                      │  Redis Pub/Sub  │                 │
+│                                      │  Channel:       │                 │
+│                                      │  'blaize:events'│                 │
+│                                      │  ':cache:*'     │                 │
+│                                      └────┬────────┬───┘                 │
+│                                           │        │                     │
+│                        ┌──────────────────┘        └──────────────┐      │
+│                        │                                          │      │
+│                        ▼                                          ▼      │
+│             ┌──────────────────────┐                  ┌──────────────────────┐
+│             │ Server B             │                  │ Server C             │
+│             │ RedisEventBusAdapter │                  │ RedisEventBusAdapter │
+│             │ • Receive from Redis │                  │ • Receive from Redis │
+│             │ • Deserialize event  │                  │ • Deserialize event  │
+│             │ • Self-filter (skip  │                  │ • Self-filter (skip  │
+│             │   own serverId)      │                  │   own serverId)      │
+│             └──────────┬───────────┘                  └──────────┬───────────┘
+│                        │                                          │
+│                        ▼                                          ▼
+│             ┌──────────────────────┐                  ┌──────────────────────┐
+│             │ MemoryEventBus       │                  │ MemoryEventBus       │
+│             │ • Match patterns     │                  │ • Match patterns     │
+│             │ • Invoke handlers    │                  │ • Invoke handlers    │
+│             └──────────────────────┘                  └──────────────────────┘
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Setting Up Redis Adapter
+
+```typescript
+// server.ts
+import { createServer } from 'blaizejs';
+import { createRedisClient } from '@blaizejs/adapter-redis';
+import { RedisEventBusAdapter } from '@blaizejs/adapter-redis';
+
+// Create Redis client (shared with cache plugin, etc.)
+const redisClient = createRedisClient({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: Number(process.env.REDIS_PORT) || 6379,
+});
+
+// Create event bus adapter
+const eventBusAdapter = new RedisEventBusAdapter(redisClient, {
+  channelPrefix: 'myapp:events',
+  circuitBreaker: {
+    failureThreshold: 5,
+    resetTimeout: 30000,
+  },
+});
+
+// Create server
+const server = createServer({
+  port: 3000,
+  eventSchemas: appEvents,
+});
+
+// Attach adapter to event bus
+await server.eventBus.setAdapter(eventBusAdapter);
+
+// Events now propagate across all server instances
+```
+
+### Self-Filtering
+
+Adapters implement **self-filtering** to prevent echo:
+
+```typescript
+// Server A publishes event
+await eventBus.publish('cache:set', { key: 'user:123' });
+// Event metadata: { serverId: 'server-a', ... }
+
+// Adapter sends to Redis
+adapter.publish(event); // Sent to all subscribed servers
+
+// Server A receives its own event from Redis
+// MemoryEventBus checks: event.serverId === this.serverId
+// ✅ Self-filtering: Event is ignored, handlers not invoked
+
+// Server B receives event from Redis
+// MemoryEventBus checks: event.serverId !== this.serverId
+// ✅ Event forwarded to local handlers
+```
+
+**Why self-filtering?**
+
+- Local handlers already ran when event was published
+- Prevents duplicate processing
+- Avoids infinite loops
+
+### Channel-Based Routing
+
+Redis adapter uses pattern-based channels:
+
+```typescript
+// Internal channel naming
+subscribe('user:*')      → 'blaize:events:user:*'
+subscribe('cache:set')   → 'blaize:events:cache:set'
+subscribe('*')           → 'blaize:events:*'
+
+// Redis PSUBSCRIBE for pattern matching
+subscriber.psubscribe('blaize:events:user:*');
+subscriber.psubscribe('blaize:events:cache:*');
+```
+
+**Benefits:**
+
+- Events only sent to interested servers
+- Reduces network traffic
+- Scales better than single broadcast channel
+
+### Circuit Breaker
+
+The Redis adapter includes circuit breaker protection:
+
+```typescript
+const adapter = new RedisEventBusAdapter(redisClient, {
+  circuitBreaker: {
+    failureThreshold: 5, // Open after 5 failures
+    resetTimeout: 30000, // Try again after 30s
+    monitoringPeriod: 10000, // Track failures over 10s
+  },
+});
+```
+
+**States:**
+
+1. **Closed:** Normal operation, publish to Redis
+2. **Open:** Too many failures, reject publishes immediately
+3. **Half-Open:** Test period, allow one publish to check recovery
+
+**Benefits:**
+
+- Prevents cascading failures
+- Graceful degradation (local events still work)
+- Automatic recovery
+
+### Health Checks
+
+Monitor adapter health:
+
+```typescript
+// Check adapter connectivity
+const health = await eventBusAdapter.healthCheck();
+
+if (health.healthy) {
+  console.log('Event bus adapter is healthy');
+} else {
+  console.error('Event bus adapter unhealthy:', health.message);
+}
+```
+
+---
+
+## 🔌 Plugin Integration
+
+Plugins use the event bus for coordination, observability, and inter-plugin communication.
+
+### Plugin Event Patterns
+
+#### 1. Publishing Lifecycle Events
+
+```typescript
+export const createCachePlugin = config => {
+  return createPlugin({
+    name: 'cache',
+
+    setup: async ({ config, logger, eventBus }) => {
+      const cache = new CacheService(config);
+
+      return {
+        services: { cache },
+
+        initialize: async () => {
+          await cache.connect();
+
+          // ✅ Publish lifecycle event
+          await eventBus.publish('plugin:cache:initialized', {
+            provider: config.provider,
+            timestamp: Date.now(),
+          });
+        },
+
+        terminate: async () => {
+          // ✅ Publish shutdown event
+          await eventBus.publish('plugin:cache:terminating', {
+            timestamp: Date.now(),
+          });
+
+          await cache.disconnect();
+        },
+      };
+    },
+  });
+};
+```
+
+#### 2. Publishing Domain Events
+
+```typescript
+// Cache plugin publishes events for cache operations
+export class CacheService {
+  constructor(private eventBus: EventBus) {}
+
+  async set(key: string, value: string, ttl?: number): Promise<void> {
+    await this.adapter.set(key, value, ttl);
+
+    // ✅ Publish domain event
+    await this.eventBus.publish('cache:set', {
+      key,
+      ttl,
+      size: value.length,
+      timestamp: Date.now(),
+    });
+  }
+
+  async delete(key: string): Promise<void> {
+    const existed = await this.adapter.delete(key);
+
+    if (existed) {
+      // ✅ Publish deletion event
+      await this.eventBus.publish('cache:delete', {
+        key,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  async get(key: string): Promise<string | null> {
+    const value = await this.adapter.get(key);
+
+    // ✅ Publish hit/miss events for metrics
+    await this.eventBus.publish(value !== null ? 'cache:hit' : 'cache:miss', { key });
+
+    return value;
+  }
+}
+```
+
+#### 3. Subscribing to Events
+
+```typescript
+export const createMetricsPlugin = () => {
+  return createPlugin({
+    name: 'metrics',
+
+    setup: async ({ eventBus, logger }) => {
+      const metrics = new MetricsCollector();
+
+      // ✅ Subscribe to cache events for metrics
+      eventBus.subscribe('cache:*', async event => {
+        if (event.type === 'cache:hit') {
+          metrics.increment('cache_hits_total');
+        } else if (event.type === 'cache:miss') {
+          metrics.increment('cache_misses_total');
+        } else if (event.type === 'cache:set') {
+          metrics.observe('cache_value_size_bytes', event.data.size);
+        }
+      });
+
+      // ✅ Subscribe to queue events
+      eventBus.subscribe('queue:job:*', async event => {
+        metrics.increment('queue_events_total', {
+          event_type: event.type,
+          queue_name: event.data.queueName,
+        });
+      });
+
+      return {
+        services: { metrics },
+      };
+    },
+  });
+};
+```
+
+#### 4. Cross-Plugin Communication
+
+```typescript
+// Notification plugin listens for user events from auth plugin
+export const createNotificationPlugin = () => {
+  return createPlugin({
+    name: 'notifications',
+
+    setup: async ({ eventBus, logger }) => {
+      const notificationService = new NotificationService();
+
+      // ✅ Listen for user creation from auth plugin
+      eventBus.subscribe('user:created', async event => {
+        await notificationService.send({
+          userId: event.data.userId,
+          type: 'email',
+          template: 'welcome',
+          data: { email: event.data.email },
+        });
+
+        logger.info('Welcome email queued', {
+          userId: event.data.userId,
+        });
+      });
+
+      // ✅ Listen for order events from order plugin
+      eventBus.subscribe('order:placed', async event => {
+        await notificationService.send({
+          userId: event.data.userId,
+          type: 'push',
+          template: 'order_confirmation',
+          data: { orderId: event.data.orderId },
+        });
+      });
+
+      return {
+        services: { notifications: notificationService },
+      };
+    },
+  });
+};
+```
+
+### Real-World Example: Queue Plugin
+
+The queue plugin extensively uses events for job lifecycle tracking:
+
+```typescript
+// From @blaizejs/plugin-queue
+export class QueueInstance {
+  private async publishStateChange(data: {
+    jobId: string;
+    jobType: string;
+    state: 'enqueued' | 'started' | 'progress' | 'completed' | 'failed';
+    progress?: number;
+    result?: unknown;
+    error?: { message: string; code?: string };
+  }): Promise<void> {
+    if (!this.eventBus) return;
+
+    const baseEvent = {
+      jobId: data.jobId,
+      jobType: data.jobType,
+      queueName: this.name,
+      timestamp: Date.now(),
+      serverId: this.serverId,
+    };
+
+    // Publish specific event based on state
+    switch (data.state) {
+      case 'enqueued':
+        await this.eventBus.publish('queue:job:enqueued', {
+          ...baseEvent,
+          priority: data.priority ?? 5,
+        });
+        break;
+
+      case 'started':
+        await this.eventBus.publish('queue:job:started', baseEvent);
+        break;
+
+      case 'progress':
+        await this.eventBus.publish('queue:job:progress', {
+          jobId: data.jobId,
+          progress: data.progress ?? 0,
+          message: data.message,
+        });
+        break;
+
+      case 'completed':
+        await this.eventBus.publish('queue:job:completed', {
+          ...baseEvent,
+          result: data.result,
+        });
+        break;
+
+      case 'failed':
+        await this.eventBus.publish('queue:job:failed', {
+          ...baseEvent,
+          error: data.error,
+        });
+        break;
+    }
+  }
+}
+```
+
+**Benefits:**
+
+- ✅ Job progress visible across all servers
+- ✅ SSE routes can stream job updates to clients
+- ✅ Metrics plugins can track job performance
+- ✅ Audit logs can record all job state transitions
+
+---
+
+## 🔄 Middleware Integration
+
+Middleware can publish and subscribe to events for cross-cutting concerns.
+
+### Publishing Events from Middleware
+
+```typescript
+// Audit middleware publishes events for all requests
+export const auditMiddleware = createMiddleware({
+  name: 'audit',
+  handler: async ({ ctx, next, logger, eventBus }) => {
+    const start = Date.now();
+
+    try {
+      await next();
+
+      const duration = Date.now() - start;
+
+      // ✅ Publish audit event
+      await eventBus.publish('request:completed', {
+        method: ctx.request.method,
+        path: ctx.request.path,
+        statusCode: ctx.response.statusCode,
+        duration,
+        userId: ctx.state.user?.id,
+        correlationId: ctx.correlationId,
+      });
+    } catch (error) {
+      // ✅ Publish error event
+      await eventBus.publish('request:failed', {
+        method: ctx.request.method,
+        path: ctx.request.path,
+        error: error instanceof Error ? error.message : String(error),
+        correlationId: ctx.correlationId,
+      });
+
+      throw error;
+    }
+  },
+});
+```
+
+### Subscribing to Events in Middleware
+
+```typescript
+// Rate limiting middleware subscribes to violation events
+export const rateLimitMiddleware = createMiddleware({
+  name: 'rate-limit',
+
+  setup: async ({ eventBus, logger }) => {
+    // ✅ Subscribe to rate limit violations
+    eventBus.subscribe('rate-limit:exceeded', async event => {
+      logger.warn('Rate limit exceeded', {
+        userId: event.data.userId,
+        endpoint: event.data.endpoint,
+        limit: event.data.limit,
+      });
+
+      // Could trigger alerts, ban IPs, etc.
+    });
+  },
+
+  handler: async ({ ctx, next, logger, eventBus }) => {
+    const key = `rate-limit:${ctx.state.user?.id || ctx.request.ip}`;
+    const count = await rateLimiter.increment(key);
+
+    if (count > RATE_LIMIT) {
+      // ✅ Publish violation event
+      await eventBus.publish('rate-limit:exceeded', {
+        userId: ctx.state.user?.id,
+        endpoint: ctx.request.path,
+        limit: RATE_LIMIT,
+        count,
+      });
+
+      throw new RateLimitError('Too many requests');
+    }
+
+    await next();
+  },
+});
+```
+
+---
+
+## 📡 SSE Integration
+
+Server-Sent Events routes naturally integrate with the event bus for real-time updates.
+
+### Basic SSE + Event Bus Pattern
+
+```typescript
+export const getNotifications = createSSERoute({
+  schema: {
+    params: z.object({ userId: z.string() }),
+    events: {
+      notification: z.object({
+        id: z.string(),
+        type: z.enum(['info', 'warning', 'error']),
+        message: z.string(),
+        timestamp: z.string(),
+      }),
+      heartbeat: z.object({ timestamp: z.string() }),
+    },
+  },
+
+  handler: async ({ stream, ctx, params, logger, eventBus }) => {
+    const { userId } = params;
+
+    logger.info('Client connected to notifications', { userId });
+
+    // Send initial connection confirmation
+    stream.send('notification', {
+      id: 'welcome',
+      type: 'info',
+      message: 'Connected to notifications',
+      timestamp: new Date().toISOString(),
+    });
+
+    // ✅ Subscribe to relevant events
+    const unsubscribers: (() => void)[] = [];
+
+    // User-specific events
+    unsubscribers.push(
+      eventBus.subscribe('user:*', event => {
+        if (event.data.userId === userId) {
+          stream.send('notification', {
+            id: event.serverId,
+            type: 'info',
+            message: `User event: ${event.type}`,
+            timestamp: new Date(event.timestamp).toISOString(),
+          });
+        }
+      })
+    );
+
+    // System events
+    unsubscribers.push(
+      eventBus.subscribe('system:*', event => {
+        stream.send('notification', {
+          id: event.serverId,
+          type: event.data.severity === 'high' ? 'error' : 'info',
+          message: event.data.message,
+          timestamp: new Date(event.timestamp).toISOString(),
+        });
+      })
+    );
+
+    // Heartbeat
+    const heartbeat = setInterval(() => {
+      stream.send('heartbeat', {
+        timestamp: new Date().toISOString(),
+      });
+    }, 30000);
+
+    // ✅ Cleanup on disconnect
+    stream.onClose(() => {
+      clearInterval(heartbeat);
+      unsubscribers.forEach(unsubscribe => unsubscribe());
+      logger.info('Client disconnected', { userId });
+    });
+  },
+});
+```
+
+### Real-World Example: Queue Job Progress Stream
+
+```typescript
+// From playground app: routes/queue/stream.ts
+export const getQueueStream = createSSERoute({
+  schema: {
+    query: z.object({
+      jobId: z.string(),
+      queueName: z.string().optional(),
+    }),
+    events: {
+      'job.enqueued': jobEventSchema,
+      'job.started': jobEventSchema,
+      'job.progress': progressEventSchema,
+      'job.completed': completedEventSchema,
+      'job.failed': failedEventSchema,
+    },
+  },
+
+  handler: async ({ stream, ctx, params, logger, eventBus }) => {
+    const { jobId, queueName } = ctx.request.query;
+
+    const unsubscribers: (() => void)[] = [];
+
+    // ✅ Subscribe to job lifecycle events
+    unsubscribers.push(
+      eventBus.subscribe('queue:job:enqueued', event => {
+        if (event.data.jobId !== jobId) return;
+        if (queueName && event.data.queueName !== queueName) return;
+
+        stream.send('job.enqueued', {
+          type: 'enqueued',
+          jobId: event.data.jobId,
+          queueName: event.data.queueName,
+          timestamp: event.timestamp,
+        });
+      })
+    );
+
+    unsubscribers.push(
+      eventBus.subscribe('queue:job:progress', event => {
+        if (event.data.jobId !== jobId) return;
+
+        stream.send('job.progress', {
+          type: 'progress',
+          jobId: event.data.jobId,
+          progress: event.data.progress,
+          message: event.data.message,
+        });
+      })
+    );
+
+    unsubscribers.push(
+      eventBus.subscribe('queue:job:completed', event => {
+        if (event.data.jobId !== jobId) return;
+
+        stream.send('job.completed', {
+          type: 'completed',
+          jobId: event.data.jobId,
+          result: event.data.result,
+        });
+      })
+    );
+
+    // Cleanup
+    stream.onClose(() => {
+      unsubscribers.forEach(unsubscribe => unsubscribe());
+    });
+  },
+});
+
+// Client usage (browser):
+const eventSource = new EventSource('/queue/stream?jobId=job_123');
+
+eventSource.addEventListener('job.progress', event => {
+  const data = JSON.parse(event.data);
+  updateProgressBar(data.progress, data.message);
+});
+
+eventSource.addEventListener('job.completed', event => {
+  const data = JSON.parse(event.data);
+  showSuccess('Job completed!', data.result);
+  eventSource.close();
+});
+```
+
+**Benefits:**
+
+- ✅ Real-time job progress updates
+- ✅ Works across all servers (with distributed adapter)
+- ✅ Automatic cleanup on disconnect
+- ✅ Type-safe events
+
+---
+
+## 🎨 Common Patterns
+
+### Pattern 1: Event-Driven Workflow Orchestration
+
+```typescript
+// Multi-step order fulfillment workflow
+eventBus.subscribe('order:placed', async event => {
+  // Step 1: Process payment
+  await eventBus.publish('payment:process', {
+    orderId: event.data.orderId,
+    amount: event.data.total,
+  });
+});
+
+eventBus.subscribe('payment:processed', async event => {
+  // Step 2: Reserve inventory
+  await eventBus.publish('inventory:reserve', {
+    orderId: event.data.orderId,
+    items: event.data.items,
+  });
+});
+
+eventBus.subscribe('inventory:reserved', async event => {
+  // Step 3: Create shipment
+  await eventBus.publish('shipment:create', {
+    orderId: event.data.orderId,
+  });
+});
+
+eventBus.subscribe('shipment:created', async event => {
+  // Step 4: Notify customer
+  await eventBus.publish('notification:send', {
+    userId: event.data.userId,
+    type: 'order_shipped',
+    data: { trackingNumber: event.data.trackingNumber },
+  });
+});
+```
+
+**Benefits:**
+
+- ✅ Each step is independent and testable
+- ✅ Easy to add steps or modify workflow
+- ✅ Natural error handling boundaries
+- ✅ Can replay/retry individual steps
+
+**Caution:** For complex workflows, consider a saga pattern library or workflow engine.
+
+### Pattern 2: Multi-Server Cache Invalidation
+
+```typescript
+// Cache plugin on Server A
+cache.on('delete', async key => {
+  // ✅ Publish invalidation event
+  await eventBus.publish('cache:invalidate', { key });
+});
+
+// All servers (including A) subscribe
+eventBus.subscribe('cache:invalidate', async event => {
+  // Self-filtering prevents double-invalidation on publishing server
+  await cache.delete(event.data.key);
+  logger.info('Cache invalidated', { key: event.data.key });
+});
+
+// Result: Deleting cache key on one server invalidates it everywhere
+```
+
+### Pattern 3: Audit Trail with Event Sourcing
+
+```typescript
+// All domain events are logged for audit trail
+const auditableEvents = [
+  'user:created',
+  'user:updated',
+  'user:deleted',
+  'order:placed',
+  'payment:processed',
+];
+
+for (const eventType of auditableEvents) {
+  eventBus.subscribe(eventType, async event => {
+    await auditLog.append({
+      eventType: event.type,
+      data: event.data,
+      timestamp: event.timestamp,
+      serverId: event.serverId,
+      correlationId: event.correlationId,
+    });
+  });
+}
+
+// Can replay events to rebuild state
+async function rebuildUserState(userId: string) {
+  const events = await auditLog.query({
+    eventType: /^user:/,
+    userId,
+  });
+
+  let state = {};
+  for (const event of events) {
+    state = applyEvent(state, event);
+  }
+
+  return state;
+}
+```
+
+### Pattern 4: Fan-Out Notifications
+
+```typescript
+// Single event triggers multiple notification types
+eventBus.subscribe('order:placed', async event => {
+  // ✅ Publish multiple notification events
+  await eventBus.publish('notification:email', {
+    userId: event.data.userId,
+    template: 'order_confirmation',
+    data: { orderId: event.data.orderId },
+  });
+
+  await eventBus.publish('notification:sms', {
+    userId: event.data.userId,
+    message: `Order #${event.data.orderId} confirmed`,
+  });
+
+  await eventBus.publish('notification:push', {
+    userId: event.data.userId,
+    title: 'Order Placed',
+    body: 'Thank you for your order!',
+  });
+});
+
+// Each notification type has dedicated handler
+eventBus.subscribe('notification:email', emailHandler);
+eventBus.subscribe('notification:sms', smsHandler);
+eventBus.subscribe('notification:push', pushHandler);
+```
+
+### Pattern 5: Dead Letter Queue
+
+```typescript
+// Track failed event handlers
+const failedEvents = new Map<string, { event: BlaizeEvent; error: Error }>();
+
+eventBus.subscribe('*', async event => {
+  try {
+    await processEvent(event);
+  } catch (error) {
+    // ✅ Publish failure event
+    await eventBus.publish('event:handler:failed', {
+      eventType: event.type,
+      eventData: event.data,
+      error: error instanceof Error ? error.message : String(error),
+      correlationId: event.correlationId,
+    });
+
+    // Store for manual review
+    failedEvents.set(event.correlationId, { event, error });
+  }
+});
+
+// Retry handler
+eventBus.subscribe('event:handler:failed', async event => {
+  logger.error('Event handler failed', {
+    eventType: event.data.eventType,
+    error: event.data.error,
+  });
+
+  // Could implement retry logic, alerting, etc.
+});
+```
+
+---
+
+## ⚡ Performance Considerations
+
+### Event Volume
+
+**Current architecture:**
+
+- ✅ Excellent for low-to-medium event volume (< 1000 events/sec)
+- ⚠️ May struggle with high volume (>10,000 events/sec)
+- ❌ Not designed for massive scale (>100,000 events/sec)
+
+**Bottlenecks:**
+
+1. **Pattern matching** — Regex patterns can be expensive with many subscriptions
+2. **Handler invocation** — Each event invokes all matching handlers sequentially
+3. **Adapter serialization** — JSON stringify/parse adds overhead
+4. **Redis pub/sub** — Limited by Redis throughput
+
+**Optimizations:**
+
+- Use exact patterns when possible (fastest)
+- Minimize regex patterns (slowest)
+- Batch events when appropriate
+- Use separate event bus instances for high-volume events
+
+### Memory Usage
+
+**Subscriptions:**
+
+- Each subscription holds a closure in memory
+- For long-running processes, ensure subscriptions are cleaned up
+- Use `unsubscribe()` when subscriptions are no longer needed
+
+```typescript
+// ❌ Memory leak: Never unsubscribes
+export const GET = createGetRoute({
+  handler: async ({ eventBus }) => {
+    eventBus.subscribe('data:*', handler); // Leaks!
+    return { ok: true };
+  },
+});
+
+// ✅ Proper cleanup
+const unsubscribers = new Set<() => void>();
+
+export const GET = createGetRoute({
+  handler: async ({ eventBus }) => {
+    const unsubscribe = eventBus.subscribe('data:*', handler);
+    unsubscribers.add(unsubscribe);
+
+    // Cleanup old subscriptions
+    if (unsubscribers.size > 100) {
+      const [oldest] = unsubscribers;
+      oldest();
+      unsubscribers.delete(oldest);
+    }
+
+    return { ok: true };
+  },
+});
+```
+
+### Handler Execution
+
+**Handlers block the publisher:**
+
+- `publish()` waits for `Promise.all()` of all matching handlers
+- If handlers are slow, the publish call is slow
+- Multiple handlers run in parallel, but publish waits for all to complete
+- Errors in handlers are logged but don't fail the publish operation
+
+```typescript
+// All handlers run in parallel, but publish waits for all
+eventBus.subscribe('user:created', async () => {
+  await slowOperation1(); // Takes 2 seconds
+});
+
+eventBus.subscribe('user:created', async () => {
+  await slowOperation2(); // Takes 3 seconds
+});
+
+// Publish blocks for ~3 seconds (longest handler)
+await eventBus.publish('user:created', data);
+// Returns after all handlers complete
+
+// ⚠️ Order is not guaranteed between handlers
+// handler1 and handler2 run concurrently
+```
+
+**Implications:**
+
+- **Natural back-pressure:** Slow handlers slow down publishers
+- **Route handler impact:** Publishing events in route handlers can increase response times
+- **No timeout control:** No way to limit handler execution time per event
+- **Parallel execution:** Multiple handlers run concurrently via `Promise.all()`
+
+**If you need non-blocking publish:**
+
+- Currently not supported (no fire-and-forget mode)
+- Workaround: Wrap publish in non-awaited promise (not recommended)
+- Consider using direct function calls for synchronous operations
+
+### Network Overhead (Distributed Mode)
+
+**Redis adapter considerations:**
+
+- Each event requires Redis PUBLISH operation
+- Large event payloads increase network traffic
+- Consider compression for large payloads (not currently supported)
+
+**Best practices:**
+
+- Keep event data minimal (avoid large objects)
+- Use references instead of full objects (`userId` vs full `user` object)
+- Consider dedicated high-volume channels
+
+---
+
+## ⚠️ Limitations & Gaps
+
+### Current Limitations
+
+#### 1. No Event Replay
+
+**Limitation:** Events are not persisted; cannot replay past events.
+
+**Workaround:** Implement your own event store:
+
+```typescript
+const eventStore: BlaizeEvent[] = [];
+
+eventBus.subscribe('*', async event => {
+  eventStore.push(event);
+});
+
+// Replay events
+for (const event of eventStore) {
+  await eventBus.publish(event.type, event.data);
+}
+```
+
+**Future:** Consider adding optional event persistence adapter.
+
+#### 2. No Event Ordering Guarantees
+
+**Limitation:** Handler invocation order is not guaranteed, especially in distributed mode.
+
+**Example:**
+
+```typescript
+await eventBus.publish('user:created', { userId: '123' });
+await eventBus.publish('user:updated', { userId: '123' });
+
+// Handler may receive 'updated' before 'created' in distributed setup
+```
+
+**Workaround:** Include sequence numbers or timestamps:
+
+```typescript
+await eventBus.publish('user:created', {
+  userId: '123',
+  sequence: 1,
+  timestamp: Date.now(),
+});
+
+await eventBus.publish('user:updated', {
+  userId: '123',
+  sequence: 2,
+  timestamp: Date.now(),
+});
+
+// Handler sorts by sequence
+eventBus.subscribe('user:*', async event => {
+  events.sort((a, b) => a.data.sequence - b.data.sequence);
+});
+```
+
+#### 3. No Dead Letter Queue
+
+**Limitation:** Failed handlers don't automatically retry or move to DLQ.
+
+**Workaround:** Implement pattern shown in "Common Patterns" section.
+
+**Future:** Consider adding DLQ support to adapters.
+
+#### 4. No Transaction Support
+
+**Limitation:** Events are not transactional with database operations.
+
+**Example:**
+
+```typescript
+// ❌ Event published even if DB save fails
+await db.users.create(user);
+await eventBus.publish('user:created', user);
+// If this throws, event is already sent
+```
+
+**Workaround:** Use outbox pattern:
+
+```typescript
+// ✅ Transactional outbox
+await db.transaction(async tx => {
+  await tx.users.create(user);
+  await tx.outbox.insert({
+    eventType: 'user:created',
+    data: user,
+  });
+});
+
+// Separate process reads outbox and publishes events
+```
+
+**Future:** Consider built-in transactional outbox support.
+
+#### 5. Handler Blocking Creates Back-Pressure
+
+**Limitation:** `publish()` waits for all handlers to complete, which creates natural back-pressure but no control mechanisms.
+
+**Current behavior:**
+
+```typescript
+// Slow handlers block the publisher
+eventBus.subscribe('data:process', async event => {
+  await slowDatabaseWrite(); // Takes 5 seconds
+});
+
+// In route handler
+export const POST = createPostRoute({
+  handler: async ({ eventBus }) => {
+    await eventBus.publish('data:process', data);
+    // ⬅️ This blocks for ~5 seconds waiting for handler
+    return { success: true }; // Response delayed
+  },
+});
+```
+
+**Limitations:**
+
+- No way to set handler timeouts
+- No way to make handlers truly fire-and-forget
+- No queue depth control or rate limiting
+- Can impact response times in route handlers
+
+**Workaround:** Extract slow operations to background jobs:
+
+```typescript
+// Instead of slow event handler
+eventBus.subscribe('data:process', async event => {
+  // ✅ Queue job instead of doing slow work
+  await ctx.services.queue.add('default', 'process-data', event.data);
+});
+```
+
+**Future:** Consider optional fire-and-forget mode for publish.
+
+#### 6. Limited Adapter Ecosystem
+
+**Current:**
+
+- ✅ Redis Pub/Sub
+- ❌ RabbitMQ
+- ❌ Apache Kafka
+- ❌ AWS SNS/SQS
+- ❌ Google Cloud Pub/Sub
+
+**Future:** Consider optional fire-and-forget mode for publish.
+
+#### 6. Limited Adapter Ecosystem
+
+**Current:**
+
+- ✅ Redis Pub/Sub
+- ❌ RabbitMQ
+- ❌ Apache Kafka
+- ❌ AWS SNS/SQS
+- ❌ Google Cloud Pub/Sub
+
+**Future:** Expand adapter ecosystem as community grows.
+
+#### 7. No Schema Versioning
+
+**Limitation:** No built-in support for event schema versioning.
+
+**Workaround:** Include version in event type:
+
+```typescript
+// Versioned events
+'user:created:v1';
+'user:created:v2';
+
+// Or version in data
+eventBus.publish('user:created', {
+  _version: 2,
+  userId: '123',
+  // ...
+});
+```
+
+**Future:** Consider schema versioning support in TypedEventBus.
+
+### Known Gaps
+
+1. **No event compression** — Large payloads increase network overhead
+2. **No event batching** — Each publish is separate operation
+3. **No priority queues** — All events treated equally
+4. **No handler timeouts** — Slow handlers block publishers indefinitely
+5. **No message acknowledgment** — Fire-and-forget delivery only
+
+---
+
+## ✅ Best Practices
+
+### 1. Event Naming Conventions
+
+**Use colon-separated namespaces:**
+
+```typescript
+// ✅ Good: Clear hierarchy
+'user:created';
+'user:profile:updated';
+'order:payment:processed';
+
+// ❌ Bad: Unclear structure
+'userCreated';
+'user_created';
+'CREATE_USER';
+```
+
+**Past tense for completed actions:**
+
+```typescript
+// ✅ Good: Describes what happened
+'user:created';
+'order:shipped';
+'payment:processed';
+
+// ❌ Bad: Imperative or present tense
+'user:create';
+'order:ship';
+'payment:process';
+```
+
+**Include entity type:**
+
+```typescript
+// ✅ Good: Clear entity
+'user:created';
+'order:placed';
+'product:updated';
+
+// ❌ Bad: Ambiguous
+'created';
+'placed';
+'updated';
+```
+
+### 2. Event Data Design
+
+**Keep data minimal:**
+
+```typescript
+// ✅ Good: Only essential data
+await eventBus.publish('user:created', {
+  userId: '123',
+  email: 'user@example.com',
+  createdAt: Date.now(),
+});
+
+// ❌ Bad: Full object with sensitive data
+await eventBus.publish('user:created', {
+  ...fullUserObject, // May include password hash, etc.
+});
+```
+
+**Include correlation ID:**
+
+```typescript
+// ✅ Good: Tracing support
+await eventBus.publish('order:placed', {
+  orderId: '123',
+  correlationId: ctx.correlationId,
+});
+```
+
+**Use references, not full objects:**
+
+```typescript
+// ✅ Good: Reference by ID
+await eventBus.publish('comment:created', {
+  commentId: '123',
+  postId: '456',
+  authorId: '789',
+});
+
+// ❌ Bad: Embedded objects
+await eventBus.publish('comment:created', {
+  comment: {
+    /* full object */
+  },
+  post: {
+    /* full object */
+  },
+  author: {
+    /* full object */
+  },
+});
+```
+
+### 3. Handler Design
+
+**Keep handlers idempotent:**
+
+```typescript
+// ✅ Good: Safe to run multiple times
+eventBus.subscribe('cache:invalidate', async event => {
+  await cache.delete(event.data.key);
+  // Delete is idempotent
+});
+
+// ⚠️ Caution: Not idempotent
+eventBus.subscribe('user:created', async event => {
+  await db.users.insert(event.data);
+  // Inserting twice will fail or create duplicates
+});
+```
+
+**Handle errors gracefully:**
+
+```typescript
+// ✅ Good: Error isolation
+eventBus.subscribe('notification:send', async event => {
+  try {
+    await sendEmail(event.data);
+  } catch (error) {
+    logger.error('Failed to send email', {
+      error,
+      eventId: event.correlationId,
+    });
+    // Don't throw — prevents other handlers from failing
+  }
+});
+```
+
+**Clean up subscriptions:**
+
+```typescript
+// ✅ Good: Cleanup in SSE onClose
+stream.onClose(() => {
+  unsubscribers.forEach(unsubscribe => unsubscribe());
+});
+
+// ✅ Good: Cleanup in plugin terminate
+terminate: async () => {
+  eventBusUnsubscribe?.();
+  await service.disconnect();
+};
+```
+
+### 4. Pattern Matching Strategy
+
+**Prefer exact match when possible:**
+
+```typescript
+// ✅ Good: Exact match (fastest)
+eventBus.subscribe('user:created', handler);
+
+// ⚠️ Okay: Glob wildcard (slower but acceptable)
+eventBus.subscribe('user:*', handler);
+
+// ❌ Avoid: Regex unless necessary (slowest)
+eventBus.subscribe(/^user:/, handler);
+```
+
+**Use wildcards judiciously:**
+
+```typescript
+// ✅ Good: Scoped wildcard
+eventBus.subscribe('user:*', handler);
+
+// ⚠️ Caution: Broad wildcard
+eventBus.subscribe('*', handler);
+// Only use for debugging, logging, or metrics
+```
+
+### 5. Testing
+
+**Test event publishing:**
+
+```typescript
+import { describe, it, expect } from 'vitest';
+
+describe('UserService', () => {
+  it('publishes user:created event', async () => {
+    const events: BlaizeEvent[] = [];
+
+    eventBus.subscribe('user:created', event => {
+      events.push(event);
+    });
+
+    await userService.create({ email: 'test@example.com' });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe('user:created');
+    expect(events[0]?.data.email).toBe('test@example.com');
+  });
+});
+```
+
+**Test event handlers:**
+
+```typescript
+describe('NotificationPlugin', () => {
+  it('sends welcome email on user:created', async () => {
+    const emails: Email[] = [];
+
+    emailService.send = email => {
+      emails.push(email);
+    };
+
+    // Trigger event
+    await eventBus.publish('user:created', {
+      userId: '123',
+      email: 'user@example.com',
+    });
+
+    // Wait for async handler
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    expect(emails).toHaveLength(1);
+    expect(emails[0]?.to).toBe('user@example.com');
+  });
+});
+```
+
+### 6. Monitoring
+
+**Log important events:**
+
+```typescript
+eventBus.subscribe('*', event => {
+  logger.debug('Event published', {
+    type: event.type,
+    serverId: event.serverId,
+    correlationId: event.correlationId,
+  });
+});
+```
+
+**Track event metrics:**
+
+```typescript
+eventBus.subscribe('*', event => {
+  metrics.increment('events_published_total', {
+    event_type: event.type,
+    server_id: event.serverId,
+  });
+});
+```
+
+---
+
+## 📚 Further Reading
+
+- [Architecture Overview](./overview.md) — System architecture and design decisions
+- [Plugin Development Guide](../guides/plugins.md) — Building plugins that use events
+- [SSE Routes Guide](../guides/sse.md) — Real-time updates with Server-Sent Events
+- [Queue Plugin](../../plugins/queue/README.md) — Background jobs with event streaming
+- [Cache Plugin](../../plugins/cache/README.md) — Distributed caching with events
+
+---
+
+**Questions or feedback?** Please open an issue on GitHub or join our Discord community.

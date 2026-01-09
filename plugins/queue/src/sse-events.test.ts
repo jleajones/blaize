@@ -8,7 +8,7 @@ import {
   jobCompletedEventSchema,
   jobFailedEventSchema,
   jobCancelledEventSchema,
-  jobEventsSchema,
+  jobSseEventSchemas,
 } from './schema';
 
 import type {
@@ -365,19 +365,23 @@ describe('jobCancelledEventSchema', () => {
 
 describe('jobEventsSchema', () => {
   it('should contain all four event types', () => {
-    expect(jobEventsSchema['job.progress']).toBeDefined();
-    expect(jobEventsSchema['job.completed']).toBeDefined();
-    expect(jobEventsSchema['job.failed']).toBeDefined();
-    expect(jobEventsSchema['job.cancelled']).toBeDefined();
+    expect(jobSseEventSchemas['job.progress']).toBeDefined();
+    expect(jobSseEventSchemas['job.completed']).toBeDefined();
+    expect(jobSseEventSchemas['job.failed']).toBeDefined();
+    expect(jobSseEventSchemas['job.cancelled']).toBeDefined();
+    expect(jobSseEventSchemas['job.enqueued']).toBeDefined();
+    expect(jobSseEventSchemas['job.started']).toBeDefined();
   });
 
   it('should have exactly four event types', () => {
-    const keys = Object.keys(jobEventsSchema);
-    expect(keys).toHaveLength(4);
+    const keys = Object.keys(jobSseEventSchemas);
+    expect(keys).toHaveLength(6);
   });
 
   it('should use correct event names', () => {
-    const keys = Object.keys(jobEventsSchema);
+    const keys = Object.keys(jobSseEventSchemas);
+    expect(keys).toContain('job.enqueued');
+    expect(keys).toContain('job.started');
     expect(keys).toContain('job.progress');
     expect(keys).toContain('job.completed');
     expect(keys).toContain('job.failed');

@@ -1484,7 +1484,9 @@ describe('createJobHandler', () => {
     expect(result.jobId).toBeDefined();
     expect(result.queueName).toBe('emails');
     expect(result.jobType).toBe('send-welcome');
-    expect(result.createdAt).toBeDefined();
+    expect(result.queuedAt).toBeDefined();
+    expect(result.status).toBe('queued');
+    expect(result.priority).toBe(5);
   });
 
   it('should log info messages', async () => {

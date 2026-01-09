@@ -77,12 +77,12 @@ export default createPostRoute()({
 
 // 4. Stream progress via SSE
 // routes/jobs/stream.ts
-import { jobStreamHandler, jobStreamQuerySchema, jobEventsSchema } from '@blaizejs/queue';
+import { jobStreamHandler, jobStreamQuerySchema, jobSseEventSchemas } from '@blaizejs/queue';
 
 export default createSSERoute()({
   schema: {
     query: jobStreamQuerySchema,
-    events: jobEventsSchema,
+    events: jobSseEventSchemas,
   },
   handler: jobStreamHandler,
 });

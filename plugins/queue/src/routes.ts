@@ -31,13 +31,13 @@
  * import {
  *   jobStreamHandler,
  *   jobStreamQuerySchema,
- *   jobEventsSchema,
+ *   jobSseEventSchemas,
  * } from '@blaizejs/queue';
  *
  * export default createSSERoute()({
  *   schema: {
  *     query: jobStreamQuerySchema,
- *     events: jobEventsSchema,
+ *     events: jobSseEventSchemas,
  *   },
  *   handler: jobStreamHandler,
  * });
@@ -67,19 +67,14 @@ import type { QueueService } from './queue-service';
 import type {
   CancelJobBody,
   CreateJobBody,
+  CreateJobResponse,
   jobSseEventSchemas,
   JobStreamQuery,
   QueueDashboardQuery,
   QueueStatusQuery,
-} from './schema';
-import type {
-  Job,
-  JobStatus,
-  JobOptions,
-  FormattedJob,
   QueueStatusResponse,
-  CreateJobResponse,
-} from './types';
+} from './schema';
+import type { Job, JobStatus, JobOptions, FormattedJob } from './types';
 import type { TypedSSEStream, Context, BlaizeLogger, EventBus } from 'blaizejs';
 
 // ============================================================================
@@ -738,7 +733,9 @@ export const createJobHandler = async ({
     jobId,
     queueName: body.queueName,
     jobType: body.jobType,
-    createdAt: Date.now(),
+    queuedAt: Date.now(),
+    status: 'queued',
+    priority: body.options?.priority || 5,
   };
 };
 

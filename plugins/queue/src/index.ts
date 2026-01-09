@@ -118,7 +118,7 @@ export {
   jobCompletedEventSchema,
   jobFailedEventSchema,
   jobCancelledEventSchema,
-  jobEventsSchema,
+  jobSseEventSchemas,
   // Query schemas for route validation
   jobStreamQuerySchema,
   queueStatusQuerySchema,

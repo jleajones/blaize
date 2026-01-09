@@ -1287,13 +1287,3 @@ export interface QueueStatusResponse {
   }>;
   timestamp: number;
 }
-
-/**
- * Create job response shape
- */
-export interface CreateJobResponse {
-  jobId: string;
-  queueName: string;
-  jobType: string;
-  createdAt: number;
-}
