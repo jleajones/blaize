@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/testing-utils",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Comprehensive testing utilities for BlaizeJS applications including middleware testing, plugin lifecycle simulation, context mocking, and integration test helpers with full TypeScript support.",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {

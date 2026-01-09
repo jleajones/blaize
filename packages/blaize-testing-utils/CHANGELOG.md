@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.5.1
+
+### Patch Changes
+
+- 5b01ab7: ✨ Event Driven changes
+
 ## 0.5.0
 
 ### Minor Changes

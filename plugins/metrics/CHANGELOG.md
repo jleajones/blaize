@@ -1,5 +1,16 @@
 # @blaizejs/plugin-metrics
 
+## 4.0.0
+
+### Minor Changes
+
+- c2001d8: ✨ introduce event bus, redis adapter for queue, cache
+
+### Patch Changes
+
+- Updated dependencies [c2001d8]
+  - blaizejs@0.9.0
+
 ## 3.0.0
 
 ### Patch Changes
