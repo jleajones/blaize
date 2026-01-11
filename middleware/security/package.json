@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/middleware-security",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Production-ready security middleware for BlaizeJS",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
@@ -38,7 +38,7 @@
     "clean": "rimraf dist"
   },
   "peerDependencies": {
-    "blaizejs": "^0.8.0"
+    "blaizejs": "^0.9.0"
   },
   "devDependencies": {
     "blaizejs": "workspace:*",

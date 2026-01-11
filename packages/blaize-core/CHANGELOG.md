@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.9.0
+
+### Minor Changes
+
+- c2001d8: ✨ introduce event bus, redis adapter for queue, cache
+
 ## 0.8.0
 
 ### Minor Changes
