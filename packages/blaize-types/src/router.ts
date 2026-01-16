@@ -23,6 +23,7 @@ export interface RouteSchema<
   P extends z.ZodType = z.ZodType<any>, // URL parameters schema
   Q extends z.ZodType = z.ZodType<any>, // Query parameters schema
   B extends z.ZodType = z.ZodType<any>, // Body schema
+  F extends z.ZodType = z.ZodType<any>, // Files schema (defaults to any for backward compatibility)
   R extends z.ZodType = z.ZodType<any>, // Response schema
   ED extends z.ZodType = z.ZodType<any>, // Error details schema
 > {
@@ -31,6 +32,9 @@ export interface RouteSchema<
 
   /** Query schema for validation */
   query?: Q;
+
+  /** Files schema for multipart/form-data validation */
+  files?: F;
 
   /** Body schema for validation */
   body?: B;
@@ -76,6 +80,7 @@ export interface RouteSchema<
  * @template TState - Accumulated state from middleware (e.g., user, session)
  * @template TServices - Accumulated services from middleware and plugins (e.g., db, cache)
  * @template TEvents - Event schemas for typed EventBus
+ * @template TFiles - Uploaded files type (validated via schema.files)
  *
  * @param hc - Handler context containing ctx, params, logger, eventBus
  * @returns Response data of type TResponse (or Promise<TResponse>)
@@ -134,8 +139,9 @@ export type RouteHandler<
   TState extends State = State,
   TServices extends Services = Services,
   TEvents extends EventSchemas = EventSchemas,
+  TFiles = unknown,
 > = (
-  hc: HandlerContext<TState, TServices, TBody, TQuery, TParams, TEvents>
+  hc: HandlerContext<TState, TServices, TBody, TQuery, TParams, TEvents, TFiles>
 ) => Promise<TResponse> | TResponse;
 
 /**
@@ -145,18 +151,23 @@ export interface RouteMethodOptions<
   P extends z.ZodType = z.ZodType<any>,
   Q extends z.ZodType = z.ZodType<any>,
   B extends z.ZodType = z.ZodType<any>,
+  F extends z.ZodType = z.ZodType<any>,
   R extends z.ZodType = z.ZodType<any>,
   ED extends z.ZodType = z.ZodType<any>,
 > {
   /** Schema for request/response validation */
-  schema?: RouteSchema<P, Q, B, R, ED>;
+  schema?: RouteSchema<P, Q, B, F, R, ED>;
 
   /** Handler function for the route */
   handler: RouteHandler<
     P extends z.ZodType ? Infer<P> : Record<string, string>,
     Q extends z.ZodType ? Infer<Q> : QueryParams,
     B extends z.ZodType ? Infer<B> : unknown,
-    R extends z.ZodType ? Infer<R> : unknown
+    R extends z.ZodType ? Infer<R> : unknown,
+    State,
+    Services,
+    EventSchemas,
+    F extends z.ZodType ? Infer<F> : unknown
   >;
 
   /** Middleware to apply to this route */
@@ -170,13 +181,13 @@ export interface RouteMethodOptions<
  * Route definition mapping HTTP methods to handlers
  */
 export interface RouteDefinition {
-  GET?: RouteMethodOptions<any, any, never, any, any>; // GET/HEAD/DELETE/OPTIONS don't have bodies
-  POST?: RouteMethodOptions<any, any, any, any, any>; // POST can have bodies
-  PUT?: RouteMethodOptions<any, any, any, any, any>; // PUT can have bodies
-  DELETE?: RouteMethodOptions<any, any, never, any, any>; // DELETE typically no body
-  PATCH?: RouteMethodOptions<any, any, any, any, any>; // PATCH can have bodies
-  HEAD?: RouteMethodOptions<any, any, never, any, any>; // HEAD no body
-  OPTIONS?: RouteMethodOptions<any, any, never, any, any>; // OPTIONS no body
+  GET?: RouteMethodOptions<any, any, never, never, any, any>; // GET/HEAD/DELETE/OPTIONS don't have bodies
+  POST?: RouteMethodOptions<any, any, any, any, any, any>; // POST can have bodies
+  PUT?: RouteMethodOptions<any, any, any, any, any, any>; // PUT can have bodies
+  DELETE?: RouteMethodOptions<any, any, never, never, any, any>; // DELETE typically no body
+  PATCH?: RouteMethodOptions<any, any, any, any, any, any>; // PATCH can have bodies
+  HEAD?: RouteMethodOptions<any, any, never, never, any, any>; // HEAD no body
+  OPTIONS?: RouteMethodOptions<any, any, never, never, any, any>; // OPTIONS no body
 }
 
 /**
@@ -411,7 +422,8 @@ export type RouteConfigWithoutBody<
     [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
     TState,
     TServices,
-    TEvents
+    TEvents,
+    never
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
@@ -425,6 +437,7 @@ export type RouteConfigWithBody<
   P = never,
   Q = never,
   B = never,
+  F = never,
   R = never,
   TState extends State = State,
   TServices extends Services = Services,
@@ -434,6 +447,7 @@ export type RouteConfigWithBody<
     params?: P extends never ? never : P;
     query?: Q extends never ? never : Q;
     body?: B extends never ? never : B;
+    files?: F extends never ? never : F;
     response?: R extends never ? never : R;
   };
   handler: RouteHandler<
@@ -443,7 +457,8 @@ export type RouteConfigWithBody<
     [R] extends [never] ? void : R extends z.ZodType ? Infer<R> : void,
     TState,
     TServices,
-    TEvents
+    TEvents,
+    F extends z.ZodType ? Infer<F> : unknown
   >;
   middleware?: Middleware[];
   options?: Record<string, unknown>;
@@ -487,6 +502,7 @@ export type CreateGetRoute = <
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
     never,
+    never,
     R extends never ? never : R extends z.ZodType ? R : never
   >;
   path: string;
@@ -503,13 +519,14 @@ export type CreatePostRoute = <
   TState extends State = State,
   TServices extends Services = Services,
   TEvents extends EventSchemas = EventSchemas,
->() => <P = never, Q = never, B = never, R = never>(
-  config: RouteConfigWithBody<P, Q, B, R, TState, TServices, TEvents>
+>() => <P = never, Q = never, B = never, F = never, R = never>(
+  config: RouteConfigWithBody<P, Q, B, F, R, TState, TServices, TEvents>
 ) => {
   POST: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
     B extends never ? never : B extends z.ZodType ? B : never,
+    F extends never ? never : F extends z.ZodType ? F : never,
     R extends never ? never : R extends z.ZodType ? R : never
   >;
   path: string;
@@ -522,13 +539,14 @@ export type CreatePutRoute = <
   TState extends State = State,
   TServices extends Services = Services,
   TEvents extends EventSchemas = EventSchemas,
->() => <P = never, Q = never, B = never, R = never>(
-  config: RouteConfigWithBody<P, Q, B, R, TState, TServices, TEvents>
+>() => <P = never, Q = never, B = never, F = never, R = never>(
+  config: RouteConfigWithBody<P, Q, B, F, R, TState, TServices, TEvents>
 ) => {
   PUT: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
     B extends never ? never : B extends z.ZodType ? B : never,
+    F extends never ? never : F extends z.ZodType ? F : never,
     R extends never ? never : R extends z.ZodType ? R : never
   >;
   path: string;
@@ -548,6 +566,7 @@ export type CreateDeleteRoute = <
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
     never,
+    never,
     R extends never ? never : R extends z.ZodType ? R : never
   >;
   path: string;
@@ -560,13 +579,14 @@ export type CreatePatchRoute = <
   TState extends State = State,
   TServices extends Services = Services,
   TEvents extends EventSchemas = EventSchemas,
->() => <P = never, Q = never, B = never, R = never>(
-  config: RouteConfigWithoutBody<P, Q, R, TState, TServices, TEvents>
+>() => <P = never, Q = never, B = never, F = never, R = never>(
+  config: RouteConfigWithBody<P, Q, B, F, R, TState, TServices, TEvents>
 ) => {
   PATCH: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
     B extends never ? never : B extends z.ZodType ? B : never,
+    F extends never ? never : F extends z.ZodType ? F : never,
     R extends never ? never : R extends z.ZodType ? R : never
   >;
   path: string;
@@ -586,6 +606,7 @@ export type CreateHeadRoute = <
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
     never,
+    never,
     R extends never ? never : R extends z.ZodType ? R : never
   >;
   path: string;
@@ -604,6 +625,7 @@ export type CreateOptionsRoute = <
   OPTIONS: RouteMethodOptions<
     P extends never ? never : P extends z.ZodType ? P : never,
     Q extends never ? never : Q extends z.ZodType ? Q : never,
+    never,
     never,
     R extends never ? never : R extends z.ZodType ? R : never
   >;
