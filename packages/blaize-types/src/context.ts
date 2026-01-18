@@ -200,9 +200,13 @@ export interface ContextOptions {
 /**
  * Function to get the current context from AsyncLocalStorage
  */
-export type GetContextFn = <S extends State = State, Svc extends Services = Services>() =>
-  | Context<S, Svc>
-  | undefined;
+export type GetContextFn = <
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+  TFiles = Record<string, UploadedFile | UploadedFile[]>,
+>() => Context<S, Svc, TBody, TQuery, TFiles> | undefined;
 
 /**
  * Factory function for creating a new context

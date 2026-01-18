@@ -14,6 +14,7 @@ import type { EventSchemas, TypedEventBus } from './events';
 import type { BlaizeLogger } from './logger';
 import type { NextFunction } from './middleware';
 import type { SSEStreamExtended } from './sse';
+import type { UploadedFile } from './upload';
 
 // ============================================================================
 // Route Handler Context
@@ -126,7 +127,7 @@ export interface HandlerContext<
   TQuery = QueryParams,
   TParams = Record<string, string>,
   TEvents extends EventSchemas = EventSchemas,
-  TFiles = unknown,
+  TFiles = Record<string, UploadedFile | UploadedFile[]>,
 > {
   /**
    * The Blaize context object

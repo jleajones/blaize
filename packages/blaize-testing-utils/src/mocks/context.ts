@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
 import { EventEmitter } from 'node:events';
 
-import type { Context, QueryParams, Services, State } from '@blaize-types';
+import type { Context, QueryParams, Services, State, UploadedFile } from '@blaize-types';
 
 /**
  * Configuration options for creating test contexts
@@ -12,6 +12,7 @@ export interface TestContextConfig {
   query?: Record<string, string | string[]>;
   params?: Record<string, string>;
   headers?: Record<string, string>;
+  files?: unknown;
   body?: unknown;
   initialState?: Record<string, unknown>;
   initialServices?: Record<string, unknown>;
@@ -54,7 +55,8 @@ export function createMockContext<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(config: TestContextConfig = {}): Context<S, Svc, TBody, TQuery> {
+  TFiles = Record<string, UploadedFile | UploadedFile[]>,
+>(config: TestContextConfig = {}): Context<S, Svc, TBody, TQuery, TFiles> {
   const {
     method = 'GET',
     path = '/test',
@@ -65,6 +67,7 @@ export function createMockContext<
     initialState = {},
     initialServices = {},
     withEventEmitter = false,
+    files,
   } = config;
 
   // Normalize headers for case-insensitive lookup
@@ -197,7 +200,7 @@ export function createMockContext<
     }),
   };
 
-  const contextRequest: Context<S, Svc, TBody, TQuery>['request'] = {
+  const contextRequest: Context<S, Svc, TBody, TQuery, TFiles>['request'] = {
     raw: rawRequest as any,
     method,
     path,
@@ -207,6 +210,7 @@ export function createMockContext<
     protocol: 'http',
     isHttp2: false,
     body: body as TBody,
+    files: files as TFiles,
 
     // Header function with case-insensitive lookup
     header: vi.fn((name: string): string | undefined => {

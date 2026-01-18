@@ -37,7 +37,7 @@ export interface MiddlewareOptions<TEvents extends EventSchemas = EventSchemas> 
   handler: MiddlewareFunction<TEvents>;
 
   /** Skip function to conditionally bypass middleware */
-  skip?: ((ctx: Context<any, any>) => boolean) | undefined;
+  skip?: ((ctx: Context) => boolean) | undefined;
 
   /** Enable debugging for this middleware */
   debug?: boolean;

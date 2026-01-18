@@ -57,7 +57,7 @@ function createParserState(boundary: string, options: Partial<ParseOptions> = {}
  */
 async function processChunk(state: ParserState, chunk: Buffer): Promise<ParserState> {
   const newBuffer = Buffer.concat([state.buffer, chunk]);
-  let currentState = { ...state, buffer: newBuffer };
+  let currentState = { ...state, buffer: newBuffer } as ParserState;
 
   // Process buffer until no more progress can be made
   while (currentState.buffer.length > 0 && !currentState.isFinished) {
@@ -424,7 +424,8 @@ async function finalizeFile(state: ParserState): Promise<ParserState> {
   }
 
   const file: UploadedFile = {
-    filename: state.currentFilename,
+    originalname: state.currentFilename,
+    encoding: '7bit', // Encoding is not tracked in this implementation
     fieldname: state.currentField,
     mimetype: state.currentMimetype,
     size: state.currentContentLength,

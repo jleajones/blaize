@@ -92,7 +92,7 @@ export const POST = appRouter.post({
 
         return {
           fieldName,
-          filename: fileData.filename || 'unnamed',
+          filename: fileData.originalname || 'unnamed',
           size: fileData.size,
           mimetype: fileData.mimetype,
           uploadPath,
@@ -161,20 +161,20 @@ function validateUploadedFiles(files: Record<string, UploadedFile | UploadedFile
       // Check individual file size
       if (fileData.size > maxSingleFileSize) {
         invalidFiles.push(
-          `${fileData.filename || 'unnamed'} (too large: ${formatFileSize(fileData.size)})`
+          `${fileData.originalname || 'unnamed'} (too large: ${formatFileSize(fileData.size)})`
         );
       }
 
       // Check MIME type
       if (!allowedMimeTypes.includes(fileData.mimetype)) {
         invalidFiles.push(
-          `${fileData.filename || 'unnamed'} (unsupported type: ${fileData.mimetype})`
+          `${fileData.originalname || 'unnamed'} (unsupported type: ${fileData.mimetype})`
         );
       }
 
       // Check for empty files
       if (fileData.size === 0) {
-        invalidFiles.push(`${fileData.filename || 'unnamed'} (empty file)`);
+        invalidFiles.push(`${fileData.originalname || 'unnamed'} (empty file)`);
       }
     }
   }
@@ -204,7 +204,7 @@ function generateUploadId(): string {
 function saveFile(file: UploadedFile, uploadId: string): string {
   // Implement actual file saving logic here
   // This is just a placeholder
-  const filename = `${uploadId}_${file.filename || 'unnamed'}`;
+  const filename = `${uploadId}_${file.originalname || 'unnamed'}`;
 
   // For stream strategy:
   // const writeStream = fs.createWriteStream(`./uploads/${filename}`);
