@@ -115,7 +115,6 @@ describe('makeRequest', () => {
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             'x-correlation-id': expect.stringMatching(/^client_[a-z0-9]+_[a-z0-9]+$/),
           }),
           body: undefined,
@@ -148,7 +147,6 @@ describe('makeRequest', () => {
         expect.any(String),
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             Authorization: 'Bearer token123',
             'X-Custom-Header': 'custom-value',
             'x-correlation-id': expect.stringMatching(/^client_[a-z0-9]+_[a-z0-9]+$/),
@@ -643,6 +641,111 @@ describe('makeRequest', () => {
           expect(typeof (error as BlaizeError).correlationId).toBe('string');
         }
       }
+    });
+  });
+
+  describe('file upload handling', () => {
+    test('should use FormData when files property is present', async () => {
+      const file = new File(['content'], 'test.txt', { type: 'text/plain' });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+        headers: { get: () => null },
+      });
+
+      const mockRouteRegistry = createMockRegistry('uploadFile', '/upload', 'POST');
+
+      await makeRequest(
+        baseConfig,
+        'POST',
+        'uploadFile',
+        { files: { document: file } },
+        mockRouteRegistry
+      );
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const fetchCall = mockFetch.mock.calls[0]!;
+      expect(fetchCall[1].body).toBeInstanceOf(FormData);
+      expect(fetchCall[1].headers['Content-Type']).toBeUndefined(); // Browser adds boundary
+    });
+
+    test('should detect files in body property (legacy)', async () => {
+      const file = new File(['content'], 'test.txt', { type: 'text/plain' });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+        headers: { get: () => null },
+      });
+
+      const mockRouteRegistry = createMockRegistry('uploadFile', '/upload', 'POST');
+
+      await makeRequest(
+        baseConfig,
+        'POST',
+        'uploadFile',
+        { body: { avatar: file, name: 'John' } },
+        mockRouteRegistry
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const fetchCall = mockFetch.mock.calls[0]!;
+      expect(fetchCall[1].body).toBeInstanceOf(FormData);
+    });
+
+    test('should handle mixed body + files', async () => {
+      const file = new File(['pdf'], 'document.pdf', { type: 'application/pdf' });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+        headers: { get: () => null },
+      });
+
+      const mockRouteRegistry = createMockRegistry('uploadDocument', '/documents', 'POST');
+
+      await makeRequest(
+        baseConfig,
+        'POST',
+        'uploadDocument',
+        {
+          body: { title: 'Report', category: 'finance' },
+          files: { document: file },
+        },
+        mockRouteRegistry
+      );
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const fetchCall = mockFetch.mock.calls[0]!;
+      const formData = fetchCall[1].body as FormData;
+
+      expect(formData).toBeInstanceOf(FormData);
+      expect(formData.get('title')).toBe('Report');
+      expect(formData.get('category')).toBe('finance');
+      expect(formData.get('document')).toBeInstanceOf(File);
+    });
+
+    test('should still use JSON for non-file requests', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+        headers: { get: () => null },
+      });
+
+      const mockRouteRegistry = createMockRegistry('createUser', '/users', 'POST');
+
+      await makeRequest(
+        baseConfig,
+        'POST',
+        'createUser',
+        { body: { name: 'John', email: 'john@example.com' } },
+        mockRouteRegistry
+      );
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const fetchCall = mockFetch.mock.calls[0]!;
+      expect(fetchCall[1].body).toBe('{"name":"John","email":"john@example.com"}');
+      expect(fetchCall[1].headers['Content-Type']).toBe('application/json');
     });
   });
 });
