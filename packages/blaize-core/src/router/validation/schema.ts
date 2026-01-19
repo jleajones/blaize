@@ -1,15 +1,16 @@
 import { z } from 'zod';
 
 import { validateBody } from './body';
+import { validateFiles } from './files';
 import { validateParams } from './params';
 import { validateQuery } from './query';
 import { validateResponse } from './response';
 import { InternalServerError } from '../../errors/internal-server-error';
 import { ValidationError } from '../../errors/validation-error';
 import { create as createMiddleware } from '../../middleware/create';
+import { isFileSchema } from '../../upload/schema';
 
-import type { Middleware } from '@blaize-types/middleware';
-import type { RouteSchema } from '@blaize-types/router';
+import type { Middleware, RouteSchema } from '@blaize-types';
 
 /**
  * Create a validation middleware for request data
@@ -65,10 +66,84 @@ export function createRequestValidator(schema: RouteSchema, debug: boolean = fal
           });
         }
       }
+
+      if (schema.files) {
+        try {
+          ctx.request.files = validateFiles(ctx.request.files, schema.files);
+        } catch (error) {
+          const fieldErrors = extractZodFieldErrors(error);
+          const errorCount = fieldErrors.reduce((sum, fe) => sum + fe.messages.length, 0);
+
+          throw new ValidationError('Request validation failed', {
+            fields: fieldErrors,
+            errorCount,
+            section: 'files',
+          });
+        }
+      }
       // Continue if validation passed
       await next();
     },
   });
+}
+
+/**
+ * Check if a Zod object schema contains any file upload fields
+ *
+ * Recursively searches through object schema properties to detect
+ * file schemas. Used to determine if multipart parsing is required.
+ *
+ * @param schema - Zod schema to check
+ * @returns True if schema contains file fields
+ *
+ * @example
+ * ```typescript
+ * const schema = z.object({
+ *   avatar: file({ maxSize: '5MB' }),
+ *   name: z.string(),
+ * });
+ *
+ * hasFileFields(schema); // true
+ * ```
+ *
+ * @example Nested detection
+ * ```typescript
+ * const schema = z.object({
+ *   profile: z.object({
+ *     avatar: file(),
+ *   }),
+ * });
+ *
+ * hasFileFields(schema); // true
+ * ```
+ *
+ * @internal
+ */
+export function hasFileFields(schema: z.ZodType): boolean {
+  // Not an object schema - check if it's a file schema
+  if (!(schema instanceof z.ZodObject)) {
+    return isFileSchema(schema);
+  }
+
+  // Get object shape
+  const shape = schema.shape as Record<string, z.ZodType>;
+
+  // Check each property
+  for (const fieldSchema of Object.values(shape) as z.ZodType[]) {
+    // Direct file schema check
+    if (isFileSchema(fieldSchema)) {
+      return true;
+    }
+
+    // Recursive check for nested objects
+    if (fieldSchema instanceof z.ZodObject) {
+      if (hasFileFields(fieldSchema)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**

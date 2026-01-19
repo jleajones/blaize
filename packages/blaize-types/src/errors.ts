@@ -190,7 +190,7 @@ export interface ValidationErrorDetails {
   errorCount: number;
 
   /** The section that failed validation */
-  section: 'params' | 'query' | 'body' | 'response';
+  section: 'params' | 'query' | 'body' | 'response' | 'files';
 
   /** Schema name if available */
   schemaName?: string;
