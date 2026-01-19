@@ -53,6 +53,7 @@ import {
 import { create as createServer } from './server/create';
 import { getCorrelationId } from './tracing/correlation';
 import { inferContext, type InferContext } from './types/server';
+import { file } from './upload/schema';
 // Tracing
 
 // TODO: ideally this could be import as an npm package, but for now we use a relative path
@@ -62,6 +63,9 @@ export * from '../../blaize-types/src/index';
 // Re-export everything
 
 export {
+  // helpers
+  file,
+
   // Events module exports
   MemoryEventBus,
   createTypedEventBus,
@@ -139,7 +143,6 @@ export const MiddlewareAPI = {
   requestLoggerMiddleware,
 };
 export const PluginsAPI = { createPlugin };
-
 // Server-side error classes
 export { ValidationError } from './errors/validation-error';
 export { NotFoundError } from './errors/not-found-error';
@@ -169,6 +172,7 @@ const Blaize = {
   configureGlobalLogger,
   createLogger,
   logger,
+  file,
 
   // Namespaces (using the non-conflicting names)
   Server: ServerAPI,
