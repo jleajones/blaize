@@ -106,13 +106,14 @@ export interface InternalRequestArgs {
   params?: Record<string, any>;
   query?: Record<string, any>;
   body?: any;
+  files?: Record<string, File | File[] | Blob | Blob[]>;
 }
 
 export interface RequestOptions {
   method: string;
   url: string;
   headers: Record<string, string>;
-  body?: string;
+  body?: string | FormData;
   timeout: number;
 }
 
