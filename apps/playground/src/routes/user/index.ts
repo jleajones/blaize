@@ -1,4 +1,4 @@
-import { file } from 'blaizejs';
+import { ConflictError, file } from 'blaizejs';
 import { z } from 'zod';
 
 import { appRouter } from '../../app-router';
@@ -41,7 +41,6 @@ export const getUsers = appRouter.get({
 export const createUser = appRouter.post({
   schema: {
     response: z.object({
-      success: z.boolean(),
       message: z.string(),
       user: z.object({
         id: z.string(),
@@ -101,12 +100,16 @@ export const createUser = appRouter.post({
     const existingUser = getUserByEmail(email);
     if (existingUser) {
       logger.warn('User creation failed - email already exists', { email });
-      ctx.response.status(409); // Conflict
-      return {
-        success: false,
-        message: 'A user with this email already exists',
-        user: existingUser,
-      };
+      throw new ConflictError('A user with this email already exists', {
+        conflictType: 'duplicate_key',
+        field: 'email',
+        providedValue: email,
+        conflictingResource: {
+          id: existingUser.id,
+          email: existingUser.email,
+        },
+        resolution: 'Provide a different email address',
+      });
     }
 
     // Log avatar details
@@ -175,7 +178,6 @@ export const createUser = appRouter.post({
 
     // Return response
     return {
-      success: true,
       message: 'User created successfully with avatar',
       user: newUser,
     };
