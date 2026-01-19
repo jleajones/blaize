@@ -5,7 +5,6 @@ import type { EventSchemas, TypedEventBus } from './events';
 import type { HandlerContext } from './handler-context';
 import type { BlaizeLogger } from './logger';
 import type { Middleware } from './middleware';
-import type { UploadedFile } from './upload';
 
 /**
  * Helper type to extract TypeScript type from Zod schema
@@ -140,7 +139,7 @@ export type RouteHandler<
   TState extends State = State,
   TServices extends Services = Services,
   TEvents extends EventSchemas = EventSchemas,
-  TFiles = Record<string, UploadedFile | UploadedFile[]>,
+  TFiles = unknown,
 > = (
   hc: HandlerContext<TState, TServices, TBody, TQuery, TParams, TEvents, TFiles>
 ) => Promise<TResponse> | TResponse;

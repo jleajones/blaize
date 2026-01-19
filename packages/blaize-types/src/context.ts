@@ -117,7 +117,7 @@ export interface Context<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
-  TFiles = Record<string, UploadedFile | UploadedFile[]>,
+  TFiles = unknown,
 > {
   /**
    * Request information
@@ -125,7 +125,7 @@ export interface Context<
   request: Omit<ContextRequest, 'body' | 'query' | 'files'> & {
     body: TBody;
     query: TQuery;
-    files?: TFiles;
+    files: TFiles;
   };
 
   /**

@@ -109,11 +109,12 @@ export async function createContext<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
+  TFiles = unknown,
 >(
   req: UnifiedRequest,
   res: UnifiedResponse,
   options: ContextOptions
-): Promise<Context<S, Svc, TBody, TQuery>> {
+): Promise<Context<S, Svc, TBody, TQuery, TFiles>> {
   // Extract basic request information
   const { path, url, query } = parseRequestUrl(req);
   const method = req.method || 'GET';
@@ -129,8 +130,8 @@ export async function createContext<
   const responseState = { sent: false };
 
   // Create the context object with its components
-  const ctx: Context<S, Svc, TBody, TQuery> = {
-    request: createRequestObject<TBody, TQuery>(req, {
+  const ctx: Context<S, Svc, TBody, TQuery, TFiles> = {
+    request: createRequestObject<TBody, TQuery, TFiles>(req, {
       path,
       url,
       query: query as TQuery,
@@ -139,7 +140,7 @@ export async function createContext<
       isHttp2,
       protocol,
     }),
-    response: {} as Context<S, Svc, TBody, TQuery>['response'],
+    response: {} as Context<S, Svc, TBody, TQuery, TFiles>['response'],
     state,
     services,
   };
@@ -157,7 +158,7 @@ export async function createContext<
 /**
  * Create the request object portion of the context
  */
-function createRequestObject<TBody = unknown, TQuery = QueryParams>(
+function createRequestObject<TBody = unknown, TQuery = QueryParams, TFiles = unknown>(
   req: UnifiedRequest,
   info: {
     path: string;
@@ -168,13 +169,14 @@ function createRequestObject<TBody = unknown, TQuery = QueryParams>(
     isHttp2: boolean;
     protocol: string;
   }
-): Context<State, Services, TBody, TQuery>['request'] {
+): Context<State, Services, TBody, TQuery, TFiles>['request'] {
   return {
     raw: req,
     ...info,
     header: createRequestHeaderGetter(req),
     headers: createRequestHeadersGetter(req),
     body: undefined as unknown as TBody,
+    files: undefined as unknown as TFiles,
   };
 }
 
@@ -236,11 +238,12 @@ function createResponseObject<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
+  TFiles = unknown,
 >(
   res: UnifiedResponse,
   responseState: { sent: boolean },
-  ctx: Context<S, Svc, TBody, TQuery>
-): Context<S, Svc, TBody, TQuery>['response'] {
+  ctx: Context<S, Svc, TBody, TQuery, TFiles>
+): Context<S, Svc, TBody, TQuery, TFiles>['response'] {
   return {
     raw: res,
 
@@ -274,7 +277,12 @@ function createStatusSetter<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
+  TFiles = unknown,
+>(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  ctx: Context<S, Svc, TBody, TQuery, TFiles>
+) {
   return function statusSetter(code: number): Context['response'] {
     if (responseState.sent) {
       throw new ResponseSentError();
@@ -292,7 +300,12 @@ function createHeaderSetter<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
+  TFiles = unknown,
+>(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  ctx: Context<S, Svc, TBody, TQuery, TFiles>
+) {
   return function headerSetter(name: string, value: string) {
     if (responseState.sent) {
       throw new ResponseSentHeaderError();
@@ -310,7 +323,12 @@ function createHeadersSetter<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
+  TFiles = unknown,
+>(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  ctx: Context<S, Svc, TBody, TQuery, TFiles>
+) {
   return function headersSetter(headers: Record<string, string>) {
     if (responseState.sent) {
       throw new ResponseSentHeaderError();
@@ -330,7 +348,12 @@ function createContentTypeSetter<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(res: UnifiedResponse, responseState: { sent: boolean }, ctx: Context<S, Svc, TBody, TQuery>) {
+  TFiles = unknown,
+>(
+  res: UnifiedResponse,
+  responseState: { sent: boolean },
+  ctx: Context<S, Svc, TBody, TQuery, TFiles>
+) {
   return function typeSetter(type: string) {
     if (responseState.sent) {
       throw new ResponseSentContentError();
@@ -477,9 +500,9 @@ function createStreamResponder(
  * - PayloadTooLargeError (413) for size limit violations
  * - UnsupportedMediaTypeError (415) for unsupported content types
  */
-async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams>(
+async function parseBodyIfNeeded<TBody = unknown, TQuery = QueryParams, TFiles = unknown>(
   req: UnifiedRequest,
-  ctx: Context<State, Services, TBody, TQuery>,
+  ctx: Context<State, Services, TBody, TQuery, TFiles>,
   options: ContextOptions
 ): Promise<void> {
   // Skip parsing for methods that typically don't have bodies
@@ -572,9 +595,9 @@ function shouldSkipParsing(method?: string): boolean {
 /**
  * Parse JSON request body
  */
-async function parseJsonBody<TBody = unknown, TQuery = QueryParams>(
+async function parseJsonBody<TBody = unknown, TQuery = QueryParams, TFiles = unknown>(
   req: UnifiedRequest,
-  ctx: Context<State, Services, TBody, TQuery>
+  ctx: Context<State, Services, TBody, TQuery, TFiles>
 ): Promise<void> {
   const body = await readRequestBody(req);
 
@@ -617,9 +640,9 @@ async function parseJsonBody<TBody = unknown, TQuery = QueryParams>(
 /**
  * Parse URL-encoded form data
  */
-async function parseFormUrlEncodedBody<TBody = unknown, TQuery = QueryParams>(
+async function parseFormUrlEncodedBody<TBody = unknown, TQuery = QueryParams, TFiles = unknown>(
   req: UnifiedRequest,
-  ctx: Context<State, Services, TBody, TQuery>
+  ctx: Context<State, Services, TBody, TQuery, TFiles>
 ): Promise<void> {
   const body = await readRequestBody(req);
   if (!body) return;
@@ -672,9 +695,9 @@ function parseUrlEncodedData(body: string): Record<string, string | string[]> {
 /**
  * Parse plain text body
  */
-async function parseTextBody<TBody = null, TQuery = QueryParams>(
+async function parseTextBody<TBody = null, TQuery = QueryParams, TFiles = unknown>(
   req: UnifiedRequest,
-  ctx: Context<State, Services, TBody, TQuery>
+  ctx: Context<State, Services, TBody, TQuery, TFiles>
 ): Promise<void> {
   const body = await readRequestBody(req);
   if (body) {
@@ -685,9 +708,9 @@ async function parseTextBody<TBody = null, TQuery = QueryParams>(
 /**
  * Parse multipart/form-data request body with improved error handling
  */
-async function parseMultipartBody<TBody = unknown, TQuery = QueryParams>(
+async function parseMultipartBody<TBody = unknown, TQuery = QueryParams, TFiles = unknown>(
   req: UnifiedRequest,
-  ctx: Context<State, Services, TBody, TQuery>,
+  ctx: Context<State, Services, TBody, TQuery, TFiles>,
   multipartLimits: MultipartLimits
 ): Promise<void> {
   try {
@@ -754,8 +777,9 @@ export function getCurrentContext<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(): Context<S, Svc, TBody, TQuery> {
-  const ctx = getContext<S, Svc, TBody, TQuery>();
+  TFiles = unknown,
+>(): Context<S, Svc, TBody, TQuery, TFiles> {
+  const ctx = getContext<S, Svc, TBody, TQuery, TFiles>();
   if (!ctx) {
     throw new Error(
       'No context found. Ensure this function is called within a request handler, ' +
