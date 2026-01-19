@@ -531,7 +531,7 @@ export interface ConflictErrorDetails {
   providedValue?: unknown;
 
   /** Resource that has the conflicting value */
-  conflictingResource?: string;
+  conflictingResource?: string | Record<string, string | number>;
 
   /** Current version/etag of the resource */
   currentVersion?: string;
