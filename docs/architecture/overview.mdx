@@ -42,7 +42,7 @@ BlaizeJS is built as a layered architecture where each layer has a single respon
 │              (composable, typed, onion-style execution)                │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                       File-Based Router                                 │
-│            (auto-discovery, dynamic parameters, exports)               │
+│     (auto-discovery, dynamic parameters, multipart parsing, exports)   │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                    Context (AsyncLocalStorage)                          │
 │         (request, response, state, services, correlation ID)          │
@@ -60,7 +60,7 @@ BlaizeJS is built as a layered architecture where each layer has a single respon
 | **Event Bus** | Pub/sub messaging, cross-component communication | `events/memory-event-bus.ts` |
 | **Plugin System** | Lifecycle management, service injection | `plugins/plugin-manager.ts` |
 | **Middleware** | Request/response transformation, cross-cutting concerns | `middleware/pipeline.ts` |
-| **Router** | URL → Handler mapping, parameter extraction | `router/file-router.ts` |
+| **Router** | URL → Handler mapping, parameter extraction, **multipart parsing** | `router/file-router.ts`, **`upload/multipart-parser.ts`** |
 | **Context** | Request-scoped state, async propagation | `context/context.ts` |
 | **Error Boundary** | Exception handling, response formatting | `errors/boundary.ts` |
 
@@ -177,10 +177,16 @@ Before handler execution, Zod schemas validate the request:
 const validatedParams = paramsSchema.parse(match.params);
 const validatedQuery = querySchema.parse(ctx.request.query);
 const validatedBody = bodySchema.parse(ctx.request.body);
+const validatedFiles = filesSchema.parse(ctx.request.files);  // ← NEW
 
 // TypeScript knows exact types of validated data
 handler(ctx, validatedParams);
 ```
+
+**File validation** includes:
+- Size constraints (min/max in human-readable format: '5MB', '100KB')
+- MIME type validation with wildcard support ('image/*')
+- Custom refinements via Zod combinators
 
 ### Phase 5: Handler Execution
 
@@ -224,6 +230,74 @@ try {
 }
 ```
 
+### File Upload Flow
+
+File uploads follow a specialized path through the system with automatic multipart detection:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. Client detects File/Blob objects                            │
+│    → Auto-switches to multipart/form-data                      │
+│    → FormData created automatically                            │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. Server receives multipart request                           │
+│    → Content-Type: multipart/form-data; boundary=...           │
+│    → Multipart parser extracts files + fields                  │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. Request Validator validates files                           │
+│    → File size checked (maxSize: '5MB')                        │
+│    → MIME type validated (accept: ['image/*'])                 │
+│    → Returns ValidationError if invalid                        │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 4. Handler receives typed files                                │
+│    → ctx.request.files.avatar (typed as UploadedFile)          │
+│    → ctx.request.body (typed from body schema)                 │
+│    → Full type safety from schema to handler                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Components:**
+
+- **Client:** Auto-detection (`containsFileObjects()`) + FormData builder
+- **Server:** Multipart parser + file validator + type inference
+- **Types:** `File`/`Blob` (client) → `UploadedFile` (server)
+
+**Implementation Details:**
+
+```typescript
+// Client-side: Automatic detection
+// blaize-client/src/file-detection.ts
+export function containsFileObjects(value: unknown, depth = 0): boolean {
+  // Recursively checks for File/Blob objects (max depth: 2)
+  // Used by request-options-builder to switch encoding
+}
+
+// Server-side: Multipart parsing
+// blaize-core/src/upload/multipart-parser.ts
+export async function parseMultipartRequest(
+  request: UnifiedRequest,
+  options: Partial<ParseOptions> = {}
+): Promise<MultipartData> {
+  // Streams request body, extracts boundary
+  // Parses files and fields into separate objects
+  // Returns { fields, files } with validated data
+}
+
+// Validation: Type-safe file schemas
+// blaize-core/src/upload/schema.ts
+export function file(options?: FileSchemaOptions): z.ZodType<UploadedFile> {
+  // Creates Zod schema with custom refinements
+  // Validates size, MIME type at request validation phase
+  // Integrates with router's validation system
+}
+```
+
 ---
 
 ## 🎯 Type System Architecture
@@ -254,6 +328,72 @@ export const getUser = createGetRoute({
   },
 });
 ```
+
+### File Upload Type Flow
+
+File uploads add a fourth generic parameter `F` to the type system:
+
+```typescript
+// RouteSchema with files parameter
+interface RouteSchema<P, Q, B, F, R> {
+  params?: P;
+  query?: Q;
+  body?: B;
+  files?: F;    // ← NEW
+  response?: R;
+}
+
+// Server route definition
+export const uploadAvatar = route.post({
+  schema: {
+    files: z.object({
+      avatar: file({
+        maxSize: '5MB',
+        accept: ['image/jpeg', 'image/png', 'image/webp'],
+      }),
+    }),
+    response: z.object({
+      url: z.string().url(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { avatar } = ctx.request.files;
+    // avatar is typed as UploadedFile
+    console.log(avatar.originalname);  // Fully typed!
+    console.log(avatar.size);          // Fully typed!
+  },
+});
+```
+
+**Client-side type mapping:**
+
+```typescript
+// On server: files schema defines UploadedFile types
+files: z.object({
+  avatar: file({ maxSize: '5MB' }),  // Validates UploadedFile
+})
+
+// On client: same schema maps to File/Blob
+await client.$post.uploadAvatar({
+  files: {
+    avatar: new File(['...'], 'avatar.jpg')  // Expects File/Blob
+  }
+});
+```
+
+**Type transformation:**
+
+| Location | Type | Description |
+|----------|------|-------------|
+| **Client schema** | `File` or `Blob` | Browser native file objects |
+| **Wire format** | `multipart/form-data` | HTTP encoding |
+| **Server schema** | `UploadedFile` | Parsed file with buffer/stream |
+| **Handler context** | Same as schema | Type-safe access via `ctx.request.files` |
+
+The `file()` helper creates a Zod schema that:
+1. **Server-side:** Validates `UploadedFile` objects (after multipart parsing)
+2. **Client-side:** Accepts `File`/`Blob` objects (inferred by client proxy)
+3. **Type-safe:** Full inference across the boundary automatically
 
 ### Client Type Inference
 
@@ -308,6 +448,10 @@ type InferParams<T> = T extends { schema: { params: infer P } }
 
 type InferResponse<T> = T extends { schema: { response: infer R } }
   ? z.infer<R>
+  : never;
+
+type InferFiles<T> = T extends { schema: { files: infer F } }
+  ? z.infer<F>
   : never;
 
 // These types flow through to the client automatically
@@ -757,6 +901,38 @@ export const DELETE = createDeleteRoute({
 });
 ```
 
+### File Upload Routes
+
+Routes can accept file uploads alongside regular body data:
+
+```typescript
+// routes/users/[userId]/avatar.ts
+import { file } from 'blaizejs';
+
+export const PATCH = createPatchRoute({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    files: z.object({
+      avatar: file({
+        maxSize: '5MB',
+        accept: ['image/jpeg', 'image/png', 'image/webp'],
+      }),
+    }),
+    response: z.object({
+      avatarUrl: z.string().url(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    const { avatar } = ctx.request.files;
+    
+    // avatar is typed as UploadedFile
+    const url = await ctx.services.storage.upload(avatar);
+    
+    return { avatarUrl: url };
+  },
+});
+```
+
 ### Named Exports for RPC
 
 For type-safe RPC, export routes with custom names:
@@ -780,11 +956,26 @@ export const updateUser = createPutRoute({
   },
 });
 
+export const updateAvatar = createPatchRoute({
+  schema: {
+    params: z.object({ userId: z.string() }),
+    files: z.object({
+      avatar: file({ maxSize: '5MB', accept: ['image/*'] }),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    const { avatar } = ctx.request.files;
+    const url = await uploadToStorage(avatar);
+    return { avatarUrl: url };
+  },
+});
+
 // Register in route registry for client
 // app-routes.ts
 export const routes = {
   getUser,
   updateUser,
+  updateAvatar,
 } as const;
 ```
 
@@ -1244,6 +1435,26 @@ The BlaizeJS packages have these relationships:
 
 **Alternative:** External event bus libraries (Redis pub/sub, EventEmitter3). Rejected because tight integration with SSE, plugins, and correlation IDs provides better DX.
 
+### Why Memory-Based File Upload Strategy?
+
+**Decision:** BlaizeJS buffers uploaded files in memory by default.
+
+**Rationale:**
+- **Simplicity:** Handler receives complete `Buffer` object, no stream handling needed
+- **Type safety:** `UploadedFile` interface is consistent and predictable
+- **Fast access:** No disk I/O for validation or processing
+- **Cloud-native:** Most deployments stream directly to S3/R2 anyway
+- **Validation first:** Size/MIME checks happen before handler execution
+
+**Tradeoffs:**
+- Memory usage scales with file size and concurrency
+- Not suitable for very large files (>100MB)
+- Serverless environments have memory limits
+
+**Future:** Streaming strategy for large files, temp file strategy for disk-based processing.
+
+**Best practice:** Set reasonable `maxSize` limits (5-50MB) and stream large uploads directly to object storage.
+
 ---
 
 ## 🔮 Future Architecture Considerations
@@ -1285,6 +1496,14 @@ Enhancing the queue plugin for distributed processing:
 - Cross-service job coordination
 - Horizontal scaling patterns
 
+### Streaming File Upload Strategy
+
+Alternative upload strategies for different use cases:
+- **Stream strategy:** Direct S3 upload without buffering
+- **Temp file strategy:** Disk-based processing for large files
+- **Chunked uploads:** Resume support for unreliable networks
+- **Progress callbacks:** Real-time upload progress via SSE
+
 ### AI Integrations
 
 Deeper integration with AI/ML workflows:
@@ -1317,6 +1536,7 @@ Potential improvements to the event bus:
 
 - [Getting Started Guide](../docs/getting-started.md) — Build your first BlaizeJS app
 - [Event Bus Architecture](./event-bus.md) — Deep dive into event-driven patterns
+- [File Uploads Guide](../docs/guides/file-uploads.md) — Complete file upload examples
 - [Core Package API](../packages/blaize-core/README.md) — Full API reference
 - [Plugin Development Guide](../docs/guides/plugins.md) — Create custom plugins
 - [Contributing Guide](../CONTRIBUTING.md) — Help improve BlaizeJS

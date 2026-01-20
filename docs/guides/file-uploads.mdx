@@ -1,0 +1,467 @@
+# 📤 File Uploads
+
+> Type-safe file uploads with automatic multipart detection and validation
+
+---
+
+## ⚡ Quick Start
+
+### Server Route
+
+```typescript
+import { file } from 'blaizejs';
+import { z } from 'zod';
+
+export const uploadAvatar = route.post({
+  schema: {
+    files: z.object({
+      avatar: file({
+        maxSize: '5MB',
+        accept: ['image/jpeg', 'image/png', 'image/webp'],
+      }),
+    }),
+    response: z.object({
+      url: z.string().url(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { avatar } = ctx.request.files;
+    
+    // Upload to storage (S3, R2, etc.)
+    const url = await ctx.services.storage.upload(avatar);
+    
+    return { url };
+  },
+});
+```
+
+### Client Usage
+
+```typescript
+import bc from '@blaizejs/client';
+
+const client = bc.create('https://api.example.com', routes);
+
+// Browser file upload
+const fileInput = document.querySelector('input[type="file"]');
+const file = fileInput.files[0];
+
+const result = await client.$post.uploadAvatar({
+  files: { avatar: file }
+});
+
+console.log(result.url); // Fully typed!
+```
+
+---
+
+## 🔍 File Validation
+
+### Size Limits
+
+Use human-readable sizes (binary units):
+
+```typescript
+file({ maxSize: '5MB' })    // 5 megabytes (5 × 1024² bytes)
+file({ maxSize: '100KB' })  // 100 kilobytes
+file({ maxSize: '1GB' })    // 1 gigabyte
+file({ minSize: '1KB', maxSize: '10MB' })  // Range
+```
+
+**Supported units:** `B`, `KB`, `MB`, `GB`, `TB`, `KiB`, `MiB`, `GiB`, `TiB`
+
+### MIME Type Validation
+
+```typescript
+// Exact match
+file({ accept: ['image/jpeg', 'image/png'] })
+
+// Wildcards
+file({ accept: ['image/*'] })        // Any image
+file({ accept: ['video/*'] })        // Any video
+file({ accept: ['audio/*'] })        // Any audio
+
+// Multiple types
+file({ accept: ['image/*', 'application/pdf'] })
+```
+
+### Combined Validation
+
+```typescript
+files: z.object({
+  avatar: file({
+    maxSize: '5MB',
+    accept: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+  }),
+})
+```
+
+---
+
+## 📁 Multiple Files
+
+### File Arrays
+
+Upload multiple files to the same field:
+
+```typescript
+// Server
+export const uploadGallery = route.post({
+  schema: {
+    files: z.object({
+      photos: file({ maxSize: '5MB', accept: ['image/*'] }).array(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { photos } = ctx.request.files;
+    
+    // photos is UploadedFile[]
+    const urls = await Promise.all(
+      photos.map(photo => uploadToStorage(photo))
+    );
+    
+    return { urls };
+  },
+});
+
+// Client
+const photos = Array.from(fileInput.files);
+await client.$post.uploadGallery({
+  files: { photos }
+});
+```
+
+### Multiple Fields
+
+Different files in different fields:
+
+```typescript
+files: z.object({
+  avatar: file({ maxSize: '2MB', accept: ['image/*'] }),
+  resume: file({ maxSize: '5MB', accept: ['application/pdf'] }),
+  portfolio: file({ maxSize: '10MB' }).array().optional(),
+})
+```
+
+---
+
+## 🔀 Mixed Requests
+
+Combine body data with file uploads:
+
+```typescript
+export const createUser = route.post({
+  schema: {
+    body: z.object({
+      name: z.string().min(1),
+      email: z.string().email(),
+      role: z.enum(['admin', 'user', 'moderator']).default('user'),
+    }),
+    files: z.object({
+      avatar: file({ maxSize: '5MB', accept: ['image/*'] }),
+      coverPhoto: file({ maxSize: '10MB', accept: ['image/*'] }).optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { name, email, role } = ctx.request.body;
+    const { avatar, coverPhoto } = ctx.request.files;
+    
+    // Process both...
+  },
+});
+
+// Client
+await client.$post.createUser({
+  body: { name: 'Alice', email: 'alice@example.com', role: 'admin' },
+  files: { avatar: file }
+});
+```
+
+---
+
+## ❓ Optional Files
+
+Make file uploads optional:
+
+```typescript
+files: z.object({
+  avatar: file({ maxSize: '5MB' }).optional(),
+  coverPhoto: file({ maxSize: '10MB' }).optional(),
+})
+
+// Client - can omit optional files
+await client.$patch.updateProfile({
+  files: { avatar }  // coverPhoto is optional
+});
+```
+
+---
+
+## 📋 UploadedFile Interface
+
+Server-side files have this structure:
+
+```typescript
+interface UploadedFile {
+  fieldname: string;      // Form field name
+  originalname: string;   // Original filename
+  encoding: string;       // File encoding
+  mimetype: string;       // MIME type
+  size: number;           // File size in bytes
+  buffer: Buffer;         // File contents
+}
+```
+
+Access in handlers:
+
+```typescript
+handler: async ({ ctx }) => {
+  const { avatar } = ctx.request.files;
+  
+  console.log(avatar.originalname);  // "profile.jpg"
+  console.log(avatar.mimetype);      // "image/jpeg"
+  console.log(avatar.size);          // 245823
+  console.log(avatar.buffer);        // Buffer containing file data
+}
+```
+
+---
+
+## ☁️ Storage Integration
+
+### Upload to S3
+
+```typescript
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
+const s3 = new S3Client({ region: 'us-east-1' });
+
+export const uploadAvatar = route.post({
+  schema: {
+    files: z.object({
+      avatar: file({ maxSize: '5MB', accept: ['image/*'] }),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { avatar } = ctx.request.files;
+    
+    const key = `avatars/${Date.now()}-${avatar.originalname}`;
+    
+    await s3.send(new PutObjectCommand({
+      Bucket: 'my-bucket',
+      Key: key,
+      Body: avatar.buffer,
+      ContentType: avatar.mimetype,
+    }));
+    
+    const url = `https://my-bucket.s3.amazonaws.com/${key}`;
+    return { url };
+  },
+});
+```
+
+### Upload to Cloudflare R2
+
+```typescript
+import { S3Client } from '@aws-sdk/client-s3';
+
+const r2 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY,
+    secretAccessKey: R2_SECRET_KEY,
+  },
+});
+
+// Same PutObjectCommand as S3...
+```
+
+---
+
+## 💻 Client Patterns
+
+### Browser File Input
+
+```typescript
+<input type="file" id="avatar" accept="image/*" />
+
+const fileInput = document.getElementById('avatar');
+const file = fileInput.files[0];
+
+await client.$post.uploadAvatar({
+  files: { avatar: file }
+});
+```
+
+### Drag & Drop
+
+```typescript
+dropZone.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  const files = Array.from(e.dataTransfer.files);
+  
+  await client.$post.uploadMultiple({
+    files: { documents: files }
+  });
+});
+```
+
+### React Hook
+
+```typescript
+function useFileUpload() {
+  const [uploading, setUploading] = useState(false);
+  
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const result = await client.$post.uploadAvatar({
+        files: { avatar: file }
+      });
+      return result;
+    } finally {
+      setUploading(false);
+    }
+  };
+  
+  return { upload, uploading };
+}
+```
+
+---
+
+## ⚠️ Error Handling
+
+### Validation Errors
+
+Files that fail validation return detailed errors:
+
+```typescript
+// File too large
+{
+  "type": "VALIDATION_ERROR",
+  "title": "Request validation failed",
+  "status": 400,
+  "details": {
+    "section": "files",
+    "errorCount": 1,
+    "fields": [{
+      "field": "avatar",
+      "messages": [
+        "File size 6291456 bytes exceeds maximum 5242880 bytes",
+        "Maximum allowed size: 5MB"
+      ]
+    }]
+  }
+}
+
+// Invalid MIME type
+{
+  "type": "VALIDATION_ERROR",
+  "details": {
+    "section": "files",
+    "fields": [{
+      "field": "avatar",
+      "messages": [
+        "MIME type text/plain not allowed",
+        "Allowed types: image/jpeg, image/png"
+      ]
+    }]
+  }
+}
+```
+
+### Client Error Handling
+
+```typescript
+try {
+  await client.$post.uploadAvatar({ files: { avatar } });
+} catch (error) {
+  if (error.type === 'VALIDATION_ERROR') {
+    error.details.fields.forEach(field => {
+      console.error(`${field.field}: ${field.messages.join(', ')}`);
+    });
+  }
+}
+```
+
+---
+
+## ✅ Best Practices
+
+### 1. Set Reasonable Size Limits
+
+```typescript
+// ✅ Good
+file({ maxSize: '5MB' })   // Avatars
+file({ maxSize: '10MB' })  // Documents
+file({ maxSize: '50MB' })  // Videos
+
+// ❌ Too permissive
+file({ maxSize: '1GB' })   // Risk of DoS attacks
+```
+
+### 2. Validate MIME Types
+
+```typescript
+// ✅ Explicit whitelist
+file({ accept: ['image/jpeg', 'image/png', 'image/webp'] })
+
+// ⚠️ Use wildcards carefully
+file({ accept: ['image/*'] })  // OK for trusted users
+
+// ❌ No validation
+file()  // Accepts any file type
+```
+
+### 3. Sanitize Filenames
+
+```typescript
+const safeFilename = avatar.originalname
+  .replace(/[^a-z0-9.-]/gi, '_')  // Remove special chars
+  .toLowerCase();
+```
+
+### 4. Generate Unique Keys
+
+```typescript
+const key = `avatars/${userId}/${Date.now()}-${crypto.randomUUID()}.jpg`;
+```
+
+### 5. Scan for Malware
+
+```typescript
+await virusScanner.scan(avatar.buffer);
+```
+
+---
+
+## 🚧 Limitations
+
+### File Size Limits
+
+- Default maximum request size: **100MB**
+- Can be configured in server options
+- Consider timeouts for large uploads
+
+### MIME Type Detection
+
+- Based on `Content-Type` header from browser
+- Not foolproof - validate on server
+- Consider magic number detection for security
+
+### Memory Usage
+
+- Files are buffered in memory
+- For large files, consider streaming
+- Monitor memory usage in production
+
+---
+
+## 🔗 Related Pages
+
+- **[Router Architecture](/docs/architecture/router)** — File upload routes
+- **[Type System](/docs/architecture/type-system)** — How file types flow
+- **[Validation](/docs/guides/validation)** — Request validation details
+- **[Error Handling](/docs/guides/error-handling)** — Handling validation errors
