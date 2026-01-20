@@ -110,19 +110,22 @@ export interface ContextRequest<TBody = unknown> {
  * @template Svc - Type of the services object
  * @template TBody - Type of the request body
  * @template TQuery - Type of the query parameters
+ * @template TFiles - Type of the uploaded files
  */
 export interface Context<
   S extends State = State,
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
+  TFiles = unknown,
 > {
   /**
    * Request information
    */
-  request: Omit<ContextRequest, 'body' | 'query'> & {
+  request: Omit<ContextRequest, 'body' | 'query' | 'files'> & {
     body: TBody;
     query: TQuery;
+    files: TFiles;
   };
 
   /**
@@ -197,9 +200,13 @@ export interface ContextOptions {
 /**
  * Function to get the current context from AsyncLocalStorage
  */
-export type GetContextFn = <S extends State = State, Svc extends Services = Services>() =>
-  | Context<S, Svc>
-  | undefined;
+export type GetContextFn = <
+  S extends State = State,
+  Svc extends Services = Services,
+  TBody = unknown,
+  TQuery = QueryParams,
+  TFiles = Record<string, UploadedFile | UploadedFile[]>,
+>() => Context<S, Svc, TBody, TQuery, TFiles> | undefined;
 
 /**
  * Factory function for creating a new context

@@ -16,6 +16,7 @@ import { UnsupportedMediaTypeError } from '../errors/unsupported-media-type-erro
 import { DEFAULT_OPTIONS } from '../server/create';
 import { _setCorrelationConfig } from '../tracing/correlation';
 
+import type { UploadedFile } from '@blaize-types';
 import type { ContextOptions, Services, State } from '@blaize-types/context';
 
 // Mock the store module
@@ -496,10 +497,12 @@ describe('Context Module', () => {
         description: 'A test file upload',
       });
 
+      const files = context.request.files as Record<string, UploadedFile | UploadedFile[]>;
+
       // Check files
-      expect(context.request.files?.avatar).toBeDefined();
-      const avatar = context.request.files?.avatar as any;
-      expect(avatar.filename).toBe('profile.jpg');
+      expect(files.avatar).toBeDefined();
+      const avatar = files.avatar as UploadedFile;
+      expect(avatar.originalname).toBe('profile.jpg');
       expect(avatar.mimetype).toBe('image/jpeg');
       expect(avatar.size).toBe('fake image data'.length);
       expect(avatar.fieldname).toBe('avatar');
@@ -583,11 +586,12 @@ describe('Context Module', () => {
       });
 
       // Check multiple files
-      expect(Array.isArray(context.request.files?.files)).toBe(true);
-      const files = context.request.files?.files as any[];
-      expect(files).toHaveLength(2);
-      expect(files[0].filename).toBe('doc1.txt');
-      expect(files[1].filename).toBe('doc2.txt');
+      const files = context.request.files as Record<string, UploadedFile | UploadedFile[]>;
+      expect(Array.isArray(files.files)).toBe(true);
+      const fFiles = files.files as UploadedFile[];
+      expect(fFiles).toHaveLength(2);
+      expect(fFiles[0]!.originalname).toBe('doc1.txt');
+      expect(fFiles[1]!.originalname).toBe('doc2.txt');
     });
 
     test('should throw UnsupportedMediaTypeError for invalid multipart data', async () => {

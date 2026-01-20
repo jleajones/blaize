@@ -31,6 +31,7 @@ import type { SSEStreamExtended } from './sse';
  * @template TQuery - Query parameters type (from schema validation)
  * @template TParams - URL parameters type (from schema validation)
  * @template TEvents - Event schemas for typed event bus
+ * @template TFiles - **NEW** Uploaded files type (e.g., { avatar: UploadedFile })
  *
  * @example Basic usage with destructuring
  * ```typescript
@@ -125,6 +126,7 @@ export interface HandlerContext<
   TQuery = QueryParams,
   TParams = Record<string, string>,
   TEvents extends EventSchemas = EventSchemas,
+  TFiles = unknown,
 > {
   /**
    * The Blaize context object
@@ -132,7 +134,7 @@ export interface HandlerContext<
    * Contains request, response, state, services, and correlation ID.
    * State and services are accumulated from middleware execution.
    */
-  ctx: Context<TState, TServices, TBody, TQuery>;
+  ctx: Context<TState, TServices, TBody, TQuery, TFiles>;
 
   /**
    * URL parameters extracted from the route path
@@ -310,7 +312,7 @@ export interface SSEHandlerContext<
    * Note: SSE handlers never have a request body.
    * ctx.body is typed as never to prevent accidental usage.
    */
-  ctx: Context<TState, TServices, never, TQuery>;
+  ctx: Context<TState, TServices, never, TQuery, never>;
 
   /**
    * URL parameters extracted from the route path

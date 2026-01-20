@@ -11,6 +11,16 @@ export async function testClient() {
     const _helloResponse = await client.$get.getHello();
     const _helloPostResponse = await client.$post.postHello({ body: { name: 'World' } });
 
+    const avatar = new File(['avatar data'], 'avatar.png', { type: 'image/png' });
+    const newUser = await client.$post.createUser({
+      body: { name: 'Alice', email: 'alice@example.com', role: 'admin' },
+      files: {
+        avatar,
+      },
+    });
+
+    console.log(newUser);
+
     const cacheEvents = await client.$sse.getCacheEvents({
       query: { pattern: 'user:*' },
     });

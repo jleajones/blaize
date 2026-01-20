@@ -33,7 +33,7 @@ export type BuildRoutesRegistry<TRoutes extends Record<string, any>> = {
 };
 
 // ============================================
-// CLIENT METHOD GENERATION - FIXED APPROACH
+// CLIENT METHOD GENERATION - FIXED WITH FILES SUPPORT
 // ============================================
 
 // Extract the route method options from a route
@@ -53,29 +53,52 @@ type GetRouteMethodOptions<TRoute> = TRoute extends { GET: infer M }
               ? M
               : never;
 
-// Helper to check if a type is never
-type IsNever<T> = [T] extends [never] ? true : false;
+// Helper to extract the shape of files schema for client-side
+// On client, files should be File/Blob, not UploadedFile
+type ClientFilesType<F> =
+  F extends z.ZodObject<infer Shape>
+    ? {
+        [K in keyof Shape as Shape[K] extends z.ZodOptional<any>
+          ? K
+          : never]?: Shape[K] extends z.ZodOptional<infer Inner>
+          ? Inner extends z.ZodArray<any>
+            ? File[] | Blob[]
+            : File | Blob
+          : never;
+      } & {
+        [K in keyof Shape as Shape[K] extends z.ZodOptional<any>
+          ? never
+          : K]: Shape[K] extends z.ZodArray<any> ? File[] | Blob[] : File | Blob;
+      }
+    : Record<string, File | File[] | Blob | Blob[]>;
 
-// Helper to build the args object with only defined schemas
-type BuildArgsObject<P, Q, B> = (IsNever<P> extends true ? {} : { params: Infer<P> }) &
-  (IsNever<Q> extends true ? {} : { query: Infer<Q> }) &
-  (IsNever<B> extends true ? {} : { body: Infer<B> });
+// Helper to build the args object with only defined schemas (NOW WITH FILES - F parameter)
+type BuildArgsObject<P, Q, B, F> = ([P] extends [never] ? {} : { params: Infer<P> }) &
+  ([Q] extends [never] ? {} : { query: Infer<Q> }) &
+  ([B] extends [never] ? {} : { body: Infer<B> }) &
+  ([F] extends [never] ? {} : { files: ClientFilesType<F> });
 
 // Check if the args object would be empty
 type IsEmptyObject<T> = keyof T extends never ? true : false;
 
-// Build the final args type - either the object or void if empty
-type BuildArgs<P, Q, B> =
-  IsEmptyObject<BuildArgsObject<P, Q, B>> extends true
+// Build the final args type - either the object or void if empty (NOW WITH FILES - F parameter)
+type BuildArgs<P, Q, B, F> =
+  IsEmptyObject<BuildArgsObject<P, Q, B, F>> extends true
     ? void // No arguments needed
-    : BuildArgsObject<P, Q, B>; // Return the built object
+    : BuildArgsObject<P, Q, B, F>; // Return the built object
 
-// Create a client method for a route
+// Create a client method for a route (FIXED: Now extracts F for files)
 type CreateClientMethod<TRoute> =
-  GetRouteMethodOptions<TRoute> extends RouteMethodOptions<infer P, infer Q, infer B, infer R>
-    ? BuildArgs<P, Q, B> extends void
+  GetRouteMethodOptions<TRoute> extends RouteMethodOptions<
+    infer P,
+    infer Q,
+    infer B,
+    infer F,
+    infer R
+  >
+    ? BuildArgs<P, Q, B, F> extends void
       ? () => Promise<R extends z.ZodType ? Infer<R> : unknown> // No args needed
-      : (args: BuildArgs<P, Q, B>) => Promise<R extends z.ZodType ? Infer<R> : unknown> // With args
+      : (args: BuildArgs<P, Q, B, F>) => Promise<R extends z.ZodType ? Infer<R> : unknown> // With args
     : never;
 
 // Create the client type
@@ -106,13 +129,14 @@ export interface InternalRequestArgs {
   params?: Record<string, any>;
   query?: Record<string, any>;
   body?: any;
+  files?: Record<string, File | File[] | Blob | Blob[]>;
 }
 
 export interface RequestOptions {
   method: string;
   url: string;
   headers: Record<string, string>;
-  body?: string;
+  body?: string | FormData;
   timeout: number;
 }
 
@@ -126,9 +150,6 @@ export interface RequestOptions {
  */
 export type HasSSEMethod<TRoute> = TRoute extends { SSE: any } ? true : false;
 
-/**
- * Extract SSE event types from route schema
- */
 /**
  * Extract SSE event types from route schema
  */

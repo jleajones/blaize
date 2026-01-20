@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 
 import { parseMultipartRequest } from './multipart-parser';
 
+import type { UploadedFile } from '@blaize-types';
 import type { UnifiedRequest } from '@blaize-types/context';
 
 describe('Multipart Parser', () => {
@@ -88,8 +89,8 @@ describe('Multipart Parser', () => {
       expect(result.fields.userId).toBe('123');
       expect(result.files.avatar).toBeDefined();
 
-      const avatar = result.files.avatar as any;
-      expect(avatar.filename).toBe('profile.jpg');
+      const avatar = result.files.avatar as UploadedFile;
+      expect(avatar.originalname).toBe('profile.jpg');
       expect(avatar.mimetype).toBe('image/jpeg');
       expect(avatar.size).toBe(fileContent.length);
       expect(avatar.buffer?.toString()).toBe(fileContent);
@@ -116,12 +117,12 @@ describe('Multipart Parser', () => {
       const result = await parseMultipartRequest(request, { strategy: 'memory' });
 
       expect(Array.isArray(result.files.documents)).toBe(true);
-      const docs = result.files.documents as any[];
+      const docs = result.files.documents as UploadedFile[];
       expect(docs).toHaveLength(2);
-      expect(docs[0].filename).toBe('doc1.txt');
-      expect(docs[1].filename).toBe('doc2.txt');
-      expect(docs[0].buffer?.toString()).toBe('doc1 content');
-      expect(docs[1].buffer?.toString()).toBe('doc2 content');
+      expect(docs[0]?.originalname).toBe('doc1.txt');
+      expect(docs[1]?.originalname).toBe('doc2.txt');
+      expect(docs[0]?.buffer?.toString()).toBe('doc1 content');
+      expect(docs[1]?.buffer?.toString()).toBe('doc2 content');
     });
 
     test('should handle multiple form fields with same name', async () => {
@@ -161,8 +162,8 @@ describe('Multipart Parser', () => {
 
       // Check file
       expect(result.files.file).toBeDefined();
-      const file = result.files.file as any;
-      expect(file.filename).toBe('test.txt');
+      const file = result.files.file as UploadedFile;
+      expect(file.originalname).toBe('test.txt');
       expect(file.mimetype).toBe('text/plain');
       expect(file.buffer?.toString()).toBe('file content');
     });
@@ -184,7 +185,7 @@ describe('Multipart Parser', () => {
       const result = await parseMultipartRequest(request, { strategy: 'memory' });
 
       expect(result.fields.field).toBe('value');
-      const file = result.files.file as any;
+      const file = result.files.file as UploadedFile;
       expect(file.buffer).toBeDefined();
       expect(file.buffer?.toString()).toBe('file content');
       expect(file.tempPath).toBeUndefined();
@@ -226,7 +227,7 @@ describe('Multipart Parser', () => {
       const result = await parseMultipartRequest(request, { strategy: 'temp' });
 
       expect(result.fields.field).toBe('value');
-      const file = result.files.file as any;
+      const file = result.files.file as UploadedFile;
       expect(file.stream).toBeDefined();
       expect(file.tempPath).toBeDefined();
       expect(file.buffer).toBeUndefined();
@@ -327,8 +328,8 @@ describe('Multipart Parser', () => {
       const request = createMockRequest(body);
       const result = await parseMultipartRequest(request, { strategy: 'memory' });
 
-      const file = result.files.file as any;
-      expect(file.filename).toBe('');
+      const file = result.files.file as UploadedFile;
+      expect(file.originalname).toBe('');
       expect(file.mimetype).toBe('text/plain');
     });
 

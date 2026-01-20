@@ -133,7 +133,12 @@ describe('createClient', () => {
 
       // Both should result in same normalized config
       mockMakeRequest.mockResolvedValue({ user: { id: '123', name: 'John' } });
-      client1.$get.testRoute({ params: { userId: '123' }, query: {} as any, body: {} as any });
+      client1.$get.testRoute({
+        params: { userId: '123' },
+        query: {} as any,
+        body: {} as any,
+        files: {} as any,
+      });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -202,6 +207,7 @@ describe('createClient', () => {
         params: {} as any,
         query: {} as any,
         body: {} as any,
+        files: {} as any,
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
@@ -225,6 +231,7 @@ describe('createClient', () => {
           params: {} as any,
           query: {} as any,
           body: {} as any,
+          files: {} as any,
         }, // Empty object when no args provided
         expect.objectContaining({
           $get: { healthCheck: mockRoutes.healthCheck },
@@ -245,6 +252,7 @@ describe('createClient', () => {
         params: { userId: '123' },
         query: {} as any,
         body: {} as any,
+        files: {} as any,
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
@@ -264,7 +272,7 @@ describe('createClient', () => {
         },
         'GET',
         'getUser',
-        { params: { userId: '123' }, query: {} as any, body: {} as any },
+        { params: { userId: '123' }, query: {} as any, body: {} as any, files: {} as any },
         expect.objectContaining({
           $get: { getUser: mockRoutes.getUser },
         })
@@ -284,6 +292,7 @@ describe('createClient', () => {
         body: { name: 'John', email: 'john@example.com' },
         params: {} as any,
         query: {} as any,
+        files: {} as any,
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
@@ -303,7 +312,12 @@ describe('createClient', () => {
         },
         'POST',
         'createUser',
-        { body: { name: 'John', email: 'john@example.com' }, params: {} as any, query: {} as any },
+        {
+          body: { name: 'John', email: 'john@example.com' },
+          params: {} as any,
+          query: {} as any,
+          files: {} as any,
+        },
         expect.objectContaining({
           $post: { createUser: mockRoutes.createUser },
         })
@@ -323,6 +337,7 @@ describe('createClient', () => {
         query: { page: 1, limit: 10, sort: 'asc' },
         params: {} as any,
         body: {} as any,
+        files: {} as any,
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
@@ -342,7 +357,12 @@ describe('createClient', () => {
         },
         'GET',
         'listUsers',
-        { query: { page: 1, limit: 10, sort: 'asc' }, params: {} as any, body: {} as any },
+        {
+          query: { page: 1, limit: 10, sort: 'asc' },
+          params: {} as any,
+          body: {} as any,
+          files: {} as any,
+        },
         expect.objectContaining({
           $get: { listUsers: mockRoutes.listUsers },
         })
@@ -362,6 +382,7 @@ describe('createClient', () => {
         params: { userId: '123' },
         query: { notify: true },
         body: { name: 'John Updated', email: 'john.updated@example.com' },
+        files: {} as any,
       });
 
       expect(mockMakeRequest).toHaveBeenCalledWith(
@@ -385,6 +406,7 @@ describe('createClient', () => {
           params: { userId: '123' },
           query: { notify: true },
           body: { name: 'John Updated', email: 'john.updated@example.com' },
+          files: {},
         },
         expect.objectContaining({
           $put: { updateUser: mockRoutes.updateUser },
@@ -448,6 +470,7 @@ describe('createClient', () => {
         params: { userId: '123' },
         query: {} as any,
         body: {} as any,
+        files: {} as any,
       });
 
       // TypeScript should know the shape of result

@@ -3,6 +3,7 @@ import {
   parseAndThrowErrorResponse,
   generateClientCorrelationId,
 } from './error-transformer';
+import { buildRequestOptions } from './request-options-builder';
 import { buildUrl } from './url';
 import {
   BlaizeError,
@@ -27,7 +28,7 @@ export async function makeRequest(
     const url = buildUrl(config.baseUrl, path, args);
 
     // Prepare request options
-    const requestOptions = prepareRequestOptions(config, method, args, correlationId);
+    const requestOptions = buildRequestOptions(config, method, args, correlationId);
 
     // Make HTTP request with error transformation
     return await executeRequest(url, requestOptions, correlationId);
@@ -54,33 +55,6 @@ function extractRoutePath(routeRegistry: any, method: string, routeName: string)
   }
 
   return route.path;
-}
-
-function prepareRequestOptions(
-  config: ClientConfig,
-  method: string,
-  args?: InternalRequestArgs,
-  correlationId?: string
-): RequestOptions {
-  // Methods that shouldn't have bodies
-  const methodsWithoutBody = ['GET', 'HEAD', 'DELETE', 'OPTIONS'];
-
-  return {
-    method: method.toUpperCase(),
-    url: '', // Will be set by caller
-    headers: {
-      'Content-Type': 'application/json',
-      ...config.defaultHeaders,
-      ...(correlationId && { 'x-correlation-id': correlationId }),
-    },
-    // Only include body for methods that support it
-    body: methodsWithoutBody.includes(method.toUpperCase())
-      ? undefined
-      : args?.body
-        ? JSON.stringify(args.body)
-        : undefined,
-    timeout: config.timeout || 5000,
-  };
 }
 
 async function executeRequest(

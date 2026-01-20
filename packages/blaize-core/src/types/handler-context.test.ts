@@ -238,7 +238,9 @@ describe('Handler Context Types', () => {
         const context: SSEHandlerContext = {} as SSEHandlerContext;
 
         expectTypeOf(context.stream).toEqualTypeOf<SSEStreamExtended>();
-        expectTypeOf(context.ctx).toEqualTypeOf<Context<State, Services, never, QueryParams>>();
+        expectTypeOf(context.ctx).toEqualTypeOf<
+          Context<State, Services, never, QueryParams, never>
+        >();
         expectTypeOf(context.params).toEqualTypeOf<Record<string, string>>();
         expectTypeOf(context.logger).toEqualTypeOf<BlaizeLogger>();
         expectTypeOf(context.eventBus).toEqualTypeOf<TypedEventBus<EventSchemas>>();
@@ -247,7 +249,7 @@ describe('Handler Context Types', () => {
       it('should allow destructuring with defaults', () => {
         const handler = ({ stream, ctx, params, logger, eventBus }: SSEHandlerContext) => {
           expectTypeOf(stream).toEqualTypeOf<SSEStreamExtended>();
-          expectTypeOf(ctx).toEqualTypeOf<Context<State, Services, never, QueryParams>>();
+          expectTypeOf(ctx).toEqualTypeOf<Context<State, Services, never, QueryParams, never>>();
           expectTypeOf(params).toEqualTypeOf<Record<string, string>>();
           expectTypeOf(logger).toEqualTypeOf<BlaizeLogger>();
           expectTypeOf(eventBus).toEqualTypeOf<TypedEventBus<EventSchemas>>();

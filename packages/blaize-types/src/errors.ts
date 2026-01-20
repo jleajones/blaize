@@ -190,7 +190,7 @@ export interface ValidationErrorDetails {
   errorCount: number;
 
   /** The section that failed validation */
-  section: 'params' | 'query' | 'body' | 'response';
+  section: 'params' | 'query' | 'body' | 'response' | 'files';
 
   /** Schema name if available */
   schemaName?: string;
@@ -531,7 +531,7 @@ export interface ConflictErrorDetails {
   providedValue?: unknown;
 
   /** Resource that has the conflicting value */
-  conflictingResource?: string;
+  conflictingResource?: string | Record<string, string | number>;
 
   /** Current version/etag of the resource */
   currentVersion?: string;

@@ -15,8 +15,9 @@ export function getContext<
   Svc extends Services = Services,
   TBody = unknown,
   TQuery = QueryParams,
->(): Context<S, Svc, TBody, TQuery> | undefined {
-  return contextStorage.getStore() as Context<S, Svc, TBody, TQuery> | undefined;
+  TFiles = unknown,
+>(): Context<S, Svc, TBody, TQuery, TFiles> | undefined {
+  return contextStorage.getStore() as Context<S, Svc, TBody, TQuery, TFiles> | undefined;
 }
 
 /**

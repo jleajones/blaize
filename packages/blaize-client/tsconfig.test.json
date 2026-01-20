@@ -3,12 +3,13 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "../../packages",
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "exactOptionalPropertyTypes": false,
     "baseUrl": ".",
     "paths": {
+      "@blaize-types": ["../blaize-types/src/index.ts"],
       "@blaize-types/*": ["../blaize-types/src/*"]
     }
   },
