@@ -74,6 +74,7 @@ When you provide schemas to a route, BlaizeJS infers types for:
 | `params`        | `params` argument   | `handler(ctx, params)` |
 | `query`         | `ctx.request.query` | Handler body           |
 | `body`          | `ctx.request.body`  | Handler body           |
+| `files`         | `ctx.request.files` | Handler body           |
 | `response`      | Return type         | Handler return         |
 
 ```typescript
@@ -147,6 +148,207 @@ export const GET = route.get({
     ctx.request.query.page; // number
     ctx.request.query.limit; // number
     ctx.request.query.sortDesc; // boolean
+  },
+});
+```
+
+---
+
+## File Upload Type Flow
+
+File uploads introduce a fourth type parameter that flows through the entire system with automatic client-server type transformation.
+
+### Type Parameter Evolution
+
+The route schema includes a `files` property that works alongside `body`:
+
+```typescript
+// Route schema with file uploads
+export const uploadAvatar = route.post({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    files: z.object({
+      avatar: file({
+        maxSize: '5MB',
+        accept: ['image/jpeg', 'image/png', 'image/webp'],
+      }),
+    }),
+    response: z.object({
+      url: z.string().url(),
+      filename: z.string(),
+      size: z.number(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    // ctx.request.files.avatar is typed as UploadedFile
+    const { avatar } = ctx.request.files;
+    
+    // All properties are fully typed
+    console.log(avatar.originalname);  // string
+    console.log(avatar.mimetype);      // string
+    console.log(avatar.size);          // number
+    console.log(avatar.buffer);        // Buffer | undefined
+    
+    const url = await uploadToStorage(avatar);
+    
+    return {
+      url,
+      filename: avatar.originalname,
+      size: avatar.size,
+    };
+  },
+});
+```
+
+### Client-Server Type Transformation
+
+The same schema creates different types on client vs server:
+
+```typescript
+// Client code
+import bc from '@blaizejs/client';
+import { routes } from './app-type';
+
+const client = bc.create('https://api.example.com', routes);
+
+// Client expects File/Blob (browser native)
+const file = document.querySelector('input[type="file"]').files[0];
+
+const result = await client.$post.uploadAvatar({
+  params: { userId: 'user-123' },
+  files: {
+    avatar: file  // Type: File (browser native)
+  }
+});
+
+// result is fully typed from response schema
+console.log(result.url);       // string (known at compile time)
+console.log(result.filename);  // string
+console.log(result.size);      // number
+```
+
+### Type Transformation Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CLIENT (Browser/Node)                         │
+├─────────────────────────────────────────────────────────────────┤
+│  file() schema → ClientFilesType<F>                             │
+│  - Extracts schema shape                                         │
+│  - Maps to File/Blob types                                       │
+│  - Handles optional/array modifiers                              │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+                    FormData serialization
+                  (multipart/form-data)
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    SERVER (BlaizeJS)                             │
+├─────────────────────────────────────────────────────────────────┤
+│  Multipart parser → { fields, files }                            │
+│  file() schema → z.ZodType<UploadedFile>                        │
+│  - Validates MIME type                                           │
+│  - Validates file size                                           │
+│  - Custom refinements                                            │
+│  ↓                                                               │
+│  Handler receives typed UploadedFile                             │
+│  - originalname: string                                          │
+│  - mimetype: string                                              │
+│  - size: number                                                  │
+│  - buffer: Buffer                                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Type Transformation Table
+
+| Location | Type | Source | Description |
+|----------|------|--------|-------------|
+| **Client schema** | `File` or `Blob` | Browser API | Native browser file objects |
+| **Wire format** | `multipart/form-data` | HTTP protocol | Binary encoding with boundary |
+| **Multipart parser** | `UploadedFile` | Server-side parsing | Parsed file with buffer/stream |
+| **Validation layer** | `UploadedFile` | Zod schema | Validated against size/MIME constraints |
+| **Handler context** | `UploadedFile` | Type inference | Type-safe access via `ctx.request.files` |
+
+### Complex File Schema Patterns
+
+```typescript
+// Pattern 1: Single required file
+files: z.object({
+  avatar: file({ maxSize: '5MB' }),
+})
+// Client: { files: { avatar: File } }
+// Server: { avatar: UploadedFile }
+
+// Pattern 2: Optional file
+files: z.object({
+  avatar: file({ maxSize: '5MB' }).optional(),
+})
+// Client: { files: { avatar?: File } }
+// Server: { avatar?: UploadedFile }
+
+// Pattern 3: Array of files
+files: z.object({
+  photos: file({ maxSize: '5MB' }).array(),
+})
+// Client: { files: { photos: File[] } }
+// Server: { photos: UploadedFile[] }
+
+// Pattern 4: Multiple different files
+files: z.object({
+  avatar: file({ maxSize: '5MB', accept: ['image/*'] }),
+  resume: file({ maxSize: '10MB', accept: ['application/pdf'] }),
+  portfolio: file({ maxSize: '50MB' }).array().optional(),
+})
+// Client: { files: { avatar: File, resume: File, portfolio?: File[] } }
+// Server: { avatar: UploadedFile, resume: UploadedFile, portfolio?: UploadedFile[] }
+```
+
+### Mixed Body + Files Type Flow
+
+When combining body data with file uploads, both are fully typed:
+
+```typescript
+export const createPost = route.post({
+  schema: {
+    body: z.object({
+      title: z.string().min(1),
+      content: z.string(),
+      category: z.enum(['tech', 'design', 'business']),
+      tags: z.array(z.string()).optional(),
+    }),
+    files: z.object({
+      coverImage: file({ maxSize: '2MB', accept: ['image/*'] }),
+      attachments: file({ maxSize: '10MB' }).array().optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    // Body is typed
+    const { title, content, category, tags } = ctx.request.body;
+    // title: string
+    // content: string
+    // category: 'tech' | 'design' | 'business'
+    // tags: string[] | undefined
+    
+    // Files are typed
+    const { coverImage, attachments } = ctx.request.files;
+    // coverImage: UploadedFile
+    // attachments: UploadedFile[] | undefined
+    
+    // Both validate before handler execution
+  },
+});
+
+// Client usage - both typed
+await client.$post.createPost({
+  body: {
+    title: 'My Post',
+    content: '...',
+    category: 'tech',
+    tags: ['typescript', 'backend'],
+  },
+  files: {
+    coverImage: imageFile,
+    attachments: [doc1, doc2],
   },
 });
 ```
@@ -385,16 +587,16 @@ export const GET = route.get({
 
 The route factory provides methods for all HTTP verbs:
 
-| Method            | HTTP Verb | Body | Common Use         |
-| ----------------- | --------- | ---- | ------------------ |
-| `route.get()`     | GET       | No   | Fetch resources    |
-| `route.post()`    | POST      | Yes  | Create resources   |
-| `route.put()`     | PUT       | Yes  | Replace resources  |
-| `route.patch()`   | PATCH     | Yes  | Partial update     |
-| `route.delete()`  | DELETE    | No   | Remove resources   |
-| `route.head()`    | HEAD      | No   | Headers only       |
-| `route.options()` | OPTIONS   | No   | CORS preflight     |
-| `route.sse()`     | GET       | No   | Server-Sent Events |
+| Method            | HTTP Verb | Body | Files | Common Use         |
+| ----------------- | --------- | ---- | ----- | ------------------ |
+| `route.get()`     | GET       | No   | No    | Fetch resources    |
+| `route.post()`    | POST      | Yes  | Yes   | Create resources   |
+| `route.put()`     | PUT       | Yes  | Yes   | Replace resources  |
+| `route.patch()`   | PATCH     | Yes  | Yes   | Partial update     |
+| `route.delete()`  | DELETE    | No   | No    | Remove resources   |
+| `route.head()`    | HEAD      | No   | No    | Headers only       |
+| `route.options()` | OPTIONS   | No   | No    | CORS preflight     |
+| `route.sse()`     | GET       | No   | No    | Server-Sent Events |
 
 ---
 
@@ -528,6 +730,7 @@ The client infers types from your route exports:
 // src/app-type.ts
 import { GET as getUser } from './routes/users/[userId]';
 import { GET as listUsers, POST as createUser } from './routes/users';
+import { PATCH as updateAvatar } from './routes/users/[userId]/avatar';
 import { POST as login } from './routes/auth/login';
 
 // Export with meaningful names — these become method names
@@ -535,6 +738,7 @@ export const routes = {
   getUser,
   listUsers,
   createUser,
+  updateAvatar,
   login,
 } as const; // as const is important!
 ```
@@ -565,6 +769,13 @@ const newUser = await client.$post.createUser({
     name: 'Alice', // Required
     email: 'a@b.com', // Required, must be email
   },
+});
+
+// ✅ Files typed from schema - client auto-detects and uses multipart
+const file = document.querySelector('input[type="file"]').files[0];
+await client.$patch.updateAvatar({
+  params: { userId: '123' },
+  files: { avatar: file },
 });
 
 // ❌ TypeScript catches errors
@@ -606,6 +817,8 @@ Understanding where inference works vs. where you need explicit types:
 | Scenario                | Types Flow Automatically                        |
 | ----------------------- | ----------------------------------------------- |
 | Schema → Handler params | `params.userId` typed from `schema.params`      |
+| Schema → Handler body   | `ctx.request.body` typed from `schema.body`     |
+| Schema → Handler files  | `ctx.request.files` typed from `schema.files`   |
 | Schema → Handler return | Return type checked against `schema.response`   |
 | Middleware → Context    | `ctx.state.user` typed from middleware generics |
 | Route export → Client   | Client methods typed from route exports         |
@@ -760,6 +973,118 @@ if (result.success) {
 }
 ```
 
+### Pattern 4: File Upload with Type-Safe Metadata
+
+Combine file uploads with structured metadata, maintaining full type safety:
+
+```typescript
+// Server route definition
+export const uploadDocument = route.post({
+  schema: {
+    body: z.object({
+      title: z.string().min(1),
+      category: z.enum(['legal', 'financial', 'personal']),
+      tags: z.array(z.string()).optional(),
+      metadata: z.object({
+        author: z.string(),
+        department: z.string(),
+        confidential: z.boolean().default(false),
+      }),
+    }),
+    files: z.object({
+      document: file({
+        maxSize: '10MB',
+        accept: ['application/pdf', 'application/msword'],
+      }),
+      attachments: file({ maxSize: '5MB' }).array().optional(),
+    }),
+    response: z.object({
+      documentId: z.string().uuid(),
+      documentUrl: z.string().url(),
+      attachmentCount: z.number(),
+      uploadedAt: z.string().datetime(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    // All types inferred from schemas
+    const { title, category, tags, metadata } = ctx.request.body;
+    // title: string
+    // category: 'legal' | 'financial' | 'personal'
+    // tags: string[] | undefined
+    // metadata: { author: string; department: string; confidential: boolean }
+    
+    const { document, attachments } = ctx.request.files;
+    // document: UploadedFile
+    // attachments: UploadedFile[] | undefined
+    
+    // Upload main document
+    const documentUrl = await storage.upload(document);
+    
+    // Upload attachments if present
+    const attachmentUrls = attachments
+      ? await Promise.all(attachments.map(a => storage.upload(a)))
+      : [];
+    
+    return {
+      documentId: generateId(),
+      documentUrl,
+      attachmentCount: attachmentUrls.length,
+      uploadedAt: new Date().toISOString(),
+    };
+  },
+});
+
+// Client usage - fully typed
+const pdfFile = new File(['...'], 'contract.pdf', { type: 'application/pdf' });
+const images = [
+  new File(['...'], 'receipt1.jpg', { type: 'image/jpeg' }),
+  new File(['...'], 'receipt2.jpg', { type: 'image/jpeg' }),
+];
+
+const result = await client.$post.uploadDocument({
+  body: {
+    title: 'Q4 Contract',
+    category: 'legal',
+    tags: ['contract', 'quarterly'],
+    metadata: {
+      author: 'John Doe',
+      department: 'Legal',
+      confidential: true,
+    },
+  },
+  files: {
+    document: pdfFile,
+    attachments: images,
+  },
+});
+
+// Result is fully typed
+console.log(result.documentId);      // string (UUID format)
+console.log(result.documentUrl);     // string (URL format)
+console.log(result.attachmentCount); // number
+console.log(result.uploadedAt);      // string (ISO datetime)
+```
+
+**Type Safety Guarantees:**
+
+1. **Client compilation fails if:**
+   - Wrong file property names
+   - Missing required files
+   - Wrong types (e.g., string instead of File)
+   - Wrong body shape
+
+2. **Server runtime validates:**
+   - File sizes against maxSize
+   - MIME types against accept list
+   - Body shape via Zod
+   - All constraints before handler runs
+
+3. **IDE provides:**
+   - Autocomplete for all properties
+   - Error highlighting for mistakes
+   - Type information on hover
+   - Refactoring support
+
 ---
 
 ## Key Takeaways
@@ -771,6 +1096,9 @@ if (result.success) {
 5. **Export names become client methods** — You control the client API
 6. **No code generation** — Everything is TypeScript inference at compile time
 7. **Transforms work** — Zod `.transform()` and `.coerce` flow through correctly
+8. **File schemas use `file()` helper** — Provides size/MIME validation with automatic type inference
+9. **Client-server type mapping** — Same schema creates `File`/`Blob` types on client, `UploadedFile` on server
+10. **Validation at the boundary** — Files validated before handler execution, maintaining type safety
 
 ---
 
@@ -780,3 +1108,4 @@ if (result.success) {
 - **[Middleware](/docs/architecture/middleware)** — How middleware adds to context types
 - **[Plugins](/docs/architecture/plugins)** — How plugins inject services
 - **[Routing](/docs/architecture/router)** — File-based routing and route exports
+- **[File Uploads](/docs/guides/file-uploads)** — Complete guide with storage integration

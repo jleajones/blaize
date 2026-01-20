@@ -142,16 +142,21 @@ routes/users/[userId]/index.ts  →  /users/:userId
 
 The route factory (explained above) provides methods for all HTTP verbs:
 
-| Method | HTTP Verb | Request Body | Common Use |
-|--------|-----------|--------------|------------|
-| `route.get()` | GET | No | Fetch resources |
-| `route.post()` | POST | Yes | Create resources |
-| `route.put()` | PUT | Yes | Replace resources |
-| `route.patch()` | PATCH | Yes | Partial update |
-| `route.delete()` | DELETE | No | Remove resources |
-| `route.head()` | HEAD | No | Headers only |
-| `route.options()` | OPTIONS | No | CORS preflight |
-| `route.sse()` | GET | No | Server-Sent Events |
+| Method | HTTP Verb | Request Body | Files Support | Common Use |
+|--------|-----------|--------------|---------------|------------|
+| `route.get()` | GET | No | No | Fetch resources |
+| `route.post()` | POST | **Yes** | **Yes** | Create resources, **file uploads** |
+| `route.put()` | PUT | **Yes** | **Yes** | Replace resources, **update files** |
+| `route.patch()` | PATCH | **Yes** | **Yes** | Partial updates, **file uploads** |
+| `route.delete()` | DELETE | No | No | Remove resources |
+| `route.head()` | HEAD | No | No | Headers only |
+| `route.options()` | OPTIONS | No | No | CORS preflight |
+| `route.sse()` | GET | No | No | Server-Sent Events |
+
+**File upload methods:**
+- POST, PUT, PATCH support both `body` and `files` schemas
+- GET, DELETE, HEAD, OPTIONS do not accept request bodies
+- Client automatically detects files and switches to multipart encoding
 
 ---
 
@@ -165,7 +170,7 @@ import { route } from '../../app';
 import { z } from 'zod';
 
 export const getUser = route.get({
-  // Schema validates params, query, body, and response
+  // Schema validates params, query, body, files, and response
   schema: {
     params: z.object({ userId: z.string().uuid() }),
     query: z.object({ 
@@ -210,12 +215,143 @@ handler: async (ctx, params, logger) => {
 
 ### Schema Properties
 
-| Property | Type | Purpose |
-|----------|------|---------|
-| `params` | `z.ZodObject` | URL path parameters (`:userId`) |
-| `query` | `z.ZodObject` | Query string parameters (`?limit=10`) |
-| `body` | `z.ZodObject` | Request body (POST, PUT, PATCH) |
-| `response` | `z.ZodType` | Response validation and client types |
+| Property | Methods | Purpose | Access |
+|----------|---------|---------|--------|
+| `params` | All | URL path parameters (`:userId`) | `params` argument |
+| `query` | All | Query string (`?limit=10`) | `ctx.request.query` |
+| `body` | POST, PUT, PATCH | JSON/form body | `ctx.request.body` |
+| `files` | POST, PUT, PATCH | **Uploaded files** | **`ctx.request.files`** |
+| `response` | All | Response validation | Return value |
+
+**Schema validation order:**
+1. `params` - Extracted from URL path
+2. `query` - Parsed from query string
+3. **Multipart detection** - If `Content-Type: multipart/form-data`
+4. `files` - Validated file uploads (if multipart)
+5. `body` - Validated request body (or form fields if multipart)
+6. `response` - Validated return value (development only)
+
+---
+
+## File Upload Routes
+
+Routes can accept file uploads alongside regular body data using the `files` schema property:
+
+```typescript
+// routes/users/[userId]/avatar.ts
+import { file } from 'blaizejs';
+import { z } from 'zod';
+
+export const updateAvatar = route.patch({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    files: z.object({
+      avatar: file({
+        maxSize: '5MB',
+        accept: ['image/jpeg', 'image/png', 'image/webp'],
+      }),
+    }),
+    response: z.object({
+      avatarUrl: z.string().url(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    const { avatar } = ctx.request.files;
+    
+    // avatar is typed as UploadedFile
+    console.log(avatar.originalname);  // Typed!
+    console.log(avatar.size);          // Typed!
+    console.log(avatar.mimetype);      // Typed!
+    
+    // Upload to storage...
+    const url = await ctx.services.storage.upload(avatar);
+    
+    return { avatarUrl: url };
+  },
+});
+```
+
+### Mixed Body + Files
+
+Combine form data with file uploads in a single request:
+
+```typescript
+export const createPost = route.post({
+  schema: {
+    body: z.object({
+      title: z.string().min(1),
+      content: z.string(),
+      tags: z.array(z.string()).optional(),
+    }),
+    files: z.object({
+      coverImage: file({ maxSize: '2MB', accept: ['image/*'] }),
+      attachments: file({ maxSize: '10MB' }).array().optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { title, content, tags } = ctx.request.body;
+    const { coverImage, attachments } = ctx.request.files;
+    
+    // Process both body data and files...
+  },
+});
+```
+
+### File Validation
+
+The `file()` helper provides built-in validation:
+
+- **Size limits**: `maxSize: '5MB'` (supports KB, MB, GB, TB)
+- **MIME types**: `accept: ['image/*', 'application/pdf']`
+- **Wildcards**: `image/*`, `video/*`, `audio/*`
+- **Arrays**: `.array()`, `.optional()`, `.nullable()`
+
+```typescript
+// Multiple files
+files: z.object({
+  photos: file({ maxSize: '5MB', accept: ['image/*'] }).array(),
+}),
+
+// Optional file
+files: z.object({
+  resume: file({ accept: ['application/pdf'] }).optional(),
+}),
+```
+
+### UploadedFile Interface
+
+Files received in handlers have this structure:
+
+```typescript
+interface UploadedFile {
+  fieldname: string;      // Form field name
+  originalname: string;   // Original filename
+  encoding: string;       // File encoding
+  mimetype: string;       // MIME type
+  size: number;           // File size in bytes
+  buffer: Buffer;         // File contents
+}
+```
+
+See **[File Uploads Guide](/docs/guides/file-uploads)** for complete examples including S3/R2 integration, client patterns, and error handling.
+
+---
+
+## Request Body Handling
+
+BlaizeJS automatically detects and handles different request types:
+
+| Content-Type | Detection | Parsing | Access |
+|--------------|-----------|---------|--------|
+| `application/json` | `Content-Type` header | JSON parser | `ctx.request.body` |
+| `application/x-www-form-urlencoded` | `Content-Type` header | Form parser | `ctx.request.body` |
+| `multipart/form-data` | `Content-Type` header + boundary | Multipart parser | `ctx.request.files` + `ctx.request.body` |
+
+**Multipart handling:**
+- Files are extracted to `ctx.request.files`
+- Form fields are available in `ctx.request.body`
+- Both are validated against their respective schemas
+- Memory strategy buffers files for convenience
 
 ---
 
@@ -232,6 +368,9 @@ export const createUser = route.post({ ... }); // client.$post.createUser()
 export const getUser = route.get({ ... });     // client.$get.getUser()
 export const updateUser = route.put({ ... });  // client.$put.updateUser()
 export const deleteUser = route.delete({ ... }); // client.$delete.deleteUser()
+
+// src/routes/users/[userId]/avatar.ts
+export const updateAvatar = route.patch({ ... }); // client.$patch.updateAvatar()
 ```
 
 ### Routes Registry
@@ -242,6 +381,7 @@ Export your routes in a registry file for the client:
 // src/app-type.ts
 import { listUsers, createUser } from './routes/users';
 import { getUser, updateUser, deleteUser } from './routes/users/[userId]';
+import { updateAvatar } from './routes/users/[userId]/avatar';
 import { streamNotifications } from './routes/notifications/stream';
 
 export const routes = {
@@ -250,6 +390,7 @@ export const routes = {
   getUser,
   updateUser,
   deleteUser,
+  updateAvatar,
   streamNotifications,
 } as const;  // `as const` is important!
 ```
@@ -267,6 +408,13 @@ const client = bc.create('https://api.example.com', routes);
 const users = await client.$get.listUsers({ query: { limit: 10 } });
 const user = await client.$get.getUser({ params: { userId: '123' } });
 const newUser = await client.$post.createUser({ body: { name: 'Alice' } });
+
+// File uploads - client auto-detects and uses multipart
+const file = document.querySelector('input[type="file"]').files[0];
+await client.$patch.updateAvatar({
+  params: { userId: '123' },
+  files: { avatar: file }
+});
 ```
 
 ---
@@ -461,6 +609,134 @@ export const deletePost = route.delete({
 
 ---
 
+## Common Patterns
+
+### Pattern: File Upload with Metadata
+
+Handle file uploads with structured metadata:
+
+```typescript
+export const uploadDocument = route.post({
+  schema: {
+    body: z.object({
+      title: z.string().min(1),
+      category: z.enum(['legal', 'financial', 'personal']),
+      metadata: z.object({
+        author: z.string(),
+        department: z.string(),
+        confidential: z.boolean().default(false),
+      }),
+    }),
+    files: z.object({
+      document: file({
+        maxSize: '10MB',
+        accept: ['application/pdf', 'application/msword'],
+      }),
+      attachments: file({ maxSize: '5MB' }).array().optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { title, category, metadata } = ctx.request.body;
+    const { document, attachments } = ctx.request.files;
+    
+    // Upload main document
+    const documentUrl = await ctx.services.storage.upload(document);
+    
+    // Upload attachments if present
+    const attachmentUrls = attachments
+      ? await Promise.all(attachments.map(a => ctx.services.storage.upload(a)))
+      : [];
+    
+    return {
+      documentId: generateId(),
+      documentUrl,
+      attachmentCount: attachmentUrls.length,
+    };
+  },
+});
+```
+
+### Pattern: Multi-File Upload
+
+Accept multiple files in a single upload:
+
+```typescript
+export const uploadGallery = route.post({
+  schema: {
+    body: z.object({
+      albumTitle: z.string(),
+      albumDescription: z.string().optional(),
+    }),
+    files: z.object({
+      photos: file({
+        maxSize: '10MB',
+        accept: ['image/jpeg', 'image/png'],
+      }).array().min(1).max(20),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { albumTitle, albumDescription } = ctx.request.body;
+    const { photos } = ctx.request.files;
+    
+    // Upload all photos concurrently
+    const uploadedPhotos = await Promise.all(
+      photos.map(async (photo) => {
+        const url = await ctx.services.storage.upload(photo);
+        return {
+          url,
+          filename: photo.originalname,
+          size: photo.size,
+        };
+      })
+    );
+    
+    return {
+      albumTitle,
+      photoCount: photos.length,
+      photos: uploadedPhotos,
+    };
+  },
+});
+```
+
+### Pattern: Conditional File Upload
+
+Make files optional based on request context:
+
+```typescript
+export const updateProfile = route.patch({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    body: z.object({
+      name: z.string().optional(),
+      bio: z.string().optional(),
+      location: z.string().optional(),
+    }),
+    files: z.object({
+      avatar: file({ maxSize: '5MB', accept: ['image/*'] }).optional(),
+      coverPhoto: file({ maxSize: '10MB', accept: ['image/*'] }).optional(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    const updates: any = { ...ctx.request.body };
+    
+    // Only process files if provided
+    if (ctx.request.files.avatar) {
+      updates.avatarUrl = await uploadFile(ctx.request.files.avatar);
+    }
+    
+    if (ctx.request.files.coverPhoto) {
+      updates.coverPhotoUrl = await uploadFile(ctx.request.files.coverPhoto);
+    }
+    
+    await db.users.update(params.userId, updates);
+    return { success: true };
+  },
+});
+```
+
+---
+
 ## Low-Level Route Creators
 
 For advanced use cases, you can use individual route creators instead of the factory:
@@ -507,6 +783,8 @@ The router scans `.ts` files recursively from `routesDir`. Currently, only TypeS
 4. **Route factory inherits types** — Context is fully typed in handlers
 5. **Static beats dynamic** — Exact matches take priority
 6. **One file, multiple routes** — Export different HTTP methods
+7. **Files schema for uploads** — Type-safe file handling with validation
+8. **Automatic multipart detection** — Client handles encoding automatically
 
 ---
 
@@ -516,3 +794,4 @@ The router scans `.ts` files recursively from `routesDir`. Currently, only TypeS
 - **[Context](/docs/architecture/context)** — What's available in handlers
 - **[Middleware](/docs/architecture/middleware)** — Route-level middleware
 - **[SSE](/docs/architecture/sse)** — Real-time streaming routes
+- **[File Uploads](/docs/guides/file-uploads)** — Complete file upload guide with examples
