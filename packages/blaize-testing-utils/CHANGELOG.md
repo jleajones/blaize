@@ -1,5 +1,11 @@
 # @blaizejs/testing-utils
 
+## 0.5.2
+
+### Patch Changes
+
+- 8ddc869: ✨ Add type safe file handling
+
 ## 0.5.1
 
 ### Patch Changes
