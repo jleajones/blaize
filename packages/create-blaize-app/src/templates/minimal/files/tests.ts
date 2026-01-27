@@ -11,7 +11,7 @@
  * - src/__tests__/routes/events-stream.test.ts - SSE route tests
  */
 
-import { TemplateFile } from '@/types';
+import type { TemplateFile } from '@/types';
 
 export const testFiles: TemplateFile[] = [
   {
