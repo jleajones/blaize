@@ -11,7 +11,8 @@ export const getDependencies = async (): Promise<Record<string, string>> => {
   // Use major version ranges for external packages
   return {
     blaizejs: 'latest',
-    zod: '^3.0.0',
+    '@blaizejs/middleware-security': 'latest',
+    zod: '^3.24.4',
   };
 };
 
@@ -20,11 +21,15 @@ export const getDependencies = async (): Promise<Record<string, string>> => {
  */
 export const getDevDependencies = async (): Promise<Record<string, string>> => {
   return {
-    '@types/node': '^22.0.0',
+    '@blaizejs/testing-utils': 'latest',
+    '@types/node': '^23.0.0',
     '@types/selfsigned': '^2.1.0',
+    '@vitest/coverage-v8': '^3.1.3',
     chokidar: '^4.0.3',
+    rimraf: '^6.0.1',
     selfsigned: '^2.4.1',
-    typescript: '^5.0.0',
-    tsx: '^4.0.0',
+    tsx: '^4.19.4',
+    typescript: '^5.8.3',
+    vitest: '^3.1.3',
   };
 };
