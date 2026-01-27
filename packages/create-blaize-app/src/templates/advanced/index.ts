@@ -11,10 +11,8 @@
  * - Integration tests
  */
 
-import { configFiles } from './files/config';
 import { coreFiles } from './files/core';
-import { routeFiles } from './files/routes';
-import { testFiles } from './files/tests';
+import { healthMetricsRoutes, queueRoutes } from './files/routes';
 import { scripts } from './scripts';
 import { getDependencies, getDevDependencies } from '../../utils/versions';
 
@@ -25,7 +23,7 @@ import type { Template } from '@/types';
  */
 export const advancedTemplate: Template = {
   name: 'advanced',
-  files: [...coreFiles, ...routeFiles, ...testFiles, ...configFiles],
+  files: [...coreFiles, ...healthMetricsRoutes, ...queueRoutes],
   scripts,
   getDependencies,
   getDevDependencies,

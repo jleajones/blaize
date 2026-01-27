@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { ValidationError } from './validation/error';
+
 import { ArgsSchema } from './commands/parse-args';
+import { ValidationError } from './validation/error';
 
 /**
  * Template file type
