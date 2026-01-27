@@ -57,14 +57,42 @@ type LogEntry = {
 export class MockLogger implements BlaizeLogger {
   /**
    * All log entries captured by this logger
-   * @internal
+   *
+   * Public for backwards compatibility with existing tests.
+   * Prefer using getLogsByLevel() for cleaner tests.
    */
-  private logs: LogEntry[] = [];
+  public logs: LogEntry[];
 
   /**
    * Child logger contexts created
    */
-  public childContexts: LogMetadata[] = [];
+  public childContexts: LogMetadata[];
+
+  /**
+   * Child logger instances created
+   *
+   * When child() is called, the new logger instance is stored here.
+   * Useful for tests that need to access child logger logs.
+   */
+  public childLoggers: MockLogger[];
+
+  /**
+   * Constructor for MockLogger
+   *
+   * @param sharedLogs - Optional shared logs array (for child loggers)
+   * @param sharedChildContexts - Optional shared child contexts array
+   * @param sharedChildLoggers - Optional shared child loggers array
+   */
+  constructor(
+    sharedLogs?: LogEntry[],
+    sharedChildContexts?: LogMetadata[],
+    sharedChildLoggers?: MockLogger[]
+  ) {
+    // Use shared arrays if provided (child logger), otherwise create new arrays (parent logger)
+    this.logs = sharedLogs ?? [];
+    this.childContexts = sharedChildContexts ?? [];
+    this.childLoggers = sharedChildLoggers ?? [];
+  }
 
   // Use spies for all log methods so they can be asserted with toHaveBeenCalled
   /**
@@ -98,12 +126,15 @@ export class MockLogger implements BlaizeLogger {
   /**
    * Create a child logger with additional context
    *
-   * Returns a new independent MockLogger instance (does not share logs)
+   * Child loggers share the parent's logs array, so all logs from
+   * children appear in the parent's logs for easier testing.
    */
   public child = vi.fn((context: LogMetadata): BlaizeLogger => {
     this.childContexts.push(context);
-    // Return fresh instance - child loggers are independent
-    return createMockLogger();
+    // Create child that shares parent's logs array
+    const childLogger = new MockLogger(this.logs, this.childContexts, this.childLoggers);
+    this.childLoggers.push(childLogger);
+    return childLogger;
   });
 
   /**
@@ -289,11 +320,59 @@ export class MockLogger implements BlaizeLogger {
   }
 
   /**
+   * Check if a log with the given message and level exists
+   *
+   * Helper method for backwards compatibility with existing tests.
+   *
+   * @param message - The log message to search for
+   * @param level - The log level (defaults to 'info')
+   * @returns True if a matching log entry exists
+   *
+   * @example
+   * ```typescript
+   * logger.info('Server started');
+   * logger.hasLog('Server started', 'info'); // true
+   * logger.hasLog('Not logged', 'info'); // false
+   * ```
+   */
+  hasLog(message: string, level: 'info' | 'debug' | 'warn' | 'error' = 'info'): boolean {
+    return this.logs.some(l => l.level === level && l.message === message);
+  }
+
+  /**
+   * Get all logs from this logger and all child loggers
+   *
+   * NOTE: With the shared logs implementation, this method now returns
+   * the same array as `this.logs` since child loggers share the parent's
+   * logs array. Kept for backwards compatibility.
+   *
+   * @returns Array of all log entries
+   *
+   * @example
+   * ```typescript
+   * const parentLogger = createMockLogger();
+   * const childLogger = parentLogger.child({ requestId: '123' });
+   *
+   * parentLogger.info('Parent log');
+   * childLogger.info('Child log');
+   *
+   * const allLogs = parentLogger.getAllLogs();
+   * // Same as parentLogger.logs (child logs already included)
+   * ```
+   */
+  getAllLogs(): LogEntry[] {
+    // Since child loggers now share the parent's logs array,
+    // we just return a copy of this.logs
+    return [...this.logs];
+  }
+
+  /**
    * Clear all tracked data and reset mock state
    *
    * Clears:
    * - All log entries
    * - Child logger contexts
+   * - Child logger instances
    * - Vitest mock call history
    *
    * @example
@@ -308,6 +387,7 @@ export class MockLogger implements BlaizeLogger {
   clear(): void {
     this.logs.length = 0; // Clear array
     this.childContexts.length = 0; // Clear child contexts
+    this.childLoggers.length = 0; // Clear child logger instances
     vi.clearAllMocks(); // Clear vitest mock state
   }
 
@@ -317,14 +397,6 @@ export class MockLogger implements BlaizeLogger {
    */
   getLastLog() {
     return this.logs[this.logs.length - 1];
-  }
-
-  /**
-   * Check if a log with specific message exists (legacy method)
-   * @deprecated Use assertion helpers instead
-   */
-  hasLog(message: string, level?: string) {
-    return this.logs.some(l => l.message === message && (!level || l.level === level));
   }
 }
 

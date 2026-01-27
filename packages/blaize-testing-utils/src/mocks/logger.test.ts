@@ -369,6 +369,33 @@ describe('MockLogger', () => {
       expect(logger.childContexts).toHaveLength(0);
     });
 
+    it('should clear child logger instances', () => {
+      logger.child({ id: '1' });
+      logger.child({ id: '2' });
+
+      expect(logger.childLoggers).toHaveLength(2);
+
+      logger.clear();
+
+      expect(logger.childLoggers).toHaveLength(0);
+    });
+
+    it('should clear shared logs for all children', () => {
+      const child = logger.child({ id: '1' }) as MockLogger;
+
+      logger.info('Parent log');
+      child.info('Child log');
+
+      expect(logger.logs).toHaveLength(2);
+      expect(child.logs).toHaveLength(2);
+
+      logger.clear();
+
+      // Both parent and child should have empty logs (shared array)
+      expect(logger.logs).toHaveLength(0);
+      expect(child.logs).toHaveLength(0);
+    });
+
     it('should allow logging after clear', () => {
       logger.info('First');
       logger.clear();
@@ -381,15 +408,23 @@ describe('MockLogger', () => {
   });
 
   describe('child logger', () => {
-    it('should create independent logger', () => {
+    it('should share logs with parent logger', () => {
       const parent = createMockLogger();
       const child = parent.child({ context: 'test' }) as MockLogger;
 
       parent.info('Parent message');
       child.info('Child message');
 
+      // Both parent and child should see both messages (shared logs array)
       expect(() => parent.assertInfoCalled('Parent message')).not.toThrow();
-      expect(() => parent.assertInfoCalled('Child message')).toThrow();
+      expect(() => parent.assertInfoCalled('Child message')).not.toThrow();
+
+      // Child also sees both (same array reference)
+      expect(() => child.assertInfoCalled('Parent message')).not.toThrow();
+      expect(() => child.assertInfoCalled('Child message')).not.toThrow();
+
+      // Verify same array reference
+      expect(child.logs).toBe(parent.logs);
     });
 
     it('should track child context', () => {
@@ -405,18 +440,57 @@ describe('MockLogger', () => {
       expect(logger.child).toHaveBeenCalledWith({ context: 'test' });
     });
 
-    it('should create multiple independent children', () => {
+    it('should share logs across all children', () => {
       const child1 = logger.child({ id: '1' }) as MockLogger;
       const child2 = logger.child({ id: '2' }) as MockLogger;
 
       child1.info('Child 1 message');
       child2.info('Child 2 message');
 
+      // All loggers share the same logs array
       expect(() => child1.assertInfoCalled('Child 1 message')).not.toThrow();
-      expect(() => child1.assertInfoCalled('Child 2 message')).toThrow();
+      expect(() => child1.assertInfoCalled('Child 2 message')).not.toThrow();
 
       expect(() => child2.assertInfoCalled('Child 2 message')).not.toThrow();
-      expect(() => child2.assertInfoCalled('Child 1 message')).toThrow();
+      expect(() => child2.assertInfoCalled('Child 1 message')).not.toThrow();
+
+      expect(() => logger.assertInfoCalled('Child 1 message')).not.toThrow();
+      expect(() => logger.assertInfoCalled('Child 2 message')).not.toThrow();
+
+      // Verify all share same array
+      expect(child1.logs).toBe(logger.logs);
+      expect(child2.logs).toBe(logger.logs);
+    });
+  });
+
+  describe('getAllLogs', () => {
+    it('should return all logs (same as logs property with shared logs)', () => {
+      const child = logger.child({ id: '1' }) as MockLogger;
+
+      logger.info('Parent log');
+      child.debug('Child log');
+
+      const allLogs = logger.getAllLogs();
+
+      expect(allLogs).toHaveLength(2);
+      expect(allLogs[0]!.message).toBe('Parent log');
+      expect(allLogs[1]!.message).toBe('Child log');
+    });
+
+    it('should return a copy of the logs array', () => {
+      logger.info('Test');
+
+      const allLogs = logger.getAllLogs();
+      allLogs.push({ level: 'info', message: 'Added', meta: undefined });
+
+      // Original logs should not be modified
+      expect(logger.logs).toHaveLength(1);
+      expect(logger.getAllLogs()).toHaveLength(1);
+    });
+
+    it('should return empty array when no logs exist', () => {
+      const allLogs = logger.getAllLogs();
+      expect(allLogs).toEqual([]);
     });
   });
 
