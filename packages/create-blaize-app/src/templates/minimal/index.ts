@@ -9,7 +9,8 @@
  * - Comprehensive test suite
  */
 
-import { coreFiles } from './core';
+import { coreFiles } from './files/core';
+import { routeFiles } from './files/routes';
 import { scripts } from './scripts';
 import { getDependencies, getDevDependencies } from '../../utils/versions';
 
@@ -39,7 +40,7 @@ export const minimalTemplate: Template = {
   name: 'minimal',
   files: [
     ...coreFiles,
-    // TODO: Add route files (T1.2-T1.5)
+    ...routeFiles,
     // TODO: Add test files (T1.6)
     // TODO: Add config files (T1.7)
   ],
