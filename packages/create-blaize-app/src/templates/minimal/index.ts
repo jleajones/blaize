@@ -16,24 +16,7 @@ import { testFiles } from './files/tests';
 import { scripts } from './scripts';
 import { getDependencies, getDevDependencies } from '../../utils/versions';
 
-/**
- * Template file type
- */
-export interface TemplateFile {
-  path: string;
-  content: string;
-}
-
-/**
- * Template type
- */
-export interface Template {
-  name: string;
-  files: TemplateFile[];
-  getDependencies: (options?: { latest?: boolean }) => Promise<Record<string, string>>;
-  getDevDependencies: (options?: { latest?: boolean }) => Promise<Record<string, string>>;
-  scripts: Record<string, string>;
-}
+import type { Template } from '@/types';
 
 /**
  * Minimal template export

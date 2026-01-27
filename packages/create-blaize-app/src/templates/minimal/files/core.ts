@@ -8,7 +8,7 @@
  * - app-type.ts - Route registry
  */
 
-import type { TemplateFile } from '../index';
+import type { TemplateFile } from '@/types';
 
 export const coreFiles: TemplateFile[] = [
   {

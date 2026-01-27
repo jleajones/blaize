@@ -4,13 +4,6 @@
  */
 
 /**
- * Version options type
- */
-export interface VersionOptions {
-  latest?: boolean;
-}
-
-/**
  * Get all dependencies for a template
  */
 export const getDependencies = async (): Promise<Record<string, string>> => {

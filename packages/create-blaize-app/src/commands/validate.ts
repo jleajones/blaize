@@ -2,31 +2,21 @@ import path from 'node:path';
 
 import fs from 'fs-extra';
 
-import { type ParsedArgs } from './parse-args';
-import { minimalTemplate, type Template } from '../templates/minimal';
+import { advancedTemplate } from '../templates/advanced';
+import { minimalTemplate } from '../templates/minimal';
 import { CLIError } from '../utils/errors';
-import { type Result, ok } from '../utils/functional';
-import { detectPackageManager, type PackageManager } from '../utils/package-manager';
+import { ok } from '../utils/functional';
+import { detectPackageManager } from '../utils/package-manager';
+
+import type { ParsedArgs, Result, Template, ValidatedInputs } from '@/types';
 
 /**
- * Validated inputs type - contains everything needed for scaffolding
+ * Template registry
  */
-export interface ValidatedInputs {
-  // Original parsed args
-  name: string;
-  typescript: boolean;
-  git: boolean;
-  install: boolean;
-  latest: boolean;
-  dryRun: boolean;
-  help: boolean;
-  version: boolean;
-
-  // Enhanced/resolved values
-  projectPath: string;
-  packageManager: PackageManager;
-  template: Template;
-}
+const templates: Record<string, Template> = {
+  minimal: minimalTemplate,
+  advanced: advancedTemplate,
+};
 
 /**
  * Validate and prepare inputs
@@ -59,15 +49,15 @@ export const validateInputs = async (args: ParsedArgs): Promise<Result<Validated
   // Detect or use specified package manager
   const packageManager = args.packageManager || detectPackageManager();
 
-  // Get template (for now, only minimal)
-  const template = minimalTemplate;
+  // Get template from registry
+  const template = templates[args.template]; // ← CHANGED: Use registry
 
   // Validate template exists
-  if (args.template !== 'minimal') {
+  if (!template) {
     throw new CLIError(
       `Template '${args.template}' not found`,
       'TEMPLATE_NOT_FOUND',
-      'Available templates: minimal'
+      `Available templates: ${Object.keys(templates).join(', ')}` // ← CHANGED: Dynamic list
     );
   }
 

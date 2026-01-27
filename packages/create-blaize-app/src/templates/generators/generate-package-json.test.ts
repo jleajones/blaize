@@ -1,6 +1,6 @@
 import { generatePackageJson } from './generate-package-json';
 
-import type { Template } from '../../templates/minimal';
+import type { Template } from '@/types';
 
 describe('generatePackageJson', () => {
   // Create a mock template

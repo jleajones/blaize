@@ -3,7 +3,7 @@ import boxen from 'boxen';
 import { displaySuccess } from './success';
 import { getRunCommand } from '../utils/package-manager';
 
-import type { InstallResult } from './install';
+import type { InstallResult } from '@/types';
 
 // Mock the external dependencies
 vi.mock('chalk', () => ({

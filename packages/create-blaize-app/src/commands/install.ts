@@ -3,18 +3,10 @@ import { spawn } from 'node:child_process';
 import chalk from 'chalk';
 import ora from 'ora';
 
-import { type Result, ok } from '../utils/functional';
+import { ok } from '../utils/functional';
 import { getInstallCommand } from '../utils/package-manager';
 
-import type { ScaffoldResult } from './scaffold';
-
-/**
- * Install result type
- */
-export interface InstallResult extends ScaffoldResult {
-  installSkipped?: boolean;
-  installDuration?: number;
-}
+import type { InstallResult, Result, ScaffoldResult } from '@/types';
 
 /**
  * Install dependencies

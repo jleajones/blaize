@@ -10,7 +10,7 @@
  * - src/routes/events/stream.ts - Server-Sent Events (SSE)
  */
 
-import type { TemplateFile } from '../index';
+import { TemplateFile } from '@/types';
 
 export const routeFiles: TemplateFile[] = [
   {

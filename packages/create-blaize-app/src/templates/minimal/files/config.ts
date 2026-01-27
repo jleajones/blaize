@@ -8,7 +8,7 @@
  * - .gitignore - Git ignore patterns
  */
 
-import type { TemplateFile } from '../index';
+import { TemplateFile } from '@/types';
 
 export const configFiles: TemplateFile[] = [
   {

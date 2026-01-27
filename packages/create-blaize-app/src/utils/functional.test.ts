@@ -13,8 +13,9 @@ import {
   unwrapOr,
   tryCatch,
   measureTime,
-  type Result,
 } from './functional';
+
+import type { Result } from '@/types';
 
 describe('Functional Utilities', () => {
   describe('Result creation', () => {
