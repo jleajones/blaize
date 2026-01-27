@@ -9,8 +9,10 @@
  * - Comprehensive test suite
  */
 
+import { configFiles } from './files/config';
 import { coreFiles } from './files/core';
 import { routeFiles } from './files/routes';
+import { testFiles } from './files/tests';
 import { scripts } from './scripts';
 import { getDependencies, getDevDependencies } from '../../utils/versions';
 
@@ -38,12 +40,7 @@ export interface Template {
  */
 export const minimalTemplate: Template = {
   name: 'minimal',
-  files: [
-    ...coreFiles,
-    ...routeFiles,
-    // TODO: Add test files (T1.6)
-    // TODO: Add config files (T1.7)
-  ],
+  files: [...coreFiles, ...routeFiles, ...testFiles, ...configFiles],
   scripts,
   getDependencies,
   getDevDependencies,

@@ -7,6 +7,7 @@
  * - src/routes/users/index.ts - List users
  * - src/routes/users/[userId]/index.ts - Get user by ID
  * - src/routes/upload.ts - File upload with validation
+ * - src/routes/events/stream.ts - Server-Sent Events (SSE)
  */
 
 import type { TemplateFile } from '../index';
@@ -332,6 +333,120 @@ export const postUpload = route.post({
       message: \`Successfully uploaded \${uploadedFiles.length} file(s)\`,
       files: processedFiles,
     };
+  },
+});
+`,
+  },
+  {
+    path: 'src/routes/events/stream.ts',
+    content: `/**
+ * Server-Sent Events (SSE) Stream Endpoint
+ * 
+ * GET /events/stream - Real-time event streaming
+ * 
+ * Demonstrates:
+ * - Server-Sent Events (SSE) with route.sse()
+ * - EventBus subscription pattern
+ * - Long-lived connections
+ * - Heartbeat mechanism
+ * - Proper cleanup on disconnect
+ * - Error handling for streams
+ * 
+ * Client Usage:
+ * \`\`\`javascript
+ * const es = new EventSource('https://localhost:7485/events/stream');
+ * es.addEventListener('user:viewed', e => console.log(JSON.parse(e.data)));
+ * es.addEventListener('file:uploaded', e => console.log(JSON.parse(e.data)));
+ * es.addEventListener('demo:event', e => console.log(JSON.parse(e.data)));
+ * \`\`\`
+ */
+
+import { route } from '../../app-router';
+import { z } from 'zod';
+
+export const getEventsStream = route.sse({
+  schema: {
+    events: {
+      /**
+       * Published when a user is viewed
+       */
+      'user:viewed': z.object({
+        userId: z.string(),
+        timestamp: z.number(),
+      }),
+      
+      /**
+       * Published when a file is uploaded
+       */
+      'file:uploaded': z.object({
+        filename: z.string(),
+        size: z.number(),
+        mimetype: z.string(),
+        uploadedAt: z.number(),
+      }),
+      
+      /**
+       * Demo events for testing and heartbeats
+       */
+      'demo:event': z.object({
+        message: z.string(),
+        data: z.record(z.unknown()).optional(),
+      }),
+    },
+  },
+  handler: async ({ stream, logger, eventBus }) => {
+    logger.info('SSE client connected');
+    
+    // Track cleanup functions for proper disconnection
+    const cleanupFns: Array<() => void> = [];
+    
+    // Send initial connection message
+    await stream.send('demo:event', {
+      message: 'Connected to event stream',
+      data: { connectedAt: Date.now() },
+    });
+    
+    // Subscribe to user:viewed events
+    const unsubUserViewed = eventBus.subscribe('user:viewed', async (event) => {
+      try {
+        await stream.send('user:viewed', event.data);
+      } catch (error) {
+        logger.error('Failed to send user:viewed event', { error });
+      }
+    });
+    cleanupFns.push(unsubUserViewed);
+    
+    // Subscribe to file:uploaded events
+    const unsubFileUploaded = eventBus.subscribe('file:uploaded', async (event) => {
+      try {
+        await stream.send('file:uploaded', event.data);
+      } catch (error) {
+        logger.error('Failed to send file:uploaded event', { error });
+      }
+    });
+    cleanupFns.push(unsubFileUploaded);
+    
+    // Heartbeat to keep connection alive (every 30 seconds)
+    const heartbeat = setInterval(() => {
+      stream.send('demo:event', {
+        message: 'heartbeat',
+        data: { timestamp: Date.now() },
+      }).catch(err => logger.error('Heartbeat failed', { error: err }));
+    }, 30000);
+    
+    // Cleanup on client disconnect
+    stream.onClose(() => {
+      logger.info('SSE client disconnected');
+      clearInterval(heartbeat);
+      cleanupFns.forEach(fn => fn());
+    });
+    
+    // Cleanup on stream error
+    stream.onError((error) => {
+      logger.error('SSE stream error', { error });
+      clearInterval(heartbeat);
+      cleanupFns.forEach(fn => fn());
+    });
   },
 });
 `,
