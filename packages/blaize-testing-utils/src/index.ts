@@ -24,6 +24,11 @@ import {
   createWorkingMockEventBus,
 } from './mocks';
 
+export { createRouteTestContext } from './utils/helpers';
+export type { RouteTestContext } from './utils/helpers';
+
+export type { MockEventBusHelpers } from './mocks/event-bus';
+
 export {
   createWorkingMockEventBus,
   createMockEventBus,
