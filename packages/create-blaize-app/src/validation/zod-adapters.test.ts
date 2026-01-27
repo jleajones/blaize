@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ValidationError } from './types';
+import { ValidationError } from './error';
 import { ZodValidator, createValidator } from './zod-adapter';
 
 describe('ZodValidator', () => {

@@ -1,4 +1,4 @@
-import type { ValidatedInputs } from '../../commands/validate';
+import type { ValidatedInputs } from '@/types';
 
 /**
  * Generate package.json content

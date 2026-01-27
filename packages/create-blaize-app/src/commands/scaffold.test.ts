@@ -6,8 +6,7 @@ import { scaffold } from './scaffold';
 import { generateReadme, generatePackageJson } from '../templates/generators';
 import { registerDirectoryCleanup } from '../utils/cleanup';
 
-import type { ValidatedInputs } from './validate';
-import type { Template } from '../templates/minimal';
+import type { Template, ValidatedInputs } from '@/types';
 
 // Mock all external dependencies
 vi.mock('fs-extra');

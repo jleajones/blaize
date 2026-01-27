@@ -3,7 +3,7 @@ import chalk from 'chalk';
 
 import { getRunCommand } from '../utils/package-manager';
 
-import type { InstallResult } from './install';
+import type { InstallResult } from '@/types';
 
 /**
  * Display success message with next steps

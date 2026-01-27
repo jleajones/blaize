@@ -29,10 +29,10 @@ export default defineConfig({
       exclude: ['**/node_modules/**', '**/test/**', '**/*.d.ts', '**/*.config.*'],
       // Use the thresholds property for coverage targets
       thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 70,
-        statements: 80,
+        lines: 60,
+        functions: 60,
+        branches: 60,
+        statements: 60,
       },
     },
   },

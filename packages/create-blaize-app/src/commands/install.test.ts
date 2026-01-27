@@ -7,8 +7,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { install } from './install';
 import { getInstallCommand } from '../utils/package-manager';
 
-import type { ScaffoldResult } from './scaffold';
-import type { Template } from '../templates/minimal';
+import type { ScaffoldResult, Template } from '@/types';
 
 // Mock template object that implements the Template interface
 const mockTemplate: Template = {

@@ -2,13 +2,15 @@ import minimist from 'minimist';
 import { z } from 'zod';
 
 import { CLIError } from '../utils/errors';
-import { type Result, ok, err } from '../utils/functional';
-import { isValidPackageManager, type PackageManager } from '../utils/package-manager';
+import { ok, err } from '../utils/functional';
+import { isValidPackageManager } from '../utils/package-manager';
+
+import type { PackageManager, ParsedArgs, Result } from '@/types';
 
 /**
  * CLI arguments schema - without defaults since we'll apply them manually
  */
-const ArgsSchema = z.object({
+export const ArgsSchema = z.object({
   name: z
     .string()
     .min(1, 'Project name is required')
@@ -16,7 +18,7 @@ const ArgsSchema = z.object({
       /^[a-z0-9-_]+$/i,
       'Project name can only contain letters, numbers, hyphens, and underscores'
     ),
-  template: z.enum(['minimal']),
+  template: z.enum(['minimal', 'advanced']), // ← CHANGED: Added 'advanced'
   packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun'] as const).optional(),
   typescript: z.boolean(),
   git: z.boolean(),
@@ -26,11 +28,6 @@ const ArgsSchema = z.object({
   help: z.boolean(),
   version: z.boolean(),
 });
-
-/**
- * Parsed arguments type
- */
-export type ParsedArgs = z.infer<typeof ArgsSchema>;
 
 /**
  * Help text
@@ -45,8 +42,8 @@ Usage:
   bun create blaize-app <project-name> [options]
 
 Options:
-  --template <n>     Template to use (default: minimal)
-  --pm <manager>        Package manager to use (npm, pnpm, yarn, bun)
+  --template <name>    Template to use: minimal (default), advanced
+  --pm <manager>       Package manager to use (npm, pnpm, yarn, bun)
   --no-git             Skip git initialization
   --no-install         Skip dependency installation
   --latest             Use latest versions instead of stable
@@ -54,9 +51,25 @@ Options:
   --help, -h           Show this help message
   --version, -v        Show version number
 
+Templates:
+  minimal              Basic template with core features (default)
+                       - File-based routing
+                       - Type-safe file uploads
+                       - SSE streaming
+                       - EventBus integration
+                       - Comprehensive tests (80%+ coverage)
+
+  advanced             Production-ready template with full stack
+                       - All minimal features
+                       - Redis integration (EventBus, Cache, Queue)
+                       - Metrics & monitoring
+                       - Docker Compose setup
+                       - Integration tests
+
 Examples:
   npx create-blaize-app my-app
-  npx create-blaize-app my-app --pm pnpm
+  npx create-blaize-app my-app --template advanced
+  npx create-blaize-app my-app --pm pnpm --template advanced
   npx create-blaize-app my-app --no-install --no-git
   npx create-blaize-app my-app --latest
 `;
@@ -80,7 +93,7 @@ export const parseArgs = (argv: string[]): Result<ParsedArgs, Error> => {
       install: true,
       latest: false,
       'dry-run': false,
-      template: 'minimal',
+      template: 'minimal', // Default to minimal
     },
   });
 
@@ -104,7 +117,6 @@ export const parseArgs = (argv: string[]): Result<ParsedArgs, Error> => {
   }
 
   try {
-
     // Get project name from first positional argument
     const projectName = parsed._[0];
 
@@ -132,7 +144,7 @@ export const parseArgs = (argv: string[]): Result<ParsedArgs, Error> => {
     // Create args object with defaults applied manually
     const args: ParsedArgs = {
       name: projectName as string,
-      template: 'minimal', // Always 'minimal' for now
+      template: parsed.template as 'minimal' | 'advanced', // ← CHANGED: Use actual value
       packageManager: parsed.packageManager as PackageManager | undefined,
       typescript: Boolean(parsed.typescript),
       git: Boolean(parsed.git),

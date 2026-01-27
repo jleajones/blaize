@@ -1,11 +1,7 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 
-/**
- * Cleanup task type
- */
-type CleanupTask = () => Promise<void> | void;
-
+import type { CleanupTask } from '@/types';
 /**
  * Manages cleanup operations
  */

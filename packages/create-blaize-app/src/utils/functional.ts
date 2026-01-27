@@ -2,10 +2,7 @@
  * Functional utilities for the CLI pipeline
  */
 
-/**
- * Result type for error handling
- */
-export type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
+import type { Result } from '@/types';
 
 /**
  * Create a successful result
