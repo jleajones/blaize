@@ -6,6 +6,7 @@
  * - src/routes/health.ts - Health check endpoint
  * - src/routes/users/index.ts - List users
  * - src/routes/users/[userId]/index.ts - Get user by ID
+ * - src/routes/upload.ts - File upload with validation
  */
 
 import type { TemplateFile } from '../index';
@@ -186,6 +187,150 @@ export const getUserById = route.get({
       name: 'Demo User',
       email: 'demo@example.com',
       role: 'user' as const,
+    };
+  },
+});
+`,
+  },
+  {
+    path: 'src/routes/upload.ts',
+    content: `/**
+ * File Upload Endpoint
+ * 
+ * POST /upload - Upload files with validation
+ * 
+ * Demonstrates:
+ * - Type-safe file uploads with file() schema
+ * - File size validation
+ * - MIME type allowlist (security best practice)
+ * - Filename sanitization (prevents path traversal)
+ * - EventBus integration
+ * - Production-ready security patterns
+ * 
+ * Security Checklist for Production:
+ * - [ ] Add virus scanning (e.g., ClamAV)
+ * - [ ] Implement rate limiting per user
+ * - [ ] Store files in S3/cloud storage (not local filesystem)
+ * - [ ] Add authentication/authorization
+ * - [ ] Generate thumbnails for images
+ * - [ ] Verify file content matches MIME type
+ */
+
+import { route } from '../app-router';
+import { z } from 'zod';
+import { file } from 'blaizejs';
+
+/**
+ * Security Configuration
+ * 
+ * Review and adjust these limits based on your use case
+ */
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'text/plain',
+] as const;
+
+/**
+ * Sanitize filename to prevent path traversal attacks
+ * 
+ * Removes: Path separators, null bytes, control characters
+ * Limits: 255 characters (filesystem limit)
+ * 
+ * @param filename - Original filename from upload
+ * @returns Sanitized filename safe for filesystem
+ */
+function sanitizeFilename(filename: string): string {
+  return filename
+    .replace(/[^a-zA-Z0-9.-]/g, '_')  // Replace unsafe chars with underscore
+    .replace(/\\.{2,}/g, '.')          // Prevent directory traversal (..)
+    .slice(0, 255);                   // Filesystem filename length limit
+}
+
+/**
+ * File Upload Schema
+ * 
+ * Provides type-safe access to uploaded files.
+ * At least one file (document OR attachments) must be uploaded.
+ */
+const uploadFilesSchema = z.object({
+  document: file().optional(),
+  attachments: z.array(file()).optional(),
+}).refine(
+  data => data.document || (data.attachments && data.attachments.length > 0),
+  { message: 'At least one file must be uploaded' }
+);
+
+export const postUpload = route.post({
+  schema: {
+    files: uploadFilesSchema,
+    response: z.object({
+      message: z.string(),
+      files: z.array(z.object({
+        filename: z.string(),
+        size: z.number(),
+        mimetype: z.string(),
+      })),
+    }),
+  },
+  handler: async ({ ctx, logger, eventBus }) => {
+    const { document, attachments } = ctx.request.files;
+    
+    // Collect all files into single array
+    const uploadedFiles = [
+      ...(document ? [document] : []),
+      ...(attachments || []),
+    ];
+    
+    logger.info('Files uploaded', { count: uploadedFiles.length });
+    
+    // Validate and process each file
+    const processedFiles = uploadedFiles.map(file => {
+      // Size validation
+      if (file.size > MAX_FILE_SIZE) {
+        throw new Error(\`File \${file.filename} exceeds size limit\`);
+      }
+      
+      // MIME type validation (allowlist, not blocklist!)
+      if (!ALLOWED_MIME_TYPES.includes(file.mimetype as any)) {
+        throw new Error(\`File \${file.filename} has disallowed type: \${file.mimetype}\`);
+      }
+      
+      const sanitizedFilename = sanitizeFilename(file.filename);
+      
+      // Publish event for audit trail / processing pipeline
+      eventBus.publish('file:uploaded', {
+        filename: sanitizedFilename,
+        size: file.size,
+        mimetype: file.mimetype,
+        uploadedAt: Date.now(),
+      });
+      
+      // TODO: Production - Save to cloud storage
+      // const url = await uploadToS3(file.data, sanitizedFilename);
+      
+      // TODO: Production - Scan for viruses
+      // await scanForViruses(file.data);
+      
+      // TODO: Production - Generate thumbnails for images
+      // if (file.mimetype.startsWith('image/')) {
+      //   await generateThumbnail(file.data, sanitizedFilename);
+      // }
+      
+      return {
+        filename: sanitizedFilename,
+        size: file.size,
+        mimetype: file.mimetype,
+      };
+    });
+    
+    return {
+      message: \`Successfully uploaded \${uploadedFiles.length} file(s)\`,
+      files: processedFiles,
     };
   },
 });
