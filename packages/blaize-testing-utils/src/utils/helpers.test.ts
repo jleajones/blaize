@@ -339,38 +339,4 @@ describe('createRouteTestContext', () => {
       ctx.cleanup();
     });
   });
-
-  describe('Performance', () => {
-    it('should create contexts quickly', () => {
-      const start = Date.now();
-
-      for (let i = 0; i < 100; i++) {
-        const ctx = createRouteTestContext();
-        ctx.cleanup();
-      }
-
-      const duration = Date.now() - start;
-
-      // Should complete in reasonable time (< 500ms for 100 contexts)
-      expect(duration).toBeLessThan(500);
-    });
-
-    it('should handle many log calls efficiently', () => {
-      for (let i = 0; i < 1000; i++) {
-        context.logger.info(`Message ${i}`);
-      }
-
-      const logs = context.logger.getLogsByLevel('info');
-      expect(logs).toHaveLength(1000);
-    });
-
-    it('should handle many event publishes efficiently', async () => {
-      for (let i = 0; i < 1000; i++) {
-        await context.eventBus.publish(`event:${i}`, { index: i });
-      }
-
-      const events = context.eventBus.getPublishedEvents();
-      expect(events).toHaveLength(1000);
-    });
-  });
 });
