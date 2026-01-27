@@ -50,14 +50,14 @@ export const validateInputs = async (args: ParsedArgs): Promise<Result<Validated
   const packageManager = args.packageManager || detectPackageManager();
 
   // Get template from registry
-  const template = templates[args.template]; // ← CHANGED: Use registry
+  const template = templates[args.template];
 
   // Validate template exists
   if (!template) {
     throw new CLIError(
       `Template '${args.template}' not found`,
       'TEMPLATE_NOT_FOUND',
-      `Available templates: ${Object.keys(templates).join(', ')}` // ← CHANGED: Dynamic list
+      `Available templates: ${Object.keys(templates).join(', ')}`
     );
   }
 
