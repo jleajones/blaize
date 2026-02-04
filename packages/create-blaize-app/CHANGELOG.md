@@ -1,5 +1,11 @@
 # create-blaize-app
 
+## 0.3.0
+
+### Minor Changes
+
+- 0251b7e: enhance create-blaize-app to work and support 2 templates
+
 ## 0.2.0
 
 ### Minor Changes

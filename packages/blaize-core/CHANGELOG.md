@@ -1,5 +1,11 @@
 # blaizejs
 
+## 0.9.2
+
+### Patch Changes
+
+- 0251b7e: enhance create-blaize-app to work and support 2 templates
+
 ## 0.9.1
 
 ### Patch Changes

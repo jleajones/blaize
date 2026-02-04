@@ -42,7 +42,7 @@
     "zod": "^3.23.0"
   },
   "peerDependencies": {
-    "blaizejs": "^0.9.1"
+    "blaizejs": "^0.9.2"
   },
   "devDependencies": {
     "blaizejs": "workspace:*",
