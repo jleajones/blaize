@@ -1,5 +1,19 @@
 # @blaizejs/testing-utils
 
+## 0.6.0
+
+### Minor Changes
+
+- 0251b7e: enhance create-blaize-app to work and support 2 templates
+
+### Patch Changes
+
+- 1280a0e: Add assertion helpers to reduce test boilerplate:
+
+  - `logger.assertInfoCalled()` / `assertErrorCalled()` etc.
+  - `eventBus.assertPublished()` / `assertNotPublished()`
+  - New `createRouteTestContext()` helper
+
 ## 0.5.2
 
 ### Patch Changes
