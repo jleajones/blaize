@@ -2,14 +2,80 @@
  * Docker Configuration for Advanced Template (T2.7)
  *
  * Contains:
+ * - .env.example - Environment template with Redis configuration (committed)
  * - docker-compose.yml - Redis service for local development
- * - .env.sample - Environment variable template
  * - .dockerignore - Files to exclude from Docker builds
+ * - tsconfig.json - TypeScript configuration
+ * - vitest.config.ts - Testing configuration
+ * - .nvmrc - Node version specification
  */
 
 import type { TemplateFile } from '@/types';
 
 export const configFiles: TemplateFile[] = [
+  // ==========================================================================
+  // ENVIRONMENT TEMPLATE
+  // ==========================================================================
+  {
+    path: '.env.example',
+    content: `# Environment Configuration Template
+# Copy this to .env and customize as needed:
+#   cp .env.example .env
+
+# ==========================================================================
+# Application Settings
+# ==========================================================================
+NODE_ENV=development
+PORT=7485
+
+# ==========================================================================
+# Redis Configuration
+# ==========================================================================
+# Redis connection settings (used by BlaizeJS adapters)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=
+
+# Alternative: Redis connection URL (overrides individual settings)
+# REDIS_URL=redis://localhost:6379/0
+
+# Production example:
+# REDIS_URL=redis://:your-password@your-redis-host:6379/0
+
+# ==========================================================================
+# Docker Compose Settings
+# ==========================================================================
+COMPOSE_PROJECT_NAME={{projectName}}
+
+# Redis Commander credentials (optional, only if using --profile gui)
+REDIS_COMMANDER_USER=admin
+REDIS_COMMANDER_PASSWORD=admin
+
+# ==========================================================================
+# Queue Plugin Settings (Optional)
+# ==========================================================================
+# Override queue configuration via environment
+# QUEUE_CONCURRENCY_EMAILS=5
+# QUEUE_CONCURRENCY_REPORTS=2
+# QUEUE_CONCURRENCY_PROCESSING=3
+
+# ==========================================================================
+# Cache Plugin Settings (Optional)
+# ==========================================================================
+# Cache TTL defaults (seconds)
+# CACHE_DEFAULT_TTL=3600
+# CACHE_MAX_ENTRIES=10000
+
+# ==========================================================================
+# Metrics Plugin Settings (Optional)
+# ==========================================================================
+# Metrics collection interval (milliseconds)
+# METRICS_COLLECTION_INTERVAL=60000
+# METRICS_HISTOGRAM_LIMIT=1000
+`,
+  },
+
   // ==========================================================================
   // DOCKER COMPOSE - Redis for local development
   // ==========================================================================
@@ -90,69 +156,6 @@ networks:
   },
 
   // ==========================================================================
-  // ENVIRONMENT VARIABLES SAMPLE
-  // ==========================================================================
-  {
-    path: '.env.sample',
-    content: `# Environment Variables for {{projectName}}
-# 
-# Copy this file to .env and update values as needed:
-#   cp .env.sample .env
-#
-# The .env file is git-ignored and should never be committed.
-
-# ==========================================================================
-# Application Settings
-# ==========================================================================
-NODE_ENV=development
-PORT=7485
-
-# ==========================================================================
-# Redis Configuration
-# ==========================================================================
-# Redis connection settings (used by BlaizeJS adapters)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_DB=0
-
-# Redis connection URL (alternative to individual settings)
-# REDIS_URL=redis://localhost:6379/0
-
-# ==========================================================================
-# Docker Compose Settings
-# ==========================================================================
-# Project name for Docker containers
-COMPOSE_PROJECT_NAME={{projectName}}
-
-# Redis Commander credentials (optional, only if using --profile gui)
-REDIS_COMMANDER_USER=admin
-REDIS_COMMANDER_PASSWORD=admin
-
-# ==========================================================================
-# Queue Plugin Settings (Optional)
-# ==========================================================================
-# Override queue configuration via environment
-# QUEUE_CONCURRENCY_EMAILS=5
-# QUEUE_CONCURRENCY_REPORTS=2
-# QUEUE_CONCURRENCY_PROCESSING=3
-
-# ==========================================================================
-# Cache Plugin Settings (Optional)
-# ==========================================================================
-# Cache TTL defaults (seconds)
-# CACHE_DEFAULT_TTL=3600
-# CACHE_MAX_ENTRIES=10000
-
-# ==========================================================================
-# Metrics Plugin Settings (Optional)
-# ==========================================================================
-# Metrics collection interval (milliseconds)
-# METRICS_COLLECTION_INTERVAL=60000
-# METRICS_HISTOGRAM_LIMIT=1000
-`,
-  },
-
-  // ==========================================================================
   // DOCKERIGNORE - Exclude files from Docker builds
   // ==========================================================================
   {
@@ -215,55 +218,7 @@ docker-compose*.yml
   },
 
   // ==========================================================================
-  // GITIGNORE ADDITIONS - Ensure sensitive files are ignored
-  // ==========================================================================
-  {
-    path: '.gitignore.additions',
-    content: `# Add these lines to your .gitignore file
-# (or create .gitignore if it doesn't exist)
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Build outputs
-dist/
-build/
-*.tsbuildinfo
-
-# Dependencies
-node_modules/
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Testing
-coverage/
-.nyc_output/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Temporary
-*.tmp
-.cache/
-`,
-  },
-
-  // ==========================================================================
-  // TSCONFIG - TypeScript configuration matching playground
+  // TYPESCRIPT CONFIG
   // ==========================================================================
   {
     path: 'tsconfig.json',
@@ -373,6 +328,55 @@ export default defineConfig({
     content: `23
 `,
   },
+
+  // ==========================================================================
+  // GITIGNORE
+  // ==========================================================================
+  {
+    path: '.gitignore',
+    content: `# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Temporary files
+*.tmp
+.cache/
+.temp/
+
+# Docker volumes (local development)
+redis-data/
+`,
+  },
 ];
-
-

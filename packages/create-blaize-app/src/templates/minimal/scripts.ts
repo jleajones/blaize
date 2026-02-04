@@ -3,7 +3,7 @@
  */
 
 export const scripts = {
-  dev: 'tsx watch src/app.ts',
+  dev: 'NODE_ENV=development tsx watch src/app.ts',
   build: 'tsc',
   start: 'node dist/app.js',
   test: 'vitest run',

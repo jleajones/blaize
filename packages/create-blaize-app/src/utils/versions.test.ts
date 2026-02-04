@@ -208,7 +208,7 @@ describe('Version Management', () => {
       expect(devDeps.typescript).toMatch(/^\^5\./);
 
       // Node types should be recent LTS version
-      expect(devDeps['@types/node']).toMatch(/^\^(23)\./);
+      expect(devDeps['@types/node']).toMatch(/^\^(22)\./);
 
       // tsx should be version 4.x
       expect(devDeps.tsx).toMatch(/^\^4\./);

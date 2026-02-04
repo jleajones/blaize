@@ -78,7 +78,7 @@ import type { minimalEvents } from './events';
 const typeServer = Blaize.createServer({
   host: 'localhost',
   port: 7485,
-  routesDir: './routes',
+  routesDir: './src/routes',
   eventSchemas: {} as typeof minimalEvents,
 });
 

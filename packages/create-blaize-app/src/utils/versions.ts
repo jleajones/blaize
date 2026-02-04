@@ -22,7 +22,7 @@ export const getDependencies = async (): Promise<Record<string, string>> => {
 export const getDevDependencies = async (): Promise<Record<string, string>> => {
   return {
     '@blaizejs/testing-utils': 'latest',
-    '@types/node': '^23.0.0',
+    '@types/node': '^22.0.0',
     '@types/selfsigned': '^2.1.0',
     '@vitest/coverage-v8': '^3.1.3',
     chokidar: '^4.0.3',

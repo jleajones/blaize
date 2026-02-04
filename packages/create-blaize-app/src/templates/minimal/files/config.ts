@@ -2,7 +2,7 @@
  * Config template files for minimal template
  *
  * Includes:
- * - package.json - Package configuration with scripts
+ * - .env.example - Environment template (committed)
  * - README.md - Comprehensive documentation
  * - tsconfig.json - TypeScript configuration
  * - .gitignore - Git ignore patterns
@@ -11,42 +11,27 @@
 import type { TemplateFile } from '@/types';
 
 export const configFiles: TemplateFile[] = [
+  // ==========================================================================
+  // ENVIRONMENT TEMPLATE
+  // ==========================================================================
   {
-    path: 'package.json',
-    content: `{
-  "name": "{{projectName}}",
-  "version": "1.0.0",
-  "description": "{{description}}",
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/app.ts",
-    "build": "tsc",
-    "start": "node dist/app.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "type-check": "tsc --noEmit",
-    "clean": "rimraf dist"
-  },
-  "keywords": ["blaizejs", "api", "typescript", "server"],
-  "author": "{{author}}",
-  "license": "{{license}}",
-  "dependencies": {
-    "blaizejs": "^0.9.0",
-    "zod": "^3.24.4"
-  },
-  "devDependencies": {
-    "@blaizejs/testing-utils": "^0.6.0",
-    "@types/node": "^23.0.0",
-    "@vitest/coverage-v8": "^3.1.0",
-    "rimraf": "^6.0.1",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.1.0"
-  }
-}
+    path: '.env.example',
+    content: `# Environment Configuration Template
+# Copy this to .env and customize as needed:
+#   cp .env.example .env
+
+NODE_ENV=development
+PORT=7485
+
+# Add your custom environment variables below:
+# API_KEY=your-api-key-here
+# DATABASE_URL=postgresql://localhost:5432/mydb
 `,
   },
+
+  // ==========================================================================
+  // README
+  // ==========================================================================
   {
     path: 'README.md',
     content: `# {{projectName}}
@@ -69,16 +54,42 @@ BlaizeJS minimal template - Production-ready starter with core features.
 ## Quick Start
 
 \`\`\`bash
-# Install dependencies
+# 1. Copy environment template
+cp .env.example .env
+
+# 2. Install dependencies
 npm install
 
-# Start development server
+# 3. Start development server
 npm run dev
 
 # Server running at https://localhost:7485
 \`\`\`
 
-Visit \`https://localhost:7485\` to see the API in action!
+⚠️ **Important:** Copy \`.env.example\` to \`.env\` before starting. The \`.env\` file is gitignored for security.
+
+## Environment Variables
+
+Create a \`.env\` file from the template:
+
+\`\`\`bash
+cp .env.example .env
+\`\`\`
+
+Default configuration:
+
+\`\`\`bash
+# .env
+NODE_ENV=development  # Enables SSL cert generation
+PORT=7485            # Server port
+\`\`\`
+
+**Environment Modes:**
+- **development** - Auto-generates self-signed SSL certificates, enables hot reload
+- **production** - Requires valid SSL certificates, optimized for production
+- **test** - Used during test execution
+
+**Note:** tsx automatically loads \`.env\` files - no additional configuration needed!
 
 ## Architecture
 
@@ -380,16 +391,6 @@ const user = await client.$get.getUserById({
 console.log(user.name); // TypeScript knows the response shape
 \`\`\`
 
-## Environment Variables
-
-The template uses sensible defaults. To customize:
-
-\`\`\`bash
-# .env (optional)
-PORT=7485
-NODE_ENV=development
-\`\`\`
-
 ## Production Deployment
 
 ### Build for Production
@@ -447,6 +448,10 @@ Found a bug or have a suggestion? Please open an issue!
 {{license}}
 `,
   },
+
+  // ==========================================================================
+  // TYPESCRIPT CONFIG
+  // ==========================================================================
   {
     path: 'tsconfig.json',
     content: `{
@@ -480,6 +485,19 @@ Found a bug or have a suggestion? Please open an issue!
 }
 `,
   },
+
+  // ==========================================================================
+  // NVMRC - Node version specification
+  // ==========================================================================
+  {
+    path: '.nvmrc',
+    content: `23
+`,
+  },
+
+  // ==========================================================================
+  // GITIGNORE
+  // ==========================================================================
   {
     path: '.gitignore',
     content: `# Dependencies

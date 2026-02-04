@@ -5,8 +5,9 @@
  */
 
 export const scripts = {
-  dev: 'tsx watch src/index.ts',
   build: 'tsc',
+  dev: 'NODE_ENV=development tsx watch src/index.ts',
+  'dev:all': 'docker-compose up -d && pnpm run dev',
   start: 'node dist/index.js',
   test: 'vitest run',
   'test:watch': 'vitest',

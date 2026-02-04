@@ -39,40 +39,10 @@ export const install = async (context: ScaffoldResult): Promise<Result<InstallRe
     }
 
     await new Promise<void>((resolve, reject) => {
-      // Explicitly type the stdio option to avoid type conflicts
-      const isDebug = process.env.DEBUG === 'true';
-
-      const child = isDebug
-        ? spawn(cmd, args, {
-            cwd: projectPath,
-            stdio: 'inherit',
-            shell: process.platform === 'win32',
-          })
-        : spawn(cmd, args, {
-            cwd: projectPath,
-            stdio: ['inherit', 'pipe', 'pipe'],
-            shell: process.platform === 'win32',
-          });
-
-      let errorOutput = '';
-
-      // Only access stderr when stdio is 'pipe'
-      if (!isDebug && 'stderr' in child && child.stderr) {
-        child.stderr.on('data', (data: Buffer) => {
-          errorOutput += data.toString();
-        });
-      }
-
-      child.on('exit', code => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(errorOutput || `Installation failed with code ${code}`));
-        }
-      });
-
-      child.on('error', (err: Error) => {
-        reject(err);
+      const child = spawn(cmd, args, {
+        cwd: projectPath,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
       });
 
       // Handle interruption
@@ -84,9 +54,21 @@ export const install = async (context: ScaffoldResult): Promise<Result<InstallRe
 
       process.once('SIGINT', handleInterrupt);
 
-      // Clean up handler when child exits
-      child.on('exit', () => {
+      child.on('exit', code => {
+        // Cleanup SIGINT handler
         process.removeListener('SIGINT', handleInterrupt);
+
+        // Resolve or reject based on exit code
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Installation failed with exit code ${code}`));
+        }
+      });
+
+      child.on('error', (err: Error) => {
+        process.removeListener('SIGINT', handleInterrupt);
+        reject(err);
       });
     });
 
@@ -98,29 +80,13 @@ export const install = async (context: ScaffoldResult): Promise<Result<InstallRe
       installSkipped: false,
       installDuration: parseFloat(duration),
     });
-  } catch (error) {
+  } catch {
     spinner.fail(chalk.red('✖ Installation failed'));
-
-    // Provide recovery suggestions based on error
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    if (errorMessage.includes('EACCES') || errorMessage.includes('permission')) {
-      console.log(chalk.yellow('\n💡 Try clearing npm cache: npm cache clean --force'));
-      console.log(chalk.yellow('   Or run with different permissions'));
-    } else if (errorMessage.includes('network') || errorMessage.includes('ENOTFOUND')) {
-      console.log(chalk.yellow('\n💡 Check your internet connection and try again'));
-      console.log(
-        chalk.yellow(`   You can also run: cd ${context.name} && ${packageManager} install`)
-      );
-    } else if (errorMessage.includes('ENOSPC')) {
-      console.log(chalk.yellow('\n💡 Not enough disk space. Free up some space and try again'));
-    } else {
-      console.log(
-        chalk.yellow(
-          `\n💡 You can try installing manually: cd ${context.name} && ${packageManager} install`
-        )
-      );
-    }
+    console.log(
+      chalk.yellow(
+        `\n💡 You can try installing manually: cd ${context.name} && ${packageManager} install`
+      )
+    );
 
     // Don't fail the entire process - user can install manually
     return ok({

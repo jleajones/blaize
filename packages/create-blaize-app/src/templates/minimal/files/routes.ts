@@ -401,15 +401,15 @@ export const getEventsStream = route.sse({
     const cleanupFns: Array<() => void> = [];
     
     // Send initial connection message
-    await stream.send('demo:event', {
+    stream.send('demo:event', {
       message: 'Connected to event stream',
       data: { connectedAt: Date.now() },
     });
     
     // Subscribe to user:viewed events
-    const unsubUserViewed = eventBus.subscribe('user:viewed', async (event) => {
+    const unsubUserViewed = eventBus.subscribe('user:viewed', (event) => {
       try {
-        await stream.send('user:viewed', event.data);
+        stream.send('user:viewed', event.data);
       } catch (error) {
         logger.error('Failed to send user:viewed event', { error });
       }
@@ -417,9 +417,9 @@ export const getEventsStream = route.sse({
     cleanupFns.push(unsubUserViewed);
     
     // Subscribe to file:uploaded events
-    const unsubFileUploaded = eventBus.subscribe('file:uploaded', async (event) => {
+    const unsubFileUploaded = eventBus.subscribe('file:uploaded', (event) => {
       try {
-        await stream.send('file:uploaded', event.data);
+        stream.send('file:uploaded', event.data);
       } catch (error) {
         logger.error('Failed to send file:uploaded event', { error });
       }
@@ -431,19 +431,12 @@ export const getEventsStream = route.sse({
       stream.send('demo:event', {
         message: 'heartbeat',
         data: { timestamp: Date.now() },
-      }).catch(err => logger.error('Heartbeat failed', { error: err }));
+      });
     }, 30000);
     
     // Cleanup on client disconnect
     stream.onClose(() => {
       logger.info('SSE client disconnected');
-      clearInterval(heartbeat);
-      cleanupFns.forEach(fn => fn());
-    });
-    
-    // Cleanup on stream error
-    stream.onError((error) => {
-      logger.error('SSE stream error', { error });
       clearInterval(heartbeat);
       cleanupFns.forEach(fn => fn());
     });
