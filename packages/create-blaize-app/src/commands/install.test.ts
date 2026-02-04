@@ -7,8 +7,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { install } from './install';
 import { getInstallCommand } from '../utils/package-manager';
 
-import type { ScaffoldResult } from './scaffold';
-import type { Template } from '../templates/minimal';
+import type { ScaffoldResult, Template } from '@/types';
 
 // Mock template object that implements the Template interface
 const mockTemplate: Template = {
@@ -149,7 +148,7 @@ describe('install', () => {
 
       expect(spawn).toHaveBeenCalledWith('npm', ['install'], {
         cwd: '/path/to/test-app',
-        stdio: ['inherit', 'pipe', 'pipe'],
+        stdio: 'inherit',
         shell: process.platform === 'win32',
       });
 
@@ -216,15 +215,13 @@ describe('install', () => {
 
       const installPromise = install(context);
 
-      // Simulate stderr output and failure
       process.nextTick(() => {
-        mockChildProcess.stderr.emit('data', Buffer.from('Error: Package not found'));
         mockChildProcess.emit('exit', 1);
       });
 
       const result = await installPromise;
 
-      expect(result.ok).toBe(true); // Install doesn't fail the whole process
+      expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('Expected success');
 
       expect(result.value.installSkipped).toBe(true);
@@ -250,57 +247,15 @@ describe('install', () => {
 
       expect(result.value.installSkipped).toBe(true);
       expect(mockSpinner.fail).toHaveBeenCalled();
-    });
-
-    it('should provide helpful suggestions for permission errors', async () => {
-      const context: ScaffoldResult = createMockContext();
-
-      const installPromise = install(context);
-
-      process.nextTick(() => {
-        mockChildProcess.stderr.emit('data', Buffer.from('EACCES: permission denied'));
-        mockChildProcess.emit('exit', 1);
-      });
-
-      const result = await installPromise;
-
-      expect(result.ok).toBe(true);
-      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Try clearing npm cache'));
-    });
-
-    it('should provide helpful suggestions for network errors', async () => {
-      const context: ScaffoldResult = createMockContext();
-
-      const installPromise = install(context);
-
-      process.nextTick(() => {
-        mockChildProcess.stderr.emit('data', Buffer.from('network timeout'));
-        mockChildProcess.emit('exit', 1);
-      });
-
-      const result = await installPromise;
-
-      expect(result.ok).toBe(true);
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Check your internet connection')
+        expect.stringContaining('You can try installing manually')
       );
     });
 
-    it('should provide helpful suggestions for disk space errors', async () => {
-      const context: ScaffoldResult = createMockContext();
-
-      const installPromise = install(context);
-
-      process.nextTick(() => {
-        mockChildProcess.stderr.emit('data', Buffer.from('ENOSPC: no space left on device'));
-        mockChildProcess.emit('exit', 1);
-      });
-
-      const result = await installPromise;
-
-      expect(result.ok).toBe(true);
-      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Not enough disk space'));
-    });
+    // ❌ REMOVE these tests - we can't detect specific error types anymore
+    // - should provide helpful suggestions for permission errors
+    // - should provide helpful suggestions for network errors
+    // - should provide helpful suggestions for disk space errors
 
     it('should handle invalid package manager command', async () => {
       (getInstallCommand as any).mockReturnValue([]);
@@ -427,7 +382,7 @@ describe('install', () => {
 
       expect(spawn).toHaveBeenCalledWith('npm', ['install'], {
         cwd: '/path/to/test-app',
-        stdio: ['inherit', 'pipe', 'pipe'],
+        stdio: 'inherit',
         shell: true,
       });
 

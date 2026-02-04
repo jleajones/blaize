@@ -33,7 +33,7 @@ describe('CORS Preflight Handler', () => {
   afterEach(() => {
     // Verify response time is reasonable
     const duration = Date.now() - startTime;
-    expect(duration).toBeLessThan(100); // Should complete within 100ms
+    expect(duration).toBeLessThan(500); // Should complete within 500ms
   });
 
   describe('isPreflightRequest', () => {

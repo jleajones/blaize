@@ -1,23 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/**
- * Supported package managers
- */
-export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
-
-/**
- * Package manager info type
- */
-export interface PackageManagerInfo {
-  name: PackageManager;
-  lockFile: string;
-  installCommand: string[];
-  runCommand: (script: string) => string;
-  addCommand: (pkg: string, dev?: boolean) => string;
-  execCommand: (pkg: string) => string;
-}
-
+import type { PackageManager, PackageManagerInfo } from '@/types';
 /**
  * Package manager configurations
  */

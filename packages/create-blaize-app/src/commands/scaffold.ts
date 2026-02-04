@@ -10,16 +10,9 @@ import {
   generatePackageJson,
 } from '../templates/generators';
 import { registerDirectoryCleanup } from '../utils/cleanup';
-import { type Result, ok } from '../utils/functional';
+import { ok } from '../utils/functional';
 
-import type { ValidatedInputs } from './validate';
-
-/**
- * Scaffold result type
- */
-export interface ScaffoldResult extends ValidatedInputs {
-  filesCreated: string[];
-}
+import type { Result, ScaffoldResult, ValidatedInputs } from '@/types';
 
 /**
  * Process template variables

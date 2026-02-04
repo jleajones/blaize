@@ -9,9 +9,9 @@ import {
   getAddCommand,
   getExecCommand,
   isValidPackageManager,
-  type PackageManager,
-  type PackageManagerInfo,
 } from './package-manager';
+
+import type { PackageManager, PackageManagerInfo } from '@/types';
 
 // Mock fs and path modules
 vi.mock('node:fs');

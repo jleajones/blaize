@@ -276,6 +276,17 @@ describe('parseArgs', () => {
       expect(result.value.template).toBe('minimal');
     });
 
+    it('should accept advanced template', () => {
+      // ← CHANGED: Test now expects advanced to work
+      const argv = ['node', 'script', 'my-app', '--template', 'advanced'];
+      const result = parseArgs(argv);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Expected success');
+
+      expect(result.value.template).toBe('advanced');
+    });
+
     it('should default to minimal template', () => {
       const argv = ['node', 'script', 'my-app'];
       const result = parseArgs(argv);
@@ -286,15 +297,16 @@ describe('parseArgs', () => {
       expect(result.value.template).toBe('minimal');
     });
 
-    it('should always use minimal template even if other is specified', () => {
-      // Currently only minimal is supported, so any other template gets overridden
+    it('should reject invalid template names', () => {
+      // ← CHANGED: Now expects rejection for invalid templates
       const argv = ['node', 'script', 'my-app', '--template', 'react'];
       const result = parseArgs(argv);
 
-      // This succeeds because the code forces template to 'minimal'
-      expect(result.ok).toBe(true);
-      if (!result.ok) throw new Error('Expected success');
-      expect(result.value.template).toBe('minimal');
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('Expected error');
+
+      expect(result.error).toBeInstanceOf(CLIError);
+      expect((result.error as CLIError).code).toBe('VALIDATION_ERROR');
     });
   });
 

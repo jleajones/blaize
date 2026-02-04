@@ -2,11 +2,13 @@ import path from 'node:path';
 
 import fs from 'fs-extra';
 
-import { type ParsedArgs } from './parse-args';
 import { validateInputs } from './validate';
+import { advancedTemplate } from '../templates/advanced'; // ← ADDED
 import { minimalTemplate } from '../templates/minimal';
 import { CLIError } from '../utils/errors';
 import { detectPackageManager } from '../utils/package-manager';
+
+import type { ParsedArgs } from '@/types';
 
 // Mock fs-extra
 vi.mock('fs-extra');
@@ -26,7 +28,7 @@ describe('validateInputs', () => {
     install: true,
     latest: false,
     dryRun: false,
-    packageManager: undefined,  // Changed from null to undefined
+    packageManager: undefined,
     help: false,
     version: false,
   };
@@ -34,10 +36,10 @@ describe('validateInputs', () => {
   beforeEach(() => {
     // Mock process.cwd()
     vi.spyOn(process, 'cwd').mockReturnValue(mockCwd);
-    
+
     // Reset all mocks
     vi.clearAllMocks();
-    
+
     // Default mock implementations
     (fs.pathExists as any).mockResolvedValue(false);
     (fs.stat as any).mockResolvedValue({ isDirectory: () => true });
@@ -232,9 +234,7 @@ describe('validateInputs', () => {
       };
 
       await expect(validateInputs(args)).rejects.toThrow(CLIError);
-      await expect(validateInputs(args)).rejects.toThrow(
-        "Template 'nonexistent' not found"
-      );
+      await expect(validateInputs(args)).rejects.toThrow("Template 'nonexistent' not found");
     });
 
     it('should throw error with correct code for invalid template', async () => {
@@ -249,7 +249,8 @@ describe('validateInputs', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(CLIError);
         expect((error as CLIError).code).toBe('TEMPLATE_NOT_FOUND');
-        expect((error as CLIError).suggestion).toBe('Available templates: minimal');
+        // ← CHANGED: Now expects both templates in error message
+        expect((error as CLIError).suggestion).toBe('Available templates: minimal, advanced');
       }
     });
 
@@ -358,6 +359,21 @@ describe('validateInputs', () => {
       expect(result.value.template).toBe(minimalTemplate);
     });
 
+    it('should accept advanced template', async () => {
+      // ← ADDED: Test for advanced template
+      const args: ParsedArgs = {
+        ...defaultArgs,
+        template: 'advanced',
+      };
+
+      const result = await validateInputs(args);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Expected success');
+
+      expect(result.value.template).toBe(advancedTemplate);
+    });
+
     it('should provide helpful error message for unknown templates', async () => {
       const templates = ['react', 'vue', 'angular', 'nextjs', 'remix'];
 
@@ -373,7 +389,10 @@ describe('validateInputs', () => {
         } catch (error) {
           expect(error).toBeInstanceOf(CLIError);
           expect((error as CLIError).message).toContain(`Template '${template}' not found`);
-          expect((error as CLIError).suggestion).toContain('Available templates: minimal');
+          // ← CHANGED: Now expects both templates in error message
+          expect((error as CLIError).suggestion).toContain(
+            'Available templates: minimal, advanced'
+          );
         }
       }
     });
@@ -409,6 +428,32 @@ describe('validateInputs', () => {
       expect(validated.typescript).toBe(true);
       expect(validated.git).toBe(true);
       expect(validated.install).toBe(true);
+    });
+
+    it('should handle advanced template flow', async () => {
+      // ← ADDED: Test for advanced template integration
+      const args: ParsedArgs = {
+        name: 'production-app',
+        template: 'advanced',
+        typescript: true,
+        git: true,
+        install: true,
+        latest: false,
+        dryRun: false,
+        packageManager: 'pnpm',
+        help: false,
+        version: false,
+      };
+
+      const result = await validateInputs(args);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Expected success');
+
+      const validated = result.value;
+      expect(validated.name).toBe('production-app');
+      expect(validated.template).toBe(advancedTemplate);
+      expect(validated.packageManager).toBe('pnpm');
     });
 
     it('should handle CI/CD scenario with specific options', async () => {

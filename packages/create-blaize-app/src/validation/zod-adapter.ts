@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
-import { type SchemaValidator, ValidationError } from './types';
-import { type Result, ok, err } from '../utils/functional';
+import { ValidationError } from './error';
+import { ok, err } from '../utils/functional';
+
+import type { Result, SchemaValidator } from '@/types';
 
 /**
  * Zod adapter for schema validation
