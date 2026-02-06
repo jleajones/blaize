@@ -17,7 +17,7 @@ Before installing BlaizeJS, ensure you have:
 
 ---
 
-## Option 1: Create BlaizeJS App (Recommended)
+## Option 1: Create BlaizeJS App (recommended)
 
 The fastest way to start a new BlaizeJS project:
 
@@ -32,7 +32,8 @@ This gives you:
 - ✅ File-based routing structure
 - ✅ Development server with hot reload
 - ✅ HTTP/2 with auto-generated HTTPS certificates
-- ✅ Example routes to learn from
+- ✅ Example routes with tests
+- ✅ Type-safe route factory pattern
 
 <details>
 <summary>Using a different package manager?</summary>
@@ -50,7 +51,128 @@ bun create blaize-app my-api
 
 </details>
 
-### CLI Options
+### Choose your template
+
+BlaizeJS offers two templates to match your needs:
+
+#### 🎯 Minimal (default)
+
+Perfect for learning BlaizeJS or starting a new project:
+
+```bash
+npx create-blaize-app my-api
+# or explicitly:
+npx create-blaize-app my-api --template minimal
+```
+
+**Includes:**
+- File-based routing
+- Type-safe file uploads with Zod schemas
+- Server-Sent Events (SSE) for real-time updates
+- EventBus for publish/subscribe patterns
+- Comprehensive test suite (30 tests, 80%+ coverage)
+
+**Project structure:**
+
+```
+my-api/
+├── src/
+│   ├── app.ts              # Server setup
+│   ├── app-router.ts       # Type-safe route factory
+│   ├── app-type.ts         # Route registry for client
+│   ├── events.ts           # Event schemas
+│   └── routes/
+│       ├── index.ts        # GET /
+│       ├── health.ts       # GET /health
+│       ├── upload.ts       # POST /upload (file uploads)
+│       ├── users/
+│       │   ├── index.ts    # GET /users
+│       │   └── [userId]/
+│       │       └── index.ts # GET /users/:userId
+│       └── events/
+│           └── stream.ts   # GET /events/stream (SSE)
+└── __tests__/              # Test suite
+```
+
+**Available endpoints:**
+- `GET /` — Welcome message
+- `GET /health` — Health check
+- `GET /users` — List users
+- `GET /users/:userId` — Get user by ID
+- `POST /upload` — File upload with validation
+- `GET /events/stream` — SSE streaming
+
+---
+
+#### 🚀 Advanced
+
+Production-ready template with Redis-powered plugins:
+
+```bash
+npx create-blaize-app my-api --template advanced
+```
+
+**Includes everything in Minimal, plus:**
+- **Queue Plugin** — Background job processing with Redis
+- **Cache Plugin** — High-performance caching with Redis
+- **Metrics Plugin** — Prometheus-compatible metrics
+- **Docker Compose** — Redis + Redis Commander (optional GUI)
+- **Integration tests** — Full test coverage with Redis
+
+**Additional requirements:**
+- Docker (for Redis)
+
+**Project structure:**
+
+```
+my-api/
+├── src/
+│   ├── index.ts            # Server entry point
+│   ├── config.ts           # Configuration (Redis, etc.)
+│   ├── events.ts           # Event schemas
+│   ├── handlers.ts         # Queue job handlers
+│   ├── app-router.ts       # Route factory
+│   ├── app-type.ts         # Type exports
+│   ├── routes/             # API routes
+│   │   ├── index.ts
+│   │   ├── health/         # Health checks
+│   │   ├── metrics/        # Prometheus metrics
+│   │   ├── queue/          # Queue management
+│   │   ├── cache/          # Cache operations
+│   │   └── user/           # User management
+│   └── data/               # Mock data
+├── docker-compose.yml      # Redis services
+├── .env.example            # Environment template
+└── __tests__/
+    ├── routes/             # Unit tests
+    └── integration/        # Integration tests
+```
+
+**Additional endpoints:**
+- `GET /cache/dashboard` — Cache statistics dashboard
+- `GET /queue/stats` — Queue statistics
+- `GET /metrics` — Prometheus metrics
+- `GET /metrics/dashboard` — Metrics dashboard
+
+**Quick start (advanced template):**
+
+```bash
+# 1. Create project
+npx create-blaize-app my-api --template advanced
+cd my-api
+
+# 2. Start Redis
+docker compose up -d
+
+# 3. Start server
+npm run dev
+
+# 4. Visit https://localhost:7485
+```
+
+---
+
+### CLI options
 
 ```bash
 create-blaize-app <project-name> [options]
@@ -58,32 +180,41 @@ create-blaize-app <project-name> [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--template <name>` | Project template | `minimal` |
+| `--template <n>` | Template: `minimal` or `advanced` | `minimal` |
 | `--pm <manager>` | Package manager (npm, pnpm, yarn, bun) | Auto-detected |
 | `--no-git` | Skip git initialization | `false` |
 | `--no-install` | Skip dependency installation | `false` |
+| `--latest` | Use latest package versions | `false` |
 | `--dry-run` | Preview without creating files | `false` |
+| `--help, -h` | Show help message | — |
+| `--version, -v` | Show version number | — |
 
 **Examples:**
 
 ```bash
-# Use pnpm explicitly
+# Create with pnpm
 npx create-blaize-app my-api --pm pnpm
 
-# Preview what would be created
+# Advanced template with yarn
+npx create-blaize-app my-api --template advanced --pm yarn
+
+# Preview without creating files
 npx create-blaize-app my-api --dry-run
 
 # Skip git init (useful in existing repos)
 npx create-blaize-app my-api --no-git
+
+# Skip installation, install manually later
+npx create-blaize-app my-api --no-install
 ```
 
 ---
 
-## Option 2: Manual Installation
+## Option 2: Manual installation
 
 For adding BlaizeJS to an existing project or when you want full control over your setup.
 
-### Step 1: Install Dependencies
+### Step 1: Install dependencies
 
 **Runtime dependencies:**
 
@@ -161,16 +292,36 @@ Add these fields to your `package.json`:
 
 > **Important:** `"type": "module"` is required for ESM imports.
 
-### Step 4: Create Project Structure
+### Step 4: Create project structure
 
 ```bash
 mkdir -p src/routes
 ```
 
-Create `src/app.ts`:
+Create `src/app-router.ts`:
 
 ```typescript
 import { Blaize, type InferContext } from 'blaizejs';
+
+// Type-only server for type inference
+const typeServer = Blaize.createServer({
+  host: 'localhost',
+  port: 7485,
+  routesDir: './src/routes',
+});
+
+type AppContext = InferContext<typeof typeServer>;
+
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],
+  AppContext['services']
+>();
+```
+
+Create `src/app.ts`:
+
+```typescript
+import { Blaize } from 'blaizejs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -179,32 +330,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Create server
-const app = Blaize.createServer({
+const server = Blaize.createServer({
   host: 'localhost',
-  port: 3000,
+  port: 7485,
   routesDir: path.resolve(__dirname, './routes'),
   http2: { enabled: true },
 });
 
-// Create typed route factory
-type AppContext = InferContext<typeof app>;
-export const route = Blaize.Router.createRouteFactory<
-  AppContext['state'],
-  AppContext['services']
->();
-
 // Start server
-await app.listen();
-console.log(`🚀 Server running at https://localhost:3000`);
+await server.listen();
+console.log(`🚀 Server running at https://localhost:7485`);
 ```
 
 Create `src/routes/index.ts`:
 
 ```typescript
-import { route } from '../app';
+import { route } from '../app-router';
 import { z } from 'zod';
 
-export const GET = route.get({
+export const getRoot = route.get({
   schema: {
     response: z.object({
       message: z.string(),
@@ -218,19 +362,35 @@ export const GET = route.get({
 });
 ```
 
-### Step 5: Run Your Server
+**Important:** Note the handler signature uses destructuring `({ ctx, params, logger, eventBus })`:
+
+```typescript
+// ✅ Correct (new signature)
+handler: async ({ ctx, params, logger, eventBus }) => {
+  logger.info('Processing request');
+  return { message: 'Hello!' };
+}
+
+// ❌ Old signature (deprecated)
+handler: async (ctx, params, logger) => {
+  // This still works but is deprecated
+  return { message: 'Hello!' };
+}
+```
+
+### Step 5: Run your server
 
 ```bash
 npm run dev
 ```
 
-Visit `https://localhost:3000` (accept the self-signed certificate warning).
+Visit `https://localhost:7485` (accept the self-signed certificate warning).
 
 ---
 
-## Additional Packages
+## Additional packages
 
-### Type-Safe Client
+### Type-safe client
 
 For calling your API with full type inference:
 
@@ -238,15 +398,28 @@ For calling your API with full type inference:
 npm install @blaizejs/client
 ```
 
-```typescript
-import bc from '@blaizejs/client';
-import { routes } from './app-type';
+Create `src/app-type.ts`:
 
-const client = bc.create('https://localhost:3000', routes);
-const data = await client.$get.getHealth();
+```typescript
+import { getRoot } from './routes/index';
+
+export const routes = {
+  getRoot,
+} as const;
 ```
 
-### Testing Utilities
+Use in client:
+
+```typescript
+import bc from '@blaizejs/client';
+import { routes } from './server/app-type';
+
+const client = bc.create('https://localhost:7485', routes);
+const data = await client.$get.getRoot();
+console.log(data.message); // TypeScript knows this is a string
+```
+
+### Testing utilities
 
 For testing your routes and middleware:
 
@@ -257,17 +430,18 @@ npm install -D @blaizejs/testing-utils vitest
 ```typescript
 import { createTestContext } from '@blaizejs/testing-utils';
 import { describe, it, expect } from 'vitest';
+import { getRoot } from '../routes/index';
 
 describe('GET /', () => {
   it('returns greeting', async () => {
     const ctx = createTestContext({ method: 'GET' });
-    const result = await GET.handler(ctx, {});
+    const result = await getRoot.handler({ ctx, params: {}, logger: ctx.logger, eventBus: ctx.eventBus });
     expect(result.message).toBe('Hello from BlaizeJS!');
   });
 });
 ```
 
-### Official Plugins
+### Official plugins
 
 | Package | Purpose | Install |
 |---------|---------|---------|
@@ -275,7 +449,15 @@ describe('GET /', () => {
 | `@blaizejs/plugin-cache` | Caching (memory/Redis) | `npm install @blaizejs/plugin-cache` |
 | `@blaizejs/plugin-metrics` | Prometheus metrics | `npm install @blaizejs/plugin-metrics` |
 
-### Official Middleware
+### Redis adapter
+
+For Redis-backed EventBus, Queue, and Cache:
+
+```bash
+npm install @blaizejs/adapter-redis
+```
+
+### Official middleware
 
 | Package | Purpose | Install |
 |---------|---------|---------|
@@ -283,42 +465,18 @@ describe('GET /', () => {
 
 ---
 
-## Project Structure
-
-Whether you use `create-blaize-app` or manual setup, the recommended structure is:
-
-```
-my-api/
-├── src/
-│   ├── app.ts              # Server entry point + route factory
-│   ├── app-type.ts         # Routes registry (for client)
-│   ├── routes/             # File-based routes
-│   │   ├── index.ts        # GET /
-│   │   ├── health.ts       # GET /health
-│   │   └── users/
-│   │       ├── index.ts    # GET /users, POST /users
-│   │       └── [userId].ts # GET /users/:userId
-│   ├── middleware/         # Custom middleware
-│   └── plugins/            # Custom plugins
-├── package.json
-├── tsconfig.json
-└── .gitignore
-```
-
----
-
-## Environment Configuration
+## Environment configuration
 
 BlaizeJS reads these environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORT` | Server port | `3000` |
+| `PORT` | Server port | `7485` |
 | `HOST` | Server host | `localhost` |
 | `NODE_ENV` | Environment mode | `development` |
 
 ```bash
-# .env (use with dotenv or similar)
+# .env
 PORT=8080
 HOST=0.0.0.0
 NODE_ENV=production
@@ -326,12 +484,14 @@ NODE_ENV=production
 
 ```typescript
 // src/app.ts
-const app = Blaize.createServer({
-  port: parseInt(process.env.PORT || '3000'),
+const server = Blaize.createServer({
+  port: process.env.PORT ? parseInt(process.env.PORT) : 7485,
   host: process.env.HOST || 'localhost',
   // ...
 });
 ```
+
+> **Note:** The `tsx` dev server automatically loads `.env` files — no additional configuration needed!
 
 ---
 
@@ -344,7 +504,7 @@ After installation, verify everything works:
 npm run dev
 
 # In another terminal, test the API
-curl -k https://localhost:3000/
+curl -k https://localhost:7485/
 ```
 
 Expected response:
@@ -362,7 +522,7 @@ Expected response:
 
 ### "Cannot find module" errors
 
-Ensure `"type": "module"` is in your `package.json` and you're using `.ts` extensions in imports if needed.
+Ensure `"type": "module"` is in your `package.json` and you're using `.js` extensions in imports if needed (TypeScript handles `.ts` automatically).
 
 ### TypeScript errors about ESM
 
@@ -380,20 +540,50 @@ Make sure `tsconfig.json` has:
 
 BlaizeJS uses HTTPS by default with a self-signed certificate in development. This is expected — click through the warning or use `curl -k`.
 
-### Port already in use
-
-Change the port in your server configuration:
+To disable HTTPS in development:
 ```typescript
-const app = Blaize.createServer({
-  port: 3001, // Use a different port
+const server = Blaize.createServer({
+  http2: { enabled: false }, // Disable HTTP/2 (uses HTTP/1.1)
   // ...
 });
 ```
 
+### Port already in use
+
+Change the port in your server configuration:
+```typescript
+const server = Blaize.createServer({
+  port: 3000, // Use a different port
+  // ...
+});
+```
+
+### Handler signature errors
+
+If you see TypeScript errors about handler parameters, you're likely using the old signature. Update to use destructuring:
+
+```typescript
+// ❌ Old (deprecated)
+handler: async (ctx, params, logger) => { ... }
+
+// ✅ New (correct)
+handler: async ({ ctx, params, logger, eventBus }) => { ... }
+```
+
+### Advanced template: Redis connection errors
+
+If using the advanced template and seeing Redis errors:
+
+1. Make sure Docker is running
+2. Start Redis: `docker compose up -d`
+3. Verify Redis is running: `docker compose ps`
+4. Test connection: `redis-cli ping` (should return `PONG`)
+
 ---
 
-## Next Steps
+## Next steps
 
-- **[Quick Start](./quick-start.mdx)** — Build your first routes
-- **[Tutorial](./tutorial.mdx)** — Complete API walkthrough
-- **[Architecture](./architecture/overview.mdx)** — Understand how BlaizeJS works
+- **[Quick start](./quick-start)** — Build your first routes
+- **[Tutorial](./tutorial)** — Complete API walkthrough  
+- **[Architecture](../architecture/overview)** — Understand how BlaizeJS works
+- **[File-based routing](../guides/routing)** — Deep dive into routing patterns

@@ -1,0 +1,1526 @@
+# 🚨 Error Handling Guide
+
+> Build robust applications with BlaizeJS's semantic error system—automatic formatting, correlation tracking, and production-ready debugging
+
+Error handling in BlaizeJS is built around one principle: **errors should be easy to throw, easy to catch, and easy to debug**. With 12 semantic error classes, automatic HTTP formatting, and correlation tracking, you get production-ready error handling out of the box.
+
+---
+
+## 📋 Table of Contents
+
+- [What Makes BlaizeJS Error Handling Different?](#-what-makes-blaizejs-error-handling-different)
+- [The Error System](#-the-error-system)
+- [Your First Error](#-your-first-error)
+- [All Error Classes](#-all-error-classes)
+- [Adding Rich Context](#-adding-rich-context)
+- [Error Boundary](#-error-boundary)
+- [Correlation IDs](#-correlation-ids)
+- [Common Patterns](#-common-patterns)
+- [Production Debugging](#-production-debugging)
+- [Client-Side Handling](#-client-side-handling)
+- [Testing Error Handling](#-testing-error-handling)
+- [Best Practices](#-best-practices)
+
+---
+
+## 🎯 What Makes BlaizeJS Error Handling Different?
+
+Most frameworks make you manually format error responses. BlaizeJS does it automatically:
+
+**Traditional approach:**
+
+```typescript
+// ❌ Manual error handling
+app.get('/users/:id', async (req, res) => {
+  try {
+    const user = await db.users.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'Not found',
+        message: 'User not found',
+        // Forgot correlation ID!
+        // Forgot timestamp!
+        // Wrong format!
+      });
+    }
+
+    res.json(user);
+  } catch (error) {
+    // What status code? What format?
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+```
+
+**BlaizeJS approach:**
+
+```typescript
+// ✅ Automatic error handling
+export const getUser = route.get({
+  handler: async ({ ctx, params }) => {
+    const user = await db.users.findById(params.userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'user',
+        resourceId: params.userId,
+      });
+    }
+
+    return { user };
+  },
+});
+
+// Automatic response:
+// HTTP 404
+// {
+//   "type": "NOT_FOUND",
+//   "title": "User not found",
+//   "status": 404,
+//   "correlationId": "req_abc123",
+//   "timestamp": "2024-01-15T10:30:00.000Z",
+//   "details": {
+//     "resourceType": "user",
+//     "resourceId": "123"
+//   }
+// }
+```
+
+**What you get automatically:**
+
+- ✅ Correct HTTP status codes
+- ✅ Consistent response format
+- ✅ Correlation IDs for tracing
+- ✅ Timestamps
+- ✅ Type-safe error details
+- ✅ Production-ready logging
+
+---
+
+## 🏗️ The Error System
+
+BlaizeJS provides **12 semantic error classes** that automatically format to HTTP responses:
+
+```
+BlaizeError (abstract base)
+├── ValidationError        (400 Bad Request)
+├── UnauthorizedError      (401 Unauthorized)
+├── ForbiddenError         (403 Forbidden)
+├── NotFoundError          (404 Not Found)
+├── RequestTimeoutError    (408 Request Timeout)
+├── ConflictError          (409 Conflict)
+├── PayloadTooLargeError   (413 Payload Too Large)
+├── UnsupportedMediaTypeError (415 Unsupported Media Type)
+├── UnprocessableEntityError  (422 Unprocessable Entity)
+├── RateLimitError         (429 Too Many Requests)
+├── InternalServerError    (500 Internal Server Error)
+└── ServiceNotAvailableError (503 Service Unavailable)
+```
+
+### Error Response Format
+
+All errors follow this consistent structure:
+
+```json
+{
+  "type": "ERROR_TYPE",
+  "title": "Human-readable message",
+  "status": 404,
+  "correlationId": "req_k3x2m1_9z8y7w6v",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "details": {
+    // Error-specific context
+  }
+}
+```
+
+---
+
+## 🚀 Your First Error
+
+Let's start with a simple example:
+
+```typescript
+// src/routes/users/[userId].ts
+import { route } from '../../app';
+import { NotFoundError } from 'blaizejs';
+
+export const getUser = route.get({
+  handler: async ({ ctx, params }) => {
+    const user = await ctx.services.db.users.findById(params.userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    return { user };
+  },
+});
+```
+
+**That's it!** The error boundary automatically:
+
+1. Catches the error
+2. Formats it as HTTP 404
+3. Adds correlation ID
+4. Adds timestamp
+5. Sends JSON response
+
+**Client receives:**
+
+```bash
+curl https://localhost:7485/users/invalid-id
+
+# HTTP/1.1 404 Not Found
+# Content-Type: application/json
+# X-Correlation-ID: req_k3x2m1_9z8y7w6v
+#
+# {
+#   "type": "NOT_FOUND",
+#   "title": "User not found",
+#   "status": 404,
+#   "correlationId": "req_k3x2m1_9z8y7w6v",
+#   "timestamp": "2024-01-15T10:30:00.000Z"
+# }
+```
+
+---
+
+## 📚 All Error Classes
+
+### 400 — ValidationError
+
+**When to use:** Invalid request data, schema validation failures
+
+```typescript
+import { ValidationError } from 'blaizejs';
+
+throw new ValidationError('Invalid input', {
+  fields: [
+    {
+      field: 'email',
+      messages: ['Must be a valid email address'],
+      rejectedValue: 'not-an-email',
+      expectedType: 'email',
+    },
+    {
+      field: 'age',
+      messages: ['Must be at least 18'],
+      rejectedValue: 15,
+      expectedType: 'number',
+    },
+  ],
+  errorCount: 2,
+  section: 'body',
+});
+```
+
+**Response:**
+
+```json
+{
+  "type": "VALIDATION_ERROR",
+  "title": "Invalid input",
+  "status": 400,
+  "details": {
+    "fields": [
+      {
+        "field": "email",
+        "messages": ["Must be a valid email address"],
+        "rejectedValue": "not-an-email",
+        "expectedType": "email"
+      }
+    ],
+    "errorCount": 2,
+    "section": "body"
+  }
+}
+```
+
+### 401 — UnauthorizedError
+
+**When to use:** Missing or invalid authentication
+
+```typescript
+import { UnauthorizedError } from 'blaizejs';
+
+throw new UnauthorizedError('Token expired', {
+  reason: 'expired_token',
+  authScheme: 'Bearer',
+  expiresAt: '2024-01-15T10:00:00Z',
+  loginUrl: '/auth/login',
+});
+```
+
+**Common scenarios:**
+
+- Missing `Authorization` header
+- Invalid JWT token
+- Expired session
+- Revoked API key
+
+### 403 — ForbiddenError
+
+**When to use:** Authenticated but not authorized
+
+```typescript
+import { ForbiddenError } from 'blaizejs';
+
+throw new ForbiddenError('Insufficient permissions', {
+  requiredPermission: 'admin:users:delete',
+  userPermissions: ['admin:users:read', 'admin:users:write'],
+  resource: 'user-123',
+  action: 'delete',
+});
+```
+
+**Common scenarios:**
+
+- User lacks required role
+- Resource belongs to different organization
+- Feature not available in current plan
+- IP address not whitelisted
+
+### 404 — NotFoundError
+
+**When to use:** Resource doesn't exist
+
+```typescript
+import { NotFoundError } from 'blaizejs';
+
+throw new NotFoundError('User not found', {
+  resourceType: 'user',
+  resourceId: params.userId,
+  suggestion: 'Verify the user ID is correct',
+});
+```
+
+**Common scenarios:**
+
+- Database record not found
+- File doesn't exist
+- API endpoint not found
+- Route parameter invalid
+
+### 408 — RequestTimeoutError
+
+**When to use:** Request took too long
+
+```typescript
+import { RequestTimeoutError } from 'blaizejs';
+
+throw new RequestTimeoutError('Upload timeout', {
+  timeoutMs: 30000,
+  elapsedMs: 31500,
+  operation: 'file-upload',
+});
+```
+
+**Common scenarios:**
+
+- Long-running upload
+- Slow database query
+- External API timeout
+- Background job timeout
+
+### 409 — ConflictError
+
+**When to use:** Resource state conflict
+
+```typescript
+import { ConflictError } from 'blaizejs';
+
+throw new ConflictError('Email already exists', {
+  conflictType: 'duplicate_key',
+  field: 'email',
+  existingValue: 'user@example.com',
+  resolution: 'Use a different email address',
+});
+```
+
+**Common scenarios:**
+
+- Duplicate unique constraint
+- Optimistic locking failure
+- Version mismatch
+- Concurrent modification
+
+### 413 — PayloadTooLargeError
+
+**When to use:** Request body exceeds limits
+
+```typescript
+import { PayloadTooLargeError } from 'blaizejs';
+
+throw new PayloadTooLargeError('File too large', {
+  currentSize: 104857600, // 100MB
+  maxSize: 52428800, // 50MB
+  filename: 'huge-video.mp4',
+});
+```
+
+**Common scenarios:**
+
+- File upload too large
+- Request body exceeds limit
+- Too many items in batch request
+- GraphQL query too complex
+
+### 415 — UnsupportedMediaTypeError
+
+**When to use:** Wrong content type
+
+```typescript
+import { UnsupportedMediaTypeError } from 'blaizejs';
+
+throw new UnsupportedMediaTypeError('Unsupported file type', {
+  receivedMimeType: 'application/x-executable',
+  allowedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
+  filename: 'document.exe',
+});
+```
+
+**Common scenarios:**
+
+- Wrong image format
+- Unsupported video codec
+- Invalid document type
+- Missing `Content-Type` header
+
+### 422 — UnprocessableEntityError
+
+**When to use:** Valid syntax but invalid semantics
+
+```typescript
+import { UnprocessableEntityError } from 'blaizejs';
+
+throw new UnprocessableEntityError('Business rule violation', {
+  rule: 'minimum_order_amount',
+  currentValue: 5.0,
+  requiredValue: 10.0,
+  message: 'Order total must be at least $10.00',
+});
+```
+
+**Common scenarios:**
+
+- Business rule violation
+- Invalid date range
+- Insufficient funds
+- Quota exceeded
+
+### 429 — RateLimitError
+
+**When to use:** Too many requests
+
+```typescript
+import { RateLimitError } from 'blaizejs';
+
+throw new RateLimitError('Rate limit exceeded', {
+  limit: 100,
+  remaining: 0,
+  resetTime: new Date('2024-01-15T11:00:00Z'),
+  retryAfter: 3600, // seconds
+  window: 'hour',
+});
+```
+
+**Common scenarios:**
+
+- API rate limiting
+- Login attempt throttling
+- Request flooding
+- DDOS protection
+
+### 500 — InternalServerError
+
+**When to use:** Unexpected server error
+
+```typescript
+import { InternalServerError } from 'blaizejs';
+
+try {
+  await database.connect();
+} catch (error) {
+  throw new InternalServerError('Database connection failed', {
+    originalError: error.message,
+    component: 'database',
+    operation: 'connect',
+    retryable: true,
+  });
+}
+```
+
+**Common scenarios:**
+
+- Database connection failure
+- Third-party API error
+- File system error
+- Unexpected exception
+
+### 503 — ServiceNotAvailableError
+
+**When to use:** Dependency unavailable
+
+```typescript
+import { ServiceNotAvailableError } from 'blaizejs';
+
+throw new ServiceNotAvailableError('Payment service unavailable', {
+  service: 'stripe',
+  retryAfter: 60,
+  reason: 'maintenance',
+});
+```
+
+**Common scenarios:**
+
+- External API down
+- Database maintenance
+- Cache server unavailable
+- Scheduled downtime
+
+---
+
+## 💡 Adding Rich Context
+
+Every error accepts a `details` object for additional context:
+
+```typescript
+throw new NotFoundError('User not found', {
+  // What was requested
+  resourceType: 'user',
+  resourceId: params.userId,
+
+  // Where we looked
+  collection: 'users',
+  query: { email: params.email },
+
+  // What the user can do
+  suggestion: 'Check the user ID or try searching by email',
+
+  // Related resources
+  parentResource: {
+    type: 'organization',
+    id: 'org-123',
+  },
+});
+```
+
+### Error Details Best Practices
+
+**✅ Good — Helpful context:**
+
+```typescript
+throw new ConflictError('Version mismatch', {
+  currentVersion: 5,
+  providedVersion: 3,
+  resourceId: 'doc-123',
+  resolution: 'Refresh the document and try again',
+});
+```
+
+**❌ Bad — Vague or missing context:**
+
+```typescript
+throw new ConflictError('Conflict');
+// No details about what conflicted or how to fix it!
+```
+
+**✅ Good — User-actionable:**
+
+```typescript
+throw new UnauthorizedError('Session expired', {
+  expiresAt: '2024-01-15T10:00:00Z',
+  loginUrl: '/auth/login',
+  canRefresh: true,
+});
+```
+
+**❌ Bad — No action path:**
+
+```typescript
+throw new UnauthorizedError('Unauthorized');
+// User has no idea what to do!
+```
+
+---
+
+## 🛡️ Error Boundary
+
+BlaizeJS includes an **automatic error boundary** that catches all errors and formats them:
+
+```
+Request arrives
+     ↓
+Error Boundary (catches everything)
+     ↓
+Global Middleware
+     ↓
+Route Middleware
+     ↓
+Route Handler
+     ↓
+Error thrown? → Caught by Error Boundary
+     ↓
+Formatted as HTTP response
+     ↓
+Sent to client
+```
+
+### How It Works
+
+```typescript
+// This is added automatically to every request
+const errorBoundary = createErrorBoundary();
+
+// It wraps all middleware and handlers
+try {
+  await next(); // Run all middleware and handler
+} catch (error) {
+  // Format error as HTTP response
+  const response = formatErrorResponse(error);
+  ctx.response.status(response.status).json(response);
+}
+```
+
+### What Gets Caught
+
+The error boundary catches **ALL errors**:
+
+**BlaizeJS errors:**
+
+```typescript
+throw new NotFoundError('User not found');
+// → HTTP 404 with proper format
+```
+
+**Standard JavaScript errors:**
+
+```typescript
+throw new Error('Database connection failed');
+// → HTTP 500 (InternalServerError)
+// → Wrapped automatically
+```
+
+**Unexpected errors:**
+
+```typescript
+const user = null;
+console.log(user.name); // TypeError
+// → HTTP 500 (InternalServerError)
+// → Logged with correlation ID
+```
+
+---
+
+## 🔍 Correlation IDs
+
+Every request gets a **unique correlation ID** that flows through all operations:
+
+### How Correlation IDs Work
+
+```
+1. Request arrives
+   ↓
+2. Check x-correlation-id header
+   ├─ Present? → Use it
+   └─ Missing? → Generate new: "req_k3x2m1_9z8y7w6v"
+   ↓
+3. Store in AsyncLocalStorage
+   ↓
+4. Available everywhere via getCorrelationId()
+   ↓
+5. Added to all log entries
+   ↓
+6. Included in error responses
+   ↓
+7. Returned in x-correlation-id header
+```
+
+### Using Correlation IDs
+
+```typescript
+import { getCorrelationId } from 'blaizejs';
+
+export const createOrder = route.post({
+  handler: async ({ ctx }) => {
+    const correlationId = getCorrelationId();
+
+    logger.info('Creating order', {
+      correlationId, // ← Automatically included in logs
+      userId: ctx.state.user.id,
+    });
+
+    try {
+      const order = await ctx.services.db.orders.create({
+        userId: ctx.state.user.id,
+        correlationId, // ← Store for tracing
+      });
+
+      return { order };
+    } catch (error) {
+      // Error automatically includes correlation ID
+      throw new InternalServerError('Order creation failed', {
+        correlationId,
+        userId: ctx.state.user.id,
+      });
+    }
+  },
+});
+```
+
+### Distributed Tracing
+
+Pass correlation IDs to downstream services:
+
+```typescript
+export const processPayment = route.post({
+  handler: async ({ ctx }) => {
+    const correlationId = getCorrelationId();
+
+    // Pass to external API
+    const response = await fetch('https://payment-api.example.com/charge', {
+      method: 'POST',
+      headers: {
+        'X-Correlation-ID': correlationId, // ← Forward to downstream
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: ctx.request.body.amount,
+        currency: 'USD',
+      }),
+    });
+
+    if (!response.ok) {
+      throw new ServiceNotAvailableError('Payment service unavailable', {
+        correlationId,
+        statusCode: response.status,
+      });
+    }
+
+    return await response.json();
+  },
+});
+```
+
+### Client-Side Tracking
+
+Clients can provide their own correlation IDs:
+
+```typescript
+// Client sends correlation ID
+const response = await fetch('https://api.example.com/users/123', {
+  headers: {
+    'X-Correlation-ID': 'client-trace-abc123',
+  },
+});
+
+// Server uses it for all operations
+// Error responses include it
+```
+
+---
+
+## 💼 Common Patterns
+
+### Pattern: Database Not Found
+
+```typescript
+export const getUser = route.get({
+  handler: async ({ ctx, params }) => {
+    const user = await ctx.services.db.users.findById(params.userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'user',
+        resourceId: params.userId,
+        suggestion: 'Verify the user ID exists',
+      });
+    }
+
+    return { user };
+  },
+});
+```
+
+### Pattern: Duplicate Resource
+
+```typescript
+export const createUser = route.post({
+  handler: async ({ ctx }) => {
+    const { email } = ctx.request.body;
+
+    const existing = await ctx.services.db.users.findByEmail(email);
+
+    if (existing) {
+      throw new ConflictError('Email already registered', {
+        conflictType: 'duplicate_key',
+        field: 'email',
+        existingValue: email,
+        resolution: 'Use a different email or log in',
+      });
+    }
+
+    const user = await ctx.services.db.users.create(ctx.request.body);
+    return { user };
+  },
+});
+```
+
+### Pattern: Permission Check
+
+```typescript
+export const deleteUser = route.delete({
+  handler: async ({ ctx, params }) => {
+    const user = await ctx.services.db.users.findById(params.userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'user',
+        resourceId: params.userId,
+      });
+    }
+
+    // Check ownership or admin role
+    if (user.id !== ctx.state.user.id && ctx.state.user.role !== 'admin') {
+      throw new ForbiddenError('Cannot delete other users', {
+        requiredPermission: 'admin',
+        userRole: ctx.state.user.role,
+        action: 'delete',
+        resource: `user:${params.userId}`,
+      });
+    }
+
+    await ctx.services.db.users.delete(params.userId);
+
+    ctx.response.status(204);
+  },
+});
+```
+
+### Pattern: External API Failure
+
+```typescript
+export const sendNotification = route.post({
+  handler: async ({ ctx, logger }) => {
+    const { userId, message } = ctx.request.body;
+
+    try {
+      await externalNotificationService.send(userId, message);
+
+      return { sent: true };
+    } catch (error) {
+      logger.error('Notification service failed', {
+        error: error.message,
+        userId,
+      });
+
+      throw new ServiceNotAvailableError('Notification service unavailable', {
+        service: 'notification-api',
+        retryAfter: 60,
+        originalError: error.message,
+      });
+    }
+  },
+});
+```
+
+### Pattern: Wrapping Database Errors
+
+```typescript
+export const updateUser = route.put({
+  handler: async ({ ctx, params, logger }) => {
+    try {
+      const user = await ctx.services.db.users.update(params.userId, ctx.request.body);
+
+      return { user };
+    } catch (error) {
+      // Handle known database errors
+      if (error.code === 'UNIQUE_VIOLATION') {
+        throw new ConflictError('Email already in use', {
+          field: 'email',
+          value: ctx.request.body.email,
+        });
+      }
+
+      if (error.code === 'NOT_FOUND') {
+        throw new NotFoundError('User not found', {
+          resourceType: 'user',
+          resourceId: params.userId,
+        });
+      }
+
+      // Unexpected database error
+      logger.error('Database error', {
+        error: error.message,
+        code: error.code,
+        userId: params.userId,
+      });
+
+      throw new InternalServerError('Failed to update user', {
+        operation: 'update',
+        resourceType: 'user',
+        resourceId: params.userId,
+      });
+    }
+  },
+});
+```
+
+### Pattern: Validation with Context
+
+```typescript
+export const createOrder = route.post({
+  handler: async ({ ctx }) => {
+    const { items, total } = ctx.request.body;
+
+    // Validate business rules
+    if (items.length === 0) {
+      throw new ValidationError('Order must contain at least one item', {
+        fields: [
+          {
+            field: 'items',
+            messages: ['Must contain at least one item'],
+            rejectedValue: [],
+            expectedType: 'array',
+          },
+        ],
+        errorCount: 1,
+        section: 'body',
+      });
+    }
+
+    if (total < 10) {
+      throw new UnprocessableEntityError('Order below minimum', {
+        rule: 'minimum_order_amount',
+        currentValue: total,
+        requiredValue: 10,
+        message: 'Minimum order amount is $10.00',
+      });
+    }
+
+    const order = await ctx.services.db.orders.create({
+      userId: ctx.state.user.id,
+      items,
+      total,
+    });
+
+    return { order };
+  },
+});
+```
+
+---
+
+## 🔧 Production Debugging
+
+### Logging Errors
+
+BlaizeJS automatically logs all errors with correlation IDs:
+
+```typescript
+// Errors are logged automatically
+throw new InternalServerError('Database connection failed', {
+  component: 'database',
+  operation: 'connect',
+});
+
+// Log output:
+// {
+//   "level": "error",
+//   "message": "Database connection failed",
+//   "correlationId": "req_k3x2m1_9z8y7w6v",
+//   "error": {
+//     "type": "INTERNAL_SERVER_ERROR",
+//     "status": 500,
+//     "details": {
+//       "component": "database",
+//       "operation": "connect"
+//     }
+//   },
+//   "timestamp": "2024-01-15T10:30:00.000Z"
+// }
+```
+
+### Custom Error Logging
+
+Add custom logging in error handlers:
+
+```typescript
+export const processPayment = route.post({
+  handler: async ({ ctx, logger }) => {
+    try {
+      const result = await paymentService.charge(ctx.request.body);
+      return { result };
+    } catch (error) {
+      // Log with rich context
+      logger.error('Payment processing failed', {
+        userId: ctx.state.user.id,
+        amount: ctx.request.body.amount,
+        paymentMethod: ctx.request.body.paymentMethod,
+        error: error.message,
+        stack: error.stack,
+      });
+
+      throw new InternalServerError('Payment failed', {
+        userId: ctx.state.user.id,
+        retryable: true,
+      });
+    }
+  },
+});
+```
+
+### Finding Errors by Correlation ID
+
+Search logs by correlation ID to trace request flow:
+
+```bash
+# Find all logs for a specific request
+grep "req_k3x2m1_9z8y7w6v" app.log
+
+# Example output:
+# [10:30:00] INFO: Request started (correlationId: req_k3x2m1_9z8y7w6v)
+# [10:30:01] DEBUG: Database query (correlationId: req_k3x2m1_9z8y7w6v)
+# [10:30:02] ERROR: Query failed (correlationId: req_k3x2m1_9z8y7w6v)
+# [10:30:02] ERROR: InternalServerError (correlationId: req_k3x2m1_9z8y7w6v)
+```
+
+### Structured Logging
+
+Use correlation IDs in structured logging:
+
+```typescript
+export const createResource = route.post({
+  handler: async ({ ctx, logger }) => {
+    const correlationId = getCorrelationId();
+
+    logger.info('Creating resource', {
+      correlationId,
+      userId: ctx.state.user.id,
+      resourceType: 'document',
+    });
+
+    try {
+      const resource = await ctx.services.db.resources.create({
+        ...ctx.request.body,
+        userId: ctx.state.user.id,
+      });
+
+      logger.info('Resource created', {
+        correlationId,
+        resourceId: resource.id,
+      });
+
+      return { resource };
+    } catch (error) {
+      logger.error('Resource creation failed', {
+        correlationId,
+        userId: ctx.state.user.id,
+        error: error.message,
+        stack: error.stack,
+      });
+
+      throw error; // Re-throw for error boundary
+    }
+  },
+});
+```
+
+### Error Monitoring
+
+Integrate with error tracking services:
+
+```typescript
+// middleware/error-tracking.ts
+import { createMiddleware } from 'blaizejs';
+import * as Sentry from '@sentry/node';
+
+export const errorTrackingMiddleware = createMiddleware({
+  name: 'error-tracking',
+
+  handler: async ({ ctx, next, logger }) => {
+    try {
+      await next();
+    } catch (error) {
+      const correlationId = getCorrelationId();
+
+      // Send to Sentry
+      Sentry.captureException(error, {
+        tags: {
+          correlationId,
+          path: ctx.request.path,
+          method: ctx.request.method,
+        },
+        user: {
+          id: ctx.state.user?.id,
+          email: ctx.state.user?.email,
+        },
+      });
+
+      // Re-throw for error boundary
+      throw error;
+    }
+  },
+});
+```
+
+---
+
+## 🌐 Client-Side Handling
+
+The BlaizeJS client automatically transforms all errors into `BlaizeError` instances:
+
+```typescript
+import { createClient } from '@blaizejs/client';
+import { ErrorType } from '@blaizejs/types';
+
+const api = createClient('https://api.example.com', routes);
+
+try {
+  const user = await api.$get.getUser({ params: { userId: 'invalid' } });
+} catch (error) {
+  // error is ALWAYS a BlaizeError instance
+  console.log(error.type); // "NOT_FOUND"
+  console.log(error.status); // 404
+  console.log(error.title); // "User not found"
+  console.log(error.correlationId); // "req_abc123"
+
+  // Type-safe error handling
+  if (error.type === ErrorType.NOT_FOUND) {
+    console.log('Resource not found');
+    console.log(error.details?.resourceType); // "user"
+    console.log(error.details?.suggestion); // "Verify..."
+  }
+
+  if (error.type === ErrorType.UNAUTHORIZED) {
+    // Redirect to login
+    window.location.href = '/login';
+  }
+}
+```
+
+### Client-Side Error Patterns
+
+**Pattern: User-Friendly Messages**
+
+```typescript
+try {
+  await api.$post.createOrder({ body: orderData });
+} catch (error) {
+  let message = 'Something went wrong';
+
+  if (error.type === ErrorType.VALIDATION_ERROR) {
+    message = 'Please check your input';
+  } else if (error.type === ErrorType.UNAUTHORIZED) {
+    message = 'Please log in to continue';
+  } else if (error.type === ErrorType.FORBIDDEN) {
+    message = 'You do not have permission';
+  } else if (error.type === ErrorType.NOT_FOUND) {
+    message = 'Resource not found';
+  } else if (error.type === ErrorType.CONFLICT) {
+    message = error.details?.resolution || 'Conflict occurred';
+  }
+
+  showToast(message, 'error');
+}
+```
+
+**Pattern: Retry Logic**
+
+```typescript
+async function fetchWithRetry(fn: () => Promise<any>, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      // Retry on specific errors
+      if (
+        error.type === ErrorType.INTERNAL_SERVER_ERROR ||
+        error.type === ErrorType.SERVICE_NOT_AVAILABLE ||
+        error.type === ErrorType.REQUEST_TIMEOUT
+      ) {
+        if (i < maxRetries - 1) {
+          const delay = Math.pow(2, i) * 1000; // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+      }
+
+      throw error;
+    }
+  }
+}
+
+// Usage
+const user = await fetchWithRetry(() => api.$get.getUser({ params: { userId: '123' } }));
+```
+
+**Pattern: Field Validation Display**
+
+```typescript
+try {
+  await api.$post.createUser({ body: userData });
+} catch (error) {
+  if (error.type === ErrorType.VALIDATION_ERROR) {
+    // Display field-specific errors
+    error.details?.fields?.forEach(field => {
+      showFieldError(field.field, field.messages[0]);
+    });
+  }
+}
+
+function showFieldError(fieldName: string, message: string) {
+  const input = document.querySelector(`[name="${fieldName}"]`);
+  const errorDiv = input?.parentElement?.querySelector('.error');
+  if (errorDiv) {
+    errorDiv.textContent = message;
+  }
+}
+```
+
+---
+
+## 🧪 Testing Error Handling
+
+### Testing Error Responses
+
+```typescript
+// routes/users/[userId].test.ts
+import { describe, it, expect } from 'vitest';
+import { createTestContext } from '@blaizejs/testing-utils';
+import { NotFoundError } from 'blaizejs';
+import { getUser } from './[userId]';
+
+describe('GET /users/:userId', () => {
+  it('should throw NotFoundError when user does not exist', async () => {
+    const ctx = createTestContext({
+      params: { userId: 'invalid' },
+    });
+
+    // Mock database
+    ctx.services.db = {
+      users: {
+        findById: vi.fn().mockResolvedValue(null),
+      },
+    };
+
+    await expect(getUser.handler({ ctx, params: { userId: 'invalid' } })).rejects.toThrow(
+      NotFoundError
+    );
+  });
+
+  it('should include resource details in error', async () => {
+    const ctx = createTestContext({
+      params: { userId: 'invalid' },
+    });
+
+    ctx.services.db = {
+      users: {
+        findById: vi.fn().mockResolvedValue(null),
+      },
+    };
+
+    try {
+      await getUser.handler({ ctx, params: { userId: 'invalid' } });
+    } catch (error) {
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect(error.details?.resourceType).toBe('user');
+      expect(error.details?.resourceId).toBe('invalid');
+    }
+  });
+});
+```
+
+### Testing Error Boundary
+
+```typescript
+import { createErrorBoundary } from 'blaizejs';
+import { formatErrorResponse } from '@blaizejs/errors';
+
+describe('Error Boundary', () => {
+  it('should catch and format BlaizeErrors', async () => {
+    const error = new NotFoundError('User not found', {
+      resourceType: 'user',
+      resourceId: '123',
+    });
+
+    const response = formatErrorResponse(error);
+
+    expect(response).toEqual({
+      type: 'NOT_FOUND',
+      title: 'User not found',
+      status: 404,
+      correlationId: expect.any(String),
+      timestamp: expect.any(String),
+      details: {
+        resourceType: 'user',
+        resourceId: '123',
+      },
+    });
+  });
+
+  it('should wrap unexpected errors', async () => {
+    const error = new Error('Database connection failed');
+
+    const response = formatErrorResponse(error);
+
+    expect(response).toEqual({
+      type: 'INTERNAL_SERVER_ERROR',
+      title: 'Internal Server Error',
+      status: 500,
+      correlationId: expect.any(String),
+      timestamp: expect.any(String),
+      details: {
+        originalMessage: 'Database connection failed',
+      },
+    });
+  });
+});
+```
+
+---
+
+## ✅ Best Practices
+
+### 1. Use Semantic Errors
+
+**✅ Good:**
+
+```typescript
+throw new NotFoundError('User not found', {
+  resourceType: 'user',
+  resourceId: userId,
+});
+```
+
+**❌ Bad:**
+
+```typescript
+throw new Error('User not found');
+// Generic error, no automatic formatting
+```
+
+### 2. Provide Rich Context
+
+**✅ Good:**
+
+```typescript
+throw new ConflictError('Email already registered', {
+  conflictType: 'duplicate_key',
+  field: 'email',
+  existingValue: email,
+  resolution: 'Use a different email or log in',
+});
+```
+
+**❌ Bad:**
+
+```typescript
+throw new ConflictError('Conflict');
+// No context about what conflicted or how to fix it
+```
+
+### 3. Don't Swallow Errors
+
+**✅ Good:**
+
+```typescript
+try {
+  await externalService.call();
+} catch (error) {
+  logger.error('External service failed', { error });
+  throw new ServiceNotAvailableError('Service unavailable', {
+    service: 'external-api',
+    originalError: error.message,
+  });
+}
+```
+
+**❌ Bad:**
+
+```typescript
+try {
+  await externalService.call();
+} catch (error) {
+  // Silent failure!
+  return { success: false };
+}
+```
+
+### 4. Let Error Boundary Handle Formatting
+
+**✅ Good:**
+
+```typescript
+export const getUser = route.get({
+  handler: async ({ ctx, params }) => {
+    const user = await db.findUser(params.userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    return { user };
+  },
+});
+```
+
+**❌ Bad:**
+
+```typescript
+export const getUser = route.get({
+  handler: async ({ ctx, params }) => {
+    const user = await db.findUser(params.userId);
+
+    if (!user) {
+      // Manual formatting!
+      ctx.response.status(404).json({
+        error: 'Not found',
+        message: 'User not found',
+      });
+      return;
+    }
+
+    return { user };
+  },
+});
+```
+
+### 5. Log Before Throwing (For Internal Errors)
+
+**✅ Good:**
+
+```typescript
+try {
+  await database.connect();
+} catch (error) {
+  logger.error('Database connection failed', {
+    error: error.message,
+    stack: error.stack,
+  });
+
+  throw new InternalServerError('Database unavailable', {
+    component: 'database',
+    retryable: true,
+  });
+}
+```
+
+**❌ Bad:**
+
+```typescript
+try {
+  await database.connect();
+} catch (error) {
+  // No logging!
+  throw new InternalServerError('Database unavailable');
+}
+```
+
+### 6. Include Suggestions in Errors
+
+**✅ Good:**
+
+```typescript
+throw new NotFoundError('Organization not found', {
+  resourceType: 'organization',
+  resourceId: orgId,
+  suggestion: 'Verify your organization ID or contact support',
+});
+```
+
+**❌ Bad:**
+
+```typescript
+throw new NotFoundError('Organization not found');
+// No guidance for user
+```
+
+### 7. Use Correlation IDs for Distributed Tracing
+
+**✅ Good:**
+
+```typescript
+const correlationId = getCorrelationId();
+
+await fetch('https://external-api.example.com', {
+  headers: {
+    'X-Correlation-ID': correlationId,
+  },
+});
+```
+
+**❌ Bad:**
+
+```typescript
+await fetch('https://external-api.example.com');
+// Lost tracing across service boundary
+```
+
+### 8. Handle Expected Errors Explicitly
+
+**✅ Good:**
+
+```typescript
+try {
+  await db.users.create(userData);
+} catch (error) {
+  if (error.code === 'UNIQUE_VIOLATION') {
+    throw new ConflictError('Email already exists', {
+      field: 'email',
+      value: userData.email,
+    });
+  }
+
+  // Unexpected error
+  throw new InternalServerError('Failed to create user', {
+    originalError: error.message,
+  });
+}
+```
+
+**❌ Bad:**
+
+```typescript
+try {
+  await db.users.create(userData);
+} catch (error) {
+  // Treating all errors the same
+  throw new InternalServerError('Failed');
+}
+```
+
+---
+
+## 📊 Error Class Quick Reference
+
+| Status | Class                       | When to Use                      |
+| ------ | --------------------------- | -------------------------------- |
+| 400    | `ValidationError`           | Invalid input, schema failures   |
+| 401    | `UnauthorizedError`         | Missing/invalid authentication   |
+| 403    | `ForbiddenError`            | Authenticated but not authorized |
+| 404    | `NotFoundError`             | Resource doesn't exist           |
+| 408    | `RequestTimeoutError`       | Request took too long            |
+| 409    | `ConflictError`             | Resource state conflict          |
+| 413    | `PayloadTooLargeError`      | Request body too large           |
+| 415    | `UnsupportedMediaTypeError` | Wrong content type               |
+| 422    | `UnprocessableEntityError`  | Valid syntax, invalid semantics  |
+| 429    | `RateLimitError`            | Too many requests                |
+| 500    | `InternalServerError`       | Unexpected server error          |
+| 503    | `ServiceNotAvailableError`  | Dependency unavailable           |
+
+---
+
+## 🔗 Related Documentation
+
+- **[Middleware Guide](./middleware.md)** — Error handling in middleware
+- **[Router Guide](./routing.md)** — Error handling in routes
+- **[Testing Guide](./testing.md)** — Testing error scenarios
+- **[Client Documentation](../../packages/blaize-client/README.md)** — Client-side error handling
+- **[Production Guide](./production.md)** — Error monitoring and debugging
+
+---
+
+**Questions or feedback?** Open an issue on GitHub or join our Discord community.

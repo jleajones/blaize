@@ -1,0 +1,1590 @@
+# 📡 Real-Time Data Guide
+
+> Build live, reactive applications with Server-Sent Events and the Event Bus—push updates to clients instantly, coordinate across servers, and create real-time experiences
+
+Real-time in BlaizeJS is built on two powerful primitives: **Server-Sent Events (SSE)** for pushing data to clients, and the **Event Bus** for coordinating across your application. Together, they enable everything from live dashboards to background job progress tracking.
+
+---
+
+## 📋 Table of Contents
+
+- [What is Real-Time in BlaizeJS?](#-what-is-real-time-in-blaizejs)
+- [Server-Sent Events (SSE)](#-server-sent-events-sse)
+- [Your First SSE Route](#-your-first-sse-route)
+- [SSE Route Schema](#-sse-route-schema)
+- [Stream API](#-stream-api)
+- [Event Bus](#-event-bus)
+- [Publishing Events](#-publishing-events)
+- [Subscribing to Events](#-subscribing-to-events)
+- [SSE + Event Bus Integration](#-sse--event-bus-integration)
+- [Common Patterns](#-common-patterns)
+- [Client-Side](#-client-side)
+- [Advanced Patterns](#-advanced-patterns)
+- [Best Practices](#-best-practices)
+
+---
+
+## 🎯 What is Real-Time in BlaizeJS?
+
+BlaizeJS provides two complementary systems for real-time data:
+
+### Server-Sent Events (SSE)
+**Push data from server → client**
+
+```
+Server ──────────▶ Client
+   │
+   ├─ Push notifications
+   ├─ Live updates
+   ├─ Progress tracking
+   └─ Dashboard data
+```
+
+**Use SSE for:**
+- 📊 Live dashboards
+- 🔔 Notifications
+- 📈 Progress bars
+- 📝 Real-time feeds
+- 💬 Chat messages (one-way)
+
+### Event Bus
+**Coordinate within your application**
+
+```
+Component A ──────▶ Event Bus ──────▶ Component B
+                       │
+                       ├─ Plugins
+                       ├─ Routes
+                       └─ Middleware
+```
+
+**Use Event Bus for:**
+- 🔄 Cache invalidation
+- 📢 Cross-module communication
+- 🔌 Plugin coordination
+- 📡 SSE data sources
+
+---
+
+## 📡 Server-Sent Events (SSE)
+
+SSE is a web standard for **unidirectional** streaming from server to client. Think of it as a persistent HTTP connection where the server can push updates whenever it wants.
+
+### SSE vs WebSockets
+
+| Feature | SSE | WebSockets |
+|---------|-----|------------|
+| Direction | Server → Client only | Bi-directional |
+| Protocol | HTTP | WS/WSS |
+| Reconnection | Automatic | Manual |
+| Firewall-friendly | ✅ Yes | ❌ Sometimes blocked |
+| Use case | Live updates, notifications | Chat, gaming, collaboration |
+
+**When to choose SSE:**
+- You only need server → client updates
+- Automatic reconnection is important
+- Working behind corporate firewalls
+- Simpler mental model
+
+---
+
+## 🚀 Your First SSE Route
+
+Let's create a simple notification stream:
+
+```typescript
+// routes/notifications/stream.ts
+import { route } from '../../app';
+import { z } from 'zod';
+
+export const getNotifications = route.sse({
+  schema: {
+    events: {
+      notification: z.object({
+        id: z.string(),
+        message: z.string(),
+        type: z.enum(['info', 'warning', 'error']),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, logger }) => {
+    logger.info('Client connected to notifications');
+    
+    // Send initial message
+    stream.send('notification', {
+      id: '1',
+      message: 'Connected to notification stream',
+      type: 'info',
+      timestamp: Date.now(),
+    });
+    
+    // Send a notification every 5 seconds (demo)
+    const interval = setInterval(() => {
+      stream.send('notification', {
+        id: crypto.randomUUID(),
+        message: 'New notification!',
+        type: 'info',
+        timestamp: Date.now(),
+      });
+    }, 5000);
+    
+    // Clean up on disconnect
+    stream.onClose(() => {
+      logger.info('Client disconnected');
+      clearInterval(interval);
+    });
+  },
+});
+```
+
+**Client-side:**
+```javascript
+const eventSource = new EventSource('https://localhost:7485/notifications/stream');
+
+eventSource.addEventListener('notification', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Notification:', data.message);
+});
+```
+
+---
+
+## 📝 SSE Route Schema
+
+SSE routes have a special schema structure:
+
+```typescript
+export const getUpdates = route.sse({
+  schema: {
+    // Query parameters (optional)
+    query: z.object({
+      userId: z.string().uuid(),
+      filter: z.enum(['all', 'important']).optional(),
+    }),
+    
+    // URL parameters (optional)
+    params: z.object({
+      roomId: z.string(),
+    }),
+    
+    // Event schemas (required)
+    events: {
+      'event-name-1': z.object({
+        // Event data schema
+      }),
+      'event-name-2': z.object({
+        // Event data schema
+      }),
+    },
+  },
+  
+  handler: async ({ stream, ctx, params, logger, eventBus }) => {
+    // Handler implementation
+  },
+});
+```
+
+### Schema Fields
+
+| Field | Type | Required | Purpose |
+|-------|------|----------|---------|
+| `query` | Zod schema | No | Validate query parameters |
+| `params` | Zod schema | No | Validate URL parameters |
+| `events` | Object of Zod schemas | Yes | Define event types and their data |
+
+### Event Schema Structure
+
+```typescript
+events: {
+  // Event name: data schema
+  'user.online': z.object({
+    userId: z.string(),
+    timestamp: z.number(),
+  }),
+  
+  'user.offline': z.object({
+    userId: z.string(),
+    lastSeen: z.number(),
+  }),
+  
+  'message.new': z.object({
+    messageId: z.string(),
+    from: z.string(),
+    text: z.string(),
+    timestamp: z.number(),
+  }),
+}
+```
+
+**Type safety:** The `stream.send()` method is fully typed based on your event schemas!
+
+```typescript
+// ✅ Valid
+stream.send('user.online', {
+  userId: '123',
+  timestamp: Date.now(),
+});
+
+// ❌ TypeScript error - wrong event name
+stream.send('user.invalid', { ... });
+
+// ❌ TypeScript error - wrong data shape
+stream.send('user.online', {
+  userId: 123, // Should be string!
+  timestamp: Date.now(),
+});
+```
+
+---
+
+## 🎛️ Stream API
+
+The `stream` object provides methods for sending data and managing the connection:
+
+### stream.send()
+
+Send a typed event to the client:
+
+```typescript
+stream.send('event-name', {
+  // Event data matching the schema
+});
+```
+
+**Example:**
+```typescript
+stream.send('notification', {
+  id: crypto.randomUUID(),
+  message: 'Order shipped!',
+  type: 'info',
+  timestamp: Date.now(),
+});
+```
+
+### stream.onClose()
+
+Register cleanup when the client disconnects:
+
+```typescript
+stream.onClose(() => {
+  // Clean up resources
+  clearInterval(interval);
+  unsubscribe();
+  logger.info('Client disconnected');
+});
+```
+
+**Multiple callbacks:**
+```typescript
+stream.onClose(() => clearInterval(heartbeat));
+stream.onClose(() => unsubscribe());
+stream.onClose(() => logger.info('Cleanup complete'));
+```
+
+### stream.close()
+
+Manually close the stream:
+
+```typescript
+// Send final event, then close
+stream.send('complete', { success: true });
+stream.close();
+```
+
+### stream.sendError()
+
+Send an error to the client:
+
+```typescript
+try {
+  const data = await fetchData();
+  stream.send('data', data);
+} catch (error) {
+  stream.sendError(error instanceof Error ? error : new Error('Unknown error'));
+}
+```
+
+### stream.ping()
+
+Send a keepalive ping:
+
+```typescript
+// Automatic heartbeat every 30 seconds
+const heartbeat = setInterval(() => {
+  stream.ping('keepalive');
+}, 30000);
+
+stream.onClose(() => clearInterval(heartbeat));
+```
+
+### stream.setRetry()
+
+Tell the client how long to wait before reconnecting:
+
+```typescript
+// Reconnect after 5 seconds
+stream.setRetry(5000);
+```
+
+---
+
+## 🔔 Event Bus
+
+The Event Bus is BlaizeJS's internal pub/sub system for coordinating across your application.
+
+### Event Structure
+
+Every event has this structure:
+
+```typescript
+interface BlaizeEvent<T = unknown> {
+  type: string;           // Event type (e.g., 'user:created')
+  data: T;                // Event payload
+  timestamp: number;      // When event was published
+  serverId: string;       // Server instance ID
+  correlationId: string;  // Request correlation ID
+}
+```
+
+### Accessing the Event Bus
+
+The Event Bus is available in:
+
+**Routes:**
+```typescript
+export const createUser = route.post({
+  handler: async ({ ctx, eventBus }) => {
+    await eventBus.publish('user:created', { userId: '123' });
+  },
+});
+```
+
+**Middleware:**
+```typescript
+export const middleware = createMiddleware({
+  handler: async ({ ctx, next, eventBus }) => {
+    await eventBus.publish('request:started', { path: ctx.request.path });
+    await next();
+  },
+});
+```
+
+**Plugins:**
+```typescript
+export const plugin = createPlugin({
+  setup: ({ logger }) => {
+    return {
+      onServerStart: async (server) => {
+        server.eventBus.subscribe('*', (event) => {
+          logger.info('Event published', { type: event.type });
+        });
+      },
+    };
+  },
+});
+```
+
+**SSE Handlers:**
+```typescript
+export const getEvents = route.sse({
+  handler: async ({ stream, eventBus }) => {
+    eventBus.subscribe('*', (event) => {
+      stream.send('event', event.data);
+    });
+  },
+});
+```
+
+---
+
+## 📤 Publishing Events
+
+Publish events with `eventBus.publish()`:
+
+```typescript
+await eventBus.publish('event:type', {
+  // Event data
+});
+```
+
+### Basic Publishing
+
+```typescript
+// In a route handler
+export const createOrder = route.post({
+  handler: async ({ ctx, eventBus }) => {
+    const order = await ctx.services.db.orders.create({
+      userId: ctx.state.user.id,
+      items: ctx.request.body.items,
+    });
+    
+    // Publish event after creation
+    await eventBus.publish('order:created', {
+      orderId: order.id,
+      userId: ctx.state.user.id,
+      total: order.total,
+      timestamp: Date.now(),
+    });
+    
+    return { order };
+  },
+});
+```
+
+### Event Naming Conventions
+
+Use colon-separated namespaces:
+
+```typescript
+// ✅ Good - Clear hierarchy
+'user:created'
+'user:updated'
+'user:deleted'
+'order:placed'
+'order:shipped'
+'order:delivered'
+'cache:invalidate'
+'job:completed'
+
+// ❌ Bad - Unclear structure
+'userCreated'
+'newUser'
+'create_user'
+```
+
+**Why?** This enables pattern-based subscriptions:
+```typescript
+eventBus.subscribe('user:*', ...);    // All user events
+eventBus.subscribe('order:*', ...);   // All order events
+```
+
+---
+
+## 📥 Subscribing to Events
+
+Subscribe to events with `eventBus.subscribe()`:
+
+```typescript
+const unsubscribe = eventBus.subscribe('event:type', (event) => {
+  // Handle event
+});
+
+// Later: cleanup
+unsubscribe();
+```
+
+### Basic Subscription
+
+```typescript
+export const notificationPlugin = createPlugin({
+  setup: ({ logger }) => {
+    return {
+      onServerStart: async (server) => {
+        server.eventBus.subscribe('user:created', async (event) => {
+          logger.info('Sending welcome email', {
+            userId: event.data.userId,
+          });
+          
+          await emailService.send({
+            to: event.data.email,
+            subject: 'Welcome!',
+            body: 'Thanks for joining!',
+          });
+        });
+      },
+    };
+  },
+});
+```
+
+### Pattern Matching
+
+Subscribe to multiple events using patterns:
+
+**Wildcard patterns:**
+```typescript
+// All user events
+eventBus.subscribe('user:*', (event) => {
+  console.log('User event:', event.type);
+});
+
+// All events
+eventBus.subscribe('*', (event) => {
+  console.log('Any event:', event.type);
+});
+```
+
+**Regex patterns:**
+```typescript
+// Events starting with 'user:'
+eventBus.subscribe(/^user:/, (event) => {
+  console.log('User event:', event.type);
+});
+```
+
+### Cleanup
+
+**Always clean up subscriptions:**
+
+```typescript
+// ❌ Bad - Memory leak
+export const getUpdates = route.sse({
+  handler: async ({ stream, eventBus }) => {
+    eventBus.subscribe('data:*', (event) => {
+      stream.send('update', event.data);
+    });
+    // No cleanup! Subscription lives forever
+  },
+});
+
+// ✅ Good - Proper cleanup
+export const getUpdates = route.sse({
+  handler: async ({ stream, eventBus }) => {
+    const unsubscribe = eventBus.subscribe('data:*', (event) => {
+      stream.send('update', event.data);
+    });
+    
+    stream.onClose(() => {
+      unsubscribe(); // Clean up subscription
+    });
+  },
+});
+```
+
+---
+
+## 🔗 SSE + Event Bus Integration
+
+The real power comes from combining SSE and the Event Bus:
+
+```
+Database Update ──▶ Publish Event ──▶ Event Bus ──▶ SSE Stream ──▶ Client
+```
+
+### Complete Example
+
+```typescript
+// routes/users/create.ts
+export const createUser = route.post({
+  handler: async ({ ctx, eventBus }) => {
+    // Create user in database
+    const user = await ctx.services.db.users.create({
+      name: ctx.request.body.name,
+      email: ctx.request.body.email,
+    });
+    
+    // Publish event
+    await eventBus.publish('user:created', {
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      timestamp: Date.now(),
+    });
+    
+    return { user };
+  },
+});
+```
+
+```typescript
+// routes/users/stream.ts
+export const getUserStream = route.sse({
+  schema: {
+    events: {
+      'user.created': z.object({
+        userId: z.string(),
+        name: z.string(),
+        email: z.string(),
+        timestamp: z.number(),
+      }),
+      'user.updated': z.object({
+        userId: z.string(),
+        changes: z.record(z.unknown()),
+        timestamp: z.number(),
+      }),
+      'user.deleted': z.object({
+        userId: z.string(),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, logger, eventBus }) => {
+    logger.info('Client connected to user stream');
+    
+    // Track all unsubscribe functions
+    const cleanup: Array<() => void> = [];
+    
+    // Subscribe to user:created events
+    cleanup.push(
+      eventBus.subscribe('user:created', (event) => {
+        stream.send('user.created', {
+          userId: event.data.userId,
+          name: event.data.name,
+          email: event.data.email,
+          timestamp: event.data.timestamp,
+        });
+      })
+    );
+    
+    // Subscribe to user:updated events
+    cleanup.push(
+      eventBus.subscribe('user:updated', (event) => {
+        stream.send('user.updated', {
+          userId: event.data.userId,
+          changes: event.data.changes,
+          timestamp: event.data.timestamp,
+        });
+      })
+    );
+    
+    // Subscribe to user:deleted events
+    cleanup.push(
+      eventBus.subscribe('user:deleted', (event) => {
+        stream.send('user.deleted', {
+          userId: event.data.userId,
+          timestamp: event.data.timestamp,
+        });
+      })
+    );
+    
+    // Heartbeat
+    const heartbeat = setInterval(() => {
+      stream.ping('keepalive');
+    }, 30000);
+    
+    // Clean up everything on disconnect
+    stream.onClose(() => {
+      logger.info('Client disconnected from user stream');
+      clearInterval(heartbeat);
+      cleanup.forEach(unsubscribe => unsubscribe());
+    });
+  },
+});
+```
+
+**Client-side:**
+```javascript
+const eventSource = new EventSource('/users/stream');
+
+eventSource.addEventListener('user.created', (event) => {
+  const user = JSON.parse(event.data);
+  addUserToList(user);
+});
+
+eventSource.addEventListener('user.updated', (event) => {
+  const update = JSON.parse(event.data);
+  updateUserInList(update.userId, update.changes);
+});
+
+eventSource.addEventListener('user.deleted', (event) => {
+  const { userId } = JSON.parse(event.data);
+  removeUserFromList(userId);
+});
+```
+
+---
+
+## 💡 Common Patterns
+
+### Pattern: Live Dashboard
+
+```typescript
+// routes/dashboard/stream.ts
+export const getDashboardStream = route.sse({
+  schema: {
+    events: {
+      'metrics.updated': z.object({
+        activeUsers: z.number(),
+        requestsPerSecond: z.number(),
+        errorRate: z.number(),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, logger, eventBus }) => {
+    logger.info('Dashboard connected');
+    
+    // Subscribe to metrics updates
+    const unsubscribe = eventBus.subscribe('metrics:updated', (event) => {
+      stream.send('metrics.updated', {
+        activeUsers: event.data.activeUsers,
+        requestsPerSecond: event.data.requestsPerSecond,
+        errorRate: event.data.errorRate,
+        timestamp: event.data.timestamp,
+      });
+    });
+    
+    // Heartbeat
+    const heartbeat = setInterval(() => {
+      stream.ping();
+    }, 30000);
+    
+    stream.onClose(() => {
+      logger.info('Dashboard disconnected');
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  },
+});
+```
+
+### Pattern: Job Progress Tracking
+
+```typescript
+// routes/jobs/[jobId]/stream.ts
+export const getJobStream = route.sse({
+  schema: {
+    params: z.object({
+      jobId: z.string().uuid(),
+    }),
+    events: {
+      'job.started': z.object({
+        jobId: z.string(),
+        timestamp: z.number(),
+      }),
+      'job.progress': z.object({
+        jobId: z.string(),
+        percent: z.number(),
+        message: z.string().optional(),
+      }),
+      'job.completed': z.object({
+        jobId: z.string(),
+        result: z.unknown(),
+        timestamp: z.number(),
+      }),
+      'job.failed': z.object({
+        jobId: z.string(),
+        error: z.string(),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, params, logger, eventBus }) => {
+    const { jobId } = params;
+    
+    logger.info('Client connected to job stream', { jobId });
+    
+    const cleanup: Array<() => void> = [];
+    
+    // Filter events for this specific job
+    cleanup.push(
+      eventBus.subscribe('job:started', (event) => {
+        if (event.data.jobId === jobId) {
+          stream.send('job.started', {
+            jobId: event.data.jobId,
+            timestamp: event.timestamp,
+          });
+        }
+      })
+    );
+    
+    cleanup.push(
+      eventBus.subscribe('job:progress', (event) => {
+        if (event.data.jobId === jobId) {
+          stream.send('job.progress', {
+            jobId: event.data.jobId,
+            percent: event.data.percent,
+            message: event.data.message,
+          });
+        }
+      })
+    );
+    
+    cleanup.push(
+      eventBus.subscribe('job:completed', (event) => {
+        if (event.data.jobId === jobId) {
+          stream.send('job.completed', {
+            jobId: event.data.jobId,
+            result: event.data.result,
+            timestamp: event.timestamp,
+          });
+          
+          // Close stream after completion
+          stream.close();
+        }
+      })
+    );
+    
+    cleanup.push(
+      eventBus.subscribe('job:failed', (event) => {
+        if (event.data.jobId === jobId) {
+          stream.send('job.failed', {
+            jobId: event.data.jobId,
+            error: event.data.error,
+            timestamp: event.timestamp,
+          });
+          
+          // Close stream after failure
+          stream.close();
+        }
+      })
+    );
+    
+    stream.onClose(() => {
+      logger.info('Client disconnected from job stream', { jobId });
+      cleanup.forEach(unsubscribe => unsubscribe());
+    });
+  },
+});
+```
+
+**Client-side:**
+```javascript
+const eventSource = new EventSource(`/jobs/${jobId}/stream`);
+
+eventSource.addEventListener('job.progress', (event) => {
+  const { percent, message } = JSON.parse(event.data);
+  updateProgressBar(percent);
+  updateStatus(message);
+});
+
+eventSource.addEventListener('job.completed', (event) => {
+  const { result } = JSON.parse(event.data);
+  showSuccess('Job completed!', result);
+  eventSource.close();
+});
+
+eventSource.addEventListener('job.failed', (event) => {
+  const { error } = JSON.parse(event.data);
+  showError('Job failed', error);
+  eventSource.close();
+});
+```
+
+### Pattern: User Presence
+
+```typescript
+// routes/presence/stream.ts
+export const getPresenceStream = route.sse({
+  schema: {
+    query: z.object({
+      roomId: z.string(),
+    }),
+    events: {
+      'user.joined': z.object({
+        userId: z.string(),
+        username: z.string(),
+        timestamp: z.number(),
+      }),
+      'user.left': z.object({
+        userId: z.string(),
+        timestamp: z.number(),
+      }),
+      'user.typing': z.object({
+        userId: z.string(),
+        isTyping: z.boolean(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, ctx, logger, eventBus }) => {
+    const { roomId } = ctx.request.query;
+    const userId = ctx.state.user.id;
+    
+    logger.info('User joined presence stream', { userId, roomId });
+    
+    // Announce user joined
+    await eventBus.publish('presence:joined', {
+      roomId,
+      userId,
+      username: ctx.state.user.name,
+      timestamp: Date.now(),
+    });
+    
+    const cleanup: Array<() => void> = [];
+    
+    // Subscribe to presence events for this room
+    cleanup.push(
+      eventBus.subscribe('presence:joined', (event) => {
+        if (event.data.roomId === roomId) {
+          stream.send('user.joined', {
+            userId: event.data.userId,
+            username: event.data.username,
+            timestamp: event.data.timestamp,
+          });
+        }
+      })
+    );
+    
+    cleanup.push(
+      eventBus.subscribe('presence:left', (event) => {
+        if (event.data.roomId === roomId) {
+          stream.send('user.left', {
+            userId: event.data.userId,
+            timestamp: event.data.timestamp,
+          });
+        }
+      })
+    );
+    
+    cleanup.push(
+      eventBus.subscribe('presence:typing', (event) => {
+        if (event.data.roomId === roomId) {
+          stream.send('user.typing', {
+            userId: event.data.userId,
+            isTyping: event.data.isTyping,
+          });
+        }
+      })
+    );
+    
+    // Announce user left on disconnect
+    stream.onClose(async () => {
+      logger.info('User left presence stream', { userId, roomId });
+      
+      await eventBus.publish('presence:left', {
+        roomId,
+        userId,
+        timestamp: Date.now(),
+      });
+      
+      cleanup.forEach(unsubscribe => unsubscribe());
+    });
+  },
+});
+```
+
+### Pattern: Cache Invalidation
+
+```typescript
+// plugins/cache-invalidation.ts
+export const createCacheInvalidationPlugin = createPlugin({
+  name: 'cache-invalidation',
+  version: '1.0.0',
+  
+  setup: ({ logger }) => {
+    return {
+      onServerStart: async (server) => {
+        // Subscribe to data changes
+        server.eventBus.subscribe('user:updated', async (event) => {
+          const cacheKey = `user:${event.data.userId}`;
+          
+          logger.info('Invalidating cache', { key: cacheKey });
+          
+          // Invalidate cache
+          await server.services.cache.delete(cacheKey);
+          
+          // Publish invalidation event for other servers
+          await server.eventBus.publish('cache:invalidated', {
+            key: cacheKey,
+            reason: 'user_updated',
+            timestamp: Date.now(),
+          });
+        });
+        
+        // Listen for invalidation from other servers
+        server.eventBus.subscribe('cache:invalidated', async (event) => {
+          logger.info('Remote cache invalidation', { key: event.data.key });
+          
+          await server.services.cache.delete(event.data.key);
+        });
+      },
+    };
+  },
+});
+```
+
+---
+
+## 🌐 Client-Side
+
+### EventSource API
+
+The browser's native `EventSource` API is used to consume SSE:
+
+```javascript
+// Create connection
+const eventSource = new EventSource('https://api.example.com/stream');
+
+// Listen for specific events
+eventSource.addEventListener('event-name', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Received:', data);
+});
+
+// Listen for errors
+eventSource.onerror = (error) => {
+  console.error('SSE error:', error);
+  
+  if (eventSource.readyState === EventSource.CLOSED) {
+    console.log('Connection closed');
+  }
+};
+
+// Close connection
+eventSource.close();
+```
+
+### Connection States
+
+```javascript
+// EventSource.CONNECTING (0) - Connecting
+// EventSource.OPEN (1) - Connected
+// EventSource.CLOSED (2) - Disconnected
+
+console.log('State:', eventSource.readyState);
+
+if (eventSource.readyState === EventSource.OPEN) {
+  console.log('Connected!');
+}
+```
+
+### Automatic Reconnection
+
+EventSource automatically reconnects on disconnect:
+
+```javascript
+const eventSource = new EventSource('/stream');
+
+eventSource.onerror = (error) => {
+  if (eventSource.readyState === EventSource.CONNECTING) {
+    console.log('Reconnecting...');
+  }
+};
+```
+
+**Control retry interval from server:**
+```typescript
+stream.setRetry(5000); // Reconnect after 5 seconds
+```
+
+### React Hook Example
+
+```typescript
+import { useEffect, useState } from 'react';
+
+interface Notification {
+  id: string;
+  message: string;
+  type: 'info' | 'warning' | 'error';
+  timestamp: number;
+}
+
+export function useNotifications() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [connected, setConnected] = useState(false);
+  
+  useEffect(() => {
+    const eventSource = new EventSource('/notifications/stream');
+    
+    eventSource.onopen = () => {
+      setConnected(true);
+    };
+    
+    eventSource.addEventListener('notification', (event) => {
+      const notification: Notification = JSON.parse(event.data);
+      setNotifications(prev => [...prev, notification]);
+    });
+    
+    eventSource.onerror = () => {
+      setConnected(false);
+    };
+    
+    return () => {
+      eventSource.close();
+    };
+  }, []);
+  
+  return { notifications, connected };
+}
+
+// Usage
+function NotificationList() {
+  const { notifications, connected } = useNotifications();
+  
+  return (
+    <div>
+      <div>Status: {connected ? 'Connected' : 'Disconnected'}</div>
+      {notifications.map(notif => (
+        <div key={notif.id}>{notif.message}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+### Vue Composable Example
+
+```typescript
+import { ref, onMounted, onUnmounted } from 'vue';
+
+export function useJobProgress(jobId: string) {
+  const progress = ref(0);
+  const status = ref<string>('');
+  const completed = ref(false);
+  const error = ref<string | null>(null);
+  
+  let eventSource: EventSource | null = null;
+  
+  onMounted(() => {
+    eventSource = new EventSource(`/jobs/${jobId}/stream`);
+    
+    eventSource.addEventListener('job.progress', (event) => {
+      const data = JSON.parse(event.data);
+      progress.value = data.percent;
+      status.value = data.message || '';
+    });
+    
+    eventSource.addEventListener('job.completed', (event) => {
+      const data = JSON.parse(event.data);
+      completed.value = true;
+      progress.value = 100;
+      eventSource?.close();
+    });
+    
+    eventSource.addEventListener('job.failed', (event) => {
+      const data = JSON.parse(event.data);
+      error.value = data.error;
+      eventSource?.close();
+    });
+  });
+  
+  onUnmounted(() => {
+    eventSource?.close();
+  });
+  
+  return {
+    progress,
+    status,
+    completed,
+    error,
+  };
+}
+```
+
+---
+
+## 🚀 Advanced Patterns
+
+### Pattern: Filtered Streams
+
+Allow clients to filter what events they receive:
+
+```typescript
+// routes/events/stream.ts
+export const getEventsStream = route.sse({
+  schema: {
+    query: z.object({
+      filter: z.enum(['all', 'important', 'errors']).optional(),
+    }),
+    events: {
+      event: z.object({
+        type: z.string(),
+        severity: z.enum(['low', 'medium', 'high']),
+        message: z.string(),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, ctx, logger, eventBus }) => {
+    const filter = ctx.request.query.filter || 'all';
+    
+    logger.info('Client connected with filter', { filter });
+    
+    const unsubscribe = eventBus.subscribe('*', (event) => {
+      const severity = event.data.severity;
+      
+      // Apply filter
+      if (filter === 'important' && severity === 'low') return;
+      if (filter === 'errors' && severity !== 'high') return;
+      
+      stream.send('event', {
+        type: event.type,
+        severity: event.data.severity,
+        message: event.data.message,
+        timestamp: event.timestamp,
+      });
+    });
+    
+    stream.onClose(() => {
+      logger.info('Client disconnected', { filter });
+      unsubscribe();
+    });
+  },
+});
+```
+
+**Client-side:**
+```javascript
+// Only receive important events
+const eventSource = new EventSource('/events/stream?filter=important');
+```
+
+### Pattern: Multi-Channel Subscriptions
+
+```typescript
+// routes/channels/stream.ts
+export const getChannelStream = route.sse({
+  schema: {
+    query: z.object({
+      channels: z.string().transform(s => s.split(',')),
+    }),
+    events: {
+      message: z.object({
+        channel: z.string(),
+        message: z.string(),
+        from: z.string(),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, ctx, logger, eventBus }) => {
+    const channels = ctx.request.query.channels;
+    
+    logger.info('Client subscribed to channels', { channels });
+    
+    const cleanup: Array<() => void> = [];
+    
+    // Subscribe to each channel
+    channels.forEach(channel => {
+      cleanup.push(
+        eventBus.subscribe(`channel:${channel}:*`, (event) => {
+          stream.send('message', {
+            channel,
+            message: event.data.message,
+            from: event.data.from,
+            timestamp: event.timestamp,
+          });
+        })
+      );
+    });
+    
+    stream.onClose(() => {
+      logger.info('Client unsubscribed from channels', { channels });
+      cleanup.forEach(unsubscribe => unsubscribe());
+    });
+  },
+});
+```
+
+**Client-side:**
+```javascript
+// Subscribe to multiple channels
+const eventSource = new EventSource('/channels/stream?channels=general,random,tech');
+```
+
+### Pattern: Backpressure Handling
+
+Handle slow clients gracefully:
+
+```typescript
+// routes/data/stream.ts
+export const getDataStream = route.sse({
+  schema: {
+    events: {
+      data: z.object({
+        id: z.string(),
+        value: z.unknown(),
+      }),
+    },
+  },
+  
+  options: {
+    maxBufferSize: 100,
+    bufferStrategy: 'drop-oldest', // or 'drop-newest' or 'close'
+  },
+  
+  handler: async ({ stream, logger, eventBus }) => {
+    let droppedEvents = 0;
+    
+    const unsubscribe = eventBus.subscribe('data:*', (event) => {
+      try {
+        stream.send('data', {
+          id: event.data.id,
+          value: event.data.value,
+        });
+      } catch (error) {
+        droppedEvents++;
+        
+        if (droppedEvents % 10 === 0) {
+          logger.warn('Buffer overflow', {
+            droppedEvents,
+            bufferSize: stream.bufferSize,
+          });
+        }
+      }
+    });
+    
+    stream.onClose(() => {
+      if (droppedEvents > 0) {
+        logger.warn('Stream closed with dropped events', { droppedEvents });
+      }
+      unsubscribe();
+    });
+  },
+});
+```
+
+### Pattern: Authentication & Authorization
+
+```typescript
+// routes/secure/stream.ts
+export const getSecureStream = route.sse({
+  middleware: [authMiddleware], // Require auth
+  
+  schema: {
+    events: {
+      message: z.object({
+        content: z.string(),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  
+  handler: async ({ stream, ctx, logger, eventBus }) => {
+    const userId = ctx.state.user.id;
+    
+    logger.info('Authenticated user connected', { userId });
+    
+    // Only send events for this user
+    const unsubscribe = eventBus.subscribe('user:*', (event) => {
+      if (event.data.userId === userId) {
+        stream.send('message', {
+          content: event.data.content,
+          timestamp: event.timestamp,
+        });
+      }
+    });
+    
+    stream.onClose(() => {
+      logger.info('Authenticated user disconnected', { userId });
+      unsubscribe();
+    });
+  },
+});
+```
+
+---
+
+## ✅ Best Practices
+
+### 1. Always Clean Up Subscriptions
+
+**✅ Good:**
+```typescript
+export const getStream = route.sse({
+  handler: async ({ stream, eventBus }) => {
+    const unsubscribe = eventBus.subscribe('event', (e) => {
+      stream.send('data', e.data);
+    });
+    
+    stream.onClose(() => {
+      unsubscribe(); // Clean up!
+    });
+  },
+});
+```
+
+**❌ Bad:**
+```typescript
+export const getStream = route.sse({
+  handler: async ({ stream, eventBus }) => {
+    eventBus.subscribe('event', (e) => {
+      stream.send('data', e.data);
+    });
+    // No cleanup! Memory leak!
+  },
+});
+```
+
+### 2. Use Heartbeats for Long-Lived Connections
+
+**✅ Good:**
+```typescript
+const heartbeat = setInterval(() => {
+  stream.ping('keepalive');
+}, 30000);
+
+stream.onClose(() => clearInterval(heartbeat));
+```
+
+**❌ Bad:**
+```typescript
+// No heartbeat - connection may be silently dropped
+```
+
+### 3. Filter Events Before Sending
+
+**✅ Good:**
+```typescript
+eventBus.subscribe('user:*', (event) => {
+  // Filter first
+  if (event.data.userId === targetUserId) {
+    stream.send('user-event', event.data);
+  }
+});
+```
+
+**❌ Bad:**
+```typescript
+eventBus.subscribe('*', (event) => {
+  // Send everything!
+  stream.send('event', event.data);
+});
+```
+
+### 4. Use Specific Event Names
+
+**✅ Good:**
+```typescript
+await eventBus.publish('user:created', { ... });
+await eventBus.publish('user:updated', { ... });
+await eventBus.publish('order:placed', { ... });
+```
+
+**❌ Bad:**
+```typescript
+await eventBus.publish('event', { type: 'user_created', ... });
+await eventBus.publish('data', { action: 'update', ... });
+```
+
+### 5. Handle Client Disconnects Gracefully
+
+**✅ Good:**
+```typescript
+stream.onClose(() => {
+  logger.info('Client disconnected gracefully');
+  clearInterval(heartbeat);
+  cleanup.forEach(fn => fn());
+});
+```
+
+**❌ Bad:**
+```typescript
+// No disconnect handler
+// Resources leak!
+```
+
+### 6. Validate Event Data
+
+**✅ Good:**
+```typescript
+schema: {
+  events: {
+    'user.created': z.object({
+      userId: z.string().uuid(),
+      email: z.string().email(),
+      timestamp: z.number().positive(),
+    }),
+  },
+}
+```
+
+**❌ Bad:**
+```typescript
+schema: {
+  events: {
+    'user.created': z.object({
+      data: z.unknown(), // No validation!
+    }),
+  },
+}
+```
+
+### 7. Log Connection Events
+
+**✅ Good:**
+```typescript
+handler: async ({ stream, logger, eventBus }) => {
+  logger.info('Client connected', {
+    streamId: stream.id,
+    userId: ctx.state.user?.id,
+  });
+  
+  stream.onClose(() => {
+    logger.info('Client disconnected', {
+      streamId: stream.id,
+    });
+  });
+}
+```
+
+### 8. Use Type-Safe Event Schemas
+
+**✅ Good:**
+```typescript
+// Define events in schema
+events: {
+  'notification': z.object({
+    id: z.string(),
+    message: z.string(),
+    type: z.enum(['info', 'warning', 'error']),
+  }),
+}
+
+// TypeScript enforces correctness
+stream.send('notification', {
+  id: '123',
+  message: 'Hello',
+  type: 'info', // ✅ Type-safe!
+});
+```
+
+**❌ Bad:**
+```typescript
+// No schema validation
+stream.send('notification', {
+  id: 123, // Should be string!
+  msg: 'Hello', // Wrong field name!
+  type: 'debug', // Invalid type!
+});
+```
+
+---
+
+## 📊 Quick Reference
+
+### SSE Handler Signature
+
+```typescript
+handler: async ({
+  stream,    // TypedSSEStream - send events
+  ctx,       // Context - request context
+  params,    // Validated URL parameters
+  logger,    // BlaizeLogger - logging
+  eventBus,  // TypedEventBus - pub/sub
+}) => {
+  // Handler implementation
+}
+```
+
+### Event Bus Methods
+
+| Method | Purpose |
+|--------|---------|
+| `eventBus.publish('type', data)` | Publish an event |
+| `eventBus.subscribe('type', fn)` | Subscribe to events |
+| `eventBus.subscribe('type:*', fn)` | Wildcard subscription |
+| `eventBus.subscribe(/^type:/, fn)` | Regex subscription |
+
+### Stream Methods
+
+| Method | Purpose |
+|--------|---------|
+| `stream.send('event', data)` | Send typed event |
+| `stream.onClose(fn)` | Register cleanup callback |
+| `stream.close()` | Close stream manually |
+| `stream.ping(comment?)` | Send keepalive ping |
+| `stream.setRetry(ms)` | Set reconnect delay |
+| `stream.sendError(error)` | Send error event |
+
+---
+
+## 🔗 Related Documentation
+
+- **[Router Guide](./routing.md)** — File-based routing and route creation
+- **[Plugins Guide](./plugins.md)** — Building plugins that use events
+- **[Middleware Guide](./middleware.md)** — Middleware with event bus access
+- **[Error Handling Guide](./error-handling.md)** — Error handling in SSE routes
+- **[Queue Plugin](../../plugins/queue/README.md)** — Background jobs with SSE progress
+
+---
+
+**Questions or feedback?** Open an issue on GitHub or join our Discord community.

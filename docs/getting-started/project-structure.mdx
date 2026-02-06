@@ -1,0 +1,687 @@
+# 📁 Project structure
+
+> **Understand BlaizeJS's monorepo architecture, package organization, and development workflow**
+
+BlaizeJS is organized as a **monorepo** using **pnpm workspaces** and **Turborepo** for efficient package management and build orchestration. This structure enables shared tooling, consistent versioning, and streamlined development across all framework packages.
+
+---
+
+## 📦 Monorepo layout
+
+```
+blaize/
+├── 📦 packages/           # Published npm packages
+│   ├── blaize-core/      # Main framework (blaizejs)
+│   ├── blaize-client/    # Type-safe RPC client (@blaizejs/client)
+│   ├── blaize-types/     # Shared TypeScript types (internal)
+│   ├── blaize-testing-utils/  # Testing utilities (@blaizejs/testing-utils)
+│   └── create-blaize-app/     # CLI scaffolding tool (create-blaize-app)
+│
+├── 🔌 plugins/            # Official framework plugins
+│   ├── cache/            # @blaizejs/plugin-cache
+│   ├── queue/            # @blaizejs/plugin-queue
+│   └── metrics/          # @blaizejs/plugin-metrics
+│
+├── 🔗 adapters/           # Storage and service adapters
+│   └── redis/            # @blaizejs/adapter-redis
+│
+├── 🛡️ middleware/         # Official middleware packages
+│   └── security/         # @blaizejs/middleware-security
+│
+├── 🎯 apps/               # Applications and examples
+│   ├── docs/             # Documentation website
+│   ├── playground/       # Development testing environment
+│   └── examples/         # Example applications
+│
+├── ⚙️ configs/            # Shared configurations
+│   ├── eslint-config/    # @blaizejs/eslint-config
+│   ├── tsconfig/         # @blaizejs/tsconfig
+│   ├── tsup/             # @blaizejs/tsup-config
+│   └── vitest/           # @blaizejs/vitest-config
+│
+├── pnpm-workspace.yaml   # Workspace configuration
+├── turbo.json            # Turborepo configuration
+├── package.json          # Root package scripts
+└── tsconfig.json         # Root TypeScript config
+```
+
+---
+
+## 📚 Package categories
+
+### Published packages (`packages/`)
+
+These packages are released to npm and follow semantic versioning with changesets:
+
+| Package | Description | Published As |
+|---------|-------------|--------------|
+| **blaize-core** | Core framework with server, routing, middleware, and plugin system | `blaizejs` |
+| **blaize-client** | Type-safe RPC client with end-to-end type inference | `@blaizejs/client` |
+| **blaize-testing-utils** | Testing utilities including mock context and server helpers | `@blaizejs/testing-utils` |
+| **create-blaize-app** | CLI scaffolding tool for new projects | `create-blaize-app` |
+| **blaize-types** | Shared TypeScript type definitions (internal, bundled with core) | _(not published)_ |
+
+**Key characteristics:**
+- Require [changesets](../contributing#changesets) for version management
+- Follow strict backward compatibility rules
+- Comprehensive test coverage (90%+ required)
+- Full API documentation with JSDoc
+
+### Plugins (`plugins/`)
+
+Official plugins that add optional functionality to the framework:
+
+| Plugin | Purpose | Install |
+|--------|---------|---------|
+| **cache** | In-memory and Redis caching with adapter pattern | `@blaizejs/plugin-cache` |
+| **queue** | Background job processing with local and Redis backends | `@blaizejs/plugin-queue` |
+| **metrics** | Prometheus-compatible metrics collection | `@blaizejs/plugin-metrics` |
+
+**Design principles:**
+- Optional dependencies (peer dependencies on core)
+- Zero-config local development
+- Production-ready adapters available
+- Lifecycle hooks integration
+
+### Adapters (`adapters/`)
+
+Storage and service adapters for plugins:
+
+| Adapter | Purpose | Used By |
+|---------|---------|---------|
+| **redis** | Redis integration for caching and queues | cache, queue plugins |
+
+**Adapter pattern:**
+- Interface-driven design
+- Local implementations for development
+- Production adapters for scaling
+- No vendor lock-in
+
+### Middleware (`middleware/`)
+
+Official middleware packages:
+
+| Middleware | Purpose | Features |
+|------------|---------|----------|
+| **security** | Security headers (CSP, HSTS, X-Frame-Options) | Zero-config secure defaults |
+
+### Applications (`apps/`)
+
+Internal applications and examples (not published to npm):
+
+| App | Purpose | Technology |
+|-----|---------|------------|
+| **docs** | Documentation website | Next.js, MDX |
+| **playground** | Development testing environment | TypeScript, Docker Compose |
+| **examples/** | Example applications demonstrating framework features | Various |
+
+### Configurations (`configs/`)
+
+Shared tooling configurations:
+
+| Config | Purpose | Extends |
+|--------|---------|---------|
+| **eslint-config** | Linting rules for monorepo | ESLint 9 flat config |
+| **tsconfig** | TypeScript base configurations | Strict mode, ESM |
+| **tsup** | Build configuration for packages | Fast ESM builds |
+| **vitest** | Test configuration for packages | Vitest, coverage |
+
+---
+
+## 🔧 Workspace configuration
+
+### pnpm workspace
+
+The `pnpm-workspace.yaml` defines which directories contain packages:
+
+```yaml
+packages:
+  # Core packages
+  - 'packages/*'
+  
+  # Adapter packages
+  - 'adapters/*'
+  
+  # Middleware packages
+  - 'middleware/*'
+  
+  # Plugin packages
+  - 'plugins/*'
+  
+  # Apps and examples (nested structure)
+  - 'apps/**'
+  
+  # Shared configurations
+  - 'configs/*'
+```
+
+**Why nested `apps/**`?**  
+Example applications are organized in subdirectories (`apps/examples/*/`), so the glob pattern `apps/**` ensures all nested projects are included in the workspace.
+
+### Turborepo configuration
+
+Turborepo orchestrates builds, tests, and linting across the monorepo:
+
+```json
+{
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["build"]
+    },
+    "lint": {},
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
+```
+
+**Key features:**
+- **Dependency-aware builds**: Packages build in the correct order
+- **Caching**: Skips unchanged packages for faster iterations
+- **Parallel execution**: Runs tasks across packages simultaneously
+- **Persistent tasks**: Dev servers run continuously
+
+---
+
+## 🏗️ Package structure
+
+Each package follows a consistent structure:
+
+```
+package-name/
+├── src/
+│   ├── index.ts          # Main entry point
+│   ├── [feature]/        # Feature modules
+│   │   ├── index.ts
+│   │   └── [feature].test.ts  # Colocated tests
+│   └── types/            # Type definitions
+├── dist/                 # Build output (gitignored)
+├── package.json          # Package configuration
+├── tsconfig.json         # TypeScript config (extends base)
+├── vitest.config.ts      # Test configuration
+└── README.md             # Package documentation
+```
+
+**Conventions:**
+- **Colocated tests**: Test files live next to implementation
+- **Index exports**: Clean public API through `index.ts`
+- **TypeScript strict mode**: All packages use strict type checking
+- **ESM-first**: Native ES modules, no CommonJS
+
+---
+
+## 📖 Key directories explained
+
+### Core framework (`packages/blaize-core/`)
+
+The heart of BlaizeJS:
+
+```
+blaize-core/
+├── src/
+│   ├── server/           # Server creation and lifecycle
+│   ├── router/           # File-based routing engine
+│   ├── middleware/       # Middleware system
+│   ├── plugins/          # Plugin lifecycle management
+│   ├── context/          # Request context (AsyncLocalStorage)
+│   ├── errors/           # BlaizeError classes (12 semantic types)
+│   ├── sse/              # Server-Sent Events implementation
+│   ├── logger/           # Logging interface and adapters
+│   └── utils/            # Shared utilities
+└── package.json          # Exports "blaizejs"
+```
+
+**Design highlights:**
+- **HTTP/2-native**: Default server implementation
+- **Functional core**: Pure functions over classes
+- **Type accumulation**: Middleware types compose through server
+- **Zero dependencies** (except `zod` for validation)
+
+### Type-safe client (`packages/blaize-client/`)
+
+RPC client with end-to-end type inference:
+
+```
+blaize-client/
+├── src/
+│   ├── client.ts         # Main client factory
+│   ├── types.ts          # Type inference helpers
+│   └── fetch/            # HTTP client implementation
+└── package.json          # Exports "@blaizejs/client"
+```
+
+**Features:**
+- Infers types from server route exports
+- Supports all HTTP methods
+- Query params, body, and URL params type-safe
+- Works in Node.js and browsers
+
+### Testing utilities (`packages/blaize-testing-utils/`)
+
+Testing helpers for BlaizeJS applications:
+
+```
+blaize-testing-utils/
+├── src/
+│   ├── context.ts        # createTestContext, createMockContext
+│   ├── server.ts         # createMockServer
+│   ├── middleware.ts     # createMockMiddleware
+│   └── plugin.ts         # createMockPlugin, getPluginHooks
+└── package.json          # Exports "@blaizejs/testing-utils"
+```
+
+**Usage:**
+```typescript
+import { createTestContext } from '@blaizejs/testing-utils';
+
+const ctx = createTestContext({ method: 'POST', path: '/users' });
+const result = await POST.handler(ctx, {});
+```
+
+### CLI scaffolding (`packages/create-blaize-app/`)
+
+Project scaffolding tool:
+
+```
+create-blaize-app/
+├── src/
+│   ├── index.ts          # CLI entry point
+│   ├── commands/         # CLI commands
+│   ├── templates/        # Project templates
+│   └── utils/            # CLI utilities
+└── package.json          # Exports "create-blaize-app"
+```
+
+**Features:**
+- Zero-config project setup
+- Multiple template options
+- Package manager detection
+- Git initialization
+
+### Playground (`apps/playground/`)
+
+Development environment for testing framework features:
+
+```
+playground/
+├── src/
+│   ├── index.ts          # Server setup with all plugins
+│   ├── routes/           # Test routes
+│   ├── data/             # Sample data
+│   └── middleware/       # Test middleware
+├── docker-compose.yml    # Redis, PostgreSQL for integration tests
+└── package.json          # Dev-only, not published
+```
+
+**Purpose:**
+- Test plugins with real services (Redis, PostgreSQL)
+- Validate SSE implementations
+- Experiment with new features
+- Performance benchmarking
+
+---
+
+## 🔄 Development workflow
+
+### Working across packages
+
+```bash
+# Install all dependencies
+pnpm install
+
+# Build all packages (respects dependency order)
+pnpm build
+
+# Run tests across monorepo
+pnpm test
+
+# Lint all packages
+pnpm lint
+
+# Type check everything
+pnpm type-check
+
+# Start playground dev server
+pnpm --filter @blaizejs/playground dev
+```
+
+### Working on a single package
+
+```bash
+# Run commands in specific package
+pnpm --filter blaizejs test
+pnpm --filter @blaizejs/client build
+
+# Run dev mode for a package
+pnpm --filter blaizejs dev
+```
+
+### Package dependencies
+
+Packages reference each other using workspace protocol:
+
+```json
+{
+  "dependencies": {
+    "blaizejs": "workspace:*",
+    "@blaizejs/adapter-redis": "workspace:*"
+  }
+}
+```
+
+**How it works:**
+- During development: Symlinks to local packages
+- During publishing: Replaced with actual version numbers
+- Turborepo handles build order automatically
+
+---
+
+## 🚀 Publishing flow
+
+### Published vs internal packages
+
+| Category | Published | Requires Changeset |
+|----------|-----------|-------------------|
+| `packages/blaize-core` | ✅ Yes → `blaizejs` | ✅ Required |
+| `packages/blaize-client` | ✅ Yes → `@blaizejs/client` | ✅ Required |
+| `packages/blaize-testing-utils` | ✅ Yes → `@blaizejs/testing-utils` | ✅ Required |
+| `packages/create-blaize-app` | ✅ Yes → `create-blaize-app` | ✅ Required |
+| `packages/blaize-types` | ❌ No (bundled with core) | ❌ Not required |
+| `plugins/*` | ✅ Yes | ✅ Required |
+| `adapters/*` | ✅ Yes | ✅ Required |
+| `middleware/*` | ✅ Yes | ✅ Required |
+| `apps/*` | ❌ No | ❌ Not required |
+| `configs/*` | ❌ No (internal tooling) | ❌ Not required |
+
+### Changeset workflow
+
+```bash
+# 1. Make changes to published package
+# 2. Create changeset
+pnpm changeset
+
+# 3. Select packages and version bump type (patch/minor/major)
+# 4. Write changelog entry
+# 5. Commit changeset file
+git add .changeset/
+git commit -m "🚀 Add new feature"
+
+# 6. On merge to main, GitHub Action creates "Version Packages" PR
+# 7. Merging that PR publishes to npm automatically
+```
+
+---
+
+## 📋 File conventions
+
+### Naming
+
+| File Type | Convention | Example |
+|-----------|-----------|---------|
+| Source files | `kebab-case.ts` | `route-handler.ts` |
+| Test files | `[name].test.ts` | `route-handler.test.ts` |
+| Type files | `[name].types.ts` | `server.types.ts` |
+| Config files | `[tool].config.ts` | `vitest.config.ts` |
+
+### Exports
+
+```typescript
+// ❌ Don't use deep imports
+import { Server } from 'blaizejs/dist/server';
+
+// ✅ Import from package root
+import { Server } from 'blaizejs';
+```
+
+**Why?** Internal structure can change; public API via `index.ts` is stable.
+
+### Testing
+
+```typescript
+// ✅ Colocate tests with implementation
+src/
+  server/
+    index.ts
+    index.test.ts        // Tests for server
+    lifecycle.ts
+    lifecycle.test.ts    // Tests for lifecycle
+
+// ❌ Don't separate tests into __tests__ directory
+```
+
+---
+
+## 🎯 Adding a new package
+
+### Step 1: Create package directory
+
+```bash
+# Choose appropriate category
+mkdir -p plugins/my-feature
+cd plugins/my-feature
+```
+
+### Step 2: Create package.json
+
+```json
+{
+  "name": "@blaizejs/plugin-my-feature",
+  "version": "0.1.0",
+  "description": "Description of plugin",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "blaizejs": "workspace:*"
+  },
+  "devDependencies": {
+    "@blaizejs/tsconfig": "workspace:*",
+    "@blaizejs/tsup-config": "workspace:*",
+    "blaizejs": "workspace:*"
+  }
+}
+```
+
+### Step 3: Create TypeScript config
+
+```json
+{
+  "extends": "@blaizejs/tsconfig/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}
+```
+
+### Step 4: Create build config
+
+```typescript
+// tsup.config.ts
+import { defineConfig } from 'tsup';
+
+export default defineConfig({
+  entry: ['src/index.ts'],
+  format: ['esm'],
+  dts: true,
+  clean: true,
+  sourcemap: true,
+});
+```
+
+### Step 5: Create source structure
+
+```bash
+mkdir -p src
+touch src/index.ts
+touch src/plugin.ts
+touch src/plugin.test.ts
+```
+
+### Step 6: Add to workspace
+
+Package is automatically included if in a workspace glob pattern. Verify:
+
+```bash
+pnpm install
+pnpm --filter @blaizejs/plugin-my-feature build
+```
+
+---
+
+## 🔍 Finding your way around
+
+### "Where should I add...?"
+
+| You want to add... | Add it to... |
+|-------------------|--------------|
+| Core framework feature | `packages/blaize-core/src/` |
+| New error class | `packages/blaize-core/src/errors/` |
+| RPC client feature | `packages/blaize-client/src/` |
+| Testing helper | `packages/blaize-testing-utils/src/` |
+| Background job processing | `plugins/queue/` |
+| Caching system | `plugins/cache/` |
+| Security headers | `middleware/security/` |
+| Redis adapter | `adapters/redis/` |
+| Example application | `apps/examples/` |
+| Documentation page | `apps/docs/pages/` |
+| Shared ESLint rule | `configs/eslint-config/` |
+
+### Common tasks
+
+**Add a dependency to a package:**
+```bash
+pnpm --filter @blaizejs/plugin-cache add redis
+```
+
+**Run tests for changed packages only:**
+```bash
+pnpm test --filter=[HEAD^1]
+```
+
+**Build in watch mode:**
+```bash
+pnpm --filter blaizejs dev
+```
+
+**Clear all build artifacts:**
+```bash
+pnpm clean
+```
+
+---
+
+## ⚙️ Configuration files
+
+### Root configuration
+
+| File | Purpose |
+|------|---------|
+| `pnpm-workspace.yaml` | Defines workspace packages |
+| `turbo.json` | Build and task orchestration |
+| `package.json` | Root scripts and dev dependencies |
+| `tsconfig.json` | Base TypeScript config |
+| `.eslintrc.js` | Root linting rules |
+| `.prettierrc` | Code formatting |
+| `.gitignore` | Git ignore patterns |
+
+### Package configuration
+
+| File | Purpose |
+|------|---------|
+| `package.json` | Package metadata, scripts, dependencies |
+| `tsconfig.json` | TypeScript settings (extends base) |
+| `vitest.config.ts` | Test configuration |
+| `tsup.config.ts` | Build configuration |
+
+---
+
+## 🎓 Best practices
+
+### Dependency management
+
+✅ **Do:**
+- Install runtime dependencies at package level
+- Use `workspace:*` for internal dependencies
+- Keep peer dependencies minimal
+- Avoid circular dependencies
+
+❌ **Don't:**
+- Install runtime dependencies at root level
+- Add unnecessary dependencies
+- Use wildcards for external packages
+
+### Package boundaries
+
+✅ **Do:**
+- Keep packages focused and cohesive
+- Define clear public APIs via `index.ts`
+- Document all exported functions
+
+❌ **Don't:**
+- Import from internal package paths
+- Create circular dependencies between packages
+- Expose implementation details
+
+### Testing
+
+✅ **Do:**
+- Colocate tests with implementation
+- Achieve 90%+ coverage for published packages
+- Test public APIs, not internals
+- Use integration tests for complex workflows
+
+❌ **Don't:**
+- Skip tests for edge cases
+- Mock internal implementation details
+- Test TypeScript types (use type-level tests instead)
+
+---
+
+## 🔗 Related documentation
+
+- **[Contributing guide](../contributing)** — How to contribute to BlaizeJS
+- **[Architecture overview](../architecture)** — Framework architecture
+- **[Release management](../contributing/release-management)** — Versioning and publishing
+
+---
+
+## 💡 Quick tips
+
+**For contributors:**
+- Start with the playground to test changes
+- Use `pnpm --filter` to work on specific packages
+- Run `pnpm build` before `pnpm test` for cross-package changes
+- Check `turbo.json` to understand task dependencies
+
+**For users:**
+- The `blaizejs` package contains everything you need to start
+- Plugins are optional and can be added as needed
+- Example applications show real-world usage patterns
+- Testing utilities make testing BlaizeJS apps straightforward
+
+---
+
+**Built with ❤️ by the BlaizeJS team**
+
+*Understanding the project structure helps you navigate the codebase, contribute effectively, and leverage the full power of BlaizeJS.*

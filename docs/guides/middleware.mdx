@@ -1,0 +1,1418 @@
+# 🔧 Middleware Guide
+
+> Build powerful request processing pipelines with type-safe middleware in BlaizeJS
+
+Middleware intercepts HTTP requests before they reach your route handlers—perfect for authentication, logging, rate limiting, and more. This guide takes you from your first middleware to advanced composition patterns.
+
+---
+
+## 📋 Table of Contents
+
+- [What is Middleware?](#-what-is-middleware)
+- [Your First Middleware](#-your-first-middleware)
+- [Understanding the Onion Model](#-understanding-the-onion-model)
+- [State vs Services](#-state-vs-services)
+- [Type-Safe Middleware](#-type-safe-middleware)
+- [Common Patterns](#-common-patterns)
+- [Middleware Execution Order](#-middleware-execution-order)
+- [Conditional Execution](#-conditional-execution)
+- [Advanced Patterns](#-advanced-patterns)
+- [Testing Middleware](#-testing-middleware)
+- [Best Practices](#-best-practices)
+
+---
+
+## 🎯 What is Middleware?
+
+Middleware is code that runs **between** the incoming request and your route handler. Think of it as a series of checkpoints each request passes through:
+
+```
+Request → Middleware 1 → Middleware 2 → Middleware 3 → Route Handler → Response
+```
+
+**Common use cases:**
+- 🔐 **Authentication** — Verify user tokens
+- 📝 **Logging** — Track requests and responses
+- ⏱️ **Timing** — Measure request duration
+- 🔒 **Rate Limiting** — Prevent abuse
+- ✅ **Validation** — Check request structure
+- 🎨 **CORS** — Handle cross-origin requests
+- 💾 **Caching** — Store frequently-requested data
+- 🔍 **Request ID** — Add correlation IDs for tracing
+
+---
+
+## 🚀 Your First Middleware
+
+Let's create a simple logging middleware that tracks request timing:
+
+```typescript
+// src/middleware/timing.ts
+import { createMiddleware } from 'blaizejs';
+
+export const timingMiddleware = createMiddleware({
+  name: 'timing',
+  
+  handler: async ({ ctx, next, logger }) => {
+    // 1️⃣ BEFORE: Code runs when request arrives
+    const start = Date.now();
+    logger.info('Request started', {
+      method: ctx.request.method,
+      path: ctx.request.path,
+    });
+    
+    // 2️⃣ NEXT: Pass control to the next middleware or handler
+    await next();
+    
+    // 3️⃣ AFTER: Code runs when response is ready
+    const duration = Date.now() - start;
+    logger.info('Request completed', {
+      duration: `${duration}ms`,
+      status: ctx.response.statusCode,
+    });
+    
+    // Add response header
+    ctx.response.header('X-Response-Time', `${duration}ms`);
+  },
+});
+```
+
+**Add it to your server:**
+
+```typescript
+// src/app.ts
+import { Blaize } from 'blaizejs';
+import { timingMiddleware } from './middleware/timing';
+
+const server = Blaize.createServer({
+  port: 7485,
+  routesDir: './src/routes',
+  middleware: [timingMiddleware], // ← Applied to all routes
+});
+
+await server.listen();
+```
+
+**Test it:**
+
+```bash
+curl https://localhost:7485/health
+# Response includes: X-Response-Time: 15ms
+```
+
+---
+
+## 🧅 Understanding the Onion Model
+
+Middleware executes in an "onion" pattern — each middleware wraps the next:
+
+```
+┌─────────────────────────────────────────┐
+│ Middleware A (before)                   │
+│  ┌───────────────────────────────────┐  │
+│  │ Middleware B (before)             │  │
+│  │  ┌─────────────────────────────┐  │  │
+│  │  │ Middleware C (before)       │  │  │
+│  │  │  ┌───────────────────────┐  │  │  │
+│  │  │  │ Route Handler         │  │  │  │
+│  │  │  └───────────────────────┘  │  │  │
+│  │  │ Middleware C (after)        │  │  │
+│  │  └─────────────────────────────┘  │  │
+│  │ Middleware B (after)              │  │
+│  └───────────────────────────────────┘  │
+│ Middleware A (after)                    │
+└─────────────────────────────────────────┘
+```
+
+**Example:**
+
+```typescript
+const loggingMiddleware = createMiddleware({
+  name: 'logging',
+  handler: async ({ ctx, next, logger }) => {
+    logger.info('→ Request incoming');
+    
+    await next(); // Call next middleware
+    
+    logger.info('← Response outgoing');
+  },
+});
+
+const authMiddleware = createMiddleware({
+  name: 'auth',
+  handler: async ({ ctx, next, logger }) => {
+    logger.info('→ Checking auth');
+    
+    await next(); // Call next middleware
+    
+    logger.info('← Auth verified');
+  },
+});
+
+// Server setup
+const server = Blaize.createServer({
+  middleware: [loggingMiddleware, authMiddleware],
+  // ...
+});
+
+// Execution order:
+// 1. → Request incoming
+// 2. → Checking auth
+// 3. Route handler executes
+// 4. ← Auth verified
+// 5. ← Response outgoing
+```
+
+---
+
+## 📦 State vs Services
+
+Middleware can add data to two places in the context:
+
+### `ctx.state` — Per-Request Data
+
+Use for data that changes **per request** (temporary, request-scoped):
+
+```typescript
+const requestIdMiddleware = createMiddleware({
+  handler: async ({ ctx, next }) => {
+    // Add request ID to state
+    ctx.state.requestId = generateId();
+    ctx.state.startTime = Date.now();
+    
+    await next();
+  },
+});
+
+// In route handler:
+export const GET = route.get({
+  handler: async ({ ctx }) => {
+    console.log(ctx.state.requestId); // Different for each request
+    console.log(ctx.state.startTime); // When this request started
+  },
+});
+```
+
+**Common state examples:**
+- User session data
+- Request correlation IDs
+- Request start time
+- Parsed JWT claims
+- Request metadata
+
+### `ctx.services` — Shared Resources
+
+Use for **shared instances** that persist across requests (singletons):
+
+```typescript
+const databaseMiddleware = createMiddleware({
+  handler: async ({ ctx, next }) => {
+    // Add database connection to services
+    ctx.services.db = databaseConnection;
+    ctx.services.cache = redisClient;
+    
+    await next();
+  },
+});
+
+// In route handler:
+export const GET = route.get({
+  handler: async ({ ctx }) => {
+    // Same db instance for all requests
+    const users = await ctx.services.db.users.findAll();
+    return { users };
+  },
+});
+```
+
+**Common services examples:**
+- Database connections
+- Redis clients
+- Logger instances
+- Email services
+- Storage clients (S3, R2)
+- API clients
+
+---
+
+## 🎨 Type-Safe Middleware
+
+BlaizeJS middleware supports **type composition** — middleware declares what it adds, and TypeScript automatically knows what's available in your routes.
+
+### Basic Typed Middleware
+
+```typescript
+// Define types
+interface User {
+  id: string;
+  email: string;
+  role: 'admin' | 'user';
+}
+
+interface AuthService {
+  verify(token: string): Promise<User>;
+}
+
+// Create typed middleware
+const authMiddleware = createMiddleware<
+  { user: User },        // ← State additions
+  { auth: AuthService }  // ← Service additions
+>({
+  name: 'auth',
+  
+  handler: async ({ ctx, next }) => {
+    const token = ctx.request.header('authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new UnauthorizedError('Missing token');
+    }
+    
+    // TypeScript knows these types!
+    ctx.state.user = await authService.verify(token);
+    ctx.services.auth = authService;
+    
+    await next();
+  },
+  
+  skip: (ctx) => ctx.request.path === '/health',
+});
+```
+
+### Type Composition
+
+When you add middleware to your server, TypeScript automatically composes the types:
+
+```typescript
+// src/app.ts
+import { Blaize, type InferContext } from 'blaizejs';
+import { authMiddleware } from './middleware/auth';
+import { timingMiddleware } from './middleware/timing';
+
+const typeServer = Blaize.createServer({
+  host: 'localhost',
+  port: 7485,
+  routesDir: './src/routes',
+  middleware: [
+    authMiddleware,   // Adds { user: User } to state
+    timingMiddleware, // Adds { startTime: number } to state
+  ],
+});
+
+// Extract composed types
+type AppContext = InferContext<typeof typeServer>;
+
+// Create route factory with composed types
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],    // { user: User; startTime: number }
+  AppContext['services']  // { auth: AuthService }
+>();
+```
+
+**Now your routes have full type safety:**
+
+```typescript
+// src/routes/profile.ts
+import { route } from '../app';
+
+export const getProfile = route.get({
+  handler: async ({ ctx }) => {
+    // TypeScript knows everything!
+    ctx.state.user;       // ✅ Typed as User
+    ctx.state.startTime;  // ✅ Typed as number
+    ctx.services.auth;    // ✅ Typed as AuthService
+    
+    return {
+      id: ctx.state.user.id,
+      email: ctx.state.user.email,
+      role: ctx.state.user.role,
+    };
+  },
+});
+```
+
+### Helper Functions
+
+For middleware that only adds state **or** only adds services:
+
+```typescript
+import { createStateMiddleware, createServiceMiddleware } from 'blaizejs';
+
+// State-only middleware
+const requestIdMiddleware = createStateMiddleware<{ requestId: string }>(
+  async ({ ctx, next }) => {
+    ctx.state.requestId = generateId();
+    await next();
+  }
+);
+
+// Service-only middleware
+const databaseMiddleware = createServiceMiddleware<{ db: Database }>(
+  async ({ ctx, next }) => {
+    ctx.services.db = database;
+    await next();
+  }
+);
+```
+
+---
+
+## 💡 Common Patterns
+
+### Pattern: Authentication
+
+Verify user tokens and add user to context:
+
+```typescript
+// middleware/auth.ts
+import { createMiddleware, UnauthorizedError } from 'blaizejs';
+import { verifyJWT } from '../utils/jwt';
+
+interface User {
+  id: string;
+  email: string;
+  role: string;
+}
+
+export const authMiddleware = createMiddleware<{ user: User }, {}>({
+  name: 'auth',
+  
+  handler: async ({ ctx, next, logger }) => {
+    const authHeader = ctx.request.header('authorization');
+    
+    if (!authHeader) {
+      throw new UnauthorizedError('Missing authorization header');
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    
+    try {
+      const user = await verifyJWT(token);
+      ctx.state.user = user;
+      
+      logger.info('User authenticated', { userId: user.id });
+      
+      await next();
+    } catch (error) {
+      logger.warn('Authentication failed', { error });
+      throw new UnauthorizedError('Invalid or expired token');
+    }
+  },
+  
+  // Skip auth for public routes
+  skip: (ctx) => {
+    const publicPaths = ['/health', '/auth/login', '/auth/register'];
+    return publicPaths.some(path => ctx.request.path.startsWith(path));
+  },
+});
+```
+
+### Pattern: Request Logging
+
+Log all requests with timing and metadata:
+
+```typescript
+// middleware/logger.ts
+import { createMiddleware } from 'blaizejs';
+import { randomUUID } from 'crypto';
+
+export const loggerMiddleware = createMiddleware<
+  { requestId: string; startTime: number },
+  {}
+>({
+  name: 'logger',
+  
+  handler: async ({ ctx, next, logger }) => {
+    // Generate request ID
+    ctx.state.requestId = randomUUID();
+    ctx.state.startTime = Date.now();
+    
+    // Log incoming request
+    logger.info('→ Request', {
+      requestId: ctx.state.requestId,
+      method: ctx.request.method,
+      path: ctx.request.path,
+      userAgent: ctx.request.header('user-agent'),
+    });
+    
+    try {
+      await next();
+      
+      // Log successful response
+      const duration = Date.now() - ctx.state.startTime;
+      logger.info('← Response', {
+        requestId: ctx.state.requestId,
+        status: ctx.response.statusCode,
+        duration: `${duration}ms`,
+      });
+    } catch (error) {
+      // Log errors
+      const duration = Date.now() - ctx.state.startTime;
+      logger.error('✗ Error', {
+        requestId: ctx.state.requestId,
+        error: error.message,
+        duration: `${duration}ms`,
+      });
+      
+      throw error; // Re-throw for error handler
+    }
+  },
+});
+```
+
+### Pattern: Rate Limiting
+
+Limit requests per user or IP:
+
+```typescript
+// middleware/rate-limit.ts
+import { createMiddleware, RateLimitError } from 'blaizejs';
+import { Redis } from 'ioredis';
+
+const redis = new Redis();
+
+export const rateLimitMiddleware = createMiddleware({
+  name: 'rate-limit',
+  
+  handler: async ({ ctx, next, logger }) => {
+    const userId = ctx.state.user?.id || ctx.request.ip;
+    const key = `rate-limit:${userId}`;
+    
+    // Increment request count
+    const requests = await redis.incr(key);
+    
+    // Set expiry on first request
+    if (requests === 1) {
+      await redis.expire(key, 60); // 60 seconds window
+    }
+    
+    // Check limit (100 requests per minute)
+    if (requests > 100) {
+      const ttl = await redis.ttl(key);
+      
+      logger.warn('Rate limit exceeded', { userId, requests });
+      
+      throw new RateLimitError('Too many requests', {
+        limit: 100,
+        windowSeconds: 60,
+        retryAfter: ttl,
+      });
+    }
+    
+    // Add rate limit headers
+    ctx.response.header('X-RateLimit-Limit', '100');
+    ctx.response.header('X-RateLimit-Remaining', String(100 - requests));
+    
+    await next();
+  },
+});
+```
+
+### Pattern: CORS
+
+Handle cross-origin requests:
+
+```typescript
+// middleware/cors.ts
+import { createMiddleware } from 'blaizejs';
+
+const ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'https://app.example.com',
+];
+
+export const corsMiddleware = createMiddleware({
+  name: 'cors',
+  
+  handler: async ({ ctx, next }) => {
+    const origin = ctx.request.header('origin');
+    
+    // Check if origin is allowed
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+      ctx.response.header('Access-Control-Allow-Origin', origin);
+      ctx.response.header('Access-Control-Allow-Credentials', 'true');
+    }
+    
+    // Handle preflight requests
+    if (ctx.request.method === 'OPTIONS') {
+      ctx.response.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH');
+      ctx.response.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      ctx.response.header('Access-Control-Max-Age', '86400'); // 24 hours
+      ctx.response.status(204);
+      return; // Don't call next() — end request here
+    }
+    
+    await next();
+  },
+});
+```
+
+### Pattern: Database Connection
+
+Add database client to services:
+
+```typescript
+// middleware/database.ts
+import { createServiceMiddleware } from 'blaizejs';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+export const databaseMiddleware = createServiceMiddleware<{ db: PrismaClient }>(
+  async ({ ctx, next }) => {
+    ctx.services.db = prisma;
+    await next();
+  }
+);
+
+// In routes:
+export const getUsers = route.get({
+  handler: async ({ ctx }) => {
+    const users = await ctx.services.db.user.findMany();
+    return { users };
+  },
+});
+```
+
+### Pattern: Request Validation
+
+Validate common request patterns:
+
+```typescript
+// middleware/validation.ts
+import { createMiddleware, ValidationError } from 'blaizejs';
+
+export const contentTypeMiddleware = createMiddleware({
+  name: 'content-type',
+  
+  handler: async ({ ctx, next, logger }) => {
+    // Only validate POST, PUT, PATCH
+    if (!['POST', 'PUT', 'PATCH'].includes(ctx.request.method)) {
+      return await next();
+    }
+    
+    const contentType = ctx.request.header('content-type');
+    
+    if (!contentType) {
+      throw new ValidationError('Content-Type header required', {
+        header: 'content-type',
+        allowed: ['application/json', 'multipart/form-data'],
+      });
+    }
+    
+    const validTypes = ['application/json', 'multipart/form-data'];
+    const isValid = validTypes.some(type => contentType.includes(type));
+    
+    if (!isValid) {
+      throw new ValidationError('Invalid Content-Type', {
+        received: contentType,
+        allowed: validTypes,
+      });
+    }
+    
+    logger.debug('Content-Type validated', { contentType });
+    
+    await next();
+  },
+});
+```
+
+---
+
+## 📊 Middleware Execution Order
+
+### Global Middleware
+
+Middleware added to the server runs for **all routes**:
+
+```typescript
+const server = Blaize.createServer({
+  middleware: [
+    corsMiddleware,      // 1st
+    loggerMiddleware,    // 2nd
+    authMiddleware,      // 3rd
+    rateLimitMiddleware, // 4th
+  ],
+  // ...
+});
+
+// Execution flow:
+// Request → CORS → Logger → Auth → Rate Limit → Route → Rate Limit → Auth → Logger → CORS → Response
+```
+
+### Route-Level Middleware
+
+Middleware can also be added to specific routes:
+
+```typescript
+export const getAdminStats = route.get({
+  middleware: [adminOnlyMiddleware, auditLogMiddleware],
+  handler: async ({ ctx }) => {
+    // Only runs after adminOnlyMiddleware and auditLogMiddleware
+    return { stats: await getStats() };
+  },
+});
+```
+
+### Combined Execution Order
+
+When both global and route middleware exist:
+
+```
+1. Global middleware (in registration order)
+2. Route middleware (in array order)
+3. Route handler
+4. Route middleware (reverse order)
+5. Global middleware (reverse order)
+```
+
+**Example:**
+
+```typescript
+// Global middleware
+const server = Blaize.createServer({
+  middleware: [
+    loggerMiddleware,  // Global 1
+    authMiddleware,    // Global 2
+  ],
+});
+
+// Route middleware
+export const GET = route.get({
+  middleware: [
+    cacheMiddleware,     // Route 1
+    rateLimitMiddleware, // Route 2
+  ],
+  handler: async ({ ctx }) => {
+    return { data: 'response' };
+  },
+});
+
+// Execution order:
+// 1. loggerMiddleware (before)
+// 2. authMiddleware (before)
+// 3. cacheMiddleware (before)
+// 4. rateLimitMiddleware (before)
+// 5. handler
+// 6. rateLimitMiddleware (after)
+// 7. cacheMiddleware (after)
+// 8. authMiddleware (after)
+// 9. loggerMiddleware (after)
+```
+
+---
+
+## ⚡ Conditional Execution
+
+Use the `skip` function to bypass middleware for specific routes:
+
+```typescript
+const authMiddleware = createMiddleware<{ user: User }, {}>({
+  name: 'auth',
+  
+  handler: async ({ ctx, next }) => {
+    const token = ctx.request.header('authorization');
+    if (!token) {
+      throw new UnauthorizedError('Missing token');
+    }
+    
+    ctx.state.user = await verifyToken(token);
+    await next();
+  },
+  
+  // Skip authentication for these routes
+  skip: (ctx) => {
+    const publicPaths = [
+      '/health',
+      '/metrics',
+      '/auth/login',
+      '/auth/register',
+      '/auth/forgot-password',
+    ];
+    
+    return publicPaths.some(path => ctx.request.path.startsWith(path));
+  },
+});
+```
+
+**When `skip` returns `true`:**
+- Middleware `handler` is **not called**
+- Execution continues to next middleware
+- Types are still composed (TypeScript doesn't know about runtime skipping)
+
+**Advanced skip patterns:**
+
+```typescript
+// Skip based on HTTP method
+skip: (ctx) => ctx.request.method === 'OPTIONS'
+
+// Skip based on path pattern
+skip: (ctx) => /^\/public\//.test(ctx.request.path)
+
+// Skip based on header
+skip: (ctx) => ctx.request.header('x-skip-auth') === 'true'
+
+// Skip based on query parameter
+skip: (ctx) => ctx.request.query.public === 'true'
+
+// Complex logic
+skip: (ctx) => {
+  const isPublicPath = ctx.request.path.startsWith('/public');
+  const isHealthCheck = ctx.request.path === '/health';
+  const isWebhook = ctx.request.header('x-webhook-signature');
+  
+  return isPublicPath || isHealthCheck || !!isWebhook;
+}
+```
+
+---
+
+## 🚀 Advanced Patterns
+
+### Pattern: Middleware Composition
+
+Create reusable middleware stacks:
+
+```typescript
+// middleware/stacks.ts
+import { compose } from 'blaizejs';
+import { authMiddleware } from './auth';
+import { rateLimitMiddleware } from './rate-limit';
+import { auditLogMiddleware } from './audit-log';
+
+// Stack for admin routes
+export const adminStack = compose([
+  authMiddleware,
+  rateLimitMiddleware,
+  auditLogMiddleware,
+]);
+
+// Stack for public API routes
+export const apiStack = compose([
+  rateLimitMiddleware,
+  corsMiddleware,
+  cacheMiddleware,
+]);
+
+// Use in routes
+export const getAdminUsers = route.get({
+  middleware: [adminStack], // ← Composed middleware
+  handler: async ({ ctx }) => {
+    // All three middleware run
+    return { users: await ctx.services.db.users.findAll() };
+  },
+});
+```
+
+### Pattern: Conditional Middleware
+
+Apply middleware based on runtime conditions:
+
+```typescript
+// middleware/conditional-cache.ts
+import { createMiddleware } from 'blaizejs';
+
+export const conditionalCacheMiddleware = createMiddleware({
+  name: 'conditional-cache',
+  
+  handler: async ({ ctx, next }) => {
+    const cacheKey = `cache:${ctx.request.path}`;
+    
+    // Only cache GET requests
+    if (ctx.request.method !== 'GET') {
+      return await next();
+    }
+    
+    // Check cache
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      ctx.response.status(200).json(JSON.parse(cached));
+      return; // Don't call next() — serve from cache
+    }
+    
+    // Capture response to cache it
+    const originalJson = ctx.response.json.bind(ctx.response);
+    ctx.response.json = (data: any) => {
+      redis.setex(cacheKey, 60, JSON.stringify(data));
+      return originalJson(data);
+    };
+    
+    await next();
+  },
+});
+```
+
+### Pattern: Error Recovery Middleware
+
+Handle errors and provide fallbacks:
+
+```typescript
+// middleware/error-recovery.ts
+import { createMiddleware, InternalServerError } from 'blaizejs';
+
+export const errorRecoveryMiddleware = createMiddleware({
+  name: 'error-recovery',
+  
+  handler: async ({ ctx, next, logger }) => {
+    try {
+      await next();
+    } catch (error) {
+      logger.error('Request failed, attempting recovery', {
+        error: error.message,
+        path: ctx.request.path,
+      });
+      
+      // Try to provide a meaningful response
+      if (error.name === 'DatabaseError') {
+        throw new InternalServerError('Database temporarily unavailable', {
+          retryAfter: 30,
+          correlationId: ctx.state.requestId,
+        });
+      }
+      
+      // Re-throw other errors
+      throw error;
+    }
+  },
+});
+```
+
+### Pattern: Feature Flags
+
+Toggle features based on middleware:
+
+```typescript
+// middleware/feature-flags.ts
+import { createMiddleware } from 'blaizejs';
+
+interface FeatureFlags {
+  newDashboard: boolean;
+  betaFeatures: boolean;
+  experimentalApi: boolean;
+}
+
+export const featureFlagsMiddleware = createMiddleware<{ features: FeatureFlags }, {}>({
+  name: 'feature-flags',
+  
+  handler: async ({ ctx, next }) => {
+    // Load user's feature flags
+    const userId = ctx.state.user?.id;
+    const flags = userId 
+      ? await loadUserFeatureFlags(userId)
+      : getDefaultFeatureFlags();
+    
+    ctx.state.features = flags;
+    
+    await next();
+  },
+});
+
+// In routes:
+export const getDashboard = route.get({
+  handler: async ({ ctx }) => {
+    if (ctx.state.features.newDashboard) {
+      return await renderNewDashboard();
+    }
+    return await renderOldDashboard();
+  },
+});
+```
+
+### Pattern: Multi-Tenant Middleware
+
+Handle multiple tenants/organizations:
+
+```typescript
+// middleware/tenant.ts
+import { createMiddleware, UnauthorizedError } from 'blaizejs';
+
+interface Tenant {
+  id: string;
+  name: string;
+  plan: 'free' | 'pro' | 'enterprise';
+}
+
+export const tenantMiddleware = createMiddleware<{ tenant: Tenant }, {}>({
+  name: 'tenant',
+  
+  handler: async ({ ctx, next, logger }) => {
+    // Extract tenant from subdomain or header
+    const tenantId = 
+      ctx.request.header('x-tenant-id') || 
+      extractSubdomain(ctx.request.host);
+    
+    if (!tenantId) {
+      throw new UnauthorizedError('Missing tenant identifier');
+    }
+    
+    // Load tenant configuration
+    const tenant = await loadTenant(tenantId);
+    
+    if (!tenant) {
+      throw new UnauthorizedError('Invalid tenant');
+    }
+    
+    ctx.state.tenant = tenant;
+    
+    logger.info('Tenant loaded', {
+      tenantId: tenant.id,
+      plan: tenant.plan,
+    });
+    
+    await next();
+  },
+});
+
+// In routes:
+export const createResource = route.post({
+  handler: async ({ ctx }) => {
+    // Check tenant plan limits
+    if (ctx.state.tenant.plan === 'free') {
+      const count = await ctx.services.db.resources.count({
+        where: { tenantId: ctx.state.tenant.id },
+      });
+      
+      if (count >= 10) {
+        throw new ForbiddenError('Free plan limited to 10 resources');
+      }
+    }
+    
+    // Create resource scoped to tenant
+    const resource = await ctx.services.db.resources.create({
+      data: {
+        ...ctx.request.body,
+        tenantId: ctx.state.tenant.id,
+      },
+    });
+    
+    return { resource };
+  },
+});
+```
+
+### Pattern: A/B Testing Middleware
+
+Assign users to experiment variants:
+
+```typescript
+// middleware/ab-testing.ts
+import { createMiddleware } from 'blaizejs';
+import { createHash } from 'crypto';
+
+interface Experiment {
+  id: string;
+  variant: 'control' | 'variant-a' | 'variant-b';
+}
+
+export const abTestingMiddleware = createMiddleware<
+  { experiments: Record<string, Experiment> },
+  {}
+>({
+  name: 'ab-testing',
+  
+  handler: async ({ ctx, next }) => {
+    const userId = ctx.state.user?.id || ctx.request.ip;
+    
+    // Load active experiments
+    const activeExperiments = await getActiveExperiments();
+    
+    const experiments: Record<string, Experiment> = {};
+    
+    for (const experiment of activeExperiments) {
+      // Deterministic assignment based on user ID
+      const hash = createHash('md5')
+        .update(`${experiment.id}:${userId}`)
+        .digest('hex');
+      
+      const value = parseInt(hash.slice(0, 8), 16);
+      const bucket = value % 100;
+      
+      let variant: Experiment['variant'];
+      if (bucket < 33) {
+        variant = 'control';
+      } else if (bucket < 66) {
+        variant = 'variant-a';
+      } else {
+        variant = 'variant-b';
+      }
+      
+      experiments[experiment.id] = {
+        id: experiment.id,
+        variant,
+      };
+    }
+    
+    ctx.state.experiments = experiments;
+    
+    await next();
+  },
+});
+
+// In routes:
+export const getHomepage = route.get({
+  handler: async ({ ctx }) => {
+    const experiment = ctx.state.experiments['homepage-redesign'];
+    
+    if (experiment?.variant === 'variant-a') {
+      return renderRedesignedHomepage();
+    }
+    
+    return renderOriginalHomepage();
+  },
+});
+```
+
+---
+
+## 🧪 Testing Middleware
+
+Use `@blaizejs/testing-utils` to test middleware in isolation:
+
+```typescript
+// middleware/auth.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { createTestContext } from '@blaizejs/testing-utils';
+import { authMiddleware } from './auth';
+import { UnauthorizedError } from 'blaizejs';
+
+describe('authMiddleware', () => {
+  it('should authenticate valid token', async () => {
+    const ctx = createTestContext({
+      headers: {
+        authorization: 'Bearer valid-token-123',
+      },
+    });
+    
+    const next = vi.fn();
+    
+    await authMiddleware.execute({
+      ctx,
+      next,
+      logger: createMockLogger(),
+      eventBus: createMockEventBus(),
+    });
+    
+    // Check user was added to state
+    expect(ctx.state.user).toBeDefined();
+    expect(ctx.state.user.id).toBe('user-123');
+    
+    // Check next was called
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+  
+  it('should throw UnauthorizedError when token missing', async () => {
+    const ctx = createTestContext({
+      headers: {}, // No authorization header
+    });
+    
+    const next = vi.fn();
+    
+    await expect(
+      authMiddleware.execute({
+        ctx,
+        next,
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      })
+    ).rejects.toThrow(UnauthorizedError);
+    
+    // Check next was NOT called
+    expect(next).not.toHaveBeenCalled();
+  });
+  
+  it('should skip public routes', () => {
+    const ctx = createTestContext({
+      path: '/health',
+    });
+    
+    // Check skip function
+    expect(authMiddleware.skip?.(ctx)).toBe(true);
+  });
+  
+  it('should not skip protected routes', () => {
+    const ctx = createTestContext({
+      path: '/api/users',
+    });
+    
+    expect(authMiddleware.skip?.(ctx)).toBe(false);
+  });
+});
+```
+
+### Testing Middleware Composition
+
+```typescript
+describe('middleware composition', () => {
+  it('should execute middleware in order', async () => {
+    const executionOrder: string[] = [];
+    
+    const middleware1 = createMiddleware({
+      name: 'first',
+      handler: async ({ next }) => {
+        executionOrder.push('first-before');
+        await next();
+        executionOrder.push('first-after');
+      },
+    });
+    
+    const middleware2 = createMiddleware({
+      name: 'second',
+      handler: async ({ next }) => {
+        executionOrder.push('second-before');
+        await next();
+        executionOrder.push('second-after');
+      },
+    });
+    
+    const ctx = createTestContext();
+    const finalNext = vi.fn(() => {
+      executionOrder.push('handler');
+    });
+    
+    const composed = compose([middleware1, middleware2]);
+    
+    await composed({
+      ctx,
+      next: finalNext,
+      logger: createMockLogger(),
+      eventBus: createMockEventBus(),
+    });
+    
+    expect(executionOrder).toEqual([
+      'first-before',
+      'second-before',
+      'handler',
+      'second-after',
+      'first-after',
+    ]);
+  });
+});
+```
+
+### Testing Type Composition
+
+```typescript
+describe('type composition', () => {
+  it('should compose types from multiple middleware', () => {
+    const middleware1 = createMiddleware<{ a: string }, {}>({
+      handler: async ({ ctx, next }) => {
+        ctx.state.a = 'value-a';
+        await next();
+      },
+    });
+    
+    const middleware2 = createMiddleware<{ b: number }, {}>({
+      handler: async ({ ctx, next }) => {
+        ctx.state.b = 42;
+        await next();
+      },
+    });
+    
+    // TypeScript should know both types are available
+    type State1 = typeof middleware1._state; // { a: string } | undefined
+    type State2 = typeof middleware2._state; // { b: number } | undefined
+    
+    // Composed state should have both
+    type ComposedState = State1 & State2;
+  });
+});
+```
+
+---
+
+## ✅ Best Practices
+
+### 1. Name Your Middleware
+
+Always provide meaningful names for debugging:
+
+**✅ Good:**
+```typescript
+const authMiddleware = createMiddleware({
+  name: 'auth', // ← Clear name
+  handler: async ({ ctx, next }) => { /* ... */ },
+});
+```
+
+**❌ Bad:**
+```typescript
+const authMiddleware = createMiddleware({
+  // No name — shows as "anonymous" in logs
+  handler: async ({ ctx, next }) => { /* ... */ },
+});
+```
+
+### 2. Always Call `next()`
+
+Unless you're short-circuiting (like auth failures):
+
+**✅ Good:**
+```typescript
+handler: async ({ ctx, next }) => {
+  // Pre-processing
+  await next(); // ← Always call next
+  // Post-processing
+}
+```
+
+**❌ Bad:**
+```typescript
+handler: async ({ ctx, next }) => {
+  // Pre-processing
+  // Forgot to call next() — request hangs!
+}
+```
+
+### 3. Use `skip` for Public Routes
+
+More efficient than checking inside handler:
+
+**✅ Good:**
+```typescript
+const authMiddleware = createMiddleware({
+  handler: async ({ ctx, next }) => { /* ... */ },
+  skip: (ctx) => ctx.request.path === '/health', // ← Efficient skip
+});
+```
+
+**❌ Bad:**
+```typescript
+const authMiddleware = createMiddleware({
+  handler: async ({ ctx, next }) => {
+    if (ctx.request.path === '/health') {
+      return await next(); // ← Still executes handler
+    }
+    // Auth logic
+  },
+});
+```
+
+### 4. Order Matters
+
+Put fast middleware first, expensive middleware later:
+
+**✅ Good:**
+```typescript
+const server = Blaize.createServer({
+  middleware: [
+    corsMiddleware,        // Fast — just headers
+    loggerMiddleware,      // Fast — just logging
+    authMiddleware,        // Medium — token verification
+    rateLimitMiddleware,   // Medium — Redis lookup
+    databaseMiddleware,    // Slow — establishes connections
+  ],
+});
+```
+
+### 5. Type Your Middleware
+
+Use TypeScript types for better autocomplete:
+
+**✅ Good:**
+```typescript
+const authMiddleware = createMiddleware<
+  { user: User },
+  { auth: AuthService }
+>({
+  handler: async ({ ctx, next }) => {
+    ctx.state.user = await verifyToken(token); // ✅ Typed
+    await next();
+  },
+});
+```
+
+**❌ Bad:**
+```typescript
+const authMiddleware = createMiddleware({
+  handler: async ({ ctx, next }) => {
+    ctx.state.user = await verifyToken(token); // ❌ No types
+    await next();
+  },
+});
+```
+
+### 6. Don't Mutate Request/Response After `next()`
+
+Avoid modifying request after response is sent:
+
+**✅ Good:**
+```typescript
+handler: async ({ ctx, next }) => {
+  // Modify request BEFORE next()
+  ctx.request.body.sanitized = true;
+  
+  await next();
+  
+  // Modify response AFTER next()
+  ctx.response.header('X-Custom', 'value');
+}
+```
+
+**❌ Bad:**
+```typescript
+handler: async ({ ctx, next }) => {
+  await next();
+  
+  // BAD: Modifying request after response sent
+  ctx.request.body = sanitize(ctx.request.body);
+}
+```
+
+### 7. Handle Errors Gracefully
+
+Catch and log errors, then re-throw:
+
+**✅ Good:**
+```typescript
+handler: async ({ ctx, next, logger }) => {
+  try {
+    await next();
+  } catch (error) {
+    logger.error('Middleware error', {
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error; // ← Re-throw for error handler
+  }
+}
+```
+
+### 8. Use Services for Singletons
+
+Don't create new instances in middleware:
+
+**✅ Good:**
+```typescript
+// Create once, outside middleware
+const prisma = new PrismaClient();
+
+const databaseMiddleware = createServiceMiddleware<{ db: PrismaClient }>(
+  async ({ ctx, next }) => {
+    ctx.services.db = prisma; // ← Reuse instance
+    await next();
+  }
+);
+```
+
+**❌ Bad:**
+```typescript
+const databaseMiddleware = createServiceMiddleware<{ db: PrismaClient}>(
+  async ({ ctx, next }) => {
+    ctx.services.db = new PrismaClient(); // ❌ New instance each request!
+    await next();
+  }
+);
+```
+
+---
+
+## 🔗 Related Documentation
+
+- **[Router Architecture](../architecture/router.md)** — How middleware integrates with routing
+- **[Context Guide](../architecture/context.md)** — Understanding `ctx` object
+- **[Type System Guide](../architecture/type-system.md)** — How type composition works
+- **[Plugin Guide](./plugins.md)** — Lifecycle management for services
+- **[Error Handling Guide](./error-handling.md)** — Working with BlaizeJS errors
+
+---
+
+**Questions or feedback?** Open an issue on GitHub or join our Discord community.
