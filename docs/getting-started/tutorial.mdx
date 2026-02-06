@@ -1,68 +1,132 @@
-# 📚 Tutorial: Build a Task API
+# 📚 Tutorial: Build a task API
 
-> **Time:** 30 minutes | **Goal:** Build a complete task management API with authentication, validation, and testing
+> **Time:** 30 minutes | **Goal:** Build a task management API with authentication, validation, and testing
 
-In this tutorial, you'll build a production-style API that demonstrates BlaizeJS's core features:
-- CRUD routes with full validation
+In this tutorial, you'll extend the BlaizeJS starter project to build a complete task management API:
+
 - Authentication middleware with typed state
-- Error handling with semantic errors
-- Testing your routes
+- CRUD routes with full validation
+- Dynamic routes with URL parameters
+- Testing your implementation
+- Type-safe client integration
 
 ---
 
-## What You'll Build
+## What you'll build
 
-A task management API with these endpoints:
+You'll add task management to your existing API:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/auth/login` | Get an auth token |
-| `GET` | `/tasks` | List all tasks (with filtering) |
-| `POST` | `/tasks` | Create a task |
-| `GET` | `/tasks/:taskId` | Get a single task |
-| `PUT` | `/tasks/:taskId` | Update a task |
-| `DELETE` | `/tasks/:taskId` | Delete a task |
+| Method   | Path                   | Description                          |
+| -------- | ---------------------- | ------------------------------------ |
+| `POST`   | `/auth/login`          | Get an auth token                    |
+| `GET`    | `/tasks`               | List all tasks (global view)         |
+| `POST`   | `/tasks`               | Create a task for authenticated user |
+| `GET`    | `/tasks/:taskId`       | Get a single task by ID              |
+| `PUT`    | `/tasks/:taskId`       | Update a task                        |
+| `DELETE` | `/tasks/:taskId`       | Delete a task                        |
+| `GET`    | `/users/:userId/tasks` | Get all tasks for a specific user    |
+
+**Data model:** Tasks belong to users. Each task has a `userId` field.
 
 ---
 
 ## Prerequisites
 
-Complete the [Quick Start](/docs/getting-started/quick-start) first, or create a new project:
+Create a new BlaizeJS project:
 
 ```bash
 npx create-blaize-app task-api
 cd task-api
+npm run dev
 ```
+
+You should see the server start at `https://localhost:7485` with several example routes already working.
 
 ---
 
-## Part 1: Project Setup
+## Part 1: Project setup
 
-### 1.1 Create the File Structure
+### 1.1 Explore the existing structure
+
+The `create-blaize-app` template gives you:
+
+```
+src/
+├── app.ts              # Server setup
+├── app-router.ts       # Type-safe route factory
+├── app-type.ts         # Route registry for client
+├── events.ts           # Event schemas
+└── routes/
+    ├── index.ts        # GET / (working)
+    ├── health.ts       # GET /health (working)
+    ├── upload.ts       # POST /upload (working)
+    ├── users/          # User routes (demo)
+    └── events/         # SSE streaming (demo)
+```
+
+Test the existing routes:
+
+```bash
+# Welcome message
+curl -k https://localhost:7485/
+
+# Health check
+curl -k https://localhost:7485/health
+
+# List demo users
+curl -k https://localhost:7485/users
+```
+
+### 1.2 Add new directories
+
+We'll add tasks and auth alongside the existing examples:
 
 ```bash
 mkdir -p src/routes/auth src/routes/tasks src/middleware src/lib
 ```
 
-Your structure will look like:
+Final structure:
 
 ```
 src/
-├── app.ts                  # Server + route factory
+├── app.ts
+├── app-router.ts
+├── app-type.ts
+├── events.ts
 ├── middleware/
-│   └── auth.ts             # Authentication middleware
+│   └── auth.ts             # ← NEW
 ├── routes/
 │   ├── auth/
-│   │   └── login.ts        # POST /auth/login
-│   └── tasks/
-│       ├── index.ts        # GET, POST /tasks
-│       └── [taskId].ts     # GET, PUT, DELETE /tasks/:taskId
+│   │   └── login.ts        # ← NEW
+│   ├── tasks/
+│   │   ├── index.ts        # ← NEW (GET, POST /tasks)
+│   │   └── [taskId].ts     # ← NEW (file-based dynamic route)
+│   ├── users/
+│   │   ├── index.ts        # ✅ Existing (demo)
+│   │   ├── [userId]/
+│   │   │   ├── index.ts    # ✅ Existing (demo)
+│   │   │   └── tasks.ts    # ← NEW (GET /users/:userId/tasks)
+│   ├── index.ts            # ✅ Existing
+│   ├── health.ts           # ✅ Existing
+│   ├── upload.ts           # ✅ Existing (demo)
+│   └── events/             # ✅ Existing (demo)
 └── lib/
-    ├── db.ts               # Mock database
-    └── schemas.ts          # Shared Zod schemas
+    ├── db.ts               # ← NEW (mock database)
+    └── schemas.ts          # ← NEW (shared schemas)
 ```
 
-### 1.2 Create Shared Schemas
+**Note on dynamic routes:**
+
+- `routes/tasks/[taskId].ts` - ✅ File-based (we'll use this)
+- `routes/users/[userId]/tasks.ts` - ✅ Folder-based (we'll use this too)
+
+Both patterns work! Use files for simple routes, folders when you have multiple routes under the same param.
+
+---
+
+## Part 2: Create shared schemas
+
+### 2.1 Define task and user types
 
 Create `src/lib/schemas.ts`:
 
@@ -113,46 +177,64 @@ export const taskFiltersSchema = z.object({
 });
 ```
 
-### 1.3 Create a Mock Database
+**Key concepts:**
+
+- `z.infer<typeof schema>` creates TypeScript types from Zod schemas
+- `z.coerce.number()` converts string `"10"` to number `10`
+- `.optional().default(value)` provides defaults for optional fields
+
+---
+
+## Part 3: Create a mock database
+
+### 3.1 Build the database layer
 
 Create `src/lib/db.ts`:
 
 ```typescript
 import type { User, Task } from './schemas';
 
-// Mock users (in real app, use a real database)
+// Mock users (in real app, use PostgreSQL/MongoDB)
 const users: Map<string, User & { password: string }> = new Map([
-  ['user-1', { 
-    id: 'user-1', 
-    email: 'alice@example.com', 
-    name: 'Alice',
-    password: 'password123' // In real app, hash passwords!
-  }],
-  ['user-2', { 
-    id: 'user-2', 
-    email: 'bob@example.com', 
-    name: 'Bob',
-    password: 'password456'
-  }],
+  [
+    'user-1',
+    {
+      id: 'user-1',
+      email: 'alice@example.com',
+      name: 'Alice',
+      password: 'password123', // ⚠️ In real app, hash passwords!
+    },
+  ],
+  [
+    'user-2',
+    {
+      id: 'user-2',
+      email: 'bob@example.com',
+      name: 'Bob',
+      password: 'password456',
+    },
+  ],
 ]);
 
 // Mock tasks
 const tasks: Map<string, Task> = new Map([
-  ['task-1', {
-    id: 'task-1',
-    title: 'Learn BlaizeJS',
-    description: 'Complete the tutorial',
-    status: 'in-progress',
-    userId: 'user-1',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }],
+  [
+    'task-1',
+    {
+      id: 'task-1',
+      title: 'Learn BlaizeJS',
+      description: 'Complete the tutorial',
+      status: 'in-progress',
+      userId: 'user-1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ],
 ]);
 
-// Mock token storage (in real app, use JWT or sessions)
+// Mock token storage (in real app, use JWT)
 const tokens: Map<string, string> = new Map(); // token -> userId
 
-// Database operations
 export const db = {
   users: {
     findByEmail: (email: string) => {
@@ -161,12 +243,15 @@ export const db = {
       }
       return null;
     },
+
     findById: (id: string) => {
       const user = users.get(id);
       if (!user) return null;
+      // Remove password before returning
       const { password: _, ...userWithoutPassword } = user;
       return userWithoutPassword;
     },
+
     validatePassword: (email: string, password: string) => {
       const user = db.users.findByEmail(email);
       return user?.password === password ? user : null;
@@ -179,35 +264,47 @@ export const db = {
       tokens.set(token, userId);
       return token;
     },
+
     validate: (token: string) => {
       const userId = tokens.get(token);
       if (!userId) return null;
       return db.users.findById(userId);
     },
-    revoke: (token: string) => {
-      tokens.delete(token);
-    },
   },
 
   tasks: {
-    findAll: (userId: string, filters?: { status?: string; search?: string; limit?: number; offset?: number }) => {
-      let result = Array.from(tasks.values()).filter(t => t.userId === userId);
-      
+    findAll: (filters?: {
+      userId?: string; // Optional - filter by user
+      status?: string;
+      search?: string;
+      limit?: number;
+      offset?: number;
+    }) => {
+      let result = Array.from(tasks.values());
+
+      // Apply user filter if provided
+      if (filters?.userId) {
+        result = result.filter(t => t.userId === filters.userId);
+      }
+
+      // Apply status filter
       if (filters?.status) {
         result = result.filter(t => t.status === filters.status);
       }
+
+      // Apply search filter
       if (filters?.search) {
         const search = filters.search.toLowerCase();
-        result = result.filter(t => 
-          t.title.toLowerCase().includes(search) ||
-          t.description?.toLowerCase().includes(search)
+        result = result.filter(
+          t =>
+            t.title.toLowerCase().includes(search) || t.description?.toLowerCase().includes(search)
         );
       }
-      
+
       const total = result.length;
       const offset = filters?.offset ?? 0;
       const limit = filters?.limit ?? 20;
-      
+
       return {
         tasks: result.slice(offset, offset + limit),
         total,
@@ -222,7 +319,14 @@ export const db = {
       return task;
     },
 
-    create: (data: { title: string; description?: string | null; status?: string }, userId: string): Task => {
+    create: (
+      data: {
+        title: string;
+        description?: string | null;
+        status?: string;
+      },
+      userId: string
+    ): Task => {
       const task: Task = {
         id: `task-${crypto.randomUUID()}`,
         title: data.title,
@@ -239,12 +343,12 @@ export const db = {
     update: (id: string, data: Partial<Task>, userId: string): Task | null => {
       const task = tasks.get(id);
       if (!task || task.userId !== userId) return null;
-      
+
       const updated: Task = {
         ...task,
         ...data,
-        id: task.id, // Prevent id override
-        userId: task.userId, // Prevent userId override
+        id: task.id, // Prevent override
+        userId: task.userId, // Prevent override
         updatedAt: new Date().toISOString(),
       };
       tasks.set(id, updated);
@@ -263,97 +367,14 @@ export const db = {
 
 ---
 
-## Part 2: Authentication
+## Part 4: Authentication
 
-### 2.1 Create the Auth Middleware
-
-Create `src/middleware/auth.ts`:
-
-```typescript
-import { createMiddleware, UnauthorizedError } from 'blaizejs';
-import { db } from '../lib/db';
-import type { User } from '../lib/schemas';
-
-// Define what auth middleware adds to context
-export const authMiddleware = createMiddleware<
-  { user: User },  // Adds user to ctx.state
-  {}               // No services added
->({
-  name: 'auth',
-  
-  handler: async (ctx, next) => {
-    // Extract token from Authorization header
-    const authHeader = ctx.request.header('authorization');
-    
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Missing or invalid Authorization header', {
-        suggestion: 'Include header: Authorization: Bearer <token>',
-      });
-    }
-    
-    const token = authHeader.slice(7); // Remove 'Bearer '
-    
-    // Validate token and get user
-    const user = db.tokens.validate(token);
-    
-    if (!user) {
-      throw new UnauthorizedError('Invalid or expired token', {
-        suggestion: 'Login again to get a new token',
-      });
-    }
-    
-    // Add user to state — now available in all routes using this middleware
-    ctx.state.user = user;
-    
-    await next();
-  },
-  
-  // Skip auth for public routes
-  skip: (ctx) => {
-    const publicPaths = ['/health', '/auth/login'];
-    return publicPaths.some(path => ctx.request.path.startsWith(path));
-  },
-});
-```
-
-### 2.2 Update the Server
-
-Update `src/app.ts` to use the auth middleware:
-
-```typescript
-import { Blaize, type InferContext } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { authMiddleware } from './middleware/auth';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Create server with middleware
-const app = Blaize.createServer({
-  host: 'localhost',
-  port: 3000,
-  routesDir: path.resolve(__dirname, './routes'),
-  http2: { enabled: true },
-}).use(authMiddleware);
-
-// Create typed route factory — includes auth middleware types!
-type AppContext = InferContext<typeof app>;
-export const route = Blaize.Router.createRouteFactory<
-  AppContext['state'],    // Includes { user: User }
-  AppContext['services']
->();
-
-await app.listen();
-console.log('🚀 Server running at https://localhost:3000');
-```
-
-### 2.3 Create the Login Route
+### 4.1 Create the login route
 
 Create `src/routes/auth/login.ts`:
 
 ```typescript
-import { route } from '../../app';
+import { route } from '../../app-router';
 import { UnauthorizedError } from 'blaizejs';
 import { z } from 'zod';
 import { db } from '../../lib/db';
@@ -363,7 +384,7 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-export const POST = route.post({
+export const postLogin = route.post({
   schema: {
     body: loginSchema,
     response: z.object({
@@ -375,22 +396,22 @@ export const POST = route.post({
       }),
     }),
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     const { email, password } = ctx.request.body;
-    
+
     // Validate credentials
     const user = db.users.validatePassword(email, password);
-    
+
     if (!user) {
       throw new UnauthorizedError('Invalid email or password');
     }
-    
+
     // Create token
     const token = db.tokens.create(user.id);
-    
+
     // Return token and user (without password)
     const { password: _, ...userWithoutPassword } = user;
-    
+
     return {
       token,
       user: userWithoutPassword,
@@ -399,22 +420,22 @@ export const POST = route.post({
 });
 ```
 
-### 2.4 Test Authentication
+**Key concepts:**
 
-Start your server and test:
+- Handler uses destructuring: `({ ctx, params, logger, eventBus })`
+- `ctx.request.body` is typed from `schema.body`
+- `UnauthorizedError` automatically formats to HTTP 401
+
+### 4.2 Test the login route
 
 ```bash
-npm run dev
-```
-
-**Login:**
-```bash
-curl -k -X POST https://localhost:3000/auth/login \
+curl -k -X POST https://localhost:7485/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "alice@example.com", "password": "password123"}'
 ```
 
 Response:
+
 ```json
 {
   "token": "tok_550e8400-e29b-41d4-a716-446655440000",
@@ -426,30 +447,113 @@ Response:
 }
 ```
 
-Save this token — you'll need it for the next requests!
+**Save this token!** You'll need it for the next steps.
+
+### 4.3 Create the auth middleware
+
+Create `src/middleware/auth.ts`:
+
+```typescript
+import { createMiddleware, UnauthorizedError } from 'blaizejs';
+import { db } from '../lib/db';
+import type { User } from '../lib/schemas';
+
+export const authMiddleware = createMiddleware<
+  { user: User }, // Adds user to ctx.state
+  {} // No services added
+>({
+  name: 'auth',
+
+  handler: async ({ ctx, next }) => {
+    // Extract token from Authorization header
+    const authHeader = ctx.request.header('authorization');
+
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new UnauthorizedError('Missing or invalid Authorization header', {
+        suggestion: 'Include header: Authorization: Bearer <token>',
+      });
+    }
+
+    const token = authHeader.slice(7); // Remove 'Bearer '
+
+    // Validate token and get user
+    const user = db.tokens.validate(token);
+
+    if (!user) {
+      throw new UnauthorizedError('Invalid or expired token', {
+        suggestion: 'Login again to get a new token',
+      });
+    }
+
+    // Add user to state — now available in all routes!
+    ctx.state.user = user;
+
+    await next();
+  },
+
+  // Skip auth for public routes
+  skip: ({ ctx }) => {
+    const publicPaths = ['/health', '/auth/login', '/'];
+    return publicPaths.some(path => ctx.request.path.startsWith(path));
+  },
+});
+```
+
+**Key concepts:**
+
+- Middleware handler receives `{ ctx, next, logger, eventBus }`
+- Type parameters: `<TState, TServices>` define what middleware adds
+- `skip` function determines when to bypass middleware
+- `ctx.state.user` becomes available in all protected routes
+
+### 4.4 Register the middleware
+
+Update `src/app.ts` to use the auth middleware:
+
+```typescript
+import { Blaize } from 'blaizejs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { minimalEvents } from './events';
+import { authMiddleware } from './middleware/auth'; // ← ADD THIS
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const routesDir = path.resolve(__dirname, './routes');
+
+const server = Blaize.createServer({
+  host: 'localhost',
+  port: process.env.PORT ? parseInt(process.env.PORT) : 7485,
+  routesDir,
+  http2: { enabled: true },
+  eventSchemas: minimalEvents,
+}).use(authMiddleware); // ← ADD THIS LINE
+
+// Rest of app.ts stays the same...
+```
+
+Now all routes (except public ones) require authentication!
 
 ---
 
-## Part 3: Task Routes
+## Part 5: Task CRUD routes
 
-### 3.1 List and Create Tasks
+### 5.1 List and create tasks
 
 Create `src/routes/tasks/index.ts`:
 
 ```typescript
-import { route } from '../../app';
+import { route } from '../../app-router';
 import { z } from 'zod';
 import { db } from '../../lib/db';
-import { 
-  taskSchema, 
-  createTaskSchema, 
-  taskFiltersSchema 
-} from '../../lib/schemas';
+import { taskSchema, createTaskSchema, taskFiltersSchema } from '../../lib/schemas';
 
-// GET /tasks — List tasks with optional filtering
-export const GET = route.get({
+// GET /tasks — List all tasks (global view, can filter by userId)
+export const getTasks = route.get({
   schema: {
-    query: taskFiltersSchema,
+    query: taskFiltersSchema.extend({
+      userId: z.string().optional(), // Filter by user
+    }),
     response: z.object({
       tasks: z.array(taskSchema),
       total: z.number(),
@@ -457,42 +561,58 @@ export const GET = route.get({
       offset: z.number(),
     }),
   },
-  handler: async (ctx) => {
-    // ctx.state.user is typed and available from auth middleware!
-    const userId = ctx.state.user.id;
+  handler: async ({ ctx, logger }) => {
     const filters = ctx.request.query;
-    
-    return db.tasks.findAll(userId, filters);
+
+    logger.info('Fetching tasks', { filters });
+
+    // Global view - returns all tasks (or filtered by userId)
+    return db.tasks.findAll(filters);
   },
 });
 
 // POST /tasks — Create a new task
-export const POST = route.post({
+export const createTask = route.post({
   schema: {
     body: createTaskSchema,
     response: taskSchema,
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx, logger, eventBus }) => {
     const userId = ctx.state.user.id;
     const data = ctx.request.body;
-    
+
     const task = db.tasks.create(data, userId);
-    
+
+    logger.info('Task created', { taskId: task.id, userId });
+
+    // Publish event for real-time updates
+    await eventBus.publish('demo:event', {
+      message: `Task created: ${task.title}`,
+      data: { taskId: task.id },
+    });
+
     // Set 201 Created status
     ctx.response.status(201);
-    
+
     return task;
   },
 });
 ```
 
-### 3.2 Single Task Operations
+**Key concepts:**
+
+- `ctx.state.user` is available because of auth middleware
+- TypeScript knows `user` exists and what type it is
+- `logger` and `eventBus` come from handler context
+- `ctx.response.status()` sets HTTP status codes
+
+### 5.2 Single task operations (dynamic routes)
 
 Create `src/routes/tasks/[taskId].ts`:
 
 ```typescript
-import { route } from '../../app';
-import { NotFoundError, ForbiddenError } from 'blaizejs';
+import { route } from '../../app-router';
+import { NotFoundError } from 'blaizejs';
 import { z } from 'zod';
 import { db } from '../../lib/db';
 import { taskSchema, updateTaskSchema } from '../../lib/schemas';
@@ -501,60 +621,56 @@ const paramsSchema = z.object({
   taskId: z.string(),
 });
 
-// GET /tasks/:taskId — Get a single task
-export const GET = route.get({
+// GET /tasks/:taskId
+export const getTask = route.get({
   schema: {
     params: paramsSchema,
     response: taskSchema,
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params, logger }) => {
+    logger.info('Fetching task', { taskId: params.taskId });
+
     const task = db.tasks.findById(params.taskId, ctx.state.user.id);
-    
+
     if (!task) {
       throw new NotFoundError('Task not found', {
         resourceType: 'task',
         resourceId: params.taskId,
       });
     }
-    
+
     return task;
   },
 });
 
-// PUT /tasks/:taskId — Update a task
-export const PUT = route.put({
+// PUT /tasks/:taskId
+export const updateTask = route.put({
   schema: {
     params: paramsSchema,
     body: updateTaskSchema,
     response: taskSchema,
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params, logger }) => {
     const userId = ctx.state.user.id;
     const data = ctx.request.body;
-    
-    // Check task exists
-    const existing = db.tasks.findById(params.taskId, userId);
-    if (!existing) {
+
+    const updated = db.tasks.update(params.taskId, data, userId);
+
+    if (!updated) {
       throw new NotFoundError('Task not found', {
         resourceType: 'task',
         resourceId: params.taskId,
       });
     }
-    
-    // Update task
-    const updated = db.tasks.update(params.taskId, data, userId);
-    
-    // This shouldn't happen, but TypeScript wants us to check
-    if (!updated) {
-      throw new NotFoundError('Task not found');
-    }
-    
+
+    logger.info('Task updated', { taskId: params.taskId });
+
     return updated;
   },
 });
 
-// DELETE /tasks/:taskId — Delete a task
-export const DELETE = route.delete({
+// DELETE /tasks/:taskId
+export const deleteTask = route.delete({
   schema: {
     params: paramsSchema,
     response: z.object({
@@ -562,18 +678,20 @@ export const DELETE = route.delete({
       message: z.string(),
     }),
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params, logger }) => {
     const userId = ctx.state.user.id;
-    
+
     const deleted = db.tasks.delete(params.taskId, userId);
-    
+
     if (!deleted) {
       throw new NotFoundError('Task not found', {
         resourceType: 'task',
         resourceId: params.taskId,
       });
     }
-    
+
+    logger.info('Task deleted', { taskId: params.taskId });
+
     return {
       success: true,
       message: `Task ${params.taskId} deleted`,
@@ -582,88 +700,160 @@ export const DELETE = route.delete({
 });
 ```
 
-### 3.3 Test the Task API
+**Key concepts:**
 
-Using the token from earlier:
+- `[taskId]` in filename becomes route parameter
+- `params` is validated by `schema.params`
+- Same `ctx.state.user` available in all protected routes
+- Named exports (`getTasks`, not `GET`) for better client integration
+
+### 5.3 Test the task API
+
+Set your token from the login response:
 
 ```bash
-TOKEN="tok_your-token-here"
+export TOKEN="tok_your-token-here"
 ```
 
 **Create a task:**
+
 ```bash
-curl -k -X POST https://localhost:3000/tasks \
+curl -k -X POST https://localhost:7485/tasks \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"title": "Buy groceries", "description": "Milk, eggs, bread"}'
 ```
 
 **List tasks:**
+
 ```bash
-curl -k https://localhost:3000/tasks \
+curl -k https://localhost:7485/tasks \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Filter by status:**
+
 ```bash
-curl -k "https://localhost:3000/tasks?status=todo" \
+curl -k "https://localhost:7485/tasks?status=todo" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Get a single task:**
+**Get a task:**
+
 ```bash
-curl -k https://localhost:3000/tasks/task-1 \
+curl -k https://localhost:7485/tasks/task-1 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Update a task:**
+
 ```bash
-curl -k -X PUT https://localhost:3000/tasks/task-1 \
+curl -k -X PUT https://localhost:7485/tasks/task-1 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"status": "done"}'
 ```
 
 **Delete a task:**
+
 ```bash
-curl -k -X DELETE https://localhost:3000/tasks/task-1 \
+curl -k -X DELETE https://localhost:7485/tasks/task-1 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-## Part 4: Testing
+## Part 6: Nested user tasks route
 
-### 4.1 Setup Testing
+### 6.1 Get tasks for a specific user
 
-Install testing dependencies:
-
-```bash
-npm install -D @blaizejs/testing-utils vitest
-```
-
-Add test script to `package.json`:
-
-```json
-{
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest"
-  }
-}
-```
-
-### 4.2 Test the Task Routes
-
-Create `src/routes/tasks/index.test.ts`:
+This demonstrates the folder-based dynamic route pattern. Create `src/routes/users/[userId]/tasks.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestContext } from '@blaizejs/testing-utils';
-import { GET, POST } from './index';
+import { route } from '../../../app-router';
+import { z } from 'zod';
+import { db } from '../../../lib/db';
+import { taskSchema, taskFiltersSchema } from '../../../lib/schemas';
+
+// GET /users/:userId/tasks
+export const getUserTasks = route.get({
+  schema: {
+    params: z.object({
+      userId: z.string(),
+    }),
+    query: taskFiltersSchema,
+    response: z.object({
+      userId: z.string(),
+      tasks: z.array(taskSchema),
+      total: z.number(),
+      limit: z.number(),
+      offset: z.number(),
+    }),
+  },
+  handler: async ({ ctx, params, logger }) => {
+    const { userId } = params;
+
+    logger.info('Fetching tasks for user', { userId });
+
+    // Fetch all tasks for this specific user
+    const result = db.tasks.findAll({
+      userId,
+      ...ctx.request.query,
+    });
+
+    return {
+      userId,
+      ...result,
+    };
+  },
+});
+```
+
+**Key concepts:**
+
+- File location: `users/[userId]/tasks.ts`
+- URL path: `/users/:userId/tasks`
+- Shows folder-based dynamic route pattern
+- `params.userId` comes from the URL segment
+
+### 6.2 Test the nested route
+
+```bash
+# Get all tasks for user-1
+curl -k https://localhost:7485/users/user-1/tasks \
+  -H "Authorization: Bearer $TOKEN"
+
+# Filter by status for a specific user
+curl -k "https://localhost:7485/users/user-1/tasks?status=todo" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Comparison of the two approaches:**
+
+| Route                  | File Pattern              | Use When                           |
+| ---------------------- | ------------------------- | ---------------------------------- |
+| `/tasks/:taskId`       | `tasks/[taskId].ts`       | Single endpoint at that param      |
+| `/users/:userId/tasks` | `users/[userId]/tasks.ts` | Multiple endpoints share the param |
+
+Both work! The template uses `users/[userId]/index.ts` (folder pattern) because it might add more user routes later.
+
+---
+
+## Part 7: Testing
+
+### 6.1 Test the task routes
+
+Create `src/__tests__/routes/tasks.test.ts`:
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { createTestContext, createRouteTestContext } from '@blaizejs/testing-utils';
+import { getTasks, createTask } from '../../routes/tasks/index';
 
 describe('GET /tasks', () => {
   it('returns tasks for authenticated user', async () => {
+    const { logger, eventBus, cleanup } = createRouteTestContext();
+
     const ctx = createTestContext({
       method: 'GET',
       query: {},
@@ -672,14 +862,18 @@ describe('GET /tasks', () => {
       },
     });
 
-    const result = await GET.handler(ctx, {});
+    const result = await getTasks.handler({ ctx, params: {}, logger, eventBus });
 
     expect(result).toHaveProperty('tasks');
     expect(result).toHaveProperty('total');
     expect(Array.isArray(result.tasks)).toBe(true);
+
+    cleanup();
   });
 
   it('filters tasks by status', async () => {
+    const { logger, eventBus, cleanup } = createRouteTestContext();
+
     const ctx = createTestContext({
       method: 'GET',
       query: { status: 'todo' },
@@ -688,17 +882,21 @@ describe('GET /tasks', () => {
       },
     });
 
-    const result = await GET.handler(ctx, {});
+    const result = await getTasks.handler({ ctx, params: {}, logger, eventBus });
 
     // All returned tasks should have 'todo' status
     result.tasks.forEach(task => {
       expect(task.status).toBe('todo');
     });
+
+    cleanup();
   });
 });
 
 describe('POST /tasks', () => {
   it('creates a new task', async () => {
+    const { logger, eventBus, cleanup } = createRouteTestContext();
+
     const ctx = createTestContext({
       method: 'POST',
       body: {
@@ -710,39 +908,27 @@ describe('POST /tasks', () => {
       },
     });
 
-    const result = await POST.handler(ctx, {});
+    const result = await createTask.handler({ ctx, params: {}, logger, eventBus });
 
     expect(result.title).toBe('Test task');
     expect(result.description).toBe('Test description');
     expect(result.status).toBe('todo'); // Default status
     expect(result.userId).toBe('user-1');
     expect(result.id).toBeDefined();
-  });
 
-  it('sets default status to todo', async () => {
-    const ctx = createTestContext({
-      method: 'POST',
-      body: { title: 'Another task' },
-      state: {
-        user: { id: 'user-1', email: 'alice@example.com', name: 'Alice' },
-      },
-    });
-
-    const result = await POST.handler(ctx, {});
-
-    expect(result.status).toBe('todo');
+    cleanup();
   });
 });
 ```
 
-### 4.3 Test the Auth Middleware
+### 7.2 Test the auth middleware
 
-Create `src/middleware/auth.test.ts`:
+Create `src/__tests__/middleware/auth.test.ts`:
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest';
 import { createTestContext } from '@blaizejs/testing-utils';
-import { authMiddleware } from './auth';
+import { authMiddleware } from '../../middleware/auth';
 
 describe('authMiddleware', () => {
   it('throws UnauthorizedError when no token provided', async () => {
@@ -751,7 +937,10 @@ describe('authMiddleware', () => {
     });
     const next = vi.fn();
 
-    await expect(authMiddleware.execute(ctx, next)).rejects.toThrow('Missing or invalid Authorization header');
+    await expect(
+      authMiddleware.handler({ ctx, next, logger: ctx.logger, eventBus: ctx.eventBus })
+    ).rejects.toThrow('Missing or invalid Authorization header');
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -763,7 +952,10 @@ describe('authMiddleware', () => {
     });
     const next = vi.fn();
 
-    await expect(authMiddleware.execute(ctx, next)).rejects.toThrow('Missing or invalid Authorization header');
+    await expect(
+      authMiddleware.handler({ ctx, next, logger: ctx.logger, eventBus: ctx.eventBus })
+    ).rejects.toThrow('Missing or invalid Authorization header');
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -772,7 +964,7 @@ describe('authMiddleware', () => {
       path: '/auth/login',
     });
 
-    const shouldSkip = authMiddleware.skip?.(ctx);
+    const shouldSkip = authMiddleware.skip?.({ ctx });
 
     expect(shouldSkip).toBe(true);
   });
@@ -782,48 +974,65 @@ describe('authMiddleware', () => {
       path: '/tasks',
     });
 
-    const shouldSkip = authMiddleware.skip?.(ctx);
+    const shouldSkip = authMiddleware.skip?.({ ctx });
 
     expect(shouldSkip).toBe(false);
   });
 });
 ```
 
-### 4.4 Run Tests
+### 7.3 Run the tests
 
 ```bash
 npm test
 ```
 
+You should see all tests passing!
+
 ---
 
-## Part 5: Type-Safe Client
+## Part 8: Type-safe client
 
-### 5.1 Export Routes for the Client
+### 8.1 Export routes for the client
 
-Create `src/app-type.ts`:
+Update `src/app-type.ts` to include the new routes:
 
 ```typescript
-// Export routes with names that become client methods
-import { POST as login } from './routes/auth/login';
-import { GET as listTasks, POST as createTask } from './routes/tasks/index';
-import { 
-  GET as getTask, 
-  PUT as updateTask, 
-  DELETE as deleteTask 
-} from './routes/tasks/[taskId]';
+// Existing routes
+import { getRoot } from './routes/index';
+import { getHealth } from './routes/health';
+import { getUsers } from './routes/users/index';
+import { getUserById } from './routes/users/[userId]/index';
+import { postUpload } from './routes/upload';
+import { getEventsStream } from './routes/events/stream';
+
+// New routes
+import { postLogin } from './routes/auth/login';
+import { getTasks, createTask } from './routes/tasks/index';
+import { getTask, updateTask, deleteTask } from './routes/tasks/[taskId]';
+import { getUserTasks } from './routes/users/[userId]/tasks';
 
 export const routes = {
-  login,
-  listTasks,
+  // Existing
+  getRoot,
+  getHealth,
+  getUsers,
+  getUserById,
+  postUpload,
+  getEventsStream,
+
+  // New
+  postLogin,
+  getTasks,
   createTask,
   getTask,
   updateTask,
   deleteTask,
+  getUserTasks, // Nested route
 } as const;
 ```
 
-### 5.2 Use the Type-Safe Client
+### 8.2 Use the type-safe client
 
 In a client application:
 
@@ -831,23 +1040,29 @@ In a client application:
 import bc from '@blaizejs/client';
 import { routes } from './server/app-type';
 
-const client = bc.create('https://localhost:3000', routes);
+const client = bc.create('https://localhost:7485', routes);
 
 // Login
-const { token, user } = await client.$post.login({
+const { token, user } = await client.$post.postLogin({
   body: { email: 'alice@example.com', password: 'password123' },
 });
 
-// Create a client with auth header
-const authClient = bc.create('https://localhost:3000', routes, {
+// Create authenticated client
+const authClient = bc.create('https://localhost:7485', routes, {
   defaultHeaders: {
     Authorization: `Bearer ${token}`,
   },
 });
 
-// Now all calls include the auth header
-const { tasks } = await authClient.$get.listTasks({
+// All calls include auth header automatically
+const { tasks } = await authClient.$get.getTasks({
   query: { status: 'todo' },
+});
+
+// Get tasks for a specific user (nested route)
+const userTasks = await authClient.$get.getUserTasks({
+  params: { userId: 'user-1' },
+  query: { status: 'in-progress' },
 });
 
 const newTask = await authClient.$post.createTask({
@@ -855,55 +1070,86 @@ const newTask = await authClient.$post.createTask({
 });
 
 // Full autocomplete on all responses!
-console.log(newTask.id);     // string
+console.log(newTask.id); // string
 console.log(newTask.status); // 'todo' | 'in-progress' | 'done'
+console.log(newTask.userId); // string - task belongs to a user
 ```
 
 ---
 
-## What You've Learned
+## ✅ What you've learned
 
-In this tutorial, you built a complete API with:
+In this tutorial, you:
 
-| Feature | What You Learned |
-|---------|------------------|
-| **Authentication** | Middleware that adds typed state (`ctx.state.user`) |
-| **CRUD Routes** | GET, POST, PUT, DELETE with full validation |
-| **Validation** | Query params, request body, URL params with Zod |
-| **Error Handling** | `NotFoundError`, `UnauthorizedError` with details |
-| **Testing** | `createTestContext` for unit testing routes |
-| **Type-Safe Client** | End-to-end types from server to client |
-
----
-
-## Next Steps
-
-- **[Middleware Guide](/docs/guides/middleware)** — Advanced middleware patterns
-- **[SSE Guide](/docs/guides/sse)** — Add real-time updates to your API
-- **[Plugin Guide](/docs/guides/plugins)** — Add database, caching, and more
-- **[Error Handling](/docs/guides/error-handling)** — All 12 error classes explained
+| Concept               | What You Did                                                 |
+| --------------------- | ------------------------------------------------------------ |
+| **Project Structure** | Built on create-blaize-app foundation                        |
+| **Data Modeling**     | Created tasks that belong to users                           |
+| **Auth Middleware**   | Created middleware that adds typed state                     |
+| **CRUD Routes**       | Implemented GET, POST, PUT, DELETE with validation           |
+| **Dynamic Routes**    | Used `[param]` in both file and folder patterns              |
+| **Nested Routes**     | Created `/users/:userId/tasks` for user-scoped data          |
+| **Handler Signature** | Used destructuring: `({ ctx, params, logger, eventBus })`    |
+| **Error Handling**    | Threw semantic errors (`NotFoundError`, `UnauthorizedError`) |
+| **Testing**           | Tested routes with `createTestContext`                       |
+| **Type-Safe Client**  | Exported routes for end-to-end type safety                   |
+| **EventBus**          | Published events for real-time coordination                  |
 
 ---
 
-## Complete Code Reference
+## 🎯 Next steps
 
-The final project structure:
+Now that you've built a complete API, explore more advanced features:
+
+- **[Middleware guide](../guides/middleware)** — Advanced middleware patterns
+- **[SSE guide](../guides/sse)** — Add real-time updates to tasks
+- **[Plugin guide](../guides/plugins)** — Add database, caching, queue
+- **[Database integration](../guides/database-integration)** — Replace mock DB with real database
+- **[Error handling](../guides/error-handling)** — All 12 error classes explained
+
+---
+
+## 📂 Complete code reference
+
+Final project structure:
 
 ```
 src/
-├── app.ts
-├── app-type.ts
+├── app.ts                  # Server with auth middleware
+├── app-router.ts           # Route factory
+├── app-type.ts             # Route registry (updated)
+├── events.ts               # Event schemas
 ├── middleware/
-│   ├── auth.ts
-│   └── auth.test.ts
+│   └── auth.ts             # ✅ Authentication middleware
 ├── routes/
 │   ├── auth/
-│   │   └── login.ts
-│   └── tasks/
-│       ├── index.ts
-│       ├── index.test.ts
-│       └── [taskId].ts
-└── lib/
-    ├── db.ts
-    └── schemas.ts
+│   │   └── login.ts        # ✅ POST /auth/login
+│   ├── tasks/
+│   │   ├── index.ts        # ✅ GET, POST /tasks
+│   │   └── [taskId].ts     # ✅ GET, PUT, DELETE (file-based dynamic)
+│   ├── users/
+│   │   ├── index.ts        # ✓ Existing (demo)
+│   │   └── [userId]/
+│   │       ├── index.ts    # ✓ Existing (demo)
+│   │       └── tasks.ts    # ✅ GET /users/:userId/tasks (folder-based dynamic)
+│   ├── index.ts            # ✓ Existing
+│   ├── health.ts           # ✓ Existing
+│   ├── upload.ts           # ✓ Existing (demo)
+│   └── events/             # ✓ Existing (demo)
+├── lib/
+│   ├── db.ts               # ✅ Mock database
+│   └── schemas.ts          # ✅ Shared Zod schemas
+└── __tests__/
+    ├── routes/
+    │   └── tasks.test.ts   # ✅ Task route tests
+    └── middleware/
+        └── auth.test.ts    # ✅ Auth middleware tests
 ```
+
+**Key learnings:**
+
+- **File-based dynamic routes:** `tasks/[taskId].ts` → `/tasks/:taskId`
+- **Folder-based dynamic routes:** `users/[userId]/tasks.ts` → `/users/:userId/tasks`
+- Both patterns work! Use what makes sense for your structure.
+
+**Congratulations!** You've built a production-style API with BlaizeJS. 🎉

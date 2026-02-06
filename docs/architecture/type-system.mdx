@@ -1,10 +1,10 @@
-# 🔷 Type System
+# 🔷 Type system
 
 > Types flow from your Zod schemas through your handlers to your client — no code generation, no manual syncing, no runtime overhead.
 
 ---
 
-## The Big Picture
+## The big picture
 
 BlaizeJS achieves end-to-end type safety through a chain of TypeScript inference. Each step passes types to the next, creating an unbroken flow from server to client:
 
@@ -37,7 +37,7 @@ BlaizeJS achieves end-to-end type safety through a chain of TypeScript inference
 
 ---
 
-## Schema-Driven Types
+## Schema-driven types
 
 Zod schemas define both runtime validation and TypeScript types. The `z.infer<T>` utility extracts the TypeScript type from any Zod schema:
 
@@ -65,17 +65,17 @@ type User = z.infer<typeof userSchema>;
 // }
 ```
 
-### Schema in Routes
+### Schema in routes
 
 When you provide schemas to a route, BlaizeJS infers types for:
 
-| Schema Property | Infers Type For     | Used In                |
-| --------------- | ------------------- | ---------------------- |
-| `params`        | `params` argument   | `handler(ctx, params)` |
-| `query`         | `ctx.request.query` | Handler body           |
-| `body`          | `ctx.request.body`  | Handler body           |
-| `files`         | `ctx.request.files` | Handler body           |
-| `response`      | Return type         | Handler return         |
+| Schema Property | Infers Type For     | Used In                    |
+| --------------- | ------------------- | -------------------------- |
+| `params`        | `params` argument   | `handler({ ctx, params })` |
+| `query`         | `ctx.request.query` | Handler body               |
+| `body`          | `ctx.request.body`  | Handler body               |
+| `files`         | `ctx.request.files` | Handler body               |
+| `response`      | Return type         | Handler return             |
 
 ```typescript
 export const getUser = route.get({
@@ -88,11 +88,11 @@ export const getUser = route.get({
       posts: z.array(postSchema).optional(),
     }),
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params }) => {
     // params.userId is typed as string ✅
     // ctx.request.query.include is typed as string[] | undefined ✅
 
-    const user = await db.users.findById(params.userId);
+    const user = await ctx.services.db.users.findById(params.userId);
 
     // Return type must match response schema ✅
     return {
@@ -104,12 +104,12 @@ export const getUser = route.get({
 });
 ```
 
-### Transforms Work Too
+### Transforms work too
 
 Zod's `.transform()` method modifies the output type, and BlaizeJS respects this:
 
 ```typescript
-export const GET = route.get({
+export const getUser = route.get({
   schema: {
     params: z.object({
       // Input: string from URL → Output: number after transform
@@ -123,14 +123,14 @@ export const GET = route.get({
         .transform(val => val === 'true'),
     }),
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params }) => {
     params.userId; // number (not string!)
     ctx.request.query.includeDeleted; // boolean | undefined
   },
 });
 ```
 
-### Coercion Helpers
+### Coercion helpers
 
 Zod's `z.coerce` is especially useful for query parameters:
 
@@ -141,9 +141,9 @@ const paginationSchema = z.object({
   sortDesc: z.coerce.boolean().default(false),
 });
 
-export const GET = route.get({
+export const listUsers = route.get({
   schema: { query: paginationSchema },
-  handler: async ctx => {
+  handler: async ({ ctx }) => {
     // All typed as their final types, not strings
     ctx.request.query.page; // number
     ctx.request.query.limit; // number
@@ -154,11 +154,11 @@ export const GET = route.get({
 
 ---
 
-## File Upload Type Flow
+## File upload type flow
 
 File uploads introduce a fourth type parameter that flows through the entire system with automatic client-server type transformation.
 
-### Type Parameter Evolution
+### Type parameter evolution
 
 The route schema includes a `files` property that works alongside `body`:
 
@@ -182,15 +182,15 @@ export const uploadAvatar = route.post({
   handler: async ({ ctx, params }) => {
     // ctx.request.files.avatar is typed as UploadedFile
     const { avatar } = ctx.request.files;
-    
+
     // All properties are fully typed
-    console.log(avatar.originalname);  // string
-    console.log(avatar.mimetype);      // string
-    console.log(avatar.size);          // number
-    console.log(avatar.buffer);        // Buffer | undefined
-    
+    console.log(avatar.originalname); // string
+    console.log(avatar.mimetype); // string
+    console.log(avatar.size); // number
+    console.log(avatar.buffer); // Buffer | undefined
+
     const url = await uploadToStorage(avatar);
-    
+
     return {
       url,
       filename: avatar.originalname,
@@ -200,7 +200,7 @@ export const uploadAvatar = route.post({
 });
 ```
 
-### Client-Server Type Transformation
+### Client-server type transformation
 
 The same schema creates different types on client vs server:
 
@@ -217,17 +217,17 @@ const file = document.querySelector('input[type="file"]').files[0];
 const result = await client.$post.uploadAvatar({
   params: { userId: 'user-123' },
   files: {
-    avatar: file  // Type: File (browser native)
-  }
+    avatar: file, // Type: File (browser native)
+  },
 });
 
 // result is fully typed from response schema
-console.log(result.url);       // string (known at compile time)
-console.log(result.filename);  // string
-console.log(result.size);      // number
+console.log(result.url); // string (known at compile time)
+console.log(result.filename); // string
+console.log(result.size); // number
 ```
 
-### Type Transformation Flow
+### Type transformation flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -259,37 +259,37 @@ console.log(result.size);      // number
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Type Transformation Table
+### Type transformation table
 
-| Location | Type | Source | Description |
-|----------|------|--------|-------------|
-| **Client schema** | `File` or `Blob` | Browser API | Native browser file objects |
-| **Wire format** | `multipart/form-data` | HTTP protocol | Binary encoding with boundary |
-| **Multipart parser** | `UploadedFile` | Server-side parsing | Parsed file with buffer/stream |
-| **Validation layer** | `UploadedFile` | Zod schema | Validated against size/MIME constraints |
-| **Handler context** | `UploadedFile` | Type inference | Type-safe access via `ctx.request.files` |
+| Location             | Type                  | Source              | Description                              |
+| -------------------- | --------------------- | ------------------- | ---------------------------------------- |
+| **Client schema**    | `File` or `Blob`      | Browser API         | Native browser file objects              |
+| **Wire format**      | `multipart/form-data` | HTTP protocol       | Binary encoding with boundary            |
+| **Multipart parser** | `UploadedFile`        | Server-side parsing | Parsed file with buffer/stream           |
+| **Validation layer** | `UploadedFile`        | Zod schema          | Validated against size/MIME constraints  |
+| **Handler context**  | `UploadedFile`        | Type inference      | Type-safe access via `ctx.request.files` |
 
-### Complex File Schema Patterns
+### Complex file schema patterns
 
 ```typescript
 // Pattern 1: Single required file
 files: z.object({
   avatar: file({ maxSize: '5MB' }),
-})
+});
 // Client: { files: { avatar: File } }
 // Server: { avatar: UploadedFile }
 
 // Pattern 2: Optional file
 files: z.object({
   avatar: file({ maxSize: '5MB' }).optional(),
-})
+});
 // Client: { files: { avatar?: File } }
 // Server: { avatar?: UploadedFile }
 
 // Pattern 3: Array of files
 files: z.object({
   photos: file({ maxSize: '5MB' }).array(),
-})
+});
 // Client: { files: { photos: File[] } }
 // Server: { photos: UploadedFile[] }
 
@@ -298,12 +298,12 @@ files: z.object({
   avatar: file({ maxSize: '5MB', accept: ['image/*'] }),
   resume: file({ maxSize: '10MB', accept: ['application/pdf'] }),
   portfolio: file({ maxSize: '50MB' }).array().optional(),
-})
+});
 // Client: { files: { avatar: File, resume: File, portfolio?: File[] } }
 // Server: { avatar: UploadedFile, resume: UploadedFile, portfolio?: UploadedFile[] }
 ```
 
-### Mixed Body + Files Type Flow
+### Mixed body + files type flow
 
 When combining body data with file uploads, both are fully typed:
 
@@ -328,12 +328,12 @@ export const createPost = route.post({
     // content: string
     // category: 'tech' | 'design' | 'business'
     // tags: string[] | undefined
-    
+
     // Files are typed
     const { coverImage, attachments } = ctx.request.files;
     // coverImage: UploadedFile
     // attachments: UploadedFile[] | undefined
-    
+
     // Both validate before handler execution
   },
 });
@@ -355,7 +355,7 @@ await client.$post.createPost({
 
 ---
 
-## Context Type Composition
+## Context type composition
 
 The `InferContext` utility type extracts the combined state and services types from your server:
 
@@ -363,70 +363,71 @@ The `InferContext` utility type extracts the combined state and services types f
 import { Blaize, type InferContext } from 'blaizejs';
 
 // Server with middleware that adds to state/services
-const app = Blaize.createServer({
+const server = Blaize.createServer({
   middleware: [authMiddleware, loggingMiddleware],
   plugins: [databasePlugin(), cachePlugin()],
 });
 
 // Extract the composed context type
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 
 // AppContext has two key properties:
 // - AppContext['state']    → Combined state from all middleware
 // - AppContext['services'] → Combined services from all plugins
 ```
 
-### Type Accumulation: Three Approaches
+### Type accumulation: Recommended approach
 
-TypeScript needs to track types as you add middleware and plugins. There are three ways to ensure types accumulate correctly:
-
-#### Approach 1: Define in Server Config
-
-Pass middleware and plugins directly to `createServer()`:
+**Best practice:** Pass middleware and plugins directly to `createServer()`:
 
 ```typescript
-const app = Blaize.createServer({
-  port: 3000,
+const server = Blaize.createServer({
+  port: 7485,
   routesDir: './src/routes',
   middleware: [authMiddleware, loggingMiddleware],
   plugins: [databasePlugin(), cachePlugin()],
 });
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 // All types included ✅
 ```
 
-**Best for:** Simple setups where all middleware/plugins are known upfront.
+**Why this is best:**
 
-#### Approach 2: Chaining
+- ✅ Types accumulate automatically
+- ✅ All configuration in one place
+- ✅ Clear, declarative setup
+- ✅ No risk of forgetting to capture return values
+
+### Alternative: Chaining
 
 Chain `.use()` and `.register()` calls, capturing the final result:
 
 ```typescript
-const app = Blaize.createServer({ port: 3000, routesDir: './src/routes' })
+const server = Blaize.createServer({ port: 7485, routesDir: './src/routes' })
   .use(authMiddleware)
   .use(loggingMiddleware)
-  .register(databasePlugin)
-  .register(cachePlugin);
+  .register(databasePlugin())
+  .register(cachePlugin());
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 // All types included ✅
 ```
 
 **Best for:** Clean, readable setup when order matters.
 
-#### Approach 3: Reassignment
+### Special cases: Reassignment
 
 Capture each return value in a new variable:
 
 ```typescript
-const server = Blaize.createServer({ port: 3000, routesDir: './src/routes' });
-const serverWithAuth = server.use(authMiddleware);
+const base = Blaize.createServer({ port: 7485, routesDir: './src/routes' });
+const serverWithAuth = base.use(authMiddleware);
 const serverWithLogging = serverWithAuth.use(loggingMiddleware);
-const serverWithDb = serverWithLogging.register(databasePlugin);
-const app = serverWithDb.register(cachePlugin);
+const serverWithDb = serverWithLogging.register(databasePlugin());
+const server = serverWithDb.register(cachePlugin());
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 // All types included ✅
 ```
 
@@ -434,25 +435,25 @@ type AppContext = InferContext<typeof app>;
 
 ```typescript
 // Example: Conditional middleware
-const base = Blaize.createServer({ port: 3000, routesDir: './src/routes' });
+const base = Blaize.createServer({ port: 7485, routesDir: './src/routes' });
 const withAuth = base.use(authMiddleware);
 
-const app =
+const server =
   process.env.NODE_ENV === 'production'
-    ? withAuth.use(rateLimitMiddleware).register(metricsPlugin)
+    ? withAuth.use(rateLimitMiddleware).register(metricsPlugin())
     : withAuth;
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 ```
 
-#### ❌ What NOT to Do
+### ❌ What NOT to do
 
 Don't ignore the return value — types will be lost:
 
 ```typescript
-const server = Blaize.createServer({ port: 3000, routesDir: './src/routes' });
+const server = Blaize.createServer({ port: 7485, routesDir: './src/routes' });
 server.use(authMiddleware); // ❌ Return value ignored!
-server.register(databasePlugin); // ❌ Return value ignored!
+server.register(databasePlugin()); // ❌ Return value ignored!
 
 type AppContext = InferContext<typeof server>;
 // AppContext['state'] = {}       ← Missing user!
@@ -461,7 +462,7 @@ type AppContext = InferContext<typeof server>;
 
 **Why this happens:** `.use()` and `.register()` return a _new_ server instance with updated types. They don't mutate the original. TypeScript tracks types through return values, so ignoring them means losing the type information.
 
-### How Types Compose
+### How types compose
 
 Each middleware declares what it adds:
 
@@ -482,7 +483,7 @@ const loggingMiddleware = createMiddleware<
 const databasePlugin = createPlugin<{}, {}, { db: Database }>({
   name: 'database',
   version: '1.0.0',
-  setup: () => ({
+  setup: (config, logger) => ({
     register: async (server) => {
       server.use(createMiddleware<{}, { db: Database }>({ ... }));
     },
@@ -493,12 +494,12 @@ const databasePlugin = createPlugin<{}, {}, { db: Database }>({
 When combined on the server, TypeScript intersects all the types:
 
 ```typescript
-const app = Blaize.createServer({
+const server = Blaize.createServer({
   middleware: [authMiddleware, loggingMiddleware],
   plugins: [databasePlugin()],
 });
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 // AppContext['state'] = {
 //   user: User;
 //   isAuthenticated: boolean;
@@ -514,21 +515,21 @@ type AppContext = InferContext<typeof app>;
 
 ---
 
-## Route Factory Pattern
+## Route factory pattern
 
 The route factory carries context types to all routes:
 
 ```typescript
-// 1. Create server using any of the three type accumulation approaches
-const app = Blaize.createServer({
-  port: 3000,
+// 1. Create server using recommended approach
+const server = Blaize.createServer({
+  port: 7485,
   routesDir: './src/routes',
   middleware: [authMiddleware],
   plugins: [databasePlugin()],
 });
 
 // 2. Extract context types from final server
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 
 // 3. Create route factory with those types
 export const route = Blaize.Router.createRouteFactory<
@@ -537,7 +538,7 @@ export const route = Blaize.Router.createRouteFactory<
 >();
 
 // 4. Start the server
-await app.listen();
+await server.listen();
 ```
 
 Now in route files, types flow automatically:
@@ -546,15 +547,15 @@ Now in route files, types flow automatically:
 // src/routes/users.ts
 import { route } from '../app';
 
-export const GET = route.get({
-  handler: async (ctx, params) => {
+export const listUsers = route.get({
+  handler: async ({ ctx, params }) => {
     ctx.state.user; // ✅ Typed as User
     ctx.services.db; // ✅ Typed as Database
   },
 });
 ```
 
-### Why a Factory?
+### Why a factory?
 
 The factory pattern solves a key problem: how do route files know about types defined in the server file?
 
@@ -573,8 +574,8 @@ Each route file imports the same `route` factory, ensuring consistent types ever
 // src/routes/users.ts
 import { route } from '../app';
 
-export const GET = route.get({
-  handler: async ctx => {
+export const listUsers = route.get({
+  handler: async ({ ctx }) => {
     // Types available because route factory was created
     // with AppContext['state'] and AppContext['services']
     ctx.state.user;
@@ -583,7 +584,7 @@ export const GET = route.get({
 });
 ```
 
-### Factory Methods
+### Factory methods
 
 The route factory provides methods for all HTTP verbs:
 
@@ -600,7 +601,7 @@ The route factory provides methods for all HTTP verbs:
 
 ---
 
-## Middleware Type Flow
+## Middleware type flow
 
 Middleware declares its type contributions via generics:
 
@@ -610,7 +611,7 @@ const authMiddleware = createMiddleware<
   { auth: AuthService } // Adds to ctx.services
 >({
   name: 'auth',
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next }) => {
     // Before: ctx.state.user doesn't exist
     ctx.state.user = await validateToken(/*...*/);
     ctx.services.auth = authService;
@@ -620,13 +621,13 @@ const authMiddleware = createMiddleware<
 });
 ```
 
-### Type Safety Within Middleware
+### Type safety within middleware
 
 Inside the middleware handler, you can safely assign to the declared types:
 
 ```typescript
 const authMiddleware = createMiddleware<{ user: User; permissions: string[] }, {}>({
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next }) => {
     // ✅ TypeScript knows these properties should be assigned
     ctx.state.user = await getUser();
     ctx.state.permissions = await getPermissions(ctx.state.user.id);
@@ -639,36 +640,49 @@ const authMiddleware = createMiddleware<{ user: User; permissions: string[] }, {
 });
 ```
 
-### Composition at Server Level
+### Composition at server level
 
-When you add middleware to the server, types compose automatically — but remember to capture return values:
+When you add middleware to the server, types compose automatically — but remember to capture return values or use server config:
 
 ```typescript
-// Chaining (captures final result)
-const app = Blaize.createServer()
-  .use(authMiddleware) // Adds { user } to state
-  .use(loggingMiddleware) // Adds { requestId } to state
-  .use(cacheMiddleware); // Adds { cache } to services
+// Recommended: Server config
+const server = Blaize.createServer({
+  middleware: [
+    authMiddleware, // Adds { user } to state
+    loggingMiddleware, // Adds { requestId } to state
+    cacheMiddleware, // Adds { cache } to services
+  ],
+});
 
-// Types are intersected on the final `app`
-type AppContext = InferContext<typeof app>;
+// Types are intersected on `server`
+type AppContext = InferContext<typeof server>;
 // state: { user: User } & { requestId: string }
 // services: { cache: CacheService }
 ```
 
 ```typescript
-// Step-by-step (useful for conditional middleware)
+// Alternative: Chaining
+const server = Blaize.createServer()
+  .use(authMiddleware) // Adds { user } to state
+  .use(loggingMiddleware) // Adds { requestId } to state
+  .use(cacheMiddleware); // Adds { cache } to services
+
+type AppContext = InferContext<typeof server>;
+```
+
+```typescript
+// Special cases: Step-by-step (useful for conditional middleware)
 const base = Blaize.createServer();
 const withAuth = base.use(authMiddleware);
 const withLogging = withAuth.use(loggingMiddleware);
-const app = process.env.ENABLE_CACHE ? withLogging.use(cacheMiddleware) : withLogging;
+const server = process.env.ENABLE_CACHE ? withLogging.use(cacheMiddleware) : withLogging;
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 ```
 
 ---
 
-## Plugin Type Flow
+## Plugin type flow
 
 Plugins add types through the middleware they register:
 
@@ -680,7 +694,7 @@ const databasePlugin = createPlugin<
 >({
   name: 'database',
   version: '1.0.0',
-  setup: config => {
+  setup: (config, logger) => {
     let db: Database; // Singleton via closure
 
     return {
@@ -689,7 +703,7 @@ const databasePlugin = createPlugin<
         server.use(
           createMiddleware<{}, { db: Database }>({
             name: 'database-provider',
-            handler: async (ctx, next) => {
+            handler: async ({ ctx, next }) => {
               ctx.services.db = db; // Inject the singleton
               await next();
             },
@@ -698,9 +712,11 @@ const databasePlugin = createPlugin<
       },
       initialize: async () => {
         db = await Database.connect(config.url);
+        logger.info('Database connected');
       },
       terminate: async () => {
         await db.disconnect();
+        logger.info('Database disconnected');
       },
     };
   },
@@ -710,28 +726,28 @@ const databasePlugin = createPlugin<
 When the plugin is added to the server, its middleware types flow through:
 
 ```typescript
-const app = Blaize.createServer({
+const server = Blaize.createServer({
   plugins: [databasePlugin({ url: process.env.DATABASE_URL })],
 });
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 // AppContext['services'] includes { db: Database }
 ```
 
 ---
 
-## Client Type Inference
+## Client type inference
 
 The client infers types from your route exports:
 
-### Step 1: Export Routes with Names
+### Step 1: Export routes with names
 
 ```typescript
 // src/app-type.ts
-import { GET as getUser } from './routes/users/[userId]';
-import { GET as listUsers, POST as createUser } from './routes/users';
-import { PATCH as updateAvatar } from './routes/users/[userId]/avatar';
-import { POST as login } from './routes/auth/login';
+import { getUser } from './routes/users/[userId]';
+import { listUsers, createUser } from './routes/users';
+import { updateAvatar } from './routes/users/[userId]/avatar';
+import { login } from './routes/auth/login';
 
 // Export with meaningful names — these become method names
 export const routes = {
@@ -743,7 +759,7 @@ export const routes = {
 } as const; // as const is important!
 ```
 
-### Step 2: Create Typed Client
+### Step 2: Create typed client
 
 ```typescript
 // client.ts
@@ -754,7 +770,7 @@ import { routes } from './server/app-type';
 const client = bc.create('https://api.example.com', routes);
 ```
 
-### Step 3: Use with Full Type Safety
+### Step 3: Use with full type safety
 
 ```typescript
 // ✅ Method name from export name
@@ -788,16 +804,16 @@ await client.$post.createUser({
 });
 ```
 
-### Why Export Names Matter
+### Why export names matter
 
 The client method names come from your export names, not file paths:
 
 ```typescript
 // File: src/routes/users/[userId].ts
-export const GET = route.get({ ... });
+export const getUser = route.get({ ... });
 
-// In app-type.ts, you name it:
-import { GET as getUser } from './routes/users/[userId]';
+// In app-type.ts, you use the export name directly:
+import { getUser } from './routes/users/[userId]';
 export const routes = { getUser } as const;
 
 // Client uses that name:
@@ -808,11 +824,11 @@ This gives you control over the client API regardless of file structure.
 
 ---
 
-## Type Boundaries
+## Type boundaries
 
 Understanding where inference works vs. where you need explicit types:
 
-### Inference Works
+### Inference works
 
 | Scenario                | Types Flow Automatically                        |
 | ----------------------- | ----------------------------------------------- |
@@ -823,7 +839,7 @@ Understanding where inference works vs. where you need explicit types:
 | Middleware → Context    | `ctx.state.user` typed from middleware generics |
 | Route export → Client   | Client methods typed from route exports         |
 
-### Explicit Types Needed
+### Explicit types needed
 
 | Scenario           | Why                                          | Solution                      |
 | ------------------ | -------------------------------------------- | ----------------------------- |
@@ -838,24 +854,24 @@ function getUser(id: string) {
 }
 
 // ✅ Pass context explicitly
-function getUser(ctx: AppContext, id: string) {
+function getUser(ctx: Context<AppContext['state'], AppContext['services']>, id: string) {
   return ctx.services.db.users.findById(id);
 }
 
 // ✅ Or use closure in handler
-export const GET = route.get({
-  handler: async (ctx, params) => {
-    const getUser = (id: string) => ctx.services.db.users.findById(id);
-    return await getUser(params.userId);
+export const getUser = route.get({
+  handler: async ({ ctx, params }) => {
+    const fetchUser = (id: string) => ctx.services.db.users.findById(id);
+    return await fetchUser(params.userId);
   },
 });
 ```
 
 ---
 
-## Common Patterns
+## Common patterns
 
-### Pattern 1: Shared Schemas
+### Pattern 1: Shared schemas
 
 Define schemas once, reuse everywhere:
 
@@ -879,18 +895,18 @@ export type UpdateUser = z.infer<typeof updateUserSchema>;
 // src/routes/users.ts
 import { userSchema, createUserSchema } from '../lib/schemas';
 
-export const GET = route.get({
+export const listUsers = route.get({
   schema: { response: z.array(userSchema) },
-  handler: async (ctx) => { ... },
+  handler: async ({ ctx }) => { ... },
 });
 
-export const POST = route.post({
+export const createUser = route.post({
   schema: { body: createUserSchema, response: userSchema },
-  handler: async (ctx) => { ... },
+  handler: async ({ ctx }) => { ... },
 });
 ```
 
-### Pattern 2: Pagination Schema
+### Pattern 2: Pagination schema
 
 Reusable pagination for list endpoints:
 
@@ -916,16 +932,16 @@ export function paginatedResponse<T extends z.ZodType>(itemSchema: T) {
 // src/routes/users.ts
 import { paginationSchema, paginatedResponse, userSchema } from '../lib/schemas';
 
-export const GET = route.get({
+export const listUsers = route.get({
   schema: {
     query: paginationSchema,
     response: paginatedResponse(userSchema),
   },
-  handler: async ctx => {
+  handler: async ({ ctx }) => {
     const { page, limit } = ctx.request.query;
     const [items, total] = await Promise.all([
-      db.users.findMany({ skip: (page - 1) * limit, take: limit }),
-      db.users.count(),
+      ctx.services.db.users.findMany({ skip: (page - 1) * limit, take: limit }),
+      ctx.services.db.users.count(),
     ]);
     return {
       items,
@@ -938,7 +954,7 @@ export const GET = route.get({
 });
 ```
 
-### Pattern 3: Error Response Types
+### Pattern 3: Error response types
 
 Type-safe error handling with response unions:
 
@@ -951,10 +967,10 @@ const getUserSchema = {
   ]),
 };
 
-export const GET = route.get({
+export const getUser = route.get({
   schema: getUserSchema,
-  handler: async (ctx, params) => {
-    const user = await db.users.findById(params.userId);
+  handler: async ({ ctx, params }) => {
+    const user = await ctx.services.db.users.findById(params.userId);
 
     if (!user) {
       return { success: false as const, error: 'User not found' };
@@ -973,7 +989,7 @@ if (result.success) {
 }
 ```
 
-### Pattern 4: File Upload with Type-Safe Metadata
+### Pattern 4: File upload with type-safe metadata
 
 Combine file uploads with structured metadata, maintaining full type safety:
 
@@ -1012,19 +1028,19 @@ export const uploadDocument = route.post({
     // category: 'legal' | 'financial' | 'personal'
     // tags: string[] | undefined
     // metadata: { author: string; department: string; confidential: boolean }
-    
+
     const { document, attachments } = ctx.request.files;
     // document: UploadedFile
     // attachments: UploadedFile[] | undefined
-    
+
     // Upload main document
     const documentUrl = await storage.upload(document);
-    
+
     // Upload attachments if present
     const attachmentUrls = attachments
       ? await Promise.all(attachments.map(a => storage.upload(a)))
       : [];
-    
+
     return {
       documentId: generateId(),
       documentUrl,
@@ -1059,21 +1075,23 @@ const result = await client.$post.uploadDocument({
 });
 
 // Result is fully typed
-console.log(result.documentId);      // string (UUID format)
-console.log(result.documentUrl);     // string (URL format)
+console.log(result.documentId); // string (UUID format)
+console.log(result.documentUrl); // string (URL format)
 console.log(result.attachmentCount); // number
-console.log(result.uploadedAt);      // string (ISO datetime)
+console.log(result.uploadedAt); // string (ISO datetime)
 ```
 
 **Type Safety Guarantees:**
 
 1. **Client compilation fails if:**
+
    - Wrong file property names
    - Missing required files
    - Wrong types (e.g., string instead of File)
    - Wrong body shape
 
 2. **Server runtime validates:**
+
    - File sizes against maxSize
    - MIME types against accept list
    - Body shape via Zod
@@ -1087,11 +1105,11 @@ console.log(result.uploadedAt);      // string (ISO datetime)
 
 ---
 
-## Key Takeaways
+## Key takeaways
 
 1. **Zod schemas are the source of truth** — They define runtime validation AND TypeScript types
 2. **`InferContext` captures composed types** — All middleware and plugin contributions combined
-3. **Capture return values** — `.use()` and `.register()` return new typed servers; always capture or chain
+3. **Use server config for type accumulation** — Pass middleware and plugins to `createServer()`
 4. **Route factory carries types** — Creates the bridge from server to route files
 5. **Export names become client methods** — You control the client API
 6. **No code generation** — Everything is TypeScript inference at compile time
@@ -1102,10 +1120,10 @@ console.log(result.uploadedAt);      // string (ISO datetime)
 
 ---
 
-## Related Pages
+## Related pages
 
 - **[Context](/docs/architecture/context)** — The object that carries state and services
 - **[Middleware](/docs/architecture/middleware)** — How middleware adds to context types
 - **[Plugins](/docs/architecture/plugins)** — How plugins inject services
-- **[Routing](/docs/architecture/router)** — File-based routing and route exports
+- **[Router](/docs/architecture/router)** — File-based routing and route exports
 - **[File Uploads](/docs/guides/file-uploads)** — Complete guide with storage integration

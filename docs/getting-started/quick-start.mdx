@@ -1,4 +1,4 @@
-# 🚀 Quick Start
+# 🚀 Quick start
 
 > **Time:** 10 minutes | **Goal:** Running BlaizeJS server with routes, validation, and type safety
 
@@ -18,7 +18,7 @@ node --version
 
 ---
 
-## 1. Create Your Project
+## 1. Create your project
 
 ```bash
 npx create-blaize-app my-api
@@ -60,7 +60,7 @@ bun create blaize-app my-api
 
 ---
 
-## 2. Start the Dev Server
+## 2. Start the dev server
 
 ```bash
 npm run dev
@@ -69,14 +69,22 @@ npm run dev
 You'll see:
 
 ```
-🚀 Server running at https://localhost:7485
+🚀 Server started successfully
+
+📍 Available Endpoints:
+   GET  https://localhost:7485/
+   GET  https://localhost:7485/health
+   GET  https://localhost:7485/users
+   GET  https://localhost:7485/users/:userId
+   POST https://localhost:7485/upload
+   GET  https://localhost:7485/events/stream
 ```
 
 > **Note:** BlaizeJS uses HTTPS by default (HTTP/2). Your browser may warn about the self-signed certificate in development — that's expected.
 
 ---
 
-## 3. Test Your API
+## 3. Test your API
 
 Open a new terminal and make a request:
 
@@ -88,13 +96,9 @@ Response:
 
 ```json
 {
-  "status": "healthy",
-  "uptime": 1.234,
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "checks": {
-    "database": true,
-    "redis": true
-  }
+  "status": "ok",
+  "timestamp": 1706356800000,
+  "uptime": 123.456
 }
 ```
 
@@ -102,18 +106,25 @@ Response:
 
 ---
 
-## 4. Explore the Project Structure
+## 4. Explore the project structure
 
 ```
 my-api/
 ├── src/
-│   ├── app.ts              # Server setup + route factory
+│   ├── app.ts              # Server setup
+│   ├── app-router.ts       # Type-safe route factory
+│   ├── app-type.ts         # Route registry for client
+│   ├── events.ts           # Event schemas
 │   └── routes/
 │       ├── index.ts        # GET /
 │       ├── health.ts       # GET /health
-│       └── users/
-│           ├── index.ts    # GET /users, POST /users
-│           └── [userId].ts # GET /users/:userId, DELETE /users/:userId
+│       ├── upload.ts       # POST /upload
+│       ├── users/
+│       │   ├── index.ts    # GET /users
+│       │   └── [userId]/
+│       │       └── index.ts # GET /users/:userId
+│       └── events/
+│           └── stream.ts   # GET /events/stream (SSE)
 ├── package.json
 └── tsconfig.json
 ```
@@ -121,69 +132,93 @@ my-api/
 Open `src/app.ts` to see the server setup:
 
 ```typescript
-import { Blaize, type InferContext } from 'blaizejs';
+import { Blaize } from 'blaizejs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { minimalEvents } from './events';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const routesDir = path.resolve(__dirname, './routes');
 
-const app = Blaize.createServer({
+const server = Blaize.createServer({
   host: 'localhost',
   port: 7485,
-  routesDir: path.resolve(__dirname, './routes'),
+  routesDir,
   http2: { enabled: true },
+  eventSchemas: minimalEvents,
 });
 
-// Create a typed route factory for use in route files
-type AppContext = InferContext<typeof app>;
+await server.listen();
+```
+
+Open `src/app-router.ts` to see the route factory:
+
+```typescript
+import { Blaize, type InferContext } from 'blaizejs';
+import type { minimalEvents } from './events';
+
+// Type-only server for type inference
+const typeServer = Blaize.createServer({
+  host: 'localhost',
+  port: 7485,
+  routesDir: './src/routes',
+  eventSchemas: {} as typeof minimalEvents,
+});
+
+type AppContext = InferContext<typeof typeServer>;
+
 export const route = Blaize.Router.createRouteFactory<
   AppContext['state'],
   AppContext['services']
 >();
-
-await app.listen();
 ```
+
+**Why separate `app-router.ts`?**
+- Cleaner imports in route files
+- Type inference happens once, reused everywhere
+- No server lifecycle dependency in routes
+- Easier testing
 
 Open `src/routes/health.ts` to see a route:
 
 ```typescript
-import { route } from '../app';
+import { route } from '../app-router';
 import { z } from 'zod';
 
-export const GET = route.get({
+export const getHealth = route.get({
   schema: {
     response: z.object({
-      status: z.enum(['healthy', 'degraded', 'unhealthy']),
+      status: z.literal('ok'),
+      timestamp: z.number(),
       uptime: z.number(),
-      timestamp: z.string(),
     }),
   },
   handler: async () => ({
-    status: 'healthy' as const,
+    status: 'ok' as const,
+    timestamp: Date.now(),
     uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
   }),
 });
 ```
 
 **Key concepts:**
 - `route.get()` creates a GET route handler
-- `export const GET` tells the router this handles GET requests
+- `export const getHealth` names the handler (used by type-safe client)
 - `schema.response` defines and validates your response shape
 - The handler returns data that TypeScript checks against the schema
 
 ---
 
-## 5. Add a Route with Query Parameters
+## 5. Add a route with query parameters
 
 Create a new file `src/routes/hello.ts`:
 
 ```typescript
-import { route } from '../app';
+import { route } from '../app-router';
 import { z } from 'zod';
 
-export const GET = route.get({
+export const getHello = route.get({
   schema: {
     query: z.object({
       name: z.string().optional(),
@@ -193,12 +228,17 @@ export const GET = route.get({
       message: z.string(),
     }),
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     const { name = 'World', excited = false } = ctx.request.query;
     const punctuation = excited ? '!' : '.';
     return { message: `Hello, ${name}${punctuation}` };
   },
 });
+```
+
+**Important:** Note the handler signature uses **destructuring**:
+```typescript
+handler: async ({ ctx, params, logger, eventBus }) => { ... }
 ```
 
 Test it:
@@ -218,15 +258,16 @@ curl -k "https://localhost:7485/hello?name=BlaizeJS&excited=true"
 - `schema.query` defines and validates query string parameters
 - `z.coerce.boolean()` converts string `"true"` to boolean `true`
 - `ctx.request.query` is fully typed based on your schema
+- Handler receives `{ ctx, params, logger, eventBus }` object (not positional params)
 
 ---
 
-## 6. Add a Route with Request Body
+## 6. Add a route with request body
 
 Create `src/routes/messages.ts`:
 
 ```typescript
-import { route } from '../app';
+import { route } from '../app-router';
 import { z } from 'zod';
 
 // Define reusable schemas
@@ -246,12 +287,12 @@ const createMessageSchema = z.object({
   body: z.string().min(1).max(10000),
 });
 
-export const POST = route.post({
+export const createMessage = route.post({
   schema: {
     body: createMessageSchema,
     response: messageSchema,
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     // ctx.request.body is typed as { from, to, subject, body }
     const { from, to, subject, body } = ctx.request.body;
     
@@ -311,6 +352,8 @@ Response (400 Bad Request):
   "type": "VALIDATION_ERROR",
   "title": "Validation failed",
   "status": 400,
+  "correlationId": "req_abc123",
+  "timestamp": "2024-01-15T10:30:00.000Z",
   "details": {
     "errors": [
       { "path": ["from"], "message": "Invalid email" },
@@ -328,16 +371,16 @@ Response (400 Bad Request):
 
 ---
 
-## 7. Explore Dynamic Routes
+## 7. Explore dynamic routes
 
-Look at `src/routes/users/[userId].ts` — this is a dynamic route:
+Look at `src/routes/users/[userId]/index.ts` — this is a dynamic route:
 
 ```typescript
-import { route } from '../../app';
+import { route } from '../../../app-router';
 import { NotFoundError } from 'blaizejs';
 import { z } from 'zod';
 
-export const GET = route.get({
+export const getUserById = route.get({
   schema: {
     params: z.object({
       userId: z.string().uuid(),
@@ -348,11 +391,19 @@ export const GET = route.get({
       email: z.string().email(),
     }),
   },
-  handler: async (ctx, params) => {
+  handler: async ({ params, logger, eventBus }) => {
+    logger.info('Fetching user', { userId: params.userId });
+    
     // params.userId is typed as string
     if (params.userId === '00000000-0000-0000-0000-000000000000') {
       throw new NotFoundError(`User ${params.userId} not found`);
     }
+    
+    // Publish event
+    await eventBus.publish('user:viewed', {
+      userId: params.userId,
+      timestamp: Date.now(),
+    });
     
     return {
       id: params.userId,
@@ -374,29 +425,32 @@ curl -k https://localhost:7485/users/00000000-0000-0000-0000-000000000000
 ```
 
 **Key concepts:**
-- `[userId]` in the filename becomes a URL parameter
+- `[userId]` in the directory name becomes a URL parameter
 - `schema.params` validates URL parameters
 - `params.userId` is fully typed
 - `NotFoundError` automatically formats to a proper HTTP 404 response
+- `logger` provides request-scoped logging
+- `eventBus` enables publishing events for real-time updates
 
 ---
 
-## 8. Connect the Type-Safe Client (Optional)
+## 8. Connect the type-safe client (optional)
 
-To call your API with full type safety, create `src/app-type.ts`:
+The `src/app-type.ts` file exports all routes for the type-safe client:
 
 ```typescript
-// Export routes with names that become client methods
-import { GET as getHealth } from './routes/health';
-import { GET as getHello } from './routes/hello';
-import { POST as createMessage } from './routes/messages';
-import { GET as getUser } from './routes/users/[userId]';
+import { getRoot } from './routes/index';
+import { getHealth } from './routes/health';
+import { getUsers } from './routes/users/index';
+import { getUserById } from './routes/users/[userId]/index';
+import { createMessage } from './routes/messages';
 
 export const routes = {
+  getRoot,
   getHealth,
-  getHello,
+  getUsers,
+  getUserById,
   createMessage,
-  getUser,
 } as const;
 ```
 
@@ -404,12 +458,12 @@ Now a client application can call your API:
 
 ```typescript
 import bc from '@blaizejs/client';
-import { routes } from './app-type';
+import { routes } from './server/app-type';
 
 const client = bc.create('https://localhost:7485', routes);
 
 // Full autocomplete and type checking!
-const user = await client.$get.getUser({ 
+const user = await client.$get.getUserById({ 
   params: { userId: '550e8400-e29b-41d4-a716-446655440000' } 
 });
 console.log(user.name); // TypeScript knows this is a string
@@ -428,30 +482,31 @@ console.log(message.id); // TypeScript knows this is a string
 
 ---
 
-## ✅ What You've Learned
+## ✅ What you've learned
 
 In 10 minutes, you've:
-- Created a new BlaizeJS project
-- Started the development server
-- Explored file-based routing
-- Added routes with **query parameters** (validated and typed)
-- Added routes with **request body validation** (with automatic error responses)
-- Explored **dynamic routes** with URL parameters
-- Seen type-safe error handling
-- Previewed the type-safe client
+- ✅ Created a new BlaizeJS project
+- ✅ Started the development server
+- ✅ Explored file-based routing
+- ✅ Added routes with **query parameters** (validated and typed)
+- ✅ Added routes with **request body validation** (with automatic error responses)
+- ✅ Explored **dynamic routes** with URL parameters
+- ✅ Used the **new handler signature** with destructuring
+- ✅ Used **logger** and **eventBus** in handlers
+- ✅ Previewed the type-safe client
 
 ---
 
-## 🔗 Next Steps
+## 🔗 Next steps
 
-- **[Tutorial](/docs/getting-started/tutorial)** — Build a complete API in 30 minutes
-- **[File-Based Routing](/docs/guides/routing)** — Deep dive into routing patterns
-- **[Middleware](/docs/guides/middleware)** — Add authentication, logging, and more
-- **[API Reference](/docs/api-reference/blaizejs)** — Full API documentation
+- **[Tutorial](./tutorial)** — Build a complete API in 30 minutes
+- **[File-based routing](../guides/routing)** — Deep dive into routing patterns
+- **[Middleware](../guides/middleware)** — Add authentication, logging, and more
+- **[API reference](../api-reference/blaizejs)** — Full API documentation
 
 ---
 
-## 📚 Available Scripts
+## 📚 Available scripts
 
 Your project includes these npm scripts:
 
@@ -461,6 +516,10 @@ Your project includes these npm scripts:
 | `npm run build` | Build for production |
 | `npm start` | Run production build |
 | `npm run type-check` | Check TypeScript types |
+| `npm run clean` | Remove build artifacts |
+| `npm test` | Run tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:coverage` | Run tests with coverage report |
 
 ---
 
@@ -478,7 +537,7 @@ BlaizeJS uses HTTPS by default. In development, it uses a self-signed certificat
 Change the port in `src/app.ts`:
 
 ```typescript
-const app = Blaize.createServer({
+const server = Blaize.createServer({
   port: 3000, // Change this
   // ...
 });
@@ -487,9 +546,21 @@ const app = Blaize.createServer({
 ### Route not found
 
 - Check that your file is in the `src/routes/` directory
-- Verify the file exports the correct HTTP method (`GET`, `POST`, `PUT`, `DELETE`, etc.)
+- Verify the file exports a named function (e.g., `export const getHealth`)
 - For POST routes, make sure you're sending `Content-Type: application/json`
 - Make sure the dev server is running
+
+### TypeScript errors in handler
+
+Remember the new handler signature uses destructuring:
+
+```typescript
+// ❌ Old signature (deprecated)
+handler: async (ctx, params, logger) => { ... }
+
+// ✅ New signature (correct)
+handler: async ({ ctx, params, logger, eventBus }) => { ... }
+```
 
 ---
 

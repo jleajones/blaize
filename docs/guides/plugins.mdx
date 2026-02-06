@@ -1,0 +1,1631 @@
+# 🔌 Plugins Guide
+
+> Manage expensive resources with lifecycle hooks—connect once at startup, clean up at shutdown, provide typed access everywhere
+
+Plugins are BlaizeJS's answer to resource management. While middleware runs on every request, plugins handle the heavy lifting: database connections, cache clients, external services—anything that's expensive to create and needs proper cleanup.
+
+---
+
+## 📋 Table of Contents
+
+- [What is a Plugin?](#-what-is-a-plugin)
+- [Plugins vs Middleware](#-plugins-vs-middleware)
+- [Your First Plugin](#-your-first-plugin)
+- [Understanding the Lifecycle](#-understanding-the-lifecycle)
+- [Type-Safe Plugins](#-type-safe-plugins)
+- [Common Patterns](#-common-patterns)
+- [Configuration](#-configuration)
+- [Adding Routes from Plugins](#-adding-routes-from-plugins)
+- [Advanced Patterns](#-advanced-patterns)
+- [Testing Plugins](#-testing-plugins)
+- [Best Practices](#-best-practices)
+
+---
+
+## 🎯 What is a Plugin?
+
+A plugin is a reusable module that **manages resources with lifecycle hooks**. Think of plugins as the infrastructure layer of your application:
+
+```
+┌──────────────────────────────────────────────┐
+│           Application Startup                │
+├──────────────────────────────────────────────┤
+│  1. Plugin setup() runs                      │
+│  2. Plugin register() adds middleware        │
+│  3. Plugin initialize() connects resources   │
+│  4. Server starts listening                  │
+│  5. Plugin onServerStart() verifies setup    │
+├──────────────────────────────────────────────┤
+│           Requests Processing                │
+│  → Middleware provides access to resources   │
+├──────────────────────────────────────────────┤
+│           Application Shutdown               │
+│  1. Plugin onServerStop() stops new work     │
+│  2. Plugin terminate() cleans up             │
+└──────────────────────────────────────────────┘
+```
+
+**Common plugin use cases:**
+- 🗄️ Database connection pools
+- 💾 Redis/cache clients
+- 📧 Email service connections
+- 📊 Metrics collection
+- ⚙️ Background job queues
+- 🔍 Search service clients
+- 📦 Storage service clients (S3, R2)
+
+---
+
+## 🤔 Plugins vs Middleware
+
+This is the **most important decision** to understand:
+
+| Need | Use Middleware | Use Plugin |
+|------|----------------|------------|
+| Run logic on every request | ✅ | ❌ |
+| Connect to database once | ❌ | ✅ |
+| Add data to `ctx.state` | ✅ | Via middleware |
+| Manage connection pools | ❌ | ✅ |
+| Validate authentication | ✅ | ❌ |
+| Clean up on server shutdown | ❌ | ✅ |
+| Add routes dynamically | ❌ | ✅ |
+
+### The Key Difference
+
+**Middleware** runs on **every request** — it's for per-request logic:
+- Authentication
+- Logging
+- Rate limiting
+- Request validation
+
+**Plugins** run **once at startup/shutdown** — they're for managing expensive resources:
+- Database connections
+- Cache clients
+- External service connections
+- Background workers
+
+### Example: The Wrong Way vs The Right Way
+
+```typescript
+// ❌ WRONG: Creating connection on every request
+const dbMiddleware = createMiddleware({
+  handler: async ({ ctx, next }) => {
+    // Connect on EVERY REQUEST — Expensive!
+    ctx.services.db = await Database.connect();
+    
+    await next();
+    
+    // Close on EVERY REQUEST — Wasteful!
+    await ctx.services.db.close();
+  },
+});
+```
+
+```typescript
+// ✅ CORRECT: Plugin connects once, middleware provides access
+const databasePlugin = createPlugin<
+  { connectionString: string }, // Config
+  {},                           // State (usually empty)
+  { db: Database }             // Services
+>({
+  name: 'database',
+  version: '1.0.0',
+  
+  setup: ({ config }) => {
+    let db: Database; // ← Singleton in closure
+    
+    return {
+      register: async (server) => {
+        // Middleware just provides a reference
+        server.use(
+          createMiddleware<{}, { db: Database }>({
+            handler: async ({ ctx, next }) => {
+              ctx.services.db = db; // Just a reference!
+              await next();
+            },
+          })
+        );
+      },
+      
+      initialize: async () => {
+        // Connect ONCE at startup
+        db = await Database.connect(config.connectionString);
+      },
+      
+      terminate: async () => {
+        // Clean up ONCE at shutdown
+        await db.close();
+      },
+    };
+  },
+});
+```
+
+---
+
+## 🚀 Your First Plugin
+
+Let's create a simple plugin that manages a Redis connection:
+
+```typescript
+// src/plugins/redis.ts
+import { createPlugin, createMiddleware } from 'blaizejs';
+import { Redis } from 'ioredis';
+
+interface RedisConfig {
+  url: string;
+  maxRetries?: number;
+}
+
+export const createRedisPlugin = createPlugin<
+  RedisConfig,      // Config type
+  {},               // State (none)
+  { redis: Redis }  // Services (what we provide)
+>({
+  name: 'redis',
+  version: '1.0.0',
+  
+  // Default configuration
+  defaultConfig: {
+    url: 'redis://localhost:6379',
+    maxRetries: 3,
+  },
+  
+  setup: ({ config, logger }) => {
+    // 1️⃣ Declare resources in closure (singleton)
+    let redis: Redis;
+    
+    return {
+      // 2️⃣ Register middleware for typed access
+      register: async (server) => {
+        logger.debug('Registering Redis middleware');
+        
+        server.use(
+          createMiddleware<{}, { redis: Redis }>({
+            name: 'redis',
+            handler: async ({ ctx, next }) => {
+              ctx.services.redis = redis;
+              await next();
+            },
+          })
+        );
+      },
+      
+      // 3️⃣ Initialize resource
+      initialize: async () => {
+        logger.info('Connecting to Redis', { url: config.url });
+        
+        redis = new Redis(config.url, {
+          maxRetriesPerRequest: config.maxRetries,
+        });
+        
+        // Verify connection
+        await redis.ping();
+        logger.info('Redis connected');
+      },
+      
+      // 4️⃣ Clean up resource
+      terminate: async () => {
+        logger.info('Disconnecting from Redis');
+        await redis.quit();
+        logger.info('Redis disconnected');
+      },
+    };
+  },
+});
+```
+
+**Add it to your server:**
+
+```typescript
+// src/app.ts
+import { Blaize } from 'blaizejs';
+import { createRedisPlugin } from './plugins/redis';
+
+const server = Blaize.createServer({
+  port: 7485,
+  routesDir: './src/routes',
+  plugins: [
+    createRedisPlugin({
+      url: 'redis://localhost:6379',
+    }),
+  ],
+});
+
+await server.listen();
+```
+
+**Use it in routes:**
+
+```typescript
+// src/routes/cache.ts
+import { route } from '../app';
+
+export const getCachedValue = route.get({
+  handler: async ({ ctx }) => {
+    // TypeScript knows redis is available!
+    const value = await ctx.services.redis.get('my-key');
+    return { value };
+  },
+});
+```
+
+---
+
+## 🔄 Understanding the Lifecycle
+
+Plugins have **five lifecycle hooks** that run at specific times:
+
+| Hook | When It Runs | Use For | Required |
+|------|--------------|---------|----------|
+| `register` | During `server.register()` | Adding middleware, routes | ✅ Yes |
+| `initialize` | Before `server.listen()` | Connecting to resources | ❌ No |
+| `onServerStart` | After server is listening | Verifying connections | ❌ No |
+| `onServerStop` | When server begins shutdown | Stopping new work | ❌ No |
+| `terminate` | During server shutdown | Closing connections | ❌ No |
+
+### Lifecycle Execution Order
+
+```
+Server Startup:
+  ┌─────────────────────────────────────┐
+  │ createServer() called               │
+  │  ↓                                  │
+  │ plugin1.register() ─────────────┐   │
+  │ plugin2.register() ─────────────┤   │
+  │ plugin3.register() ─────────────┘   │
+  │  ↓                                  │
+  │ server.listen() called              │
+  │  ↓                                  │
+  │ plugin1.initialize() ───────────┐   │
+  │ plugin2.initialize() ───────────┤   │
+  │ plugin3.initialize() ───────────┘   │
+  │  ↓                                  │
+  │ Server starts listening             │
+  │  ↓                                  │
+  │ plugin1.onServerStart() ────────┐   │
+  │ plugin2.onServerStart() ────────┤   │
+  │ plugin3.onServerStart() ────────┘   │
+  └─────────────────────────────────────┘
+
+Server Shutdown (REVERSE ORDER):
+  ┌─────────────────────────────────────┐
+  │ server.close() called               │
+  │  ↓                                  │
+  │ plugin3.onServerStop() ─────────┐   │
+  │ plugin2.onServerStop() ─────────┤   │
+  │ plugin1.onServerStop() ─────────┘   │
+  │  ↓                                  │
+  │ plugin3.terminate() ────────────┐   │
+  │ plugin2.terminate() ────────────┤   │
+  │ plugin1.terminate() ────────────┘   │
+  └─────────────────────────────────────┘
+```
+
+**Why reverse order for shutdown?** Resources registered last may depend on resources registered first. Shutting down in reverse ensures dependencies are available during cleanup.
+
+### Lifecycle Hook Examples
+
+```typescript
+const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Database }>({
+  name: 'database',
+  version: '1.0.0',
+  
+  setup: ({ config, logger }) => {
+    let pool: ConnectionPool;
+    
+    return {
+      // 1. REGISTER - Add middleware to server
+      register: async (server) => {
+        server.use(
+          createMiddleware<{}, { db: Database }>({
+            name: 'database',
+            handler: async ({ ctx, next }) => {
+              ctx.services.db = pool;
+              await next();
+            },
+          })
+        );
+        
+        logger.debug('Database middleware registered');
+      },
+      
+      // 2. INITIALIZE - Connect to resources
+      initialize: async () => {
+        logger.info('Creating database pool...');
+        
+        pool = await ConnectionPool.create({
+          host: config.host,
+          port: config.port,
+          max: config.poolSize,
+        });
+        
+        logger.info('Database pool created');
+      },
+      
+      // 3. ON_SERVER_START - Verify everything works
+      onServerStart: async () => {
+        await pool.query('SELECT 1'); // Health check
+        logger.info('Database connection verified');
+      },
+      
+      // 4. ON_SERVER_STOP - Stop accepting new work
+      onServerStop: async () => {
+        pool.stopAcceptingQueries();
+        logger.info('Draining database connections...');
+      },
+      
+      // 5. TERMINATE - Clean up resources
+      terminate: async () => {
+        await pool.close();
+        logger.info('Database pool closed');
+      },
+    };
+  },
+});
+```
+
+---
+
+## 🎨 Type-Safe Plugins
+
+BlaizeJS plugins support full type composition—your routes automatically know what services are available.
+
+### Plugin Type Parameters
+
+```typescript
+createPlugin<TConfig, TState, TServices>({ ... })
+```
+
+| Generic | Purpose | Typical Usage |
+|---------|---------|---------------|
+| `TConfig` | Shape of configuration options | `{ host: string; port: number }` |
+| `TState` | What plugin adds to `ctx.state` | Usually `{}` — plugins rarely add state |
+| `TServices` | What plugin adds to `ctx.services` | `{ db: Database; cache: Cache }` |
+
+### Type Flow Example
+
+```typescript
+// 1. Define types
+interface CacheConfig {
+  maxSize: number;
+  ttl: number;
+}
+
+interface CacheService {
+  get(key: string): Promise<unknown | null>;
+  set(key: string, value: unknown, ttl?: number): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+// 2. Create typed plugin
+const cachePlugin = createPlugin<
+  CacheConfig,              // Config
+  {},                       // State (none)
+  { cache: CacheService }   // Services
+>({
+  name: 'cache',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    maxSize: 1000,
+    ttl: 3600,
+  },
+  
+  setup: ({ config, logger }) => {
+    let cache: CacheService;
+    
+    return {
+      register: async (server) => {
+        server.use(
+          createMiddleware<{}, { cache: CacheService }>({
+            name: 'cache',
+            handler: async ({ ctx, next }) => {
+              ctx.services.cache = cache;
+              await next();
+            },
+          })
+        );
+      },
+      
+      initialize: async () => {
+        cache = new CacheService(config);
+      },
+      
+      terminate: async () => {
+        await cache.cleanup();
+      },
+    };
+  },
+});
+
+// 3. Register plugin
+const app = Blaize.createServer().register(cachePlugin({ maxSize: 5000 }));
+
+// 4. Extract types
+type AppContext = InferContext<typeof app>;
+// AppContext['services'] = { cache: CacheService }
+
+// 5. Routes get types automatically
+export const GET = route.get({
+  handler: async ({ ctx }) => {
+    // TypeScript knows cache is available!
+    const value = await ctx.services.cache.get('key');
+    return { value };
+  },
+});
+```
+
+### Multiple Plugins Compose Types
+
+```typescript
+const server = Blaize.createServer()
+  .register(databasePlugin({ host: 'localhost' }))
+  .register(cachePlugin({ maxSize: 1000 }))
+  .register(queuePlugin({ queues: {} }));
+
+type AppContext = InferContext<typeof server>;
+
+// AppContext['services'] = {
+//   db: Database;
+//   cache: CacheService;
+//   queue: QueueService;
+// }
+
+// All routes see all services!
+export const GET = route.get({
+  handler: async ({ ctx }) => {
+    ctx.services.db;    // ✅ Database
+    ctx.services.cache; // ✅ CacheService
+    ctx.services.queue; // ✅ QueueService
+  },
+});
+```
+
+---
+
+## 💡 Common Patterns
+
+### Pattern: Database Connection Pool
+
+```typescript
+// plugins/database.ts
+import { createPlugin, createMiddleware } from 'blaizejs';
+import { Pool } from 'pg';
+
+interface DatabaseConfig {
+  connectionString: string;
+  poolSize?: number;
+}
+
+export const createDatabasePlugin = createPlugin<
+  DatabaseConfig,
+  {},
+  { db: Pool }
+>({
+  name: 'database',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    connectionString: 'postgresql://localhost:5432/app',
+    poolSize: 10,
+  },
+  
+  setup: ({ config, logger }) => {
+    let pool: Pool;
+    
+    return {
+      register: async (server) => {
+        server.use(
+          createMiddleware<{}, { db: Pool }>({
+            name: 'database',
+            handler: async ({ ctx, next }) => {
+              ctx.services.db = pool;
+              await next();
+            },
+          })
+        );
+      },
+      
+      initialize: async () => {
+        logger.info('Creating database pool', {
+          poolSize: config.poolSize,
+        });
+        
+        pool = new Pool({
+          connectionString: config.connectionString,
+          max: config.poolSize,
+        });
+        
+        // Verify connection
+        const client = await pool.connect();
+        await client.query('SELECT 1');
+        client.release();
+        
+        logger.info('Database pool created');
+      },
+      
+      onServerStart: async () => {
+        // Run migrations or verify schema
+        logger.info('Database ready');
+      },
+      
+      onServerStop: async () => {
+        // Stop accepting new queries
+        logger.info('Draining database connections...');
+      },
+      
+      terminate: async () => {
+        await pool.end();
+        logger.info('Database pool closed');
+      },
+    };
+  },
+});
+```
+
+**Usage:**
+```typescript
+const server = Blaize.createServer({
+  plugins: [
+    createDatabasePlugin({
+      connectionString: process.env.DATABASE_URL,
+      poolSize: 20,
+    }),
+  ],
+});
+
+// In routes:
+export const getUsers = route.get({
+  handler: async ({ ctx }) => {
+    const result = await ctx.services.db.query('SELECT * FROM users');
+    return { users: result.rows };
+  },
+});
+```
+
+### Pattern: Redis Cache
+
+```typescript
+// plugins/cache.ts
+import { createPlugin, createMiddleware } from 'blaizejs';
+import { Redis } from 'ioredis';
+
+interface CacheConfig {
+  url: string;
+  ttl?: number;
+}
+
+interface CacheService {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttl?: number): Promise<void>;
+  del(key: string): Promise<void>;
+}
+
+export const createCachePlugin = createPlugin<
+  CacheConfig,
+  {},
+  { cache: CacheService }
+>({
+  name: 'cache',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    url: 'redis://localhost:6379',
+    ttl: 3600,
+  },
+  
+  setup: ({ config, logger }) => {
+    let redis: Redis;
+    
+    const cache: CacheService = {
+      get: async (key) => redis.get(key),
+      
+      set: async (key, value, ttl = config.ttl) => {
+        await redis.setex(key, ttl, value);
+      },
+      
+      del: async (key) => {
+        await redis.del(key);
+      },
+    };
+    
+    return {
+      register: async (server) => {
+        server.use(
+          createMiddleware<{}, { cache: CacheService }>({
+            name: 'cache',
+            handler: async ({ ctx, next }) => {
+              ctx.services.cache = cache;
+              await next();
+            },
+          })
+        );
+      },
+      
+      initialize: async () => {
+        logger.info('Connecting to Redis', { url: config.url });
+        
+        redis = new Redis(config.url);
+        
+        // Wait for ready
+        await new Promise((resolve) => redis.on('ready', resolve));
+        
+        logger.info('Redis connected');
+      },
+      
+      terminate: async () => {
+        await redis.quit();
+        logger.info('Redis disconnected');
+      },
+    };
+  },
+});
+```
+
+### Pattern: Email Service
+
+```typescript
+// plugins/email.ts
+import { createPlugin, createMiddleware } from 'blaizejs';
+import nodemailer from 'nodemailer';
+
+interface EmailConfig {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+interface EmailService {
+  send(to: string, subject: string, body: string): Promise<void>;
+}
+
+export const createEmailPlugin = createPlugin<
+  EmailConfig,
+  {},
+  { email: EmailService }
+>({
+  name: 'email',
+  version: '1.0.0',
+  
+  setup: ({ config, logger }) => {
+    let transporter: nodemailer.Transporter;
+    
+    const emailService: EmailService = {
+      send: async (to, subject, body) => {
+        logger.info('Sending email', { to, subject });
+        
+        await transporter.sendMail({
+          from: config.from,
+          to,
+          subject,
+          html: body,
+        });
+        
+        logger.info('Email sent', { to, subject });
+      },
+    };
+    
+    return {
+      register: async (server) => {
+        server.use(
+          createMiddleware<{}, { email: EmailService }>({
+            name: 'email',
+            handler: async ({ ctx, next }) => {
+              ctx.services.email = emailService;
+              await next();
+            },
+          })
+        );
+      },
+      
+      initialize: async () => {
+        logger.info('Creating email transporter');
+        
+        transporter = nodemailer.createTransport({
+          host: config.host,
+          port: config.port,
+          auth: {
+            user: config.user,
+            pass: config.pass,
+          },
+        });
+        
+        // Verify connection
+        await transporter.verify();
+        
+        logger.info('Email service ready');
+      },
+      
+      terminate: async () => {
+        transporter.close();
+        logger.info('Email service closed');
+      },
+    };
+  },
+});
+```
+
+### Pattern: Background Worker
+
+```typescript
+// plugins/worker.ts
+import { createPlugin } from 'blaizejs';
+
+interface WorkerConfig {
+  interval: number;
+  enabled?: boolean;
+}
+
+export const createWorkerPlugin = createPlugin<WorkerConfig, {}, {}>({
+  name: 'worker',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    interval: 60000, // 1 minute
+    enabled: true,
+  },
+  
+  setup: ({ config, logger }) => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    async function doWork() {
+      logger.info('Worker running...');
+      try {
+        // Do background work here
+        await processBackgroundTasks();
+        logger.info('Worker completed');
+      } catch (error) {
+        logger.error('Worker failed', { error });
+      }
+    }
+    
+    return {
+      onServerStart: async () => {
+        if (!config.enabled) {
+          logger.info('Worker disabled');
+          return;
+        }
+        
+        logger.info('Starting background worker', {
+          interval: config.interval,
+        });
+        
+        // Run immediately, then on interval
+        await doWork();
+        
+        intervalId = setInterval(doWork, config.interval);
+      },
+      
+      onServerStop: async () => {
+        if (intervalId) {
+          logger.info('Stopping background worker...');
+          clearInterval(intervalId);
+          intervalId = null;
+          logger.info('Background worker stopped');
+        }
+      },
+    };
+  },
+});
+```
+
+---
+
+## ⚙️ Configuration
+
+### Default Configuration
+
+Plugins can provide default values:
+
+```typescript
+const plugin = createPlugin<{ port: number; host: string }, {}, {}>({
+  name: 'api',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    port: 3000,
+    host: 'localhost',
+  },
+  
+  setup: ({ config, logger }) => {
+    logger.info('Config', {
+      port: config.port,    // Always defined (from default or user)
+      host: config.host,    // Always defined
+    });
+    
+    return {};
+  },
+});
+
+// Use defaults
+const server = Blaize.createServer({
+  plugins: [plugin()], // Uses port: 3000, host: 'localhost'
+});
+
+// Override some defaults
+const server2 = Blaize.createServer({
+  plugins: [
+    plugin({ port: 8080 }), // port: 8080, host: 'localhost'
+  ],
+});
+```
+
+### Environment-Based Configuration
+
+```typescript
+const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Pool }>({
+  name: 'database',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/app',
+    poolSize: parseInt(process.env.DB_POOL_SIZE || '10', 10),
+  },
+  
+  setup: ({ config }) => {
+    // Config is already merged with env vars
+    let pool: Pool;
+    
+    return {
+      initialize: async () => {
+        pool = new Pool({
+          connectionString: config.connectionString,
+          max: config.poolSize,
+        });
+      },
+      
+      terminate: async () => {
+        await pool.end();
+      },
+    };
+  },
+});
+```
+
+---
+
+## 🛣️ Adding Routes from Plugins
+
+Plugins can add routes dynamically:
+
+```typescript
+// plugins/health.ts
+import { createPlugin } from 'blaizejs';
+
+export const createHealthPlugin = createPlugin<{}, {}, {}>({
+  name: 'health',
+  version: '1.0.0',
+  
+  setup: ({ logger }) => {
+    return {
+      register: async (server) => {
+        logger.debug('Adding health check route');
+        
+        server.router.addRoute({
+          path: '/health',
+          GET: {
+            handler: async ({ ctx }) => {
+              return {
+                status: 'ok',
+                timestamp: Date.now(),
+                uptime: process.uptime(),
+              };
+            },
+          },
+        });
+        
+        logger.info('Health check route added');
+      },
+    };
+  },
+});
+```
+
+### Adding Multiple Routes
+
+```typescript
+const metricsPlugin = createPlugin<{ path?: string }, {}, {}>({
+  name: 'metrics',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    path: '/metrics',
+  },
+  
+  setup: ({ config, logger }) => {
+    let collector: MetricsCollector;
+    
+    return {
+      register: async (server) => {
+        // Metrics endpoint
+        server.router.addRoute({
+          path: config.path,
+          GET: {
+            handler: async ({ ctx }) => {
+              const metrics = await collector.export();
+              ctx.response.header('Content-Type', 'text/plain');
+              return metrics;
+            },
+          },
+        });
+        
+        // Debug endpoint
+        server.router.addRoute({
+          path: `${config.path}/debug`,
+          GET: {
+            handler: async ({ ctx }) => {
+              return collector.getDebugInfo();
+            },
+          },
+        });
+      },
+      
+      initialize: async () => {
+        collector = new MetricsCollector();
+        collector.start();
+      },
+      
+      terminate: async () => {
+        collector.stop();
+      },
+    };
+  },
+});
+```
+
+### Adding Route Directories
+
+```typescript
+const apiPlugin = createPlugin<{ prefix?: string }, {}, {}>({
+  name: 'api',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    prefix: '/api/v1',
+  },
+  
+  setup: ({ config, logger }) => {
+    return {
+      initialize: async (server) => {
+        logger.info('Loading API routes', { prefix: config.prefix });
+        
+        await server.router.addRouteDirectory('./api-routes', {
+          prefix: config.prefix,
+        });
+        
+        logger.info('API routes loaded');
+      },
+    };
+  },
+});
+```
+
+---
+
+## 🚀 Advanced Patterns
+
+### Pattern: Plugin with Health Checks
+
+```typescript
+interface HealthCheckable {
+  name: string;
+  check(): Promise<{ healthy: boolean; details?: any }>;
+}
+
+const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Pool }>({
+  name: 'database',
+  version: '1.0.0',
+  
+  setup: ({ config, logger }) => {
+    let pool: Pool;
+    
+    const healthCheck: HealthCheckable = {
+      name: 'database',
+      check: async () => {
+        try {
+          const client = await pool.connect();
+          await client.query('SELECT 1');
+          client.release();
+          
+          return {
+            healthy: true,
+            details: { poolSize: pool.totalCount },
+          };
+        } catch (error) {
+          return {
+            healthy: false,
+            details: { error: error.message },
+          };
+        }
+      },
+    };
+    
+    return {
+      register: async (server) => {
+        // Register middleware
+        server.use(
+          createMiddleware<{}, { db: Pool }>({
+            name: 'database',
+            handler: async ({ ctx, next }) => {
+              ctx.services.db = pool;
+              await next();
+            },
+          })
+        );
+        
+        // Add health check route
+        server.router.addRoute({
+          path: '/health/database',
+          GET: {
+            handler: async ({ ctx }) => {
+              const result = await healthCheck.check();
+              
+              if (!result.healthy) {
+                ctx.response.status(503);
+              }
+              
+              return result;
+            },
+          },
+        });
+      },
+      
+      initialize: async () => {
+        pool = new Pool({
+          connectionString: config.connectionString,
+        });
+      },
+      
+      terminate: async () => {
+        await pool.end();
+      },
+    };
+  },
+});
+```
+
+### Pattern: Plugin with Graceful Shutdown
+
+```typescript
+const queuePlugin = createPlugin<QueueConfig, {}, { queue: QueueService }>({
+  name: 'queue',
+  version: '1.0.0',
+  
+  setup: ({ config, logger }) => {
+    let queueService: QueueService;
+    let activeJobs = 0;
+    
+    return {
+      register: async (server) => {
+        server.use(
+          createMiddleware<{}, { queue: QueueService }>({
+            name: 'queue',
+            handler: async ({ ctx, next }) => {
+              ctx.services.queue = queueService;
+              await next();
+            },
+          })
+        );
+      },
+      
+      initialize: async () => {
+        queueService = new QueueService(config);
+        
+        queueService.on('job:start', () => {
+          activeJobs++;
+        });
+        
+        queueService.on('job:complete', () => {
+          activeJobs--;
+        });
+        
+        await queueService.start();
+      },
+      
+      onServerStop: async () => {
+        logger.info('Stopping queue (graceful)', { activeJobs });
+        
+        // Stop accepting new jobs
+        await queueService.pause();
+        
+        // Wait for active jobs to complete (with timeout)
+        const timeout = 30000; // 30 seconds
+        const start = Date.now();
+        
+        while (activeJobs > 0 && Date.now() - start < timeout) {
+          logger.debug('Waiting for jobs to complete', { activeJobs });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        if (activeJobs > 0) {
+          logger.warn('Forcing shutdown with active jobs', { activeJobs });
+        }
+        
+        logger.info('Queue stopped');
+      },
+      
+      terminate: async () => {
+        await queueService.stop();
+      },
+    };
+  },
+});
+```
+
+### Pattern: Plugin with Event Bus Integration
+
+```typescript
+const analyticsPlugin = createPlugin<AnalyticsConfig, {}, {}>({
+  name: 'analytics',
+  version: '1.0.0',
+  
+  setup: ({ config, logger }) => {
+    let analyticsClient: AnalyticsClient;
+    
+    return {
+      initialize: async () => {
+        analyticsClient = new AnalyticsClient(config.apiKey);
+      },
+      
+      onServerStart: async (server) => {
+        logger.info('Subscribing to analytics events');
+        
+        // Subscribe to event bus
+        server.eventBus.subscribe('user:*', (event) => {
+          analyticsClient.track({
+            event: event.type,
+            userId: event.data.userId,
+            timestamp: event.timestamp,
+            metadata: event.data,
+          });
+        });
+        
+        server.eventBus.subscribe('order:*', (event) => {
+          analyticsClient.track({
+            event: event.type,
+            orderId: event.data.orderId,
+            timestamp: event.timestamp,
+            revenue: event.data.total,
+          });
+        });
+      },
+      
+      terminate: async () => {
+        await analyticsClient.flush();
+        await analyticsClient.close();
+      },
+    };
+  },
+});
+```
+
+### Pattern: Conditional Plugin Features
+
+```typescript
+const featureFlagsPlugin = createPlugin<
+  { features: Record<string, boolean> },
+  { features: Record<string, boolean> },
+  {}
+>({
+  name: 'feature-flags',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    features: {},
+  },
+  
+  setup: ({ config, logger }) => {
+    return {
+      register: async (server) => {
+        // Add middleware to expose features
+        server.use(
+          createMiddleware<{ features: Record<string, boolean> }, {}>({
+            name: 'feature-flags',
+            handler: async ({ ctx, next }) => {
+              ctx.state.features = { ...config.features };
+              await next();
+            },
+          })
+        );
+        
+        // Conditionally add debug routes
+        if (config.features.debugRoutes) {
+          logger.info('Adding debug routes (feature flag enabled)');
+          
+          server.router.addRoute({
+            path: '/debug/features',
+            GET: {
+              handler: async ({ ctx }) => {
+                return { features: config.features };
+              },
+            },
+          });
+        }
+      },
+    };
+  },
+});
+```
+
+---
+
+## 🧪 Testing Plugins
+
+Test plugins by calling their lifecycle hooks directly:
+
+```typescript
+// plugins/redis.test.ts
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createRedisPlugin } from './redis';
+
+describe('Redis Plugin', () => {
+  let plugin: ReturnType<typeof createRedisPlugin>;
+  
+  beforeEach(() => {
+    plugin = createRedisPlugin({
+      url: 'redis://localhost:6379',
+    });
+  });
+  
+  afterEach(async () => {
+    // Clean up
+    if (plugin.terminate) {
+      await plugin.terminate({} as any);
+    }
+  });
+  
+  it('should register middleware', async () => {
+    const server = {
+      use: vi.fn(),
+      router: { addRoute: vi.fn() },
+    };
+    
+    await plugin.register(server as any);
+    
+    expect(server.use).toHaveBeenCalledTimes(1);
+  });
+  
+  it('should initialize Redis connection', async () => {
+    const server = { eventBus: {} };
+    
+    await plugin.register(server as any);
+    await plugin.initialize?.(server as any);
+    
+    // Verify connection (would need Redis running)
+    // This is a simplified example
+  });
+  
+  it('should handle initialization errors', async () => {
+    const badPlugin = createRedisPlugin({
+      url: 'redis://invalid:9999',
+    });
+    
+    const server = { eventBus: {} };
+    
+    await badPlugin.register(server as any);
+    
+    await expect(
+      badPlugin.initialize?.(server as any)
+    ).rejects.toThrow();
+  });
+  
+  it('should clean up on terminate', async () => {
+    const server = { eventBus: {} };
+    
+    await plugin.register(server as any);
+    await plugin.initialize?.(server as any);
+    
+    // Should not throw
+    await expect(plugin.terminate?.(server as any)).resolves.toBeUndefined();
+  });
+});
+```
+
+### Testing Plugin Middleware
+
+```typescript
+describe('Redis Plugin Middleware', () => {
+  it('should inject redis service into context', async () => {
+    const plugin = createRedisPlugin({ url: 'redis://localhost:6379' });
+    const server = { use: vi.fn(), eventBus: {} };
+    
+    await plugin.register(server as any);
+    await plugin.initialize?.(server as any);
+    
+    // Extract middleware
+    const middleware = server.use.mock.calls[0][0];
+    
+    // Create mock context
+    const ctx = createTestContext();
+    const next = vi.fn();
+    
+    // Execute middleware
+    await middleware.execute({
+      ctx,
+      next,
+      logger: createMockLogger(),
+      eventBus: createMockEventBus(),
+    });
+    
+    // Verify redis was injected
+    expect(ctx.services.redis).toBeDefined();
+    expect(next).toHaveBeenCalled();
+  });
+});
+```
+
+---
+
+## ✅ Best Practices
+
+### 1. Always Clean Up Resources
+
+**✅ Good:**
+```typescript
+const plugin = createPlugin<{}, {}, {}>({
+  name: 'clean',
+  version: '1.0.0',
+  
+  setup: () => {
+    let connection: Connection;
+    
+    return {
+      initialize: async () => {
+        connection = await connect();
+      },
+      
+      terminate: async () => {
+        await connection.close(); // ← Always clean up!
+      },
+    };
+  },
+});
+```
+
+**❌ Bad:**
+```typescript
+const plugin = createPlugin<{}, {}, {}>({
+  name: 'leaky',
+  version: '1.0.0',
+  
+  setup: () => {
+    let connection: Connection;
+    
+    return {
+      initialize: async () => {
+        connection = await connect();
+      },
+      // Missing terminate! Resource leak!
+    };
+  },
+});
+```
+
+### 2. Use Closure Pattern for Singletons
+
+**✅ Good:**
+```typescript
+setup: ({ config }) => {
+  let db: Database; // ← Singleton in closure
+  
+  return {
+    register: async (server) => {
+      server.use(
+        createMiddleware<{}, { db: Database }>({
+          handler: async ({ ctx, next }) => {
+            ctx.services.db = db; // ← Reference
+            await next();
+          },
+        })
+      );
+    },
+    
+    initialize: async () => {
+      db = await Database.connect(config.url);
+    },
+  };
+}
+```
+
+**❌ Bad:**
+```typescript
+setup: ({ config }) => {
+  return {
+    register: async (server) => {
+      server.use(
+        createMiddleware({
+          handler: async ({ ctx, next }) => {
+            // Creating new instance on EVERY request!
+            ctx.services.db = await Database.connect(config.url);
+            await next();
+          },
+        })
+      );
+    },
+  };
+}
+```
+
+### 3. Register Middleware in `register` Hook
+
+**✅ Good:**
+```typescript
+setup: () => {
+  let service: Service;
+  
+  return {
+    register: async (server) => {
+      server.use(
+        createMiddleware({
+          handler: async ({ ctx, next }) => {
+            ctx.services.myService = service;
+            await next();
+          },
+        })
+      );
+    },
+    
+    initialize: async () => {
+      service = new Service();
+    },
+  };
+}
+```
+
+**❌ Bad:**
+```typescript
+setup: () => {
+  let service: Service;
+  
+  // Wrong! Don't register middleware in setup body
+  server.use(
+    createMiddleware({
+      handler: async ({ ctx, next }) => {
+        ctx.services.myService = service;
+        await next();
+      },
+    })
+  );
+  
+  return {
+    initialize: async () => {
+      service = new Service();
+    },
+  };
+}
+```
+
+### 4. Provide Meaningful Defaults
+
+**✅ Good:**
+```typescript
+const plugin = createPlugin<Config, {}, {}>({
+  name: 'cache',
+  version: '1.0.0',
+  
+  defaultConfig: {
+    maxSize: 1000,
+    ttl: 3600,
+    url: 'redis://localhost:6379',
+  },
+  
+  setup: ({ config }) => {
+    // All config values are always defined
+  },
+});
+```
+
+**❌ Bad:**
+```typescript
+const plugin = createPlugin<Config, {}, {}>({
+  name: 'cache',
+  version: '1.0.0',
+  
+  // No defaults!
+  
+  setup: ({ config }) => {
+    // Have to check every value
+    const maxSize = config.maxSize ?? 1000;
+    const ttl = config.ttl ?? 3600;
+    // ...
+  },
+});
+```
+
+### 5. Capture Type Information
+
+**✅ Good:**
+```typescript
+const app = Blaize.createServer()
+  .register(databasePlugin()) // ← Capture return
+  .register(cachePlugin());    // ← Capture return
+
+type AppContext = InferContext<typeof app>;
+// services = { db: Database; cache: Cache } ✅
+```
+
+**❌ Bad:**
+```typescript
+const server = Blaize.createServer();
+server.register(databasePlugin()); // ← Types lost!
+server.register(cachePlugin());    // ← Types lost!
+
+type AppContext = InferContext<typeof server>;
+// services = {} ❌
+```
+
+### 6. Use Semantic Versioning
+
+**✅ Good:**
+```typescript
+const plugin = createPlugin({
+  name: 'my-plugin',
+  version: '2.1.0', // ← Semantic version
+  // ...
+});
+```
+
+**❌ Bad:**
+```typescript
+const plugin = createPlugin({
+  name: 'my-plugin',
+  version: 'latest', // ❌ Not semantic!
+  // ...
+});
+```
+
+### 7. Log Important Lifecycle Events
+
+**✅ Good:**
+```typescript
+setup: ({ config, logger }) => {
+  return {
+    initialize: async () => {
+      logger.info('Connecting to database', { host: config.host });
+      // connect...
+      logger.info('Database connected');
+    },
+    
+    terminate: async () => {
+      logger.info('Closing database connection');
+      // close...
+      logger.info('Database closed');
+    },
+  };
+}
+```
+
+### 8. Handle Errors Gracefully
+
+**✅ Good:**
+```typescript
+setup: ({ logger }) => {
+  return {
+    initialize: async () => {
+      try {
+        await riskyOperation();
+      } catch (error) {
+        logger.error('Initialization failed', { error });
+        throw error; // Re-throw for framework to handle
+      }
+    },
+  };
+}
+```
+
+---
+
+## 🔗 Related Documentation
+
+- **[Middleware Guide](./middleware.md)** — For per-request logic
+- **[Type System Guide](../architecture/type-system.md)** — How types flow through plugins
+- **[Context Guide](../architecture/context.md)** — Understanding `ctx.services`
+- **[Database Integration](./database-integration.md)** — Using database plugins
+- **[Testing Guide](./testing.md)** — Testing plugins and middleware
+
+---
+
+**Questions or feedback?** Open an issue on GitHub or join our Discord community.

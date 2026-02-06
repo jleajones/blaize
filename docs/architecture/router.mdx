@@ -4,7 +4,7 @@
 
 ---
 
-## Why File-Based Routing?
+## Why file-based routing?
 
 Most frameworks require you to manually register routes:
 
@@ -33,6 +33,7 @@ src/routes/                         URL
 ```
 
 **Benefits:**
+
 - **Discoverable:** New developers can understand your API by browsing files
 - **Predictable:** File location guarantees URL structure
 - **Maintainable:** Refactoring files automatically refactors URLs
@@ -40,46 +41,44 @@ src/routes/                         URL
 
 ---
 
-## How Routes Connect to Types
+## How routes connect to types
 
 Before diving into route definitions, it's important to understand where the `route` object comes from. This is the bridge between your server's types and your route handlers.
 
 In your main app file, you create a **route factory** that inherits types from your server:
 
 ```typescript
-// src/app.ts
+// src/app-router.ts
 import { Blaize, type InferContext } from 'blaizejs';
 
-// 1. Create server with middleware and plugins
-const app = Blaize.createServer({
-  port: 3000,
+// 1. Create type-only server (for type inference)
+const typeServer = Blaize.createServer({
+  host: 'localhost',
+  port: 7485,
   routesDir: './src/routes',
-  middleware: [authMiddleware],
-  plugins: [databasePlugin()],
+  // Include middleware and plugins for type inference
 });
 
 // 2. Extract the composed context types
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof typeServer>;
 
 // 3. Create a route factory that carries these types
 export const route = Blaize.Router.createRouteFactory<
-  AppContext['state'],     // { user: User } from authMiddleware
-  AppContext['services']   // { db: Database } from databasePlugin
+  AppContext['state'], // { user: User } from authMiddleware
+  AppContext['services'] // { db: Database } from databasePlugin
 >();
-
-await app.listen();
 ```
 
 Now every route file imports this `route` factory:
 
 ```typescript
 // src/routes/users.ts
-import { route } from '../app';  // ← Types flow from here
+import { route } from '../app-router'; // ← Types flow from here
 
 export const listUsers = route.get({
-  handler: async (ctx) => {
-    ctx.state.user;      // ✅ Typed as User
-    ctx.services.db;     // ✅ Typed as Database
+  handler: async ({ ctx }) => {
+    ctx.state.user; // ✅ Typed as User
+    ctx.services.db; // ✅ Typed as Database
   },
 });
 ```
@@ -88,38 +87,43 @@ For a deeper explanation of how types flow through the system, see **[Type Syste
 
 ---
 
-## Path Mapping Rules
+## Path mapping rules
 
-### Basic Mapping
+### Basic mapping
 
-| File Path | URL Path |
-|-----------|----------|
-| `routes/index.ts` | `/` |
-| `routes/users.ts` | `/users` |
-| `routes/users/index.ts` | `/users` |
-| `routes/health.ts` | `/health` |
+| File Path                 | URL Path         |
+| ------------------------- | ---------------- |
+| `routes/index.ts`         | `/`              |
+| `routes/users.ts`         | `/users`         |
+| `routes/users/index.ts`   | `/users`         |
+| `routes/health.ts`        | `/health`        |
 | `routes/api/v1/status.ts` | `/api/v1/status` |
 
-### Dynamic Segments
+### Dynamic segments
 
-Use `[param]` brackets for dynamic URL segments:
+Use `[param]` brackets for dynamic URL segments in **both files and folders**:
 
-| File Path | URL Path | Parameters |
-|-----------|----------|------------|
-| `routes/users/[userId].ts` | `/users/:userId` | `userId` |
-| `routes/users/[userId]/index.ts` | `/users/:userId` | `userId` |
-| `routes/users/[userId]/posts.ts` | `/users/:userId/posts` | `userId` |
+| File Path                                       | URL Path                             | Parameters            |
+| ----------------------------------------------- | ------------------------------------ | --------------------- |
+| `routes/users/[userId].ts`                      | `/users/:userId`                     | `userId`              |
+| `routes/users/[userId]/index.ts`                | `/users/:userId`                     | `userId`              |
+| `routes/users/[userId]/posts.ts`                | `/users/:userId/posts`               | `userId`              |
 | `routes/posts/[postId]/comments/[commentId].ts` | `/posts/:postId/comments/:commentId` | `postId`, `commentId` |
+
+**Both patterns work:**
+
+- **File pattern:** `tasks/[taskId].ts` — Use when you have a single endpoint at that parameter
+- **Folder pattern:** `users/[userId]/tasks.ts` — Use when multiple routes share the same parameter
 
 The parameter name inside brackets becomes the key in `params`:
 
 ```typescript
-// routes/users/[userId].ts
+// routes/users/[userId].ts (file pattern)
 export const getUser = route.get({
   schema: {
     params: z.object({ userId: z.string().uuid() }),
   },
-  handler: async (ctx, params) => {
+  handler: async ({ params }) => {
     // params.userId is the value from the URL
     // GET /users/abc-123 → params.userId = "abc-123"
     return await db.users.findById(params.userId);
@@ -127,7 +131,20 @@ export const getUser = route.get({
 });
 ```
 
-### Index Files
+```typescript
+// routes/users/[userId]/tasks.ts (folder pattern)
+export const getUserTasks = route.get({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+  },
+  handler: async ({ params }) => {
+    // GET /users/abc-123/tasks → params.userId = "abc-123"
+    return await db.tasks.findAll({ userId: params.userId });
+  },
+});
+```
+
+### Index files
 
 `index.ts` files represent the directory path:
 
@@ -138,43 +155,44 @@ routes/users/[userId]/index.ts  →  /users/:userId
 
 ---
 
-## Route Factory Methods
+## Route factory methods
 
 The route factory (explained above) provides methods for all HTTP verbs:
 
-| Method | HTTP Verb | Request Body | Files Support | Common Use |
-|--------|-----------|--------------|---------------|------------|
-| `route.get()` | GET | No | No | Fetch resources |
-| `route.post()` | POST | **Yes** | **Yes** | Create resources, **file uploads** |
-| `route.put()` | PUT | **Yes** | **Yes** | Replace resources, **update files** |
-| `route.patch()` | PATCH | **Yes** | **Yes** | Partial updates, **file uploads** |
-| `route.delete()` | DELETE | No | No | Remove resources |
-| `route.head()` | HEAD | No | No | Headers only |
-| `route.options()` | OPTIONS | No | No | CORS preflight |
-| `route.sse()` | GET | No | No | Server-Sent Events |
+| Method            | HTTP Verb | Request Body | Files Support | Handler Params                                  | Common Use                          |
+| ----------------- | --------- | ------------ | ------------- | ----------------------------------------------- | ----------------------------------- |
+| `route.get()`     | GET       | No           | No            | `{ ctx, params, logger, eventBus }`             | Fetch resources                     |
+| `route.post()`    | POST      | **Yes**      | **Yes**       | `{ ctx, params, logger, eventBus }`             | Create resources, **file uploads**  |
+| `route.put()`     | PUT       | **Yes**      | **Yes**       | `{ ctx, params, logger, eventBus }`             | Replace resources, **update files** |
+| `route.patch()`   | PATCH     | **Yes**      | **Yes**       | `{ ctx, params, logger, eventBus }`             | Partial updates, **file uploads**   |
+| `route.delete()`  | DELETE    | No           | No            | `{ ctx, params, logger, eventBus }`             | Remove resources                    |
+| `route.head()`    | HEAD      | No           | No            | `{ ctx, params, logger, eventBus }`             | Headers only                        |
+| `route.options()` | OPTIONS   | No           | No            | `{ ctx, params, logger, eventBus }`             | CORS preflight                      |
+| `route.sse()`     | GET       | No           | No            | **`{ stream, ctx, params, logger, eventBus }`** | **Server-Sent Events**              |
 
-**File upload methods:**
-- POST, PUT, PATCH support both `body` and `files` schemas
-- GET, DELETE, HEAD, OPTIONS do not accept request bodies
-- Client automatically detects files and switches to multipart encoding
+**Key differences:**
+
+- **SSE routes** include `stream` as first parameter for sending events
+- **File upload methods** (POST, PUT, PATCH) support both `body` and `files` schemas
+- **All routes** receive the same context object with different capabilities
 
 ---
 
-## Route Definition
+## Route definition
 
 Each route is defined with a schema and handler:
 
 ```typescript
 // src/routes/users/[userId].ts
-import { route } from '../../app';
+import { route } from '../../app-router';
 import { z } from 'zod';
 
 export const getUser = route.get({
   // Schema validates params, query, body, files, and response
   schema: {
     params: z.object({ userId: z.string().uuid() }),
-    query: z.object({ 
-      include: z.array(z.string()).optional() 
+    query: z.object({
+      include: z.array(z.string()).optional(),
     }),
     response: z.object({
       id: z.string(),
@@ -182,48 +200,75 @@ export const getUser = route.get({
       email: z.string().email(),
     }),
   },
-  
+
   // Optional route-level middleware
   middleware: [rateLimitMiddleware],
-  
-  // Handler receives typed context and params
-  handler: async (ctx, params, logger) => {
+
+  // Handler receives single object with named properties
+  handler: async ({ ctx, params, logger }) => {
     logger.info('Fetching user', { userId: params.userId });
-    
+
     const user = await ctx.services.db.users.findById(params.userId);
-    
+
     if (!user) {
       throw new NotFoundError('User not found');
     }
-    
-    return user;  // Validated against response schema
+
+    return user; // Validated against response schema
   },
 });
 ```
 
-### Handler Signature
+### Handler signature
+
+**Regular routes (GET, POST, PUT, PATCH, DELETE):**
 
 ```typescript
-handler: async (ctx, params, logger) => {
-  // ctx     - Context with request, response, state, services
-  // params  - Validated URL parameters (typed from schema.params)
-  // logger  - BlaizeLogger scoped to this route
-  
-  return response;  // Validated against schema.response
-}
+handler: async ({ ctx, params, logger, eventBus }) => {
+  // ctx       - Context with request, response, state, services
+  // params    - Validated URL parameters (typed from schema.params)
+  // logger    - BlaizeLogger scoped to this route
+  // eventBus  - TypedEventBus for publishing events
+
+  return response; // Validated against schema.response
+};
 ```
 
-### Schema Properties
+**SSE routes:**
 
-| Property | Methods | Purpose | Access |
-|----------|---------|---------|--------|
-| `params` | All | URL path parameters (`:userId`) | `params` argument |
-| `query` | All | Query string (`?limit=10`) | `ctx.request.query` |
-| `body` | POST, PUT, PATCH | JSON/form body | `ctx.request.body` |
-| `files` | POST, PUT, PATCH | **Uploaded files** | **`ctx.request.files`** |
-| `response` | All | Response validation | Return value |
+```typescript
+handler: async ({ stream, ctx, params, logger, eventBus }) => {
+  // stream    - TypedSSEStream for sending events to client
+  // ctx       - Context with request, response, state, services
+  // params    - Validated URL parameters (typed from schema.params)
+  // logger    - BlaizeLogger scoped to this route
+  // eventBus  - TypedEventBus for subscribing to events
+
+  // SSE handlers don't return - they send events via stream
+  stream.send('message', { text: 'Hello!' });
+};
+```
+
+**Key points:**
+
+- Handler receives a **single object** with named properties
+- **Destructure only what you need:** `({ ctx })` or `({ ctx, params, logger })`
+- **SSE handlers include `stream`** as the first destructured property
+- All parameters are available, use what's relevant to your route
+- Parameters are fully typed based on your schemas
+
+### Schema properties
+
+| Property   | Methods          | Purpose                         | Access                  |
+| ---------- | ---------------- | ------------------------------- | ----------------------- |
+| `params`   | All              | URL path parameters (`:userId`) | `params` argument       |
+| `query`    | All              | Query string (`?limit=10`)      | `ctx.request.query`     |
+| `body`     | POST, PUT, PATCH | JSON/form body                  | `ctx.request.body`      |
+| `files`    | POST, PUT, PATCH | **Uploaded files**              | **`ctx.request.files`** |
+| `response` | All              | Response validation             | Return value            |
 
 **Schema validation order:**
+
 1. `params` - Extracted from URL path
 2. `query` - Parsed from query string
 3. **Multipart detection** - If `Content-Type: multipart/form-data`
@@ -233,7 +278,7 @@ handler: async (ctx, params, logger) => {
 
 ---
 
-## File Upload Routes
+## File upload routes
 
 Routes can accept file uploads alongside regular body data using the `files` schema property:
 
@@ -257,21 +302,21 @@ export const updateAvatar = route.patch({
   },
   handler: async ({ ctx, params }) => {
     const { avatar } = ctx.request.files;
-    
+
     // avatar is typed as UploadedFile
-    console.log(avatar.originalname);  // Typed!
-    console.log(avatar.size);          // Typed!
-    console.log(avatar.mimetype);      // Typed!
-    
+    console.log(avatar.originalname); // Typed!
+    console.log(avatar.size); // Typed!
+    console.log(avatar.mimetype); // Typed!
+
     // Upload to storage...
     const url = await ctx.services.storage.upload(avatar);
-    
+
     return { avatarUrl: url };
   },
 });
 ```
 
-### Mixed Body + Files
+### Mixed body + files
 
 Combine form data with file uploads in a single request:
 
@@ -291,13 +336,13 @@ export const createPost = route.post({
   handler: async ({ ctx }) => {
     const { title, content, tags } = ctx.request.body;
     const { coverImage, attachments } = ctx.request.files;
-    
+
     // Process both body data and files...
   },
 });
 ```
 
-### File Validation
+### File validation
 
 The `file()` helper provides built-in validation:
 
@@ -318,18 +363,18 @@ files: z.object({
 }),
 ```
 
-### UploadedFile Interface
+### UploadedFile interface
 
 Files received in handlers have this structure:
 
 ```typescript
 interface UploadedFile {
-  fieldname: string;      // Form field name
-  originalname: string;   // Original filename
-  encoding: string;       // File encoding
-  mimetype: string;       // MIME type
-  size: number;           // File size in bytes
-  buffer: Buffer;         // File contents
+  fieldname: string; // Form field name
+  originalname: string; // Original filename
+  encoding: string; // File encoding
+  mimetype: string; // MIME type
+  size: number; // File size in bytes
+  buffer: Buffer; // File contents
 }
 ```
 
@@ -337,17 +382,96 @@ See **[File Uploads Guide](/docs/guides/file-uploads)** for complete examples in
 
 ---
 
-## Request Body Handling
+## SSE (Server-Sent Events) routes
+
+SSE routes enable real-time streaming from server to client:
+
+```typescript
+// routes/notifications/stream.ts
+import { route } from '../../app-router';
+import { z } from 'zod';
+
+export const streamNotifications = route.sse({
+  schema: {
+    query: z.object({
+      userId: z.string().uuid(),
+    }),
+    events: {
+      notification: z.object({
+        id: z.string(),
+        message: z.string(),
+        timestamp: z.number(),
+      }),
+      heartbeat: z.object({
+        timestamp: z.number(),
+      }),
+    },
+  },
+  handler: async ({ stream, ctx, params, logger, eventBus }) => {
+    const { userId } = ctx.request.query;
+
+    logger.info('SSE connection established', { userId });
+
+    // Send heartbeat every 30 seconds
+    const heartbeat = setInterval(() => {
+      stream.send('heartbeat', { timestamp: Date.now() });
+    }, 30000);
+
+    // Subscribe to user's notifications via EventBus
+    const unsubscribe = eventBus.subscribe(`notification:${userId}`, event => {
+      stream.send('notification', event.data);
+    });
+
+    // Cleanup on disconnect
+    stream.onClose(() => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      logger.info('SSE connection closed', { userId });
+    });
+  },
+});
+```
+
+**SSE-specific features:**
+
+- **`stream` parameter** - First in handler destructuring
+- **`schema.events`** - Defines typed events (replaces `response`)
+- **`stream.send(event, data)`** - Send typed events to client
+- **`stream.onClose(callback)`** - Handle client disconnect
+- **No return value** - Handler sends events via stream
+
+**Client usage:**
+
+```typescript
+const eventSource = new EventSource('/notifications/stream?userId=123');
+
+eventSource.addEventListener('notification', event => {
+  const data = JSON.parse(event.data);
+  console.log('Notification:', data.message);
+});
+
+eventSource.addEventListener('heartbeat', event => {
+  const data = JSON.parse(event.data);
+  console.log('Heartbeat:', data.timestamp);
+});
+```
+
+See **[SSE Guide](/docs/guides/sse)** for complete patterns including error handling, reconnection, and integration with job queues.
+
+---
+
+## Request body handling
 
 BlaizeJS automatically detects and handles different request types:
 
-| Content-Type | Detection | Parsing | Access |
-|--------------|-----------|---------|--------|
-| `application/json` | `Content-Type` header | JSON parser | `ctx.request.body` |
-| `application/x-www-form-urlencoded` | `Content-Type` header | Form parser | `ctx.request.body` |
-| `multipart/form-data` | `Content-Type` header + boundary | Multipart parser | `ctx.request.files` + `ctx.request.body` |
+| Content-Type                        | Detection                        | Parsing          | Access                                   |
+| ----------------------------------- | -------------------------------- | ---------------- | ---------------------------------------- |
+| `application/json`                  | `Content-Type` header            | JSON parser      | `ctx.request.body`                       |
+| `application/x-www-form-urlencoded` | `Content-Type` header            | Form parser      | `ctx.request.body`                       |
+| `multipart/form-data`               | `Content-Type` header + boundary | Multipart parser | `ctx.request.files` + `ctx.request.body` |
 
 **Multipart handling:**
+
 - Files are extracted to `ctx.request.files`
 - Form fields are available in `ctx.request.body`
 - Both are validated against their respective schemas
@@ -355,7 +479,7 @@ BlaizeJS automatically detects and handles different request types:
 
 ---
 
-## Named Exports → Client Methods
+## Named exports → Client methods
 
 **This is crucial:** The export name becomes the client method name.
 
@@ -373,7 +497,7 @@ export const deleteUser = route.delete({ ... }); // client.$delete.deleteUser()
 export const updateAvatar = route.patch({ ... }); // client.$patch.updateAvatar()
 ```
 
-### Routes Registry
+### Routes registry
 
 Export your routes in a registry file for the client:
 
@@ -392,17 +516,17 @@ export const routes = {
   deleteUser,
   updateAvatar,
   streamNotifications,
-} as const;  // `as const` is important!
+} as const; // `as const` is important!
 ```
 
-### Client Usage
+### Client usage
 
 ```typescript
 // client.ts
 import bc from '@blaizejs/client';
 import { routes } from './server/app-type';
 
-const client = bc.create('https://api.example.com', routes);
+const client = bc.create('https://localhost:7485', routes);
 
 // Methods use export names, not file paths!
 const users = await client.$get.listUsers({ query: { limit: 10 } });
@@ -413,13 +537,13 @@ const newUser = await client.$post.createUser({ body: { name: 'Alice' } });
 const file = document.querySelector('input[type="file"]').files[0];
 await client.$patch.updateAvatar({
   params: { userId: '123' },
-  files: { avatar: file }
+  files: { avatar: file },
 });
 ```
 
 ---
 
-## Route Matching Priority
+## Route matching priority
 
 When multiple routes could match a URL, BlaizeJS uses this priority:
 
@@ -443,7 +567,7 @@ GET /users/123
 
 ---
 
-## Route Discovery
+## Route discovery
 
 On server start, BlaizeJS:
 
@@ -453,12 +577,12 @@ On server start, BlaizeJS:
 4. **Registers** routes for fast matching
 
 ```typescript
-const app = Blaize.createServer({
-  routesDir: './src/routes',  // Where to look for routes
+const server = Blaize.createServer({
+  routesDir: './src/routes', // Where to look for routes
 });
 ```
 
-### What Gets Discovered
+### What gets discovered
 
 The router looks for exports that look like routes (objects with HTTP method properties):
 
@@ -466,7 +590,7 @@ The router looks for exports that look like routes (objects with HTTP method pro
 // ✅ Discovered: Named export with route.get()
 export const getUser = route.get({ handler: async () => {} });
 
-// ✅ Discovered: Named export with route.post()  
+// ✅ Discovered: Named export with route.post()
 export const createUser = route.post({ handler: async () => {} });
 
 // ❌ Not a route: No HTTP method
@@ -478,13 +602,13 @@ export function validateUser() { ... }
 
 ---
 
-## Multiple Routes Per File
+## Multiple routes per file
 
 A single file can export multiple routes:
 
 ```typescript
 // src/routes/users/index.ts
-import { route } from '../../app';
+import { route } from '../../app-router';
 
 // GET /users
 export const listUsers = route.get({
@@ -492,7 +616,7 @@ export const listUsers = route.get({
     query: z.object({ limit: z.coerce.number().default(20) }),
     response: z.array(userSchema),
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     return await ctx.services.db.users.findMany({
       take: ctx.request.query.limit,
     });
@@ -505,7 +629,7 @@ export const createUser = route.post({
     body: createUserSchema,
     response: userSchema,
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     return await ctx.services.db.users.create(ctx.request.body);
   },
 });
@@ -515,14 +639,14 @@ Both routes share the same URL path (`/users`) but handle different HTTP methods
 
 ---
 
-## Route-Level Middleware
+## Route-level middleware
 
 Add middleware to specific routes:
 
 ```typescript
 export const getSecrets = route.get({
   middleware: [adminOnlyMiddleware, auditLogMiddleware],
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     // Only runs if middleware passes
     return await ctx.services.vault.getSecrets();
   },
@@ -533,7 +657,7 @@ Middleware executes in array order, before the handler.
 
 ---
 
-## CRUD Pattern
+## CRUD pattern
 
 A typical RESTful resource:
 
@@ -552,7 +676,7 @@ export const listPosts = route.get({
     query: paginationSchema,
     response: z.array(postSchema),
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     return await ctx.services.db.posts.findMany();
   },
 });
@@ -562,7 +686,7 @@ export const createPost = route.post({
     body: createPostSchema,
     response: postSchema,
   },
-  handler: async (ctx) => {
+  handler: async ({ ctx }) => {
     return await ctx.services.db.posts.create({
       ...ctx.request.body,
       authorId: ctx.state.user.id,
@@ -578,8 +702,8 @@ export const getPost = route.get({
     params: z.object({ postId: z.string().uuid() }),
     response: postSchema,
   },
-  handler: async (ctx, params) => {
-    const post = await ctx.services.db.posts.findById(params.postId);
+  handler: async ({ params }) => {
+    const post = await db.posts.findById(params.postId);
     if (!post) throw new NotFoundError('Post not found');
     return post;
   },
@@ -591,7 +715,7 @@ export const updatePost = route.put({
     body: updatePostSchema,
     response: postSchema,
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params }) => {
     return await ctx.services.db.posts.update(params.postId, ctx.request.body);
   },
 });
@@ -600,7 +724,7 @@ export const deletePost = route.delete({
   schema: {
     params: z.object({ postId: z.string().uuid() }),
   },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params }) => {
     await ctx.services.db.posts.delete(params.postId);
     ctx.response.status(204);
   },
@@ -609,9 +733,9 @@ export const deletePost = route.delete({
 
 ---
 
-## Common Patterns
+## Common patterns
 
-### Pattern: File Upload with Metadata
+### Pattern: File upload with metadata
 
 Handle file uploads with structured metadata:
 
@@ -638,15 +762,15 @@ export const uploadDocument = route.post({
   handler: async ({ ctx }) => {
     const { title, category, metadata } = ctx.request.body;
     const { document, attachments } = ctx.request.files;
-    
+
     // Upload main document
     const documentUrl = await ctx.services.storage.upload(document);
-    
+
     // Upload attachments if present
     const attachmentUrls = attachments
       ? await Promise.all(attachments.map(a => ctx.services.storage.upload(a)))
       : [];
-    
+
     return {
       documentId: generateId(),
       documentUrl,
@@ -656,7 +780,7 @@ export const uploadDocument = route.post({
 });
 ```
 
-### Pattern: Multi-File Upload
+### Pattern: Multi-file upload
 
 Accept multiple files in a single upload:
 
@@ -671,16 +795,19 @@ export const uploadGallery = route.post({
       photos: file({
         maxSize: '10MB',
         accept: ['image/jpeg', 'image/png'],
-      }).array().min(1).max(20),
+      })
+        .array()
+        .min(1)
+        .max(20),
     }),
   },
   handler: async ({ ctx }) => {
     const { albumTitle, albumDescription } = ctx.request.body;
     const { photos } = ctx.request.files;
-    
+
     // Upload all photos concurrently
     const uploadedPhotos = await Promise.all(
-      photos.map(async (photo) => {
+      photos.map(async photo => {
         const url = await ctx.services.storage.upload(photo);
         return {
           url,
@@ -689,7 +816,7 @@ export const uploadGallery = route.post({
         };
       })
     );
-    
+
     return {
       albumTitle,
       photoCount: photos.length,
@@ -699,7 +826,7 @@ export const uploadGallery = route.post({
 });
 ```
 
-### Pattern: Conditional File Upload
+### Pattern: Conditional file upload
 
 Make files optional based on request context:
 
@@ -719,16 +846,16 @@ export const updateProfile = route.patch({
   },
   handler: async ({ ctx, params }) => {
     const updates: any = { ...ctx.request.body };
-    
+
     // Only process files if provided
     if (ctx.request.files.avatar) {
       updates.avatarUrl = await uploadFile(ctx.request.files.avatar);
     }
-    
+
     if (ctx.request.files.coverPhoto) {
       updates.coverPhotoUrl = await uploadFile(ctx.request.files.coverPhoto);
     }
-    
+
     await db.users.update(params.userId, updates);
     return { success: true };
   },
@@ -737,7 +864,7 @@ export const updateProfile = route.patch({
 
 ---
 
-## Low-Level Route Creators
+## Low-level route creators
 
 For advanced use cases, you can use individual route creators instead of the factory:
 
@@ -751,9 +878,9 @@ export const getHealth = createGetRoute()({
 
 // With explicit types
 export const getUser = createGetRoute<MyState, MyServices>()({
-  handler: async (ctx, params) => {
-    ctx.state.user;      // Typed as MyState['user']
-    ctx.services.db;     // Typed as MyServices['db']
+  handler: async ({ ctx, params }) => {
+    ctx.state.user; // Typed as MyState['user']
+    ctx.services.db; // Typed as MyServices['db']
   },
 });
 ```
@@ -765,7 +892,7 @@ export const getUser = createGetRoute<MyState, MyServices>()({
 ## Configuration
 
 ```typescript
-const app = Blaize.createServer({
+const server = Blaize.createServer({
   // Where to find route files
   routesDir: './src/routes',
 });
@@ -775,20 +902,22 @@ The router scans `.ts` files recursively from `routesDir`. Currently, only TypeS
 
 ---
 
-## Key Takeaways
+## Key takeaways
 
 1. **File paths = URL paths** — No configuration needed
-2. **`[param]` = dynamic segments** — Extracted and typed automatically
+2. **`[param]` = dynamic segments** — Works in both files and folders
 3. **Export names = client method names** — Choose meaningful names
 4. **Route factory inherits types** — Context is fully typed in handlers
-5. **Static beats dynamic** — Exact matches take priority
-6. **One file, multiple routes** — Export different HTTP methods
-7. **Files schema for uploads** — Type-safe file handling with validation
-8. **Automatic multipart detection** — Client handles encoding automatically
+5. **Handler uses destructuring** — `({ ctx, params, logger, eventBus })`
+6. **SSE handlers include `stream`** — `({ stream, ctx, params, logger, eventBus })`
+7. **Static beats dynamic** — Exact matches take priority
+8. **One file, multiple routes** — Export different HTTP methods
+9. **Files schema for uploads** — Type-safe file handling with validation
+10. **Automatic multipart detection** — Client handles encoding automatically
 
 ---
 
-## Related Pages
+## Related pages
 
 - **[Type System](/docs/architecture/type-system)** — How route types flow to client
 - **[Context](/docs/architecture/context)** — What's available in handlers

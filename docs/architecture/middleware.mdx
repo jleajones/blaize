@@ -4,7 +4,7 @@
 
 ---
 
-## The Big Picture
+## The big picture
 
 Middleware in BlaizeJS follows the "onion model" — each middleware wraps the next, executing code before and after the inner layers:
 
@@ -40,7 +40,7 @@ The `await next()` call is the pivot point — code before it runs on the way in
 
 ---
 
-## Creating Middleware
+## Creating middleware
 
 Use `createMiddleware` to create typed middleware:
 
@@ -53,21 +53,21 @@ const loggingMiddleware = createMiddleware<
 >({
   name: 'logging',
 
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next, logger }) => {
     // BEFORE: Runs when request arrives
     ctx.state.startTime = Date.now();
-    console.log(`→ ${ctx.request.method} ${ctx.request.path}`);
+    logger.info(`→ ${ctx.request.method} ${ctx.request.path}`);
 
     await next(); // Call the next middleware or handler
 
     // AFTER: Runs when response is ready
     const duration = Date.now() - ctx.state.startTime;
-    console.log(`← ${ctx.response.statusCode} (${duration}ms)`);
+    logger.info(`← ${ctx.response.statusCode} (${duration}ms)`);
   },
 });
 ```
 
-### Middleware Options
+### Middleware options
 
 | Option    | Type       | Required | Description                           |
 | --------- | ---------- | -------- | ------------------------------------- |
@@ -76,7 +76,7 @@ const loggingMiddleware = createMiddleware<
 | `skip`    | `function` | No       | Return `true` to skip this middleware |
 | `debug`   | `boolean`  | No       | Enable verbose logging                |
 
-### Type Parameters
+### Type parameters
 
 ```typescript
 createMiddleware<TState, TServices>(options);
@@ -89,16 +89,33 @@ createMiddleware<TState, TServices>(options);
 
 ---
 
-## The Handler Function
+## The handler function
 
-The middleware handler receives three arguments:
+The middleware handler receives a single object with named properties:
 
 ```typescript
-handler: async (ctx, next, logger) => {
-  // ctx    - The request context (request, response, state, services)
-  // next   - Function to call the next middleware
-  // logger - BlaizeLogger instance scoped to this middleware
+handler: async ({ ctx, next, logger, eventBus }) => {
+  // ctx      - The request context (request, response, state, services)
+  // next     - Function to call the next middleware
+  // logger   - BlaizeLogger instance scoped to this middleware
+  // eventBus - TypedEventBus for publishing/subscribing to events
 };
+```
+
+**Destructure only what you need:**
+
+```typescript
+// Minimal - just ctx and next
+handler: async ({ ctx, next }) => { ... }
+
+// With logging
+handler: async ({ ctx, next, logger }) => { ... }
+
+// With events
+handler: async ({ ctx, next, eventBus }) => { ... }
+
+// Everything
+handler: async ({ ctx, next, logger, eventBus }) => { ... }
 ```
 
 ### Calling next()
@@ -106,7 +123,7 @@ handler: async (ctx, next, logger) => {
 The `next()` function invokes the next middleware in the chain (or the route handler if there's no more middleware):
 
 ```typescript
-handler: async (ctx, next) => {
+handler: async ({ ctx, next }) => {
   // Before next(): Request is coming in
 
   await next(); // Execute the rest of the chain
@@ -123,13 +140,13 @@ handler: async (ctx, next) => {
 
 ```typescript
 // ❌ ERROR: Calling next() twice
-handler: async (ctx, next) => {
+handler: async ({ ctx, next }) => {
   await next();
   await next(); // Throws: "next() called multiple times"
 };
 
 // ✅ Short-circuit: Don't call next() to stop the chain
-handler: async (ctx, next) => {
+handler: async ({ ctx, next }) => {
   if (!ctx.request.header('authorization')) {
     ctx.response.status(401).json({ error: 'Unauthorized' });
     return; // Don't call next() — request ends here
@@ -140,7 +157,7 @@ handler: async (ctx, next) => {
 
 ---
 
-## Type Composition
+## Type composition
 
 When middleware is added to a server, its types compose automatically:
 
@@ -158,11 +175,11 @@ const timingMiddleware = createMiddleware<
 >({ ... });
 
 // Server composes all types
-const app = Blaize.createServer()
+const server = Blaize.createServer()
   .use(authMiddleware)
   .use(timingMiddleware);
 
-type AppContext = InferContext<typeof app>;
+type AppContext = InferContext<typeof server>;
 // AppContext['state'] = {
 //   user: User;
 //   isAuthenticated: boolean;
@@ -176,8 +193,8 @@ type AppContext = InferContext<typeof app>;
 Route handlers then receive the composed types:
 
 ```typescript
-export const GET = route.get({
-  handler: async ctx => {
+export const getProfile = route.get({
+  handler: async ({ ctx }) => {
     ctx.state.user; // ✅ User
     ctx.state.isAuthenticated; // ✅ boolean
     ctx.state.startTime; // ✅ number
@@ -188,7 +205,7 @@ export const GET = route.get({
 
 ---
 
-## Skip Conditions
+## Skip conditions
 
 Use the `skip` function to conditionally bypass middleware:
 
@@ -196,7 +213,7 @@ Use the `skip` function to conditionally bypass middleware:
 const authMiddleware = createMiddleware<{ user: User }, {}>({
   name: 'auth',
 
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next }) => {
     const token = ctx.request.header('authorization');
     if (!token) {
       throw new UnauthorizedError('Missing token');
@@ -206,11 +223,17 @@ const authMiddleware = createMiddleware<{ user: User }, {}>({
   },
 
   // Skip auth for public routes
-  skip: ctx => {
+  skip: ({ ctx }) => {
     const publicPaths = ['/health', '/public', '/auth/login'];
     return publicPaths.some(path => ctx.request.path.startsWith(path));
   },
 });
+```
+
+**Skip function signature:**
+
+```typescript
+skip: ({ ctx, logger, eventBus }) => boolean;
 ```
 
 When `skip` returns `true`:
@@ -221,14 +244,14 @@ When `skip` returns `true`:
 
 ---
 
-## Execution Order
+## Execution order
 
-### Global Middleware
+### Global middleware
 
 Middleware added to the server runs for **all routes** in registration order:
 
 ```typescript
-const app = Blaize.createServer()
+const server = Blaize.createServer()
   .use(correlationMiddleware) // Runs 1st
   .use(loggingMiddleware) // Runs 2nd
   .use(authMiddleware); // Runs 3rd
@@ -236,18 +259,18 @@ const app = Blaize.createServer()
 // Execution: correlation → logging → auth → handler → auth → logging → correlation
 ```
 
-### Route Middleware
+### Route middleware
 
 Middleware can also be added to specific routes:
 
 ```typescript
-export const GET = route.get({
+export const getSecrets = route.get({
   middleware: [rateLimitMiddleware, cacheMiddleware],
-  handler: async (ctx) => { ... },
+  handler: async ({ ctx }) => { ... },
 });
 ```
 
-### Combined Order
+### Combined order
 
 When both exist, the order is:
 
@@ -268,17 +291,20 @@ When both exist, the order is:
 
 ---
 
-## Error Handling
+## Error handling
 
 Errors thrown in middleware propagate up through the chain:
 
 ```typescript
 const errorBoundary = createMiddleware({
   name: 'error-boundary',
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next, logger }) => {
     try {
       await next();
     } catch (error) {
+      // Log the error
+      logger.error('Request failed', { error });
+
       // Handle error, format response
       if (error instanceof BlaizeError) {
         ctx.response.status(error.statusCode).json({
@@ -305,7 +331,7 @@ A → B → handler throws → B catches → A catches → Response sent
 
 ---
 
-## Common Patterns
+## Common patterns
 
 ### Pattern 1: Authentication
 
@@ -324,7 +350,7 @@ interface AuthService {
 const authMiddleware = createMiddleware<{ user: User }, { auth: AuthService }>({
   name: 'auth',
 
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next, logger }) => {
     const token = ctx.request.header('authorization')?.replace('Bearer ', '');
 
     if (!token) {
@@ -334,6 +360,7 @@ const authMiddleware = createMiddleware<{ user: User }, { auth: AuthService }>({
     try {
       ctx.state.user = await authService.verify(token);
       ctx.services.auth = authService;
+      logger.info('User authenticated', { userId: ctx.state.user.id });
     } catch {
       throw new UnauthorizedError('Invalid token');
     }
@@ -341,17 +368,17 @@ const authMiddleware = createMiddleware<{ user: User }, { auth: AuthService }>({
     await next();
   },
 
-  skip: ctx => ctx.request.path === '/health',
+  skip: ({ ctx }) => ctx.request.path === '/health',
 });
 ```
 
-### Pattern 2: Request Timing
+### Pattern 2: Request timing
 
 ```typescript
 const timingMiddleware = createMiddleware<{ startTime: number }, {}>({
   name: 'timing',
 
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next }) => {
     ctx.state.startTime = performance.now();
 
     await next();
@@ -368,7 +395,7 @@ const timingMiddleware = createMiddleware<{ startTime: number }, {}>({
 const correlationMiddleware = createMiddleware<{ correlationId: string }, {}>({
   name: 'correlation',
 
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next }) => {
     // Use incoming ID or generate new one
     ctx.state.correlationId =
       ctx.request.header('x-correlation-id') || `req_${crypto.randomUUID()}`;
@@ -381,7 +408,7 @@ const correlationMiddleware = createMiddleware<{ correlationId: string }, {}>({
 });
 ```
 
-### Pattern 4: Rate Limiting
+### Pattern 4: Rate limiting
 
 ```typescript
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -389,7 +416,7 @@ const rateLimits = new Map<string, { count: number; resetAt: number }>();
 const rateLimitMiddleware = createMiddleware({
   name: 'rate-limit',
 
-  handler: async (ctx, next) => {
+  handler: async ({ ctx, next, logger }) => {
     const ip = ctx.request.header('x-forwarded-for') || 'unknown';
     const now = Date.now();
     const windowMs = 60000; // 1 minute
@@ -405,6 +432,7 @@ const rateLimitMiddleware = createMiddleware({
     record.count++;
 
     if (record.count > maxRequests) {
+      logger.warn('Rate limit exceeded', { ip, count: record.count });
       throw new RateLimitError('Too many requests', {
         retryAfter: Math.ceil((record.resetAt - now) / 1000),
       });
@@ -419,7 +447,7 @@ const rateLimitMiddleware = createMiddleware({
 });
 ```
 
-### Pattern 5: Request Validation Middleware
+### Pattern 5: Request validation middleware
 
 ```typescript
 import { z } from 'zod';
@@ -431,7 +459,7 @@ function createValidationMiddleware<T extends z.ZodType>(
   return createMiddleware({
     name: `validate-${location}`,
 
-    handler: async (ctx, next) => {
+    handler: async ({ ctx, next, logger }) => {
       const data =
         location === 'body'
           ? ctx.request.body
@@ -442,6 +470,10 @@ function createValidationMiddleware<T extends z.ZodType>(
       const result = schema.safeParse(data);
 
       if (!result.success) {
+        logger.warn('Validation failed', {
+          location,
+          errors: result.error.errors,
+        });
         throw new ValidationError('Validation failed', {
           errors: result.error.errors,
         });
@@ -451,41 +483,66 @@ function createValidationMiddleware<T extends z.ZodType>(
     },
   });
 }
+
+// Usage
+const userBodySchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+});
+
+export const createUser = route.post({
+  middleware: [createValidationMiddleware('body', userBodySchema)],
+  handler: async ({ ctx }) => {
+    // Body is validated
+    const user = await db.users.create(ctx.request.body);
+    return user;
+  },
+});
+```
+
+### Pattern 6: EventBus integration
+
+```typescript
+const auditMiddleware = createMiddleware<{ auditId: string }, {}>({
+  name: 'audit',
+
+  handler: async ({ ctx, next, logger, eventBus }) => {
+    const auditId = crypto.randomUUID();
+    ctx.state.auditId = auditId;
+
+    // Publish request started event
+    await eventBus.publish('audit:request-started', {
+      auditId,
+      method: ctx.request.method,
+      path: ctx.request.path,
+      timestamp: Date.now(),
+    });
+
+    try {
+      await next();
+
+      // Publish success event
+      await eventBus.publish('audit:request-completed', {
+        auditId,
+        statusCode: ctx.response.statusCode,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      // Publish failure event
+      await eventBus.publish('audit:request-failed', {
+        auditId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: Date.now(),
+      });
+      throw error; // Re-throw to maintain error flow
+    }
+  },
+});
 ```
 
 ---
 
-## Shorthand Helpers
-
-For middleware that only adds state or only adds services:
-
-### createStateMiddleware
-
-```typescript
-import { createStateMiddleware } from 'blaizejs';
-
-// Only adds to state, no services
-const timingMiddleware = createStateMiddleware<{ startTime: number }>(async (ctx, next) => {
-  ctx.state.startTime = Date.now();
-  await next();
-});
-```
-
-### createServiceMiddleware
-
-```typescript
-import { createServiceMiddleware } from 'blaizejs';
-
-// Only adds to services, no state
-const dbMiddleware = createServiceMiddleware<{ db: Database }>(async (ctx, next) => {
-  ctx.services.db = database;
-  await next();
-});
-```
-
----
-
-## Testing Middleware
+## Testing middleware
 
 Use `createTestContext` from `@blaizejs/testing-utils`:
 
@@ -502,8 +559,10 @@ describe('authMiddleware', () => {
       },
     });
     const next = vi.fn();
+    const logger = createMockLogger();
+    const eventBus = createMockEventBus();
 
-    await authMiddleware.execute(ctx, next, mockLogger);
+    await authMiddleware.handler({ ctx, next, logger, eventBus });
 
     expect(ctx.state.user).toBeDefined();
     expect(ctx.state.user.id).toBe('user-123');
@@ -515,8 +574,10 @@ describe('authMiddleware', () => {
       headers: {},
     });
     const next = vi.fn();
+    const logger = createMockLogger();
+    const eventBus = createMockEventBus();
 
-    await expect(authMiddleware.execute(ctx, next, mockLogger)).rejects.toThrow(
+    await expect(authMiddleware.handler({ ctx, next, logger, eventBus })).rejects.toThrow(
       'Missing authentication token'
     );
 
@@ -527,28 +588,32 @@ describe('authMiddleware', () => {
     const ctx = createTestContext({
       path: '/health',
     });
+    const logger = createMockLogger();
+    const eventBus = createMockEventBus();
 
-    expect(authMiddleware.skip?.(ctx)).toBe(true);
+    expect(authMiddleware.skip?.({ ctx, logger, eventBus })).toBe(true);
   });
 });
 ```
 
 ---
 
-## Key Takeaways
+## Key takeaways
 
 1. **Onion model** — Code before `next()` runs on request, after runs on response
 2. **Type composition** — Middleware types combine on the server automatically
-3. **Call `next()` once** — Multiple calls throw an error
-4. **Skip for efficiency** — Use `skip` to bypass middleware for certain routes
-5. **Order matters** — Global middleware runs first, then route middleware
-6. **Capture return values** — `.use()` returns a new server with updated types
+3. **Destructured handler** — `({ ctx, next, logger, eventBus })`
+4. **Call `next()` once** — Multiple calls throw an error
+5. **Skip for efficiency** — Use `skip` to bypass middleware for certain routes
+6. **Order matters** — Global middleware runs first, then route middleware
+7. **Capture return values** — `.use()` returns a new server with updated types
 
 ---
 
-## Related Pages
+## Related pages
 
 - **[Context](/docs/architecture/context)** — The object middleware modifies
 - **[Type System](/docs/architecture/type-system)** — How middleware types compose
 - **[Plugins](/docs/architecture/plugins)** — For lifecycle management and service singletons
 - **[Error Handling](/docs/guides/error-handling)** — Semantic error classes
+- **[Router](/docs/architecture/router)** — How middleware integrates with routes

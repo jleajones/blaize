@@ -1,0 +1,1358 @@
+# 🛣️ Routing Guide
+
+> Master file-based routing, dynamic parameters, and advanced routing patterns in BlaizeJS
+
+This guide covers everything you need to know about routing in BlaizeJS—from basic file-based routes to advanced patterns like programmatic registration and Server-Sent Events.
+
+---
+
+## 📋 Table of Contents
+
+- [How Routing Works](#-how-routing-works)
+- [File-Based Routing](#-file-based-routing)
+- [HTTP Method Routes](#-http-method-routes)
+- [Dynamic Parameters](#-dynamic-parameters)
+- [Query Parameters](#-query-parameters)
+- [Request Body](#-request-body)
+- [File Uploads](#-file-uploads)
+- [SSE Routes](#-sse-routes)
+- [Route Middleware](#-route-middleware)
+- [Advanced Patterns](#-advanced-patterns)
+- [Best Practices](#-best-practices)
+
+---
+
+## 🎯 How Routing Works
+
+BlaizeJS uses **file-based routing** where your directory structure defines your URL structure. No manual route registration needed—create a file, export a handler, and your route is ready.
+
+### The Magic of File-Based Routing
+
+```
+📁 src/routes/
+├── index.ts              →  GET /
+├── health.ts             →  GET /health
+├── users/
+│   ├── index.ts          →  GET /users
+│   └── [userId]/
+│       ├── index.ts      →  GET /users/:userId
+│       └── posts.ts      →  GET /users/:userId/posts
+└── api/
+    └── v1/
+        └── status.ts     →  GET /api/v1/status
+```
+
+**Key Principles:**
+- ✅ File path = URL path
+- ✅ `[param]` folders = dynamic segments
+- ✅ `index.ts` files = directory root
+- ✅ Export names = client method names
+
+---
+
+## 📁 File-Based Routing
+
+### Basic Path Mapping
+
+| File Path | URL Path | Example |
+|-----------|----------|---------|
+| `routes/index.ts` | `/` | Root endpoint |
+| `routes/health.ts` | `/health` | Health check |
+| `routes/users.ts` | `/users` | User list |
+| `routes/users/index.ts` | `/users` | Same as above |
+| `routes/api/v1/status.ts` | `/api/v1/status` | Nested API endpoint |
+
+### Index Files
+
+Files named `index.ts` represent the **directory itself**, not `/index`:
+
+```typescript
+// routes/users/index.ts
+// URL: /users (NOT /users/index)
+
+export const GET = route.get({
+  handler: async ({ ctx }) => {
+    const users = await ctx.services.db.users.findAll();
+    return { users };
+  },
+});
+```
+
+### Creating Your First Route
+
+```typescript
+// routes/hello.ts
+import { route } from '../app';
+import { z } from 'zod';
+
+export const GET = route.get({
+  schema: {
+    response: z.object({
+      message: z.string(),
+      timestamp: z.number(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    return {
+      message: 'Hello from BlaizeJS!',
+      timestamp: Date.now(),
+    };
+  },
+});
+```
+
+**Test it:**
+```bash
+curl https://localhost:7485/hello
+```
+
+---
+
+## 🔀 HTTP Method Routes
+
+Routes support all standard HTTP methods. Export handlers for each method you want to support.
+
+### Available Methods
+
+| Method | Route Creator | Body Support | Common Use |
+|--------|---------------|--------------|------------|
+| GET | `route.get()` | ❌ | Fetch resources |
+| POST | `route.post()` | ✅ | Create resources |
+| PUT | `route.put()` | ✅ | Replace resources |
+| PATCH | `route.patch()` | ✅ | Update resources |
+| DELETE | `route.delete()` | ❌ | Remove resources |
+| HEAD | `route.head()` | ❌ | Headers only |
+| OPTIONS | `route.options()` | ❌ | CORS preflight |
+
+### Multiple Methods in One File
+
+```typescript
+// routes/users/[userId]/index.ts
+import { route } from '../../../app';
+import { z } from 'zod';
+
+const userSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  email: z.string().email(),
+});
+
+const updateUserSchema = z.object({
+  name: z.string().optional(),
+  email: z.string().email().optional(),
+});
+
+// GET /users/:userId
+export const GET = route.get({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    response: userSchema,
+  },
+  handler: async ({ ctx, params }) => {
+    const user = await ctx.services.db.users.findById(params.userId);
+    
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    
+    return user;
+  },
+});
+
+// PUT /users/:userId
+export const PUT = route.put({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    body: updateUserSchema,
+    response: userSchema,
+  },
+  handler: async ({ ctx, params }) => {
+    const updated = await ctx.services.db.users.update(
+      params.userId,
+      ctx.request.body
+    );
+    
+    return updated;
+  },
+});
+
+// DELETE /users/:userId
+export const DELETE = route.delete({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+  },
+  handler: async ({ ctx, params }) => {
+    await ctx.services.db.users.delete(params.userId);
+    ctx.response.status(204);
+  },
+});
+```
+
+### Named Exports for RPC
+
+For type-safe RPC, export routes with custom names:
+
+```typescript
+// routes/users/[userId]/index.ts
+export const getUser = route.get({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    response: userSchema,
+  },
+  handler: async ({ ctx, params }) => {
+    return await ctx.services.db.users.findById(params.userId);
+  },
+});
+
+export const updateUser = route.put({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    body: updateUserSchema,
+  },
+  handler: async ({ ctx, params }) => {
+    return await ctx.services.db.users.update(
+      params.userId,
+      ctx.request.body
+    );
+  },
+});
+
+export const deleteUser = route.delete({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+  },
+  handler: async ({ ctx, params }) => {
+    await ctx.services.db.users.delete(params.userId);
+    ctx.response.status(204);
+  },
+});
+```
+
+**Register for RPC:**
+```typescript
+// src/app-routes.ts
+import { getUser, updateUser, deleteUser } from './routes/users/[userId]';
+
+export const routes = {
+  getUser,
+  updateUser,
+  deleteUser,
+} as const;
+```
+
+---
+
+## 🎯 Dynamic Parameters
+
+Use `[param]` syntax for dynamic URL segments.
+
+### Single Parameter
+
+```typescript
+// routes/users/[userId].ts
+// URL: /users/:userId
+
+export const GET = route.get({
+  schema: {
+    params: z.object({ 
+      userId: z.string().uuid() 
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    // params.userId is typed as string
+    // GET /users/550e8400-e29b-41d4-a716-446655440000
+    // → params.userId = "550e8400-e29b-41d4-a716-446655440000"
+    
+    const user = await ctx.services.db.users.findById(params.userId);
+    return { user };
+  },
+});
+```
+
+### Multiple Parameters
+
+```typescript
+// routes/teams/[teamId]/members/[memberId].ts
+// URL: /teams/:teamId/members/:memberId
+
+export const GET = route.get({
+  schema: {
+    params: z.object({
+      teamId: z.string().uuid(),
+      memberId: z.string().uuid(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    // GET /teams/team-123/members/member-456
+    // → params = { teamId: "team-123", memberId: "member-456" }
+    
+    const member = await ctx.services.db.teams.getMember(
+      params.teamId,
+      params.memberId
+    );
+    
+    return { member };
+  },
+});
+```
+
+### Nested Dynamic Routes
+
+```typescript
+// routes/organizations/[orgId]/projects/[projectId]/tasks/[taskId].ts
+// URL: /organizations/:orgId/projects/:projectId/tasks/:taskId
+
+export const GET = route.get({
+  schema: {
+    params: z.object({
+      orgId: z.string(),
+      projectId: z.string(),
+      taskId: z.string(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    const task = await ctx.services.db.tasks.find({
+      organizationId: params.orgId,
+      projectId: params.projectId,
+      id: params.taskId,
+    });
+    
+    return { task };
+  },
+});
+```
+
+### Parameter Validation
+
+Use Zod to validate parameter formats:
+
+```typescript
+// routes/users/[userId].ts
+export const GET = route.get({
+  schema: {
+    params: z.object({
+      userId: z.string().uuid(), // Must be valid UUID
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    // Only reaches here if userId is valid UUID
+    // GET /users/invalid → 400 Bad Request
+    // GET /users/550e8400-e29b-41d4-a716-446655440000 → ✅
+  },
+});
+```
+
+---
+
+## 🔍 Query Parameters
+
+Query parameters are validated using Zod schemas and accessed via `ctx.request.query`.
+
+### Basic Query Parameters
+
+```typescript
+// routes/users.ts
+export const GET = route.get({
+  schema: {
+    query: z.object({
+      page: z.string().transform(Number).pipe(z.number().int().positive()).default('1'),
+      limit: z.string().transform(Number).pipe(z.number().int().min(1).max(100)).default('20'),
+      search: z.string().optional(),
+      role: z.enum(['admin', 'user', 'guest']).optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { page, limit, search, role } = ctx.request.query;
+    
+    const users = await ctx.services.db.users.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      where: {
+        ...(search && { name: { contains: search } }),
+        ...(role && { role }),
+      },
+    });
+    
+    return {
+      users,
+      pagination: {
+        page,
+        limit,
+        total: await ctx.services.db.users.count(),
+      },
+    };
+  },
+});
+```
+
+**Test it:**
+```bash
+curl "https://localhost:7485/users?page=2&limit=10&role=admin"
+```
+
+### Array Query Parameters
+
+```typescript
+// routes/products.ts
+export const GET = route.get({
+  schema: {
+    query: z.object({
+      tags: z.array(z.string()).optional(),
+      categories: z.array(z.string()).optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { tags, categories } = ctx.request.query;
+    
+    // GET /products?tags=featured&tags=new&categories=electronics
+    // → tags = ["featured", "new"]
+    // → categories = ["electronics"]
+    
+    const products = await ctx.services.db.products.findMany({
+      where: {
+        ...(tags && { tags: { hasSome: tags } }),
+        ...(categories && { category: { in: categories } }),
+      },
+    });
+    
+    return { products };
+  },
+});
+```
+
+### Complex Query Filters
+
+```typescript
+// routes/events.ts
+export const GET = route.get({
+  schema: {
+    query: z.object({
+      startDate: z.string().datetime().optional(),
+      endDate: z.string().datetime().optional(),
+      location: z.string().optional(),
+      minAttendees: z.string().transform(Number).pipe(z.number().int().positive()).optional(),
+      status: z.enum(['upcoming', 'ongoing', 'completed']).optional(),
+      sort: z.enum(['date', 'attendees', 'name']).default('date'),
+      order: z.enum(['asc', 'desc']).default('asc'),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const query = ctx.request.query;
+    
+    const events = await ctx.services.db.events.findMany({
+      where: {
+        ...(query.startDate && { date: { gte: new Date(query.startDate) } }),
+        ...(query.endDate && { date: { lte: new Date(query.endDate) } }),
+        ...(query.location && { location: { contains: query.location } }),
+        ...(query.minAttendees && { attendees: { gte: query.minAttendees } }),
+        ...(query.status && { status: query.status }),
+      },
+      orderBy: { [query.sort]: query.order },
+    });
+    
+    return { events };
+  },
+});
+```
+
+---
+
+## 📦 Request Body
+
+POST, PUT, and PATCH routes accept request bodies validated by Zod schemas.
+
+### Simple Body Validation
+
+```typescript
+// routes/users.ts
+export const POST = route.post({
+  schema: {
+    body: z.object({
+      name: z.string().min(1).max(100),
+      email: z.string().email(),
+      age: z.number().int().positive().optional(),
+    }),
+    response: z.object({
+      id: z.string().uuid(),
+      name: z.string(),
+      email: z.string(),
+      createdAt: z.string(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const user = await ctx.services.db.users.create(ctx.request.body);
+    
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt.toISOString(),
+    };
+  },
+});
+```
+
+**Test it:**
+```bash
+curl -X POST https://localhost:7485/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alice","email":"alice@example.com"}'
+```
+
+### Nested Objects
+
+```typescript
+// routes/orders.ts
+export const POST = route.post({
+  schema: {
+    body: z.object({
+      customerId: z.string().uuid(),
+      items: z.array(
+        z.object({
+          productId: z.string().uuid(),
+          quantity: z.number().int().positive(),
+          price: z.number().positive(),
+        })
+      ).min(1),
+      shipping: z.object({
+        address: z.string(),
+        city: z.string(),
+        postalCode: z.string(),
+        country: z.string(),
+      }),
+      notes: z.string().optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const order = await ctx.services.db.orders.create({
+      ...ctx.request.body,
+      status: 'pending',
+      total: ctx.request.body.items.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0
+      ),
+    });
+    
+    return { order };
+  },
+});
+```
+
+### Combining Body with Params
+
+```typescript
+// routes/posts/[postId]/comments.ts
+export const POST = route.post({
+  schema: {
+    params: z.object({
+      postId: z.string().uuid(),
+    }),
+    body: z.object({
+      content: z.string().min(1).max(1000),
+      authorId: z.string().uuid(),
+    }),
+    response: z.object({
+      id: z.string(),
+      postId: z.string(),
+      content: z.string(),
+      authorId: z.string(),
+      createdAt: z.string(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    const comment = await ctx.services.db.comments.create({
+      postId: params.postId,
+      content: ctx.request.body.content,
+      authorId: ctx.request.body.authorId,
+    });
+    
+    return {
+      id: comment.id,
+      postId: comment.postId,
+      content: comment.content,
+      authorId: comment.authorId,
+      createdAt: comment.createdAt.toISOString(),
+    };
+  },
+});
+```
+
+---
+
+## 📎 File Uploads
+
+BlaizeJS supports type-safe file uploads with automatic multipart detection and validation.
+
+> **📖 Deep Dive:** For complete file upload examples and patterns, see the [File Uploads Guide](./file-uploads.md).
+
+### Basic File Upload
+
+```typescript
+// routes/users/[userId]/avatar.ts
+import { file } from 'blaizejs';
+
+export const PATCH = route.patch({
+  schema: {
+    params: z.object({ userId: z.string().uuid() }),
+    files: z.object({
+      avatar: file({
+        maxSize: '5MB',
+        accept: ['image/jpeg', 'image/png', 'image/webp'],
+      }),
+    }),
+    response: z.object({
+      avatarUrl: z.string().url(),
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    const { avatar } = ctx.request.files;
+    
+    // avatar is typed as UploadedFile
+    const url = await ctx.services.storage.upload({
+      file: avatar.buffer,
+      filename: avatar.originalname,
+      contentType: avatar.mimetype,
+    });
+    
+    await ctx.services.db.users.update(params.userId, {
+      avatarUrl: url,
+    });
+    
+    return { avatarUrl: url };
+  },
+});
+```
+
+### Multiple Files
+
+```typescript
+// routes/posts.ts
+export const POST = route.post({
+  schema: {
+    body: z.object({
+      title: z.string(),
+      content: z.string(),
+    }),
+    files: z.object({
+      images: z.array(
+        file({
+          maxSize: '10MB',
+          accept: ['image/*'],
+        })
+      ).max(5),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { images } = ctx.request.files;
+    
+    // Upload all images
+    const imageUrls = await Promise.all(
+      images.map(img =>
+        ctx.services.storage.upload({
+          file: img.buffer,
+          filename: img.originalname,
+        })
+      )
+    );
+    
+    const post = await ctx.services.db.posts.create({
+      ...ctx.request.body,
+      images: imageUrls,
+    });
+    
+    return { post };
+  },
+});
+```
+
+### Files with Body Data
+
+```typescript
+// routes/documents.ts
+export const POST = route.post({
+  schema: {
+    body: z.object({
+      title: z.string(),
+      description: z.string(),
+      tags: z.array(z.string()),
+    }),
+    files: z.object({
+      document: file({
+        maxSize: '50MB',
+        accept: ['application/pdf', 'application/msword'],
+      }),
+      thumbnail: file({
+        maxSize: '2MB',
+        accept: ['image/*'],
+      }).optional(),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const { document, thumbnail } = ctx.request.files;
+    
+    const documentUrl = await ctx.services.storage.upload({
+      file: document.buffer,
+      filename: document.originalname,
+    });
+    
+    const thumbnailUrl = thumbnail
+      ? await ctx.services.storage.upload({
+          file: thumbnail.buffer,
+          filename: thumbnail.originalname,
+        })
+      : null;
+    
+    const doc = await ctx.services.db.documents.create({
+      ...ctx.request.body,
+      documentUrl,
+      thumbnailUrl,
+    });
+    
+    return { document: doc };
+  },
+});
+```
+
+---
+
+## 📡 SSE Routes
+
+Server-Sent Events (SSE) enable real-time, unidirectional streaming from server to client.
+
+> **📖 Deep Dive:** For detailed SSE patterns and integration with the event bus, see the [Event Bus Architecture Guide](../architecture/event-bus.md).
+
+### Basic SSE Route
+
+```typescript
+// routes/notifications/stream.ts
+export const GET = route.sse({
+  schema: {
+    events: {
+      notification: z.object({
+        id: z.string(),
+        type: z.enum(['info', 'warning', 'error']),
+        message: z.string(),
+        timestamp: z.number(),
+      }),
+      heartbeat: z.object({
+        timestamp: z.number(),
+      }),
+    },
+  },
+  handler: async ({ stream, ctx, logger }) => {
+    logger.info('Client connected to notifications');
+    
+    // Send initial message
+    stream.send('notification', {
+      id: 'welcome',
+      type: 'info',
+      message: 'Connected to notifications',
+      timestamp: Date.now(),
+    });
+    
+    // Heartbeat every 30 seconds
+    const heartbeat = setInterval(() => {
+      stream.send('heartbeat', { timestamp: Date.now() });
+    }, 30000);
+    
+    // Cleanup on disconnect
+    stream.onClose(() => {
+      clearInterval(heartbeat);
+      logger.info('Client disconnected');
+    });
+  },
+});
+```
+
+**Client usage:**
+```typescript
+const eventSource = new EventSource('https://localhost:7485/notifications/stream');
+
+eventSource.addEventListener('notification', (event) => {
+  const data = JSON.parse(event.data);
+  console.log(`[${data.type}] ${data.message}`);
+});
+
+eventSource.addEventListener('heartbeat', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Heartbeat:', new Date(data.timestamp));
+});
+```
+
+### SSE with Parameters
+
+```typescript
+// routes/users/[userId]/activity.ts
+export const GET = route.sse({
+  schema: {
+    params: z.object({ 
+      userId: z.string().uuid() 
+    }),
+    events: {
+      'activity.created': z.object({
+        id: z.string(),
+        type: z.string(),
+        timestamp: z.number(),
+      }),
+    },
+  },
+  handler: async ({ stream, ctx, params, logger, eventBus }) => {
+    const { userId } = params;
+    
+    logger.info('Activity stream opened', { userId });
+    
+    // Subscribe to user-specific events
+    const unsubscribe = eventBus.subscribe('user:activity:*', (event) => {
+      if (event.data.userId === userId) {
+        stream.send('activity.created', {
+          id: event.data.activityId,
+          type: event.data.type,
+          timestamp: event.timestamp,
+        });
+      }
+    });
+    
+    // Cleanup
+    stream.onClose(() => {
+      unsubscribe();
+      logger.info('Activity stream closed', { userId });
+    });
+  },
+});
+```
+
+### SSE with Query Parameters
+
+```typescript
+// routes/jobs/stream.ts
+export const GET = route.sse({
+  schema: {
+    query: z.object({
+      jobId: z.string(),
+      queueName: z.string().optional(),
+    }),
+    events: {
+      'job.started': z.object({
+        jobId: z.string(),
+        timestamp: z.number(),
+      }),
+      'job.progress': z.object({
+        jobId: z.string(),
+        percent: z.number(),
+        message: z.string().optional(),
+      }),
+      'job.completed': z.object({
+        jobId: z.string(),
+        result: z.unknown(),
+      }),
+      'job.failed': z.object({
+        jobId: z.string(),
+        error: z.object({
+          message: z.string(),
+          code: z.string().optional(),
+        }),
+      }),
+    },
+  },
+  handler: async ({ stream, ctx, logger, eventBus }) => {
+    const { jobId, queueName } = ctx.request.query;
+    
+    logger.info('Job stream opened', { jobId, queueName });
+    
+    // Subscribe to job events
+    const unsubscribe = eventBus.subscribe('queue:job:*', (event) => {
+      if (event.data.jobId !== jobId) return;
+      if (queueName && event.data.queueName !== queueName) return;
+      
+      // Map queue events to SSE events
+      const eventTypeMap: Record<string, string> = {
+        'queue:job:started': 'job.started',
+        'queue:job:progress': 'job.progress',
+        'queue:job:completed': 'job.completed',
+        'queue:job:failed': 'job.failed',
+      };
+      
+      const sseEvent = eventTypeMap[event.type];
+      if (sseEvent) {
+        stream.send(sseEvent, event.data);
+      }
+    });
+    
+    // Cleanup
+    stream.onClose(() => {
+      unsubscribe();
+      logger.info('Job stream closed', { jobId });
+    });
+  },
+});
+```
+
+---
+
+## 🛡️ Route Middleware
+
+Apply middleware at the route level for authentication, validation, rate limiting, and more.
+
+### Single Middleware
+
+```typescript
+// routes/admin/users.ts
+import { authMiddleware } from '../../middleware/auth';
+
+export const GET = route.get({
+  middleware: [authMiddleware], // ← Route-specific middleware
+  handler: async ({ ctx }) => {
+    // ctx.state.user is available (added by authMiddleware)
+    const users = await ctx.services.db.users.findAll();
+    return { users };
+  },
+});
+```
+
+### Multiple Middleware
+
+```typescript
+// routes/api/data.ts
+import { authMiddleware } from '../../middleware/auth';
+import { rateLimitMiddleware } from '../../middleware/rate-limit';
+import { cacheMiddleware } from '../../middleware/cache';
+
+export const GET = route.get({
+  middleware: [
+    authMiddleware,        // 1. Authenticate user
+    rateLimitMiddleware,   // 2. Check rate limits
+    cacheMiddleware,       // 3. Try cache before handler
+  ],
+  handler: async ({ ctx }) => {
+    const data = await expensiveOperation();
+    return { data };
+  },
+});
+```
+
+### Middleware Execution Order
+
+Middleware executes in an "onion" pattern:
+
+```
+Request
+  ↓
+authMiddleware (before)
+  ↓
+rateLimitMiddleware (before)
+  ↓
+cacheMiddleware (before)
+  ↓
+handler
+  ↓
+cacheMiddleware (after)
+  ↓
+rateLimitMiddleware (after)
+  ↓
+authMiddleware (after)
+  ↓
+Response
+```
+
+---
+
+## 🚀 Advanced Patterns
+
+### Programmatic Route Registration
+
+For plugins or dynamic routes, use programmatic registration:
+
+```typescript
+// plugins/admin-routes-plugin.ts
+import { createPlugin } from 'blaizejs';
+
+export const createAdminRoutesPlugin = () => {
+  return createPlugin({
+    name: 'admin-routes',
+    setup: async ({ server, logger }) => {
+      // Add routes programmatically
+      server.router.addRoutes([
+        {
+          method: 'GET',
+          path: '/admin/stats',
+          handler: async ({ ctx }) => {
+            const stats = await getAdminStats();
+            return { stats };
+          },
+          schema: {
+            response: z.object({
+              users: z.number(),
+              posts: z.number(),
+              revenue: z.number(),
+            }),
+          },
+        },
+        {
+          method: 'POST',
+          path: '/admin/reset',
+          handler: async ({ ctx }) => {
+            await resetDatabase();
+            ctx.response.status(204);
+          },
+        },
+      ]);
+      
+      logger.info('Admin routes registered');
+    },
+  });
+};
+```
+
+**Use in server:**
+```typescript
+const server = createServer({
+  routesDir: './src/routes',
+  plugins: [
+    createAdminRoutesPlugin(),
+  ],
+});
+```
+
+### Adding Route Directories
+
+Plugins can add entire route directories:
+
+```typescript
+// plugins/api-routes-plugin.ts
+import { createPlugin } from 'blaizejs';
+import path from 'path';
+
+export const createApiRoutesPlugin = () => {
+  return createPlugin({
+    name: 'api-routes',
+    setup: async ({ server, logger }) => {
+      // Add directory of routes with prefix
+      await server.router.addRouteDirectory(
+        path.join(__dirname, './routes'),
+        {
+          prefix: '/api/v1',
+        }
+      );
+      
+      logger.info('API routes directory loaded');
+    },
+  });
+};
+```
+
+**Directory structure:**
+```
+plugins/api-routes-plugin/routes/
+├── users.ts        →  /api/v1/users
+├── posts.ts        →  /api/v1/posts
+└── comments.ts     →  /api/v1/comments
+```
+
+### Conditional Routes
+
+Load routes based on environment or configuration:
+
+```typescript
+// src/app.ts
+const server = createServer({
+  routesDir: './src/routes',
+});
+
+// Add debug routes in development
+if (process.env.NODE_ENV === 'development') {
+  await server.router.addRouteDirectory('./src/debug-routes');
+}
+
+// Add admin routes if enabled
+if (config.features.adminPanel) {
+  await server.router.addRouteDirectory('./src/admin-routes', {
+    prefix: '/admin',
+  });
+}
+```
+
+### Route Prefixing
+
+Add prefixes to route groups:
+
+```typescript
+// API versioning
+await server.router.addRouteDirectory('./src/routes/v1', {
+  prefix: '/api/v1',
+});
+
+await server.router.addRouteDirectory('./src/routes/v2', {
+  prefix: '/api/v2',
+});
+
+// Result:
+// routes/v1/users.ts  →  /api/v1/users
+// routes/v2/users.ts  →  /api/v2/users
+```
+
+### Shared Route Configuration
+
+Create route factories with shared configuration:
+
+```typescript
+// lib/api-route.ts
+import { createRouteFactory } from 'blaizejs';
+import type { AppState, AppServices } from '../app';
+
+// API routes with standard error handling
+export const apiRoute = createRouteFactory<AppState, AppServices>({
+  onError: async (error, ctx) => {
+    if (error instanceof ValidationError) {
+      ctx.response.status(400).json({
+        error: 'Validation failed',
+        details: error.details,
+      });
+    } else {
+      throw error;
+    }
+  },
+});
+
+// Admin routes with auth middleware
+export const adminRoute = createRouteFactory<AppState, AppServices>({
+  middleware: [authMiddleware, adminOnlyMiddleware],
+  onError: async (error, ctx) => {
+    // Custom admin error handling
+  },
+});
+```
+
+**Use in routes:**
+```typescript
+// routes/api/users.ts
+import { apiRoute } from '../../lib/api-route';
+
+export const GET = apiRoute.get({
+  // Inherits standard error handling
+  handler: async ({ ctx }) => {
+    return { users: await ctx.services.db.users.findAll() };
+  },
+});
+
+// routes/admin/settings.ts
+import { adminRoute } from '../../lib/api-route';
+
+export const PUT = adminRoute.put({
+  // Inherits auth middleware and admin error handling
+  handler: async ({ ctx }) => {
+    await ctx.services.config.update(ctx.request.body);
+    ctx.response.status(204);
+  },
+});
+```
+
+---
+
+## ✅ Best Practices
+
+### 1. File Organization
+
+**✅ Good:**
+```
+routes/
+├── users/
+│   ├── index.ts                    # GET /users
+│   ├── [userId]/
+│   │   ├── index.ts                # GET /users/:userId
+│   │   ├── posts.ts                # GET /users/:userId/posts
+│   │   └── avatar.ts               # PATCH /users/:userId/avatar
+│   └── schemas.ts                  # Shared schemas
+└── posts/
+    ├── index.ts
+    └── [postId]/
+        └── index.ts
+```
+
+**❌ Bad:**
+```
+routes/
+├── get-users.ts                    # Unclear naming
+├── user-detail.ts                  # Not RESTful
+├── user_posts.ts                   # Inconsistent naming
+└── update-avatar-for-user.ts       # Too verbose
+```
+
+### 2. Schema Reuse
+
+**✅ Good:**
+```typescript
+// routes/users/schemas.ts
+export const userIdSchema = z.object({
+  userId: z.string().uuid(),
+});
+
+export const userSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  email: z.string().email(),
+});
+
+export const createUserSchema = userSchema.omit({ id: true });
+export const updateUserSchema = createUserSchema.partial();
+
+// routes/users/[userId]/index.ts
+import { userIdSchema, userSchema, updateUserSchema } from '../schemas';
+
+export const GET = route.get({
+  schema: {
+    params: userIdSchema,
+    response: userSchema,
+  },
+  handler: async ({ ctx, params }) => { /* ... */ },
+});
+
+export const PUT = route.put({
+  schema: {
+    params: userIdSchema,
+    body: updateUserSchema,
+    response: userSchema,
+  },
+  handler: async ({ ctx, params }) => { /* ... */ },
+});
+```
+
+### 3. Consistent Error Handling
+
+**✅ Good:**
+```typescript
+export const GET = route.get({
+  handler: async ({ ctx, params }) => {
+    const user = await ctx.services.db.users.findById(params.userId);
+    
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'user',
+        resourceId: params.userId,
+      });
+    }
+    
+    return { user };
+  },
+});
+```
+
+**❌ Bad:**
+```typescript
+export const GET = route.get({
+  handler: async ({ ctx, params }) => {
+    const user = await ctx.services.db.users.findById(params.userId);
+    
+    if (!user) {
+      ctx.response.status(404).json({ error: 'Not found' });
+      return;
+    }
+    
+    return { user };
+  },
+});
+```
+
+### 4. Route Naming for RPC
+
+**✅ Good:**
+```typescript
+// Descriptive, action-oriented names
+export const getUser = route.get({ /* ... */ });
+export const updateUser = route.put({ /* ... */ });
+export const deleteUser = route.delete({ /* ... */ });
+export const getUserPosts = route.get({ /* ... */ });
+export const uploadUserAvatar = route.patch({ /* ... */ });
+```
+
+**❌ Bad:**
+```typescript
+// Too generic or unclear
+export const user = route.get({ /* ... */ });
+export const update = route.put({ /* ... */ });
+export const del = route.delete({ /* ... */ });
+export const posts = route.get({ /* ... */ });
+export const avatar = route.patch({ /* ... */ });
+```
+
+### 5. Response Consistency
+
+**✅ Good:**
+```typescript
+// Consistent response structure
+export const GET = route.get({
+  schema: {
+    response: z.object({
+      users: z.array(userSchema),
+      pagination: z.object({
+        page: z.number(),
+        limit: z.number(),
+        total: z.number(),
+      }),
+    }),
+  },
+  handler: async ({ ctx }) => {
+    const users = await ctx.services.db.users.findMany();
+    const total = await ctx.services.db.users.count();
+    
+    return {
+      users,
+      pagination: {
+        page: ctx.request.query.page,
+        limit: ctx.request.query.limit,
+        total,
+      },
+    };
+  },
+});
+```
+
+### 6. Parameter Validation
+
+**✅ Good:**
+```typescript
+// Strong validation rules
+export const GET = route.get({
+  schema: {
+    params: z.object({
+      userId: z.string().uuid(),
+    }),
+    query: z.object({
+      page: z.string().transform(Number).pipe(z.number().int().positive()),
+      limit: z.string().transform(Number).pipe(z.number().int().min(1).max(100)),
+    }),
+  },
+  handler: async ({ ctx, params }) => { /* ... */ },
+});
+```
+
+**❌ Bad:**
+```typescript
+// No validation or weak validation
+export const GET = route.get({
+  schema: {
+    params: z.object({
+      userId: z.string(), // Any string accepted
+    }),
+  },
+  handler: async ({ ctx, params }) => {
+    // Manual validation in handler
+    if (!isValidUUID(params.userId)) {
+      throw new ValidationError('Invalid user ID');
+    }
+  },
+});
+```
+
+---
+
+## 🔗 Related Documentation
+
+- **[Type System Guide](../architecture/type-system.md)** — How types flow from routes to client
+- **[Context Guide](../architecture/context.md)** — Understanding the request context
+- **[Middleware Guide](./middleware.md)** — Creating and composing middleware
+- **[File Uploads Guide](./file-uploads.md)** — Complete file upload patterns
+- **[Event Bus Guide](../architecture/event-bus.md)** — Event-driven architecture with SSE
+
+---
+
+**Questions or feedback?** Open an issue on GitHub or join our Discord community.
