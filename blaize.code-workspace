@@ -1,0 +1,77 @@
+{
+  "folders": [
+    {
+      "name": "✨ blaize",
+      "path": ".",
+    },
+    {
+      "name": "🔌@blaizejs/adapter-redis",
+      "path": "adapters/redis",
+    },
+    {
+      "name": "🚀 @blaizejs/playground",
+      "path": "apps/playground",
+    },
+    {
+      "name": "⚙️ @blaizejs/eslint-config",
+      "path": "configs/eslint",
+    },
+    {
+      "name": "⚙️ @blaizejs/tsconfig",
+      "path": "configs/tsconfig",
+    },
+    {
+      "name": "⚙️ @blaizejs/tsup-config",
+      "path": "configs/tsup",
+    },
+    {
+      "name": "⚙️ @blaizejs/vitest-config",
+      "path": "configs/vitest",
+    },
+    {
+      "name": "🔗@blaizejs/middleware-security",
+      "path": "middleware/security",
+    },
+    {
+      "name": "📦 @blaizejs/client",
+      "path": "packages/blaize-client",
+    },
+    {
+      "name": "📦 blaizejs",
+      "path": "packages/blaize-core",
+    },
+    {
+      "name": "📦 @blaizejs/testing-utils",
+      "path": "packages/blaize-testing-utils",
+    },
+    {
+      "name": "📦 @blaizejs/types",
+      "path": "packages/blaize-types",
+    },
+    {
+      "name": "📦 create-blaize-app",
+      "path": "packages/create-blaize-app",
+    },
+    {
+      "name": "🧩@blaizejs/plugin-cache",
+      "path": "plugins/cache",
+    },
+    {
+      "name": "🧩@blaizejs/plugin-metrics",
+      "path": "plugins/metrics",
+    },
+    {
+      "name": "🧩@blaizejs/plugin-queue",
+      "path": "plugins/queue",
+    },
+  ],
+  "settings": {},
+  "extensions": {
+    "recommendations": [
+      "folke.vscode-monorepo-workspace",
+      "esbenp.prettier-vscode",
+      "yoavbls.pretty-ts-errors",
+      "unifiedjs.vscode-mdx",
+    ],
+  },
+}
