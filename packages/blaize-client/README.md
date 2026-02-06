@@ -12,9 +12,9 @@ BlaizeJS Client provides **true RPC (Remote Procedure Call) functionality** simi
 
 ```typescript
 // Your server function
-export const getUser = createGetRoute({
+export const getUser = route.get({
   schema: { /* ... */ },
-  handler: async (ctx, params) => {
+  handler: async ({ ctx, params }) => {
     // This is your actual server function
     return await db.users.findById(params.userId);
   },
@@ -37,6 +37,8 @@ const user = await client.$get.getUser({ params: { userId: '123' } });
 | **Zero config** | ✅ Yes | ⚠️ Partial | ❌ Requires setup |
 | **Proxy-based** | ✅ Yes | ✅ Yes | ✅ Yes |
 
+---
+
 ## 📋 Table of Contents
 
 - [🌟 What Makes This RPC?](#-what-makes-this-rpc)
@@ -45,23 +47,26 @@ const user = await client.$get.getUser({ params: { userId: '123' } });
 - [🎯 RPC Features](#-rpc-features)
 - [📖 Core API](#-core-api)
 - [🛡️ Error Handling](#️-error-handling)
-- [💡 Advanced RPC Patterns](#-advanced-rpc-patterns)
+- [💡 Advanced Patterns](#-advanced-patterns)
 - [🧪 Testing](#-testing)
 - [📚 Type System](#-type-system)
 - [🗺️ Roadmap](#️-roadmap)
-- [🤝 Contributing](#-contributing)
+
+---
 
 ## 🌟 What Makes This RPC?
 
 **RPC (Remote Procedure Call)** means calling server functions as if they were local functions. BlaizeJS Client achieves this through:
 
 ### 1️⃣ **Direct Function Mapping**
+
 Your server handlers become client methods automatically:
+
 ```typescript
 // Server: Define a function
-export const calculateTax = createPostRoute({
-  handler: async (ctx) => {
-    return { tax: ctx.body.amount * 0.2 };
+export const calculateTax = route.post({
+  handler: async ({ ctx }) => {
+    return { tax: ctx.request.body.amount * 0.2 };
   }
 });
 
@@ -72,10 +77,12 @@ const result = await client.$post.calculateTax({
 ```
 
 ### 2️⃣ **Automatic Type Inference**
+
 Types flow from server to client without any manual work:
+
 ```typescript
 // Server defines the contract
-const createUser = createPostRoute({
+const createUser = route.post({
   schema: {
     body: z.object({
       name: z.string(),
@@ -86,7 +93,7 @@ const createUser = createPostRoute({
       name: z.string()
     })
   },
-  handler: async (ctx) => { /* ... */ }
+  handler: async ({ ctx }) => { /* ... */ }
 });
 
 // Client knows the types automatically!
@@ -101,7 +108,9 @@ const newUser = await client.$post.createUser({
 ```
 
 ### 3️⃣ **Proxy-Based Method Generation**
+
 We use JavaScript Proxies to create methods dynamically:
+
 ```typescript
 // No manual client method definitions needed!
 // Methods are created automatically from your routes:
@@ -110,6 +119,8 @@ client.$post.createUser()   // ✅ Exists if route exists
 client.$delete.deleteUser() // ✅ Exists if route exists
 client.$get.nonExistent()   // ❌ TypeScript error!
 ```
+
+---
 
 ## 📦 Installation
 
@@ -124,189 +135,121 @@ npm install @blaizejs/client
 yarn add @blaizejs/client
 ```
 
+**Current Version:** 0.5.1
+
+---
+
 ## 🚀 Quick Start
 
-### Step 1: Set Up Your Server with File-Based Routing
-
-BlaizeJS requires file-based routing - routes must be in a specific directory structure:
+### Step 1: Set Up Your Server
 
 ```typescript
-// server/index.ts
-import { createServer } from 'blaizejs';
-import { fileURLToPath } from 'node:url';
+// server/src/app.ts
+import { Blaize, type InferContext } from 'blaizejs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// ESM path resolution (required for route discovery)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Create server - routes MUST be in a directory
-const server = createServer({
+const app = Blaize.createServer({
   port: 3000,
-  host: 'localhost',
-  routesDir: path.resolve(__dirname, './routes') // Required!
+  routesDir: path.resolve(__dirname, './routes'),
 });
 
-await server.listen();
-console.log('🚀 Server running at https://localhost:3000');
+// Create typed route factory
+type AppContext = InferContext<typeof app>;
+export const route = Blaize.Router.createRouteFactory<
+  AppContext['state'],
+  AppContext['services']
+>();
+
+await app.listen();
 ```
 
-### Step 2: Define Your Server Functions in Route Files
-
-Routes must follow the file-based structure:
-
-```
-server/
-├── index.ts                    # Server setup (above)
-└── routes/                     # Routes directory (required!)
-    ├── users/
-    │   ├── index.ts           # GET /users, POST /users
-    │   └── [userId]/
-    │       └── index.ts       # GET /users/:userId, PUT /users/:userId
-    └── posts/
-        └── index.ts           # GET /posts, POST /posts
-```
+### Step 2: Define Your Routes
 
 ```typescript
-// server/routes/users/[userId]/index.ts
-import { createGetRoute, createPutRoute } from 'blaizejs';
+// server/src/routes/users/[userId].ts
+import { route } from '../../app';
 import { z } from 'zod';
 
-// GET /users/:userId - the file path determines the route!
-export const getUser = createGetRoute({
+export const getUser = route.get({
   schema: {
-    params: z.object({
-      userId: z.string().uuid(),
-    }),
+    params: z.object({ userId: z.string().uuid() }),
     response: z.object({
       id: z.string(),
       name: z.string(),
       email: z.string(),
     }),
   },
-  handler: async (ctx, params) => {
-    // Your actual server logic
+  handler: async ({ ctx, params }) => {
     const user = await db.users.findById(params.userId);
     if (!user) throw new NotFoundError('User not found');
     return user;
   },
 });
-
-// PUT /users/:userId
-export const updateUser = createPutRoute({
-  schema: {
-    params: z.object({
-      userId: z.string().uuid(),
-    }),
-    body: z.object({
-      name: z.string().min(1),
-      email: z.string().email(),
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string(),
-    }),
-  },
-  handler: async (ctx, params) => {
-    const updatedUser = await db.users.update(params.userId, ctx.body);
-    return updatedUser;
-  },
-});
 ```
 
-```typescript
-// server/routes/users/index.ts
-import { createPostRoute } from 'blaizejs';
-import { z } from 'zod';
+### Step 3: Export Your Routes Registry
 
-// POST /users - file location = route path
-export const createUser = createPostRoute({
-  schema: {
-    body: z.object({
-      name: z.string().min(1),
-      email: z.string().email(),
-    }),
-    response: z.object({
-      id: z.string(),
-      name: z.string(),
-      email: z.string(),
-    }),
-  },
-  handler: async (ctx) => {
-    // Your actual server logic
-    const newUser = await db.users.create(ctx.body);
-    await sendWelcomeEmail(newUser.email);
-    return newUser;
-  },
-});
-```
-
-### Step 3: Export Your Route Registry for the Client
-
-**Important**: Do NOT create this file in the `routes` directory as it will interfere with file-based routing!
+**⚠️ Important:** Create this file in `src/`, **NOT** in the `routes/` directory!
 
 ```typescript
-// server/src/app-routes.ts - Route registry for client (NOT in routes directory!)
-import { getUser, updateUser } from './routes/users/[userId]/index.js';
-import { createUser } from './routes/users/index.js';
+// server/src/app-routes.ts
+import { getUser } from './routes/users/[userId]';
+import { listUsers, createUser } from './routes/users';
 
-// Export your route registry - this is your RPC interface!
 export const routes = {
   getUser,
-  updateUser,
+  listUsers,
   createUser,
-} as const;
-
-// Alternative naming: app-type.ts
-export type AppType = typeof routes;
+} as const; // ← 'as const' is important!
 ```
 
-### Step 4: Create Your RPC Client
+### Step 4: Create Your Client
 
 ```typescript
-// client/api.ts
+// client/src/api.ts
 import bc from '@blaizejs/client';
-import { routes } from '../server/src/app-routes'; // Import from src, NOT routes directory!
+import { routes } from '../../server/src/app-routes';
 
-// Create your RPC client
+// Create the RPC client
 const client = bc.create('https://api.example.com', routes);
 
-// Now you have an RPC client that calls your server functions!
 export default client;
 ```
 
-### Step 5: Call Server Functions from Client
+**Alternative:** Use named import:
 
 ```typescript
-// client/app.ts
+import { createClient } from '@blaizejs/client';
+
+const client = createClient('https://api.example.com', routes);
+```
+
+### Step 5: Use the Client
+
+```typescript
+// client/src/app.ts
 import client from './api';
 
-async function myApp() {
-  // 🎯 RPC in action - calling server functions directly!
-  
-  // Call getUser function on the server
-  const user = await client.$get.getUser({
-    params: { userId: '123e4567-e89b-12d3-a456-426614174000' }
-  });
-  console.log(user.name); // ✅ Fully typed!
-  
-  // Call createUser function on the server
-  const newUser = await client.$post.createUser({
-    body: {
-      name: 'Jane Doe',
-      email: 'jane@example.com'
-    }
-  });
-  console.log(newUser.id); // ✅ Fully typed!
-  
-  // TypeScript prevents errors at compile time
-  await client.$get.nonExistent(); // ❌ TypeScript error!
-  await client.$post.createUser({
-    body: { name: 'John' } // ❌ TypeScript error: missing email!
-  });
+async function loadUser(userId: string) {
+  try {
+    const user = await client.$get.getUser({
+      params: { userId },
+    });
+    
+    // TypeScript knows the exact shape of 'user'
+    console.log(user.name);  // ✅ string
+    console.log(user.email); // ✅ string
+    
+  } catch (error) {
+    console.error('Failed to load user:', error);
+  }
 }
 ```
+
+---
 
 ## 🎯 RPC Features
 
@@ -318,77 +261,54 @@ The client automatically generates methods for all your routes:
 // Server routes
 export const routes = {
   // User operations
-  getUser: createGetRoute({ /* ... */ }),
-  createUser: createPostRoute({ /* ... */ }),
-  updateUser: createPutRoute({ /* ... */ }),
-  deleteUser: createDeleteRoute({ /* ... */ }),
-  
-  // Post operations  
-  getPosts: createGetRoute({ /* ... */ }),
-  createPost: createPostRoute({ /* ... */ }),
+  getUser,
+  createUser,
+  updateUser,
+  deleteUser,
   
   // Auth operations
-  login: createPostRoute({ /* ... */ }),
-  logout: createPostRoute({ /* ... */ }),
-  refreshToken: createPostRoute({ /* ... */ }),
+  login,
+  logout,
+  refreshToken,
 } as const;
 
 // Client automatically has all these methods!
-client.$get.getUser()     // ✅
-client.$post.createUser() // ✅
-client.$put.updateUser()  // ✅
+client.$get.getUser()       // ✅
+client.$post.createUser()   // ✅
+client.$put.updateUser()    // ✅
 client.$delete.deleteUser() // ✅
-client.$get.getPosts()    // ✅
-client.$post.createPost() // ✅
-client.$post.login()      // ✅
-client.$post.logout()     // ✅
+client.$post.login()        // ✅
+client.$post.logout()       // ✅
 client.$post.refreshToken() // ✅
 ```
 
 ### 🎨 Full IntelliSense Support
 
-Get autocomplete for everything:
+Your IDE shows all available methods with autocomplete:
 
 ```typescript
-// As you type, your IDE shows available methods
 client.$get.  // IDE shows: getUser, getPosts, etc.
-client.$post. // IDE shows: createUser, createPost, login, etc.
-
-// Parameter hints
-client.$get.getUser({
-  // IDE shows required params structure
-  params: {
-    userId: // IDE shows: string (uuid format)
-  }
-});
+client.$post. // IDE shows: createUser, login, etc.
 ```
 
 ### 🔒 Type-Safe Parameters
 
-All parameters are fully typed based on your schemas:
+All parameters are fully typed:
 
 ```typescript
-// Path parameters
+// ✅ Correct
 await client.$get.getUser({
-  params: { 
-    userId: 123 // ❌ Type error: Expected string, got number
-  }
+  params: { userId: '550e8400-e29b-41d4-a716-446655440000' },
 });
 
-// Query parameters  
-await client.$get.getPosts({
-  query: {
-    page: 1,      // ✅ number
-    limit: "10"   // ❌ Type error: Expected number
-  }
+// ❌ TypeScript error - wrong type
+await client.$get.getUser({
+  params: { userId: 123 }, // Expected string, got number
 });
 
-// Request body
-await client.$post.createUser({
-  body: {
-    name: "John",
-    email: "invalid" // ❌ Type error: Invalid email format
-  }
+// ❌ TypeScript error - missing required param
+await client.$get.getUser({
+  params: {}, // Missing userId
 });
 ```
 
@@ -399,16 +319,17 @@ Response types are automatically inferred:
 ```typescript
 const user = await client.$get.getUser({ params: { userId: '123' } });
 
-// TypeScript knows the exact shape of 'user'
+// TypeScript knows the exact shape
 console.log(user.id);    // ✅ string
-console.log(user.name);  // ✅ string  
-console.log(user.email); // ✅ string
+console.log(user.name);  // ✅ string
 console.log(user.age);   // ❌ Property 'age' does not exist
 ```
 
+---
+
 ## 📖 Core API
 
-### Creating an RPC Client
+### Creating a Client
 
 ```typescript
 import bc from '@blaizejs/client';
@@ -422,43 +343,46 @@ const client = bc.create({
   timeout: 10000,
   defaultHeaders: {
     'Authorization': 'Bearer token',
-    'X-API-Key': 'secret'
-  }
+    'X-API-Key': 'secret',
+  },
 }, routes);
 ```
 
-### RPC Method Pattern
+### Method Pattern
 
-All RPC methods follow the pattern: `client.$[method].[routeName](...)`
+All RPC methods follow: `client.$[method].[routeName](...)`
 
 ```typescript
 client.$get.routeName()    // GET requests
 client.$post.routeName()   // POST requests
 client.$put.routeName()    // PUT requests
-client.$delete.routeName() // DELETE requests
 client.$patch.routeName()  // PATCH requests
+client.$delete.routeName() // DELETE requests
 ```
 
-### Request Parameters
+### Request Arguments
 
 ```typescript
 interface RequestArgs {
   params?: Record<string, string>;  // URL path parameters
-  query?: Record<string, any>;      // Query string parameters
+  query?: Record<string, any>;      // Query string
   body?: unknown;                   // Request body (POST/PUT/PATCH)
+  files?: Record<string, File | File[]>; // File uploads
 }
 ```
 
+---
+
 ## 🛡️ Error Handling
 
-RPC calls can fail. Handle errors properly:
+All errors are automatically transformed to `BlaizeError`:
 
 ```typescript
 import { BlaizeError } from 'blaizejs';
 
 try {
   const user = await client.$get.getUser({ 
-    params: { userId: 'invalid-id' } 
+    params: { userId: 'invalid' } 
   });
 } catch (error) {
   if (error instanceof BlaizeError) {
@@ -472,52 +396,38 @@ try {
       case 500:
         console.log('Server error');
         break;
-      default:
-        console.log('Unknown error:', error.message);
     }
   }
 }
 ```
 
-## 💡 Project Structure Best Practices
-
-When using BlaizeJS with the RPC client, follow this recommended structure:
-
-```
-my-app/
-├── server/
-│   ├── src/
-│   │   ├── index.ts           # Server setup with createServer
-│   │   ├── app-routes.ts      # ✅ Route registry export (for client)
-│   │   └── routes/            # ✅ File-based routing directory
-│   │       ├── users/
-│   │       │   ├── index.ts
-│   │       │   └── [userId]/
-│   │       │       └── index.ts
-│   │       └── posts/
-│   │           └── index.ts
-│   └── package.json
-└── client/
-    ├── src/
-    │   ├── api.ts             # RPC client setup
-    │   └── app.ts             # Your client application
-    └── package.json
-```
-
-**⚠️ Important**: Never put the route registry export (`app-routes.ts` or `app-type.ts`) inside the `routes` directory! This will cause errors with the file-based routing system.
-
-## 💡 Advanced RPC Patterns
-
-### Authentication with RPC
+### Error Structure
 
 ```typescript
-// Create authenticated RPC client
+interface BlaizeError {
+  type: string;           // Error type (e.g., 'NOT_FOUND')
+  title: string;          // Human-readable message
+  status: number;         // HTTP status code
+  correlationId: string;  // Request correlation ID
+  timestamp: string;      // ISO timestamp
+  details?: unknown;      // Error-specific details
+}
+```
+
+---
+
+## 💡 Advanced Patterns
+
+### Authentication
+
+```typescript
+// Create authenticated client
 const createAuthClient = (token: string) => {
   return bc.create({
     baseUrl: 'https://api.example.com',
     defaultHeaders: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   }, routes);
 };
 
@@ -526,30 +436,10 @@ const authClient = createAuthClient(userToken);
 const profile = await authClient.$get.getProfile();
 ```
 
-### Typed Error Handling
+### Request Logging
 
 ```typescript
-// Define custom error types on server
-class UserNotFoundError extends BlaizeError {
-  constructor(userId: string) {
-    super(`User ${userId} not found`, 404);
-  }
-}
-
-// Handle specific errors on client
-try {
-  const user = await client.$get.getUser({ params: { userId } });
-} catch (error) {
-  if (error instanceof BlaizeError && error.status === 404) {
-    // Handle user not found
-  }
-}
-```
-
-### Request Interceptors
-
-```typescript
-// Wrap RPC client for logging, metrics, etc.
+// Wrap client for logging
 function withLogging(client: any) {
   return new Proxy(client, {
     get(target, method) {
@@ -557,7 +447,7 @@ function withLogging(client: any) {
         get(methodTarget, routeName) {
           const original = methodTarget[routeName];
           return async (...args: any[]) => {
-            console.log(`RPC Call: ${String(method)}.${String(routeName)}`);
+            console.log(`[RPC] ${String(method)}.${String(routeName)}`);
             const start = Date.now();
             try {
               const result = await original(...args);
@@ -568,25 +458,27 @@ function withLogging(client: any) {
               throw error;
             }
           };
-        }
+        },
       });
-    }
+    },
   });
 }
 
 const loggedClient = withLogging(client);
 ```
 
-### Batch RPC Calls
+### Batch Requests
 
 ```typescript
-// Execute multiple RPC calls in parallel
-const [users, posts, comments] = await Promise.all([
+// Execute multiple requests in parallel
+const [users, posts, stats] = await Promise.all([
   client.$get.getUsers({ query: { limit: 10 } }),
   client.$get.getPosts({ query: { limit: 5 } }),
-  client.$get.getComments({ query: { limit: 20 } })
+  client.$get.getStats(),
 ]);
 ```
+
+---
 
 ## 🧪 Testing
 
@@ -596,26 +488,23 @@ Testing RPC calls is straightforward:
 import { describe, test, expect, vi } from 'vitest';
 import bc from '@blaizejs/client';
 
-describe('RPC Client Tests', () => {
+describe('RPC Client', () => {
   test('should call server function', async () => {
-    // Mock the underlying fetch
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         id: '123',
         name: 'Test User',
-        email: 'test@example.com'
-      })
+        email: 'test@example.com',
+      }),
     });
 
     const client = bc.create('https://api.example.com', routes);
     
-    // Call RPC method
     const user = await client.$get.getUser({ 
       params: { userId: '123' } 
     });
     
-    // Verify the call
     expect(user.name).toBe('Test User');
     expect(global.fetch).toHaveBeenCalledWith(
       'https://api.example.com/users/123',
@@ -625,15 +514,15 @@ describe('RPC Client Tests', () => {
 });
 ```
 
+---
+
 ## 📚 Type System
 
-### How RPC Types Work
-
-The magic happens through TypeScript's type system:
+### How It Works
 
 ```typescript
-// 1. Your server defines the contract
-const getUser = createGetRoute({
+// 1. Server defines the contract
+const getUser = route.get({
   schema: {
     params: z.object({ id: z.string() }),
     response: z.object({ 
@@ -641,7 +530,7 @@ const getUser = createGetRoute({
       name: z.string() 
     })
   },
-  handler: async (ctx, params) => { /* ... */ }
+  handler: async ({ ctx, params }) => { /* ... */ }
 });
 
 // 2. TypeScript infers the types
@@ -655,109 +544,72 @@ const user = await client.$get.getUser({
 // user is typed as GetUserResponse
 ```
 
-### Type Transformation Pipeline
+### Type Flow
 
-```typescript
-// Server Route Definition
-RouteDefinition 
-  ↓
-// Type Extraction  
-ExtractRouteTypes<RouteDefinition>
-  ↓
-// Registry Building
-BuildRoutesRegistry<Routes>
-  ↓
-// Client Creation
-CreateClient<Registry>
-  ↓
-// Fully Typed RPC Client
-client.$method.routeName(args)
+```
+Server Route Definition
+    ↓
+Type Extraction
+    ↓
+Registry Building
+    ↓
+Client Creation
+    ↓
+Fully Typed RPC Client
 ```
 
-## ⚠️ Known Limitations
-
-### Current Version (v0.3.1)
-
-- **Zod `.transform()` not supported** - Route schemas using Zod's `.transform()` method are not currently supported. This is a known issue that will be fixed in an upcoming release.
-  ```typescript
-  // ❌ Currently not supported
-  const route = createPostRoute({
-    schema: {
-      body: z.object({
-        date: z.string().transform(str => new Date(str))
-      })
-    },
-    handler: async (ctx) => { /* ... */ }
-  });
-  
-  // ✅ Workaround: Handle transformation in the handler
-  const route = createPostRoute({
-    schema: {
-      body: z.object({
-        date: z.string()
-      })
-    },
-    handler: async (ctx) => {
-      const date = new Date(ctx.body.date);
-      // ... rest of your logic
-    }
-  });
-  ```
-
-- **File-Based Routing Required** - The server requires routes to be in a specific directory structure. Routes cannot be defined arbitrarily - they must follow the file-based routing pattern where the file path determines the URL path.
+---
 
 ## 🗺️ Roadmap
 
-### 🚀 Current (v0.3.1)
-- ✅ **Full RPC functionality** with type safety
+### ✅ Current (v0.5.1)
+
+- ✅ Full RPC functionality with type safety
 - ✅ Proxy-based method generation
 - ✅ Automatic type inference
 - ✅ RESTful URL mapping
 - ✅ Error transformation
+- ✅ SSE support
+- ✅ File upload support
+- ✅ Correlation ID tracking
 
-### 🎯 MVP/1.0 Release
-- 🔄 **Fix Zod `.transform()` support** - Full support for Zod transformations
-- 🔄 **Streaming RPC** - Server-sent events support
-- 🔄 **WebSocket RPC** - Bidirectional real-time RPC
-- 🔄 **Request batching** - Send multiple RPC calls in one request
-- 🔄 **Request cancellation** - AbortController support
-- 🔄 **Optimistic updates** - Update UI before server confirms
+### 🎯 v1.0 Release
 
-### 🔮 Post-MVP (v1.1+)
-- 🔄 **GraphQL integration** - Use RPC with GraphQL endpoints
-- 🔄 **gRPC-Web support** - Connect to gRPC services
-- 🔄 **Offline queue** - Queue RPC calls when offline
-- 🔄 **React Query adapter** - First-class React Query integration
-- 🔄 **SWR adapter** - First-class SWR integration
+- 🔄 WebSocket RPC (bidirectional real-time)
+- 🔄 Request batching
+- 🔄 Request cancellation (AbortController)
+- 🔄 Optimistic updates helper
+- 🔄 React Query adapter
+- 🔄 SWR adapter
+
+### 🔮 Post-1.0
+
+- 🔄 GraphQL integration
+- 🔄 gRPC-Web support
+- 🔄 Offline queue
+- 🔄 Request deduplication
+- 🔄 Streaming responses
+
+---
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
+We welcome contributions! See our [Contributing Guide](../../CONTRIBUTING.md).
 
 ### Development Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/jleajones/blaize.git
 cd blaize
-
-# Install dependencies
 pnpm install
-
-# Run tests for client package
 pnpm --filter @blaizejs/client test
-
-# Build client package
-pnpm --filter @blaizejs/client build
 ```
 
-### Why Our RPC Implementation?
+---
 
-1. **HTTP-Native**: Unlike tRPC, we use standard HTTP semantics
-2. **RESTful URLs**: Your RPC calls map to clean REST endpoints
-3. **Zero Config**: No schema definitions or code generation needed
-4. **Framework Agnostic**: Works with any TypeScript backend
-5. **Progressive Enhancement**: Start with REST, add RPC seamlessly
+## 📄 License
+
+MIT © [BlaizeJS Contributors](https://github.com/jleajones/blaize/graphs/contributors)
 
 ---
 
