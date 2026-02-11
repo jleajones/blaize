@@ -1,8 +1,8 @@
 # 🗄️ Database integration
 
-> **Learn how to integrate any database or ORM into your BlaizeJS application using the plugin system**
+> **Learn how to integrate any database or ORM into your BlaizeJS application using the plugin system with factory functions for safe service access**
 
-This guide teaches you the **pattern** for integrating databases — not a specific implementation. You'll get full control, perfect type safety, and lifecycle management while keeping the flexibility to use your preferred tools.
+This guide teaches you the **pattern** for integrating databases — not a specific implementation. You'll get full control, perfect type safety, and lifecycle management while keeping the flexibility to use your preferred tools. Plus, you'll learn how to safely access your database from route handlers, job handlers, and utility functions.
 
 ---
 
@@ -27,7 +27,9 @@ BlaizeJS intentionally does not provide a database plugin because:
 ## 📚 What you'll learn
 
 - ✅ Create a database plugin with lifecycle management
+- ✅ Export factory functions for safe service access
 - ✅ Inject your database into `ctx.services` with full type safety
+- ✅ Use database in routes, job handlers, and utilities
 - ✅ Handle connections, disconnections, and errors gracefully
 - ✅ Publish events for real-time updates
 - ✅ Coordinate across multiple servers
@@ -77,7 +79,21 @@ const dbMiddleware = createMiddleware({
   },
 });
 
-// ✅ CORRECT: Plugin connects once, middleware provides access
+// ✅ CORRECT: Plugin connects once, factory provides safe access
+// Internal singleton (private)
+let _db: Database | null = null;
+
+// Factory function for external access (public)
+export function getDatabase(): Database {
+  if (!_db) {
+    throw new Error(
+      'Database not initialized. ' +
+      'Make sure you have registered the database plugin.'
+    );
+  }
+  return _db;
+}
+
 const databasePlugin = createPlugin<
   { connectionString: string }, // Config
   {}, // State (none needed)
@@ -87,35 +103,57 @@ const databasePlugin = createPlugin<
   version: '1.0.0',
 
   setup: ({ config, logger }) => {
-    let db: Database; // Singleton in closure
-
     return {
-      // Connect ONCE at startup
+      // Connect ONCE at startup (only place to assign _db)
       initialize: async () => {
-        db = await Database.connect(config.connectionString);
+        _db = await Database.connect(config.connectionString);
       },
 
-      // Register middleware to provide access
+      // Register middleware to provide access in routes
       register: async server => {
         server.use(
           createMiddleware<{}, { db: Database }>({
             name: 'database',
             handler: async (ctx, next) => {
-              ctx.services.db = db; // Just a reference!
+              ctx.services.db = getDatabase(); // Use factory
               await next();
             },
           })
         );
       },
 
-      // Clean up ONCE at shutdown
+      // Clean up ONCE at shutdown (only place to clear _db)
       terminate: async () => {
+        const db = getDatabase();
         await db.close();
+        _db = null;
       },
     };
   },
 });
 ```
+
+### Two ways to access your database
+
+BlaizeJS plugins provide **two access patterns**, each optimized for different contexts:
+
+| Context | Access Method | Example |
+|---------|---------------|---------|
+| **Route handlers** | `ctx.services.db` | `await ctx.services.db.insert(...)` |
+| **Job handlers** | `getDatabase()` | `const db = getDatabase()` |
+| **Utility functions** | `getDatabase()` | `const db = getDatabase()` |
+| **Worker processes** | `getDatabase()` | `const db = getDatabase()` |
+
+**Why two patterns?**
+
+- **Route handlers** receive context via middleware → use `ctx.services.db`
+- **Everything else** doesn't have context → use `getDatabase()` factory function
+
+This pattern gives you:
+- ✅ **Clear error messages** — "Database not initialized..." instead of "Cannot read property of null"
+- ✅ **Explicit intent** — `getDatabase()` shows you're retrieving a service
+- ✅ **Easy testing** — Mock the factory function, not the instance
+- ✅ **Safety checks** — Factory verifies initialization state
 
 ### Plugin lifecycle hooks
 
@@ -164,6 +202,18 @@ createMiddleware<TState, TServices>({ ... })
 
 The middleware types must match what the plugin declares it provides.
 
+### Naming conventions
+
+Follow these patterns for consistency:
+
+| Service Type | Factory Function | Check Function | Private Variable |
+|--------------|------------------|----------------|------------------|
+| `Database` | `getDatabase()` | `isDatabaseInitialized()` | `_db` |
+| `PrismaClient` | `getPrisma()` | `isPrismaInitialized()` | `_prisma` |
+| `DataSource` | `getDataSource()` | `isDataSourceInitialized()` | `_dataSource` |
+
+**Pattern:** `get[ServiceName]()` where ServiceName is PascalCase
+
 ---
 
 ## 📖 Drizzle integration
@@ -211,33 +261,102 @@ export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
 ```
 
-### Step 3: Create database module
+### Step 3: Create database module with factory functions
 
 ```typescript
 // src/database/index.ts
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { users, posts } from './schema';
+import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 
-// Create SQLite connection
-const sqlite = new Database('./data.db');
+// Internal singletons (private)
+let _sqlite: Database.Database | null = null;
+let _db: BetterSQLite3Database<typeof schema> | null = null;
 
-// Enable WAL mode for better concurrency
-sqlite.pragma('journal_mode = WAL');
+const schema = { users, posts };
 
-// Create Drizzle instance
-export const db = drizzle(sqlite, {
-  schema: { users, posts },
-});
+/**
+ * Get the Drizzle database instance
+ * 
+ * Safe for use in:
+ * - Job handlers
+ * - Utility functions
+ * - Worker processes
+ * - Anywhere outside route handlers
+ * 
+ * @throws {Error} If called before database plugin is initialized
+ * 
+ * @example In job handlers
+ * ```typescript
+ * import { getDatabase } from '../../database';
+ * 
+ * export const cleanupHandler = createHandler(queues, 'maintenance', 'cleanup',
+ *   async (data, ctx) => {
+ *     const db = getDatabase();
+ *     await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
+ *   }
+ * );
+ * ```
+ * 
+ * @example In utility functions
+ * ```typescript
+ * import { getDatabase } from '../database';
+ * 
+ * export async function getUserStats(userId: number) {
+ *   const db = getDatabase();
+ *   return await db.select().from(users).where(eq(users.id, userId));
+ * }
+ * ```
+ */
+export function getDatabase(): BetterSQLite3Database<typeof schema> {
+  if (!_db) {
+    throw new Error(
+      'Database not initialized. ' +
+      'Make sure you have registered the database plugin.'
+    );
+  }
+  return _db;
+}
+
+/**
+ * Check if database is initialized
+ * 
+ * Useful for conditional logic or startup checks.
+ * 
+ * @returns true if the database has been initialized
+ */
+export function isDatabaseInitialized(): boolean {
+  return _db !== null;
+}
+
+/**
+ * Initialize database (called by plugin)
+ * @internal - Do not call directly
+ */
+export function initializeDatabase(): void {
+  _sqlite = new Database('./data.db');
+  _sqlite.pragma('journal_mode = WAL');
+  _db = drizzle(_sqlite, { schema });
+}
+
+/**
+ * Close database connection (called by plugin)
+ * @internal - Do not call directly
+ */
+export function closeDatabase(): void {
+  if (_sqlite) {
+    _sqlite.close();
+    _sqlite = null;
+  }
+  _db = null;
+}
 
 // Export schema for queries
-export const schema = { users, posts };
-
-// Export connection for cleanup
-export const connection = sqlite;
+export { schema };
 
 // Export type for service injection
-export type Database = typeof db;
+export type Database = BetterSQLite3Database<typeof schema>;
 ```
 
 ### Step 4: Create database plugin
@@ -245,7 +364,12 @@ export type Database = typeof db;
 ```typescript
 // src/database/plugin.ts
 import { createPlugin, createMiddleware } from 'blaizejs';
-import { db, connection } from './index';
+import { 
+  getDatabase, 
+  initializeDatabase, 
+  closeDatabase,
+  isDatabaseInitialized 
+} from './index';
 import type { Database } from './index';
 
 interface DatabaseServices {
@@ -272,7 +396,7 @@ export const createDatabasePlugin = () => {
             createMiddleware<{}, DatabaseServices>({
               name: 'database',
               handler: async (ctx, next) => {
-                ctx.services.db = db;
+                ctx.services.db = getDatabase(); // Use factory
                 await next();
               },
             })
@@ -282,13 +406,18 @@ export const createDatabasePlugin = () => {
         },
 
         /**
-         * Initialize - Verify connection before server starts
+         * Initialize - Connect to database before server starts
          */
         initialize: async () => {
           pluginLogger.info('Initializing database');
 
           try {
-            connection.prepare('SELECT 1').get();
+            initializeDatabase(); // Only place to create connection
+            
+            // Verify connection
+            const db = getDatabase();
+            db.run('SELECT 1');
+            
             pluginLogger.info('Database connection verified');
           } catch (error) {
             pluginLogger.error('Database connection failed', {
@@ -302,7 +431,9 @@ export const createDatabasePlugin = () => {
          * Server start - Log readiness
          */
         onServerStart: async () => {
-          pluginLogger.info('Database ready');
+          pluginLogger.info('Database ready', {
+            initialized: isDatabaseInitialized(),
+          });
         },
 
         /**
@@ -317,8 +448,10 @@ export const createDatabasePlugin = () => {
          */
         terminate: async () => {
           pluginLogger.info('Closing database connection');
-          connection.close();
-          pluginLogger.info('Database connection closed');
+          closeDatabase(); // Only place to close connection
+          pluginLogger.info('Database connection closed', {
+            initialized: isDatabaseInitialized(),
+          });
         },
       };
     },
@@ -385,6 +518,7 @@ export const getUser = createGetRoute({
     params: z.object({ userId: z.string() }),
   },
   handler: async (ctx, params) => {
+    // Use ctx.services in routes
     const [user] = await ctx.services.db
       .select()
       .from(users)
@@ -400,7 +534,78 @@ export const getUser = createGetRoute({
 });
 ```
 
-### Step 7: Migrations
+### Step 7: Use in job handlers
+
+```typescript
+// src/queues/cleanup/old-sessions.ts
+import { getDatabase } from '../../database';
+import { sessions } from '../../database/schema';
+import { lt } from 'drizzle-orm';
+
+export const cleanupOldSessions = createHandler(
+  queues,
+  'maintenance',
+  'cleanup-sessions',
+  async (data, ctx) => {
+    // Use factory function in job handlers
+    const db = getDatabase();
+    
+    const result = await db
+      .delete(sessions)
+      .where(lt(sessions.expiresAt, new Date()))
+      .returning({ id: sessions.id });
+
+    ctx.logger.info('Cleaned up old sessions', { 
+      count: result.length 
+    });
+
+    return { deletedCount: result.length };
+  }
+);
+```
+
+### Step 8: Use in utility functions
+
+```typescript
+// src/lib/user-stats.ts
+import { getDatabase } from '../database';
+import { users, posts } from '../database/schema';
+import { eq, count } from 'drizzle-orm';
+
+/**
+ * Get statistics for a user
+ * Safe to call from anywhere - uses factory function
+ */
+export async function getUserStats(userId: number) {
+  // Use factory function in utilities
+  const db = getDatabase();
+
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!user) {
+    return null;
+  }
+
+  const [postCount] = await db
+    .select({ count: count() })
+    .from(posts)
+    .where(eq(posts.userId, userId));
+
+  return {
+    user,
+    stats: {
+      totalPosts: postCount.count,
+      accountAge: Date.now() - user.createdAt.getTime(),
+    },
+  };
+}
+```
+
+### Step 9: Migrations
 
 ```typescript
 // drizzle.config.ts
@@ -489,17 +694,80 @@ model Post {
 pnpm prisma generate
 ```
 
-### Step 5: Create database module
+### Step 5: Create database module with factory functions
 
 ```typescript
 // src/database/index.ts
 import { PrismaClient } from '@prisma/client';
 
-export const prisma = new PrismaClient({
-  log: ['query', 'error', 'warn'],
-});
+// Internal singleton (private)
+let _prisma: PrismaClient | null = null;
 
-export type Database = typeof prisma;
+/**
+ * Get the Prisma client instance
+ * 
+ * Safe for use in:
+ * - Job handlers
+ * - Utility functions
+ * - Worker processes
+ * - Anywhere outside route handlers
+ * 
+ * @throws {Error} If called before Prisma is initialized
+ * 
+ * @example In job handlers
+ * ```typescript
+ * import { getPrisma } from '../../database';
+ * 
+ * export const cleanupHandler = createHandler(queues, 'maintenance', 'cleanup',
+ *   async (data, ctx) => {
+ *     const prisma = getPrisma();
+ *     await prisma.session.deleteMany({
+ *       where: { expiresAt: { lt: new Date() } }
+ *     });
+ *   }
+ * );
+ * ```
+ */
+export function getPrisma(): PrismaClient {
+  if (!_prisma) {
+    throw new Error(
+      'Prisma not initialized. ' +
+      'Make sure you have registered the database plugin.'
+    );
+  }
+  return _prisma;
+}
+
+/**
+ * Check if Prisma is initialized
+ */
+export function isPrismaInitialized(): boolean {
+  return _prisma !== null;
+}
+
+/**
+ * Initialize Prisma (called by plugin)
+ * @internal
+ */
+export function initializePrisma(): void {
+  _prisma = new PrismaClient({
+    log: ['query', 'error', 'warn'],
+  });
+}
+
+/**
+ * Close Prisma connection (called by plugin)
+ * @internal
+ */
+export async function closePrisma(): Promise<void> {
+  if (_prisma) {
+    await _prisma.$disconnect();
+    _prisma = null;
+  }
+}
+
+// Export type
+export type Database = PrismaClient;
 ```
 
 ### Step 6: Create database plugin
@@ -507,7 +775,12 @@ export type Database = typeof prisma;
 ```typescript
 // src/database/plugin.ts
 import { createPlugin, createMiddleware } from 'blaizejs';
-import { prisma } from './index';
+import { 
+  getPrisma, 
+  initializePrisma, 
+  closePrisma,
+  isPrismaInitialized 
+} from './index';
 import type { Database } from './index';
 
 interface DatabaseServices {
@@ -528,7 +801,7 @@ export const createDatabasePlugin = () => {
             createMiddleware<{}, DatabaseServices>({
               name: 'database',
               handler: async (ctx, next) => {
-                ctx.services.db = prisma;
+                ctx.services.db = getPrisma(); // Use factory
                 await next();
               },
             })
@@ -538,13 +811,21 @@ export const createDatabasePlugin = () => {
         },
 
         initialize: async () => {
-          // Prisma connects lazily, verify with simple query
+          pluginLogger.info('Initializing Prisma');
+          
+          initializePrisma(); // Only place to create client
+          
+          // Verify connection
+          const prisma = getPrisma();
           await prisma.$queryRaw`SELECT 1`;
-          pluginLogger.info('Database connection verified');
+          
+          pluginLogger.info('Prisma connection verified');
         },
 
         onServerStart: async () => {
-          pluginLogger.info('Database ready');
+          pluginLogger.info('Database ready', {
+            initialized: isPrismaInitialized(),
+          });
         },
 
         onServerStop: async () => {
@@ -552,8 +833,9 @@ export const createDatabasePlugin = () => {
         },
 
         terminate: async () => {
-          await prisma.$disconnect();
-          pluginLogger.info('Database connection closed');
+          pluginLogger.info('Closing Prisma connection');
+          await closePrisma(); // Only place to disconnect
+          pluginLogger.info('Prisma connection closed');
         },
       };
     },
@@ -578,6 +860,7 @@ export const createUser = createPostRoute({
     body: createUserSchema,
   },
   handler: async ctx => {
+    // Use ctx.services in routes
     const user = await ctx.services.db.user.create({
       data: {
         name: ctx.request.body.name,
@@ -590,7 +873,69 @@ export const createUser = createPostRoute({
 });
 ```
 
-### Step 8: Migrations
+### Step 8: Use in job handlers
+
+```typescript
+// src/queues/cleanup/old-sessions.ts
+import { getPrisma } from '../../database';
+
+export const cleanupOldSessions = createHandler(
+  queues,
+  'maintenance',
+  'cleanup-sessions',
+  async (data, ctx) => {
+    // Use factory function in job handlers
+    const prisma = getPrisma();
+    
+    const result = await prisma.session.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() },
+      },
+    });
+
+    ctx.logger.info('Cleaned up old sessions', { 
+      count: result.count 
+    });
+
+    return { deletedCount: result.count };
+  }
+);
+```
+
+### Step 9: Use in utility functions
+
+```typescript
+// src/lib/user-stats.ts
+import { getPrisma } from '../database';
+
+export async function getUserStats(userId: number) {
+  // Use factory function in utilities
+  const prisma = getPrisma();
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      _count: {
+        select: { posts: true },
+      },
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    user,
+    stats: {
+      totalPosts: user._count.posts,
+      accountAge: Date.now() - user.createdAt.getTime(),
+    },
+  };
+}
+```
+
+### Step 10: Migrations
 
 ```bash
 # Create migration
@@ -666,7 +1011,7 @@ export class Post {
 }
 ```
 
-### Step 3: Create database module
+### Step 3: Create database module with factory functions
 
 ```typescript
 // src/database/index.ts
@@ -675,15 +1020,66 @@ import { DataSource } from 'typeorm';
 import { User } from './entities/User';
 import { Post } from './entities/Post';
 
-export const AppDataSource = new DataSource({
-  type: 'sqlite',
-  database: './data.db',
-  entities: [User, Post],
-  synchronize: true, // Disable in production!
-  logging: true,
-});
+// Internal singleton (private)
+let _dataSource: DataSource | null = null;
 
-export type Database = typeof AppDataSource;
+/**
+ * Get the TypeORM DataSource instance
+ * 
+ * Safe for use in:
+ * - Job handlers
+ * - Utility functions
+ * - Worker processes
+ * - Anywhere outside route handlers
+ * 
+ * @throws {Error} If called before DataSource is initialized
+ */
+export function getDataSource(): DataSource {
+  if (!_dataSource) {
+    throw new Error(
+      'DataSource not initialized. ' +
+      'Make sure you have registered the database plugin.'
+    );
+  }
+  return _dataSource;
+}
+
+/**
+ * Check if DataSource is initialized
+ */
+export function isDataSourceInitialized(): boolean {
+  return _dataSource !== null && _dataSource.isInitialized;
+}
+
+/**
+ * Initialize DataSource (called by plugin)
+ * @internal
+ */
+export async function initializeDataSource(): Promise<void> {
+  _dataSource = new DataSource({
+    type: 'sqlite',
+    database: './data.db',
+    entities: [User, Post],
+    synchronize: true, // Disable in production!
+    logging: true,
+  });
+  
+  await _dataSource.initialize();
+}
+
+/**
+ * Close DataSource connection (called by plugin)
+ * @internal
+ */
+export async function closeDataSource(): Promise<void> {
+  if (_dataSource && _dataSource.isInitialized) {
+    await _dataSource.destroy();
+    _dataSource = null;
+  }
+}
+
+// Export type
+export type Database = DataSource;
 ```
 
 ### Step 4: Create database plugin
@@ -691,7 +1087,12 @@ export type Database = typeof AppDataSource;
 ```typescript
 // src/database/plugin.ts
 import { createPlugin, createMiddleware } from 'blaizejs';
-import { AppDataSource } from './index';
+import { 
+  getDataSource, 
+  initializeDataSource, 
+  closeDataSource,
+  isDataSourceInitialized 
+} from './index';
 import type { Database } from './index';
 
 interface DatabaseServices {
@@ -712,7 +1113,7 @@ export const createDatabasePlugin = () => {
             createMiddleware<{}, DatabaseServices>({
               name: 'database',
               handler: async (ctx, next) => {
-                ctx.services.db = AppDataSource;
+                ctx.services.db = getDataSource(); // Use factory
                 await next();
               },
             })
@@ -722,12 +1123,15 @@ export const createDatabasePlugin = () => {
         },
 
         initialize: async () => {
-          await AppDataSource.initialize();
-          pluginLogger.info('Database connection initialized');
+          pluginLogger.info('Initializing TypeORM DataSource');
+          await initializeDataSource(); // Only place to initialize
+          pluginLogger.info('DataSource initialized');
         },
 
         onServerStart: async () => {
-          pluginLogger.info('Database ready');
+          pluginLogger.info('Database ready', {
+            initialized: isDataSourceInitialized(),
+          });
         },
 
         onServerStop: async () => {
@@ -735,8 +1139,9 @@ export const createDatabasePlugin = () => {
         },
 
         terminate: async () => {
-          await AppDataSource.destroy();
-          pluginLogger.info('Database connection closed');
+          pluginLogger.info('Closing DataSource');
+          await closeDataSource(); // Only place to destroy
+          pluginLogger.info('DataSource closed');
         },
       };
     },
@@ -762,6 +1167,7 @@ export const createUser = createPostRoute({
     body: createUserSchema,
   },
   handler: async ctx => {
+    // Use ctx.services in routes
     const userRepository = ctx.services.db.getRepository(User);
 
     const user = userRepository.create({
@@ -773,6 +1179,157 @@ export const createUser = createPostRoute({
 
     return { success: true, user };
   },
+});
+```
+
+### Step 6: Use in job handlers
+
+```typescript
+// src/queues/cleanup/old-sessions.ts
+import { getDataSource } from '../../database';
+import { Session } from '../../database/entities/Session';
+import { LessThan } from 'typeorm';
+
+export const cleanupOldSessions = createHandler(
+  queues,
+  'maintenance',
+  'cleanup-sessions',
+  async (data, ctx) => {
+    // Use factory function in job handlers
+    const dataSource = getDataSource();
+    const sessionRepo = dataSource.getRepository(Session);
+    
+    const result = await sessionRepo.delete({
+      expiresAt: LessThan(new Date()),
+    });
+
+    ctx.logger.info('Cleaned up old sessions', { 
+      count: result.affected 
+    });
+
+    return { deletedCount: result.affected || 0 };
+  }
+);
+```
+
+### Step 7: Use in utility functions
+
+```typescript
+// src/lib/user-stats.ts
+import { getDataSource } from '../database';
+import { User } from '../database/entities/User';
+
+export async function getUserStats(userId: number) {
+  // Use factory function in utilities
+  const dataSource = getDataSource();
+  const userRepo = dataSource.getRepository(User);
+
+  const user = await userRepo.findOne({
+    where: { id: userId },
+    relations: ['posts'],
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    user,
+    stats: {
+      totalPosts: user.posts.length,
+      accountAge: Date.now() - user.createdAt.getTime(),
+    },
+  };
+}
+```
+
+---
+
+## 🧪 Testing database integration
+
+### Testing factory functions
+
+```typescript
+// test/database.test.ts
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { 
+  getDatabase, 
+  isDatabaseInitialized,
+  initializeDatabase,
+  closeDatabase 
+} from '../src/database';
+
+describe('Database Factory Functions', () => {
+  afterEach(async () => {
+    if (isDatabaseInitialized()) {
+      closeDatabase();
+    }
+  });
+
+  it('should throw before initialization', () => {
+    expect(() => getDatabase()).toThrow('Database not initialized');
+    expect(isDatabaseInitialized()).toBe(false);
+  });
+
+  it('should return database after initialization', () => {
+    initializeDatabase();
+    
+    expect(() => getDatabase()).not.toThrow();
+    expect(isDatabaseInitialized()).toBe(true);
+    
+    const db = getDatabase();
+    expect(db).toBeDefined();
+  });
+
+  it('should throw after cleanup', () => {
+    initializeDatabase();
+    const db = getDatabase();
+    expect(db).toBeDefined();
+    
+    closeDatabase();
+    
+    expect(() => getDatabase()).toThrow('Database not initialized');
+    expect(isDatabaseInitialized()).toBe(false);
+  });
+});
+```
+
+### Mocking database in route tests
+
+```typescript
+// test/routes/users.test.ts
+import { vi } from 'vitest';
+import { request } from 'supertest';
+
+// Mock the factory function
+vi.mock('../../database', () => ({
+  getDatabase: vi.fn(() => mockDb),
+  isDatabaseInitialized: vi.fn(() => true),
+}));
+
+const mockDb = {
+  insert: vi.fn().mockReturnThis(),
+  values: vi.fn().mockReturnThis(),
+  returning: vi.fn().mockResolvedValue([{ 
+    id: 1, 
+    name: 'Test User', 
+    email: 'test@example.com' 
+  }]),
+};
+
+describe('POST /users', () => {
+  it('should create a user', async () => {
+    const response = await request(app)
+      .post('/users')
+      .send({
+        name: 'Test User',
+        email: 'test@example.com',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(mockDb.insert).toHaveBeenCalled();
+  });
 });
 ```
 
@@ -873,11 +1430,11 @@ export const userStream = createSSERoute({
 
 ### Database helpers with automatic events
 
-Create helper functions that combine Drizzle operations with automatic event emission:
+Create helper functions that combine database operations with automatic event emission:
 
 ```typescript
 // src/database/helpers.ts
-import { db } from './index';
+import { getDatabase } from './index';
 import { users } from './schema';
 import { eq } from 'drizzle-orm';
 import type { NewUser, User } from './schema';
@@ -887,6 +1444,7 @@ export function createDatabaseHelpers(eventBus: EventBus) {
   return {
     users: {
       async create(data: NewUser): Promise<User> {
+        const db = getDatabase(); // Use factory function
         const [user] = await db.insert(users).values(data).returning();
 
         await eventBus.publish('user:created', {
@@ -898,7 +1456,12 @@ export function createDatabaseHelpers(eventBus: EventBus) {
       },
 
       async update(id: number, data: Partial<NewUser>): Promise<User> {
-        const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+        const db = getDatabase();
+        const [user] = await db
+          .update(users)
+          .set(data)
+          .where(eq(users.id, id))
+          .returning();
 
         await eventBus.publish('user:updated', {
           userId: id,
@@ -909,6 +1472,7 @@ export function createDatabaseHelpers(eventBus: EventBus) {
       },
 
       async delete(id: number): Promise<void> {
+        const db = getDatabase();
         await db.delete(users).where(eq(users.id, id));
 
         await eventBus.publish('user:deleted', {
@@ -918,7 +1482,9 @@ export function createDatabaseHelpers(eventBus: EventBus) {
     },
 
     // Raw database access when needed
-    db,
+    get db() {
+      return getDatabase();
+    },
   };
 }
 ```
@@ -1141,6 +1707,26 @@ createMiddleware<{}, DatabaseServices>({ ... })
 
 ---
 
+### "Database not initialized" error
+
+**Cause:** Factory function called before plugin's `initialize()` hook ran.
+
+**Solutions:**
+
+1. Ensure plugin is registered: `server.register(createDatabasePlugin())`
+2. Ensure code runs after `server.listen()` for development scripts
+3. In tests, ensure factory is mocked
+
+**Example test setup:**
+```typescript
+vi.mock('../database', () => ({
+  getDatabase: vi.fn(() => mockDb),
+  isDatabaseInitialized: vi.fn(() => true),
+}));
+```
+
+---
+
 ### "Database connection closed" errors
 
 **Cause:** Database disconnected before request completed.
@@ -1150,7 +1736,7 @@ createMiddleware<{}, DatabaseServices>({ ... })
 ```typescript
 terminate: async () => {
   // Only runs when server.close() is called
-  await connection.close();
+  closeDatabase();
 };
 ```
 
@@ -1200,6 +1786,21 @@ interface DatabaseServices {
 
 ---
 
+### "TypeError: getDatabase is not a function"
+
+**Cause:** Import path is incorrect.
+
+**Solution:**
+```typescript
+// ✅ Correct
+import { getDatabase } from '../../database';
+
+// ❌ Wrong (old pattern)
+import { db } from '../../database';
+```
+
+---
+
 ## ⚡ Performance tips
 
 ### Connection pooling
@@ -1211,18 +1812,36 @@ import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
 
-const pool = new Pool({
-  host: 'localhost',
-  port: 5432,
-  database: 'mydb',
-  user: 'postgres',
-  password: 'password',
-  max: 20, // Maximum connections
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+let _pool: Pool | null = null;
+let _db: Database | null = null;
 
-export const db = drizzle(pool, { schema });
+export function getDatabase(): Database {
+  if (!_db) throw new Error('Database not initialized');
+  return _db;
+}
+
+export function initializeDatabase(): void {
+  _pool = new Pool({
+    host: 'localhost',
+    port: 5432,
+    database: 'mydb',
+    user: 'postgres',
+    password: 'password',
+    max: 20, // Maximum connections
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
+
+  _db = drizzle(_pool, { schema });
+}
+
+export function closeDatabase(): void {
+  if (_pool) {
+    _pool.end();
+    _pool = null;
+  }
+  _db = null;
+}
 ```
 
 ### Query optimization
@@ -1351,7 +1970,7 @@ export const updateUser = createPutRoute({
 
 ## 🔗 Related documentation
 
-- [Plugin system](./plugins) — Deep dive into plugin architecture
+- [Plugin system](./plugins) — Deep dive into plugin architecture with factory functions
 - [EventBus](./eventbus) — Real-time event coordination
 - [Server-Sent Events](./sse) — Real-time updates to clients
 - [Middleware](./middleware) — Request/response processing
@@ -1363,7 +1982,9 @@ export const updateUser = createPutRoute({
 You've learned:
 
 - ✅ How to create a database plugin with lifecycle management
+- ✅ How to export factory functions for safe service access
 - ✅ How to inject services with full type safety
+- ✅ How to use database in routes, jobs, and utilities
 - ✅ How to handle connections and cleanup properly
 - ✅ How to publish events for real-time updates
 - ✅ How to coordinate across multiple servers

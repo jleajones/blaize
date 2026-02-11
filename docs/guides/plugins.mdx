@@ -1,8 +1,8 @@
 # 🔌 Plugins Guide
 
-> Manage expensive resources with lifecycle hooks—connect once at startup, clean up at shutdown, provide typed access everywhere
+> Manage expensive resources with lifecycle hooks—connect once at startup, clean up at shutdown, provide typed access everywhere through middleware and factory functions
 
-Plugins are BlaizeJS's answer to resource management. While middleware runs on every request, plugins handle the heavy lifting: database connections, cache clients, external services—anything that's expensive to create and needs proper cleanup.
+Plugins are BlaizeJS's answer to resource management. While middleware runs on every request, plugins handle the heavy lifting: database connections, cache clients, external services—anything that's expensive to create and needs proper cleanup. Plugins provide **two access patterns**: `ctx.services` for route handlers and factory functions for job handlers, utilities, and worker processes.
 
 ---
 
@@ -11,6 +11,7 @@ Plugins are BlaizeJS's answer to resource management. While middleware runs on e
 - [What is a Plugin?](#-what-is-a-plugin)
 - [Plugins vs Middleware](#-plugins-vs-middleware)
 - [Your First Plugin](#-your-first-plugin)
+- [Understanding Service Access](#-understanding-service-access)
 - [Understanding the Lifecycle](#-understanding-the-lifecycle)
 - [Type-Safe Plugins](#-type-safe-plugins)
 - [Common Patterns](#-common-patterns)
@@ -37,7 +38,8 @@ A plugin is a reusable module that **manages resources with lifecycle hooks**. T
 │  5. Plugin onServerStart() verifies setup    │
 ├──────────────────────────────────────────────┤
 │           Requests Processing                │
-│  → Middleware provides access to resources   │
+│  → Middleware provides ctx.services access   │
+│  → Factory functions provide direct access   │
 ├──────────────────────────────────────────────┤
 │           Application Shutdown               │
 │  1. Plugin onServerStop() stops new work     │
@@ -102,7 +104,21 @@ const dbMiddleware = createMiddleware({
 ```
 
 ```typescript
-// ✅ CORRECT: Plugin connects once, middleware provides access
+// ✅ CORRECT: Plugin connects once, factory provides safe access
+// Internal singleton (private)
+let _db: Database | null = null;
+
+// Factory function for external access (public)
+export function getDatabase(): Database {
+  if (!_db) {
+    throw new Error(
+      'Database not initialized. ' +
+      'Make sure you have registered the database plugin.'
+    );
+  }
+  return _db;
+}
+
 const databasePlugin = createPlugin<
   { connectionString: string }, // Config
   {},                           // State (usually empty)
@@ -112,15 +128,13 @@ const databasePlugin = createPlugin<
   version: '1.0.0',
   
   setup: ({ config }) => {
-    let db: Database; // ← Singleton in closure
-    
     return {
       register: async (server) => {
-        // Middleware just provides a reference
+        // Middleware provides reference via factory
         server.use(
           createMiddleware<{}, { db: Database }>({
             handler: async ({ ctx, next }) => {
-              ctx.services.db = db; // Just a reference!
+              ctx.services.db = getDatabase(); // Use factory
               await next();
             },
           })
@@ -128,13 +142,15 @@ const databasePlugin = createPlugin<
       },
       
       initialize: async () => {
-        // Connect ONCE at startup
-        db = await Database.connect(config.connectionString);
+        // Connect ONCE at startup (only place to assign _db)
+        _db = await Database.connect(config.connectionString);
       },
       
       terminate: async () => {
         // Clean up ONCE at shutdown
+        const db = getDatabase();
         await db.close();
+        _db = null; // Only place to clear _db
       },
     };
   },
@@ -157,6 +173,49 @@ interface RedisConfig {
   maxRetries?: number;
 }
 
+// 1️⃣ Internal singleton (private)
+let _redis: Redis | null = null;
+
+// 2️⃣ Factory function for external access (public)
+/**
+ * Get the Redis instance
+ * 
+ * Safe for use in:
+ * - Job handlers
+ * - Utility functions
+ * - Worker processes
+ * - Anywhere outside route handlers
+ * 
+ * @throws {Error} If called before Redis plugin is initialized
+ * 
+ * @example In job handlers
+ * ```typescript
+ * import { getRedis } from '../../plugins/redis';
+ * 
+ * export const cacheWarmer = createHandler(queues, 'maintenance', 'cache-warm',
+ *   async (data, ctx) => {
+ *     const redis = getRedis();
+ *     await redis.set('cache:key', value);
+ *   }
+ * );
+ * ```
+ */
+export function getRedis(): Redis {
+  if (!_redis) {
+    throw new Error(
+      'Redis not initialized. ' +
+      'Make sure you have registered the Redis plugin.'
+    );
+  }
+  return _redis;
+}
+
+// 3️⃣ Optional initialization check
+export function isRedisInitialized(): boolean {
+  return _redis !== null;
+}
+
+// 4️⃣ Plugin factory
 export const createRedisPlugin = createPlugin<
   RedisConfig,      // Config type
   {},               // State (none)
@@ -172,11 +231,8 @@ export const createRedisPlugin = createPlugin<
   },
   
   setup: ({ config, logger }) => {
-    // 1️⃣ Declare resources in closure (singleton)
-    let redis: Redis;
-    
     return {
-      // 2️⃣ Register middleware for typed access
+      // 5️⃣ Register middleware for typed access in routes
       register: async (server) => {
         logger.debug('Registering Redis middleware');
         
@@ -184,30 +240,32 @@ export const createRedisPlugin = createPlugin<
           createMiddleware<{}, { redis: Redis }>({
             name: 'redis',
             handler: async ({ ctx, next }) => {
-              ctx.services.redis = redis;
+              ctx.services.redis = getRedis(); // Use factory
               await next();
             },
           })
         );
       },
       
-      // 3️⃣ Initialize resource
+      // 6️⃣ Initialize resource (only place to assign _redis)
       initialize: async () => {
         logger.info('Connecting to Redis', { url: config.url });
         
-        redis = new Redis(config.url, {
+        _redis = new Redis(config.url, {
           maxRetriesPerRequest: config.maxRetries,
         });
         
         // Verify connection
-        await redis.ping();
+        await _redis.ping();
         logger.info('Redis connected');
       },
       
-      // 4️⃣ Clean up resource
+      // 7️⃣ Clean up resource (only place to clear _redis)
       terminate: async () => {
         logger.info('Disconnecting from Redis');
+        const redis = getRedis();
         await redis.quit();
+        _redis = null;
         logger.info('Redis disconnected');
       },
     };
@@ -243,12 +301,98 @@ import { route } from '../app';
 
 export const getCachedValue = route.get({
   handler: async ({ ctx }) => {
-    // TypeScript knows redis is available!
+    // TypeScript knows redis is available via ctx.services!
     const value = await ctx.services.redis.get('my-key');
     return { value };
   },
 });
 ```
+
+**Use it in job handlers:**
+
+```typescript
+// src/queues/cache-warmer.ts
+import { getRedis } from '../plugins/redis';
+
+export const cacheWarmer = createHandler(queues, 'maintenance', 'cache-warm',
+  async (data, ctx) => {
+    // Use factory function outside routes
+    const redis = getRedis();
+    await redis.set('cache:key', data.value);
+  }
+);
+```
+
+---
+
+## 🔑 Understanding Service Access
+
+BlaizeJS plugins provide **two ways** to access services, each optimized for different contexts:
+
+| Context | Access Method | Example |
+|---------|---------------|---------|
+| **Route handlers** | `ctx.services.serviceName` | `await ctx.services.redis.get(...)` |
+| **Job handlers** | `getServiceName()` | `const redis = getRedis()` |
+| **Utility functions** | `getServiceName()` | `const redis = getRedis()` |
+| **Worker processes** | `getServiceName()` | `const redis = getRedis()` |
+| **Plugin internals** | `getServiceName()` | Use for consistency |
+
+### Why Two Patterns?
+
+**Route handlers** receive context via middleware → use `ctx.services.serviceName`
+
+**Everything else** doesn't have context → use factory functions
+
+```typescript
+// ✅ In route handlers - use ctx.services
+export const POST = createRoute({
+  handler: async ({ ctx }) => {
+    const value = await ctx.services.redis.get('key');
+    return { value };
+  }
+});
+
+// ✅ In job handlers - use factory function
+import { getRedis } from '../../plugins/redis';
+
+export const processJob = createHandler(queues, 'jobs', 'process',
+  async (data, ctx) => {
+    const redis = getRedis();
+    await redis.set('result', data.result);
+  }
+);
+
+// ✅ In utility functions - use factory function
+import { getRedis } from '../plugins/redis';
+
+export async function getCachedUser(userId: string) {
+  const redis = getRedis();
+  const cached = await redis.get(`user:${userId}`);
+  return cached ? JSON.parse(cached) : null;
+}
+```
+
+### Factory Function Benefits
+
+1. **Clear error messages** — "Redis not initialized..." instead of "Cannot read property of null"
+2. **Explicit intent** — `getRedis()` shows you're retrieving a service
+3. **Easy testing** — Mock the factory function, not the instance
+4. **Safety checks** — Factory verifies initialization state
+5. **Consistency** — Same pattern across all plugins
+
+### Naming Conventions
+
+Follow these patterns for consistency:
+
+| Service Type | Factory Function | Check Function | Private Variable |
+|--------------|------------------|----------------|------------------|
+| `Database` | `getDatabase()` | `isDatabaseInitialized()` | `_db` |
+| `Redis` | `getRedis()` | `isRedisInitialized()` | `_redis` |
+| `EmailService` | `getEmailService()` | `isEmailServiceInitialized()` | `_emailService` |
+| `CacheService` | `getCacheService()` | `isCacheServiceInitialized()` | `_cache` |
+| `QueueService` | `getQueueService()` | `isQueueServiceInitialized()` | `_queueService` |
+
+**Pattern:** `get[ServiceName]()` where ServiceName is PascalCase
 
 ---
 
@@ -307,13 +451,22 @@ Server Shutdown (REVERSE ORDER):
 ### Lifecycle Hook Examples
 
 ```typescript
+// Internal singleton
+let _pool: ConnectionPool | null = null;
+
+// Factory function
+export function getDatabase(): ConnectionPool {
+  if (!_pool) {
+    throw new Error('Database not initialized.');
+  }
+  return _pool;
+}
+
 const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Database }>({
   name: 'database',
   version: '1.0.0',
   
   setup: ({ config, logger }) => {
-    let pool: ConnectionPool;
-    
     return {
       // 1. REGISTER - Add middleware to server
       register: async (server) => {
@@ -321,7 +474,7 @@ const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Database }>({
           createMiddleware<{}, { db: Database }>({
             name: 'database',
             handler: async ({ ctx, next }) => {
-              ctx.services.db = pool;
+              ctx.services.db = getDatabase(); // Use factory
               await next();
             },
           })
@@ -330,11 +483,11 @@ const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Database }>({
         logger.debug('Database middleware registered');
       },
       
-      // 2. INITIALIZE - Connect to resources
+      // 2. INITIALIZE - Connect to resources (ONLY place to assign _pool)
       initialize: async () => {
         logger.info('Creating database pool...');
         
-        pool = await ConnectionPool.create({
+        _pool = await ConnectionPool.create({
           host: config.host,
           port: config.port,
           max: config.poolSize,
@@ -345,19 +498,23 @@ const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Database }>({
       
       // 3. ON_SERVER_START - Verify everything works
       onServerStart: async () => {
+        const pool = getDatabase();
         await pool.query('SELECT 1'); // Health check
         logger.info('Database connection verified');
       },
       
       // 4. ON_SERVER_STOP - Stop accepting new work
       onServerStop: async () => {
+        const pool = getDatabase();
         pool.stopAcceptingQueries();
         logger.info('Draining database connections...');
       },
       
-      // 5. TERMINATE - Clean up resources
+      // 5. TERMINATE - Clean up resources (ONLY place to clear _pool)
       terminate: async () => {
+        const pool = getDatabase();
         await pool.close();
+        _pool = null;
         logger.info('Database pool closed');
       },
     };
@@ -398,7 +555,17 @@ interface CacheService {
   delete(key: string): Promise<void>;
 }
 
-// 2. Create typed plugin
+// 2. Internal singleton + factory
+let _cache: CacheService | null = null;
+
+export function getCacheService(): CacheService {
+  if (!_cache) {
+    throw new Error('Cache not initialized.');
+  }
+  return _cache;
+}
+
+// 3. Create typed plugin
 const cachePlugin = createPlugin<
   CacheConfig,              // Config
   {},                       // State (none)
@@ -413,15 +580,13 @@ const cachePlugin = createPlugin<
   },
   
   setup: ({ config, logger }) => {
-    let cache: CacheService;
-    
     return {
       register: async (server) => {
         server.use(
           createMiddleware<{}, { cache: CacheService }>({
             name: 'cache',
             handler: async ({ ctx, next }) => {
-              ctx.services.cache = cache;
+              ctx.services.cache = getCacheService(); // Use factory
               await next();
             },
           })
@@ -429,24 +594,26 @@ const cachePlugin = createPlugin<
       },
       
       initialize: async () => {
-        cache = new CacheService(config);
+        _cache = new CacheService(config);
       },
       
       terminate: async () => {
+        const cache = getCacheService();
         await cache.cleanup();
+        _cache = null;
       },
     };
   },
 });
 
-// 3. Register plugin
+// 4. Register plugin
 const app = Blaize.createServer().register(cachePlugin({ maxSize: 5000 }));
 
-// 4. Extract types
+// 5. Extract types
 type AppContext = InferContext<typeof app>;
 // AppContext['services'] = { cache: CacheService }
 
-// 5. Routes get types automatically
+// 6. Routes get types automatically
 export const GET = route.get({
   handler: async ({ ctx }) => {
     // TypeScript knows cache is available!
@@ -498,6 +665,24 @@ interface DatabaseConfig {
   poolSize?: number;
 }
 
+// Internal singleton
+let _pool: Pool | null = null;
+
+// Factory function
+export function getDatabase(): Pool {
+  if (!_pool) {
+    throw new Error(
+      'Database not initialized. ' +
+      'Make sure you have registered the database plugin.'
+    );
+  }
+  return _pool;
+}
+
+export function isDatabaseInitialized(): boolean {
+  return _pool !== null;
+}
+
 export const createDatabasePlugin = createPlugin<
   DatabaseConfig,
   {},
@@ -512,15 +697,13 @@ export const createDatabasePlugin = createPlugin<
   },
   
   setup: ({ config, logger }) => {
-    let pool: Pool;
-    
     return {
       register: async (server) => {
         server.use(
           createMiddleware<{}, { db: Pool }>({
             name: 'database',
             handler: async ({ ctx, next }) => {
-              ctx.services.db = pool;
+              ctx.services.db = getDatabase(); // Use factory
               await next();
             },
           })
@@ -532,13 +715,13 @@ export const createDatabasePlugin = createPlugin<
           poolSize: config.poolSize,
         });
         
-        pool = new Pool({
+        _pool = new Pool({
           connectionString: config.connectionString,
           max: config.poolSize,
         });
         
         // Verify connection
-        const client = await pool.connect();
+        const client = await _pool.connect();
         await client.query('SELECT 1');
         client.release();
         
@@ -556,7 +739,9 @@ export const createDatabasePlugin = createPlugin<
       },
       
       terminate: async () => {
+        const pool = getDatabase();
         await pool.end();
+        _pool = null;
         logger.info('Database pool closed');
       },
     };
@@ -564,7 +749,7 @@ export const createDatabasePlugin = createPlugin<
 });
 ```
 
-**Usage:**
+**Usage in routes:**
 ```typescript
 const server = Blaize.createServer({
   plugins: [
@@ -578,10 +763,39 @@ const server = Blaize.createServer({
 // In routes:
 export const getUsers = route.get({
   handler: async ({ ctx }) => {
+    // Use ctx.services in routes
     const result = await ctx.services.db.query('SELECT * FROM users');
     return { users: result.rows };
   },
 });
+```
+
+**Usage in job handlers:**
+```typescript
+import { getDatabase } from '../plugins/database';
+
+export const cleanupHandler = createHandler(queues, 'maintenance', 'cleanup',
+  async (data, ctx) => {
+    // Use factory function in jobs
+    const db = getDatabase();
+    await db.query('DELETE FROM sessions WHERE expires_at < NOW()');
+  }
+);
+```
+
+**Usage in utilities:**
+```typescript
+import { getDatabase } from '../plugins/database';
+
+export async function getUserStats(userId: string) {
+  // Use factory function in utilities
+  const db = getDatabase();
+  const result = await db.query(
+    'SELECT COUNT(*) FROM user_actions WHERE user_id = $1',
+    [userId]
+  );
+  return result.rows[0].count;
+}
 ```
 
 ### Pattern: Redis Cache
@@ -602,6 +816,18 @@ interface CacheService {
   del(key: string): Promise<void>;
 }
 
+// Internal singletons
+let _redis: Redis | null = null;
+let _cache: CacheService | null = null;
+
+// Factory function
+export function getCacheService(): CacheService {
+  if (!_cache) {
+    throw new Error('Cache not initialized.');
+  }
+  return _cache;
+}
+
 export const createCachePlugin = createPlugin<
   CacheConfig,
   {},
@@ -616,17 +842,20 @@ export const createCachePlugin = createPlugin<
   },
   
   setup: ({ config, logger }) => {
-    let redis: Redis;
-    
     const cache: CacheService = {
-      get: async (key) => redis.get(key),
+      get: async (key) => {
+        if (!_redis) throw new Error('Redis not initialized');
+        return _redis.get(key);
+      },
       
       set: async (key, value, ttl = config.ttl) => {
-        await redis.setex(key, ttl, value);
+        if (!_redis) throw new Error('Redis not initialized');
+        await _redis.setex(key, ttl, value);
       },
       
       del: async (key) => {
-        await redis.del(key);
+        if (!_redis) throw new Error('Redis not initialized');
+        await _redis.del(key);
       },
     };
     
@@ -636,7 +865,7 @@ export const createCachePlugin = createPlugin<
           createMiddleware<{}, { cache: CacheService }>({
             name: 'cache',
             handler: async ({ ctx, next }) => {
-              ctx.services.cache = cache;
+              ctx.services.cache = getCacheService();
               await next();
             },
           })
@@ -646,16 +875,21 @@ export const createCachePlugin = createPlugin<
       initialize: async () => {
         logger.info('Connecting to Redis', { url: config.url });
         
-        redis = new Redis(config.url);
+        _redis = new Redis(config.url);
         
         // Wait for ready
-        await new Promise((resolve) => redis.on('ready', resolve));
+        await new Promise((resolve) => _redis!.on('ready', resolve));
         
+        _cache = cache;
         logger.info('Redis connected');
       },
       
       terminate: async () => {
-        await redis.quit();
+        if (_redis) {
+          await _redis.quit();
+          _redis = null;
+        }
+        _cache = null;
         logger.info('Redis disconnected');
       },
     };
@@ -682,6 +916,18 @@ interface EmailService {
   send(to: string, subject: string, body: string): Promise<void>;
 }
 
+// Internal singletons
+let _transporter: nodemailer.Transporter | null = null;
+let _emailService: EmailService | null = null;
+
+// Factory function
+export function getEmailService(): EmailService {
+  if (!_emailService) {
+    throw new Error('Email service not initialized.');
+  }
+  return _emailService;
+}
+
 export const createEmailPlugin = createPlugin<
   EmailConfig,
   {},
@@ -691,13 +937,13 @@ export const createEmailPlugin = createPlugin<
   version: '1.0.0',
   
   setup: ({ config, logger }) => {
-    let transporter: nodemailer.Transporter;
-    
     const emailService: EmailService = {
       send: async (to, subject, body) => {
+        if (!_transporter) throw new Error('Email transporter not initialized');
+        
         logger.info('Sending email', { to, subject });
         
-        await transporter.sendMail({
+        await _transporter.sendMail({
           from: config.from,
           to,
           subject,
@@ -714,7 +960,7 @@ export const createEmailPlugin = createPlugin<
           createMiddleware<{}, { email: EmailService }>({
             name: 'email',
             handler: async ({ ctx, next }) => {
-              ctx.services.email = emailService;
+              ctx.services.email = getEmailService();
               await next();
             },
           })
@@ -724,7 +970,7 @@ export const createEmailPlugin = createPlugin<
       initialize: async () => {
         logger.info('Creating email transporter');
         
-        transporter = nodemailer.createTransport({
+        _transporter = nodemailer.createTransport({
           host: config.host,
           port: config.port,
           auth: {
@@ -734,13 +980,18 @@ export const createEmailPlugin = createPlugin<
         });
         
         // Verify connection
-        await transporter.verify();
+        await _transporter.verify();
         
+        _emailService = emailService;
         logger.info('Email service ready');
       },
       
       terminate: async () => {
-        transporter.close();
+        if (_transporter) {
+          _transporter.close();
+          _transporter = null;
+        }
+        _emailService = null;
         logger.info('Email service closed');
       },
     };
@@ -927,6 +1178,15 @@ export const createHealthPlugin = createPlugin<{}, {}, {}>({
 ### Adding Multiple Routes
 
 ```typescript
+let _collector: MetricsCollector | null = null;
+
+export function getMetricsCollector(): MetricsCollector {
+  if (!_collector) {
+    throw new Error('Metrics collector not initialized.');
+  }
+  return _collector;
+}
+
 const metricsPlugin = createPlugin<{ path?: string }, {}, {}>({
   name: 'metrics',
   version: '1.0.0',
@@ -936,8 +1196,6 @@ const metricsPlugin = createPlugin<{ path?: string }, {}, {}>({
   },
   
   setup: ({ config, logger }) => {
-    let collector: MetricsCollector;
-    
     return {
       register: async (server) => {
         // Metrics endpoint
@@ -945,7 +1203,7 @@ const metricsPlugin = createPlugin<{ path?: string }, {}, {}>({
           path: config.path,
           GET: {
             handler: async ({ ctx }) => {
-              const metrics = await collector.export();
+              const metrics = await getMetricsCollector().export();
               ctx.response.header('Content-Type', 'text/plain');
               return metrics;
             },
@@ -957,19 +1215,21 @@ const metricsPlugin = createPlugin<{ path?: string }, {}, {}>({
           path: `${config.path}/debug`,
           GET: {
             handler: async ({ ctx }) => {
-              return collector.getDebugInfo();
+              return getMetricsCollector().getDebugInfo();
             },
           },
         });
       },
       
       initialize: async () => {
-        collector = new MetricsCollector();
-        collector.start();
+        _collector = new MetricsCollector();
+        _collector.start();
       },
       
       terminate: async () => {
+        const collector = getMetricsCollector();
         collector.stop();
+        _collector = null;
       },
     };
   },
@@ -1015,17 +1275,23 @@ interface HealthCheckable {
   check(): Promise<{ healthy: boolean; details?: any }>;
 }
 
+let _pool: Pool | null = null;
+
+export function getDatabase(): Pool {
+  if (!_pool) throw new Error('Database not initialized.');
+  return _pool;
+}
+
 const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Pool }>({
   name: 'database',
   version: '1.0.0',
   
   setup: ({ config, logger }) => {
-    let pool: Pool;
-    
     const healthCheck: HealthCheckable = {
       name: 'database',
       check: async () => {
         try {
+          const pool = getDatabase();
           const client = await pool.connect();
           await client.query('SELECT 1');
           client.release();
@@ -1050,7 +1316,7 @@ const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Pool }>({
           createMiddleware<{}, { db: Pool }>({
             name: 'database',
             handler: async ({ ctx, next }) => {
-              ctx.services.db = pool;
+              ctx.services.db = getDatabase();
               await next();
             },
           })
@@ -1074,13 +1340,15 @@ const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Pool }>({
       },
       
       initialize: async () => {
-        pool = new Pool({
+        _pool = new Pool({
           connectionString: config.connectionString,
         });
       },
       
       terminate: async () => {
+        const pool = getDatabase();
         await pool.end();
+        _pool = null;
       },
     };
   },
@@ -1090,12 +1358,18 @@ const databasePlugin = createPlugin<DatabaseConfig, {}, { db: Pool }>({
 ### Pattern: Plugin with Graceful Shutdown
 
 ```typescript
+let _queueService: QueueService | null = null;
+
+export function getQueueService(): QueueService {
+  if (!_queueService) throw new Error('Queue not initialized.');
+  return _queueService;
+}
+
 const queuePlugin = createPlugin<QueueConfig, {}, { queue: QueueService }>({
   name: 'queue',
   version: '1.0.0',
   
   setup: ({ config, logger }) => {
-    let queueService: QueueService;
     let activeJobs = 0;
     
     return {
@@ -1104,7 +1378,7 @@ const queuePlugin = createPlugin<QueueConfig, {}, { queue: QueueService }>({
           createMiddleware<{}, { queue: QueueService }>({
             name: 'queue',
             handler: async ({ ctx, next }) => {
-              ctx.services.queue = queueService;
+              ctx.services.queue = getQueueService();
               await next();
             },
           })
@@ -1112,21 +1386,23 @@ const queuePlugin = createPlugin<QueueConfig, {}, { queue: QueueService }>({
       },
       
       initialize: async () => {
-        queueService = new QueueService(config);
+        _queueService = new QueueService(config);
         
-        queueService.on('job:start', () => {
+        _queueService.on('job:start', () => {
           activeJobs++;
         });
         
-        queueService.on('job:complete', () => {
+        _queueService.on('job:complete', () => {
           activeJobs--;
         });
         
-        await queueService.start();
+        await _queueService.start();
       },
       
       onServerStop: async () => {
         logger.info('Stopping queue (graceful)', { activeJobs });
+        
+        const queueService = getQueueService();
         
         // Stop accepting new jobs
         await queueService.pause();
@@ -1148,7 +1424,9 @@ const queuePlugin = createPlugin<QueueConfig, {}, { queue: QueueService }>({
       },
       
       terminate: async () => {
+        const queueService = getQueueService();
         await queueService.stop();
+        _queueService = null;
       },
     };
   },
@@ -1158,24 +1436,31 @@ const queuePlugin = createPlugin<QueueConfig, {}, { queue: QueueService }>({
 ### Pattern: Plugin with Event Bus Integration
 
 ```typescript
+let _analyticsClient: AnalyticsClient | null = null;
+
+export function getAnalyticsClient(): AnalyticsClient {
+  if (!_analyticsClient) throw new Error('Analytics not initialized.');
+  return _analyticsClient;
+}
+
 const analyticsPlugin = createPlugin<AnalyticsConfig, {}, {}>({
   name: 'analytics',
   version: '1.0.0',
   
   setup: ({ config, logger }) => {
-    let analyticsClient: AnalyticsClient;
-    
     return {
       initialize: async () => {
-        analyticsClient = new AnalyticsClient(config.apiKey);
+        _analyticsClient = new AnalyticsClient(config.apiKey);
       },
       
       onServerStart: async (server) => {
         logger.info('Subscribing to analytics events');
         
+        const client = getAnalyticsClient();
+        
         // Subscribe to event bus
         server.eventBus.subscribe('user:*', (event) => {
-          analyticsClient.track({
+          client.track({
             event: event.type,
             userId: event.data.userId,
             timestamp: event.timestamp,
@@ -1184,7 +1469,7 @@ const analyticsPlugin = createPlugin<AnalyticsConfig, {}, {}>({
         });
         
         server.eventBus.subscribe('order:*', (event) => {
-          analyticsClient.track({
+          client.track({
             event: event.type,
             orderId: event.data.orderId,
             timestamp: event.timestamp,
@@ -1194,8 +1479,10 @@ const analyticsPlugin = createPlugin<AnalyticsConfig, {}, {}>({
       },
       
       terminate: async () => {
-        await analyticsClient.flush();
-        await analyticsClient.close();
+        const client = getAnalyticsClient();
+        await client.flush();
+        await client.close();
+        _analyticsClient = null;
       },
     };
   },
@@ -1254,12 +1541,14 @@ const featureFlagsPlugin = createPlugin<
 
 ## 🧪 Testing Plugins
 
-Test plugins by calling their lifecycle hooks directly:
+### Testing Factory Functions
+
+The factory function pattern makes testing easy:
 
 ```typescript
 // plugins/redis.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createRedisPlugin } from './redis';
+import { createRedisPlugin, getRedis, isRedisInitialized } from './redis';
 
 describe('Redis Plugin', () => {
   let plugin: ReturnType<typeof createRedisPlugin>;
@@ -1275,6 +1564,11 @@ describe('Redis Plugin', () => {
     if (plugin.terminate) {
       await plugin.terminate({} as any);
     }
+  });
+  
+  it('should throw before initialization', () => {
+    expect(() => getRedis()).toThrow('Redis not initialized');
+    expect(isRedisInitialized()).toBe(false);
   });
   
   it('should register middleware', async () => {
@@ -1294,8 +1588,9 @@ describe('Redis Plugin', () => {
     await plugin.register(server as any);
     await plugin.initialize?.(server as any);
     
-    // Verify connection (would need Redis running)
-    // This is a simplified example
+    // Factory should now work
+    expect(() => getRedis()).not.toThrow();
+    expect(isRedisInitialized()).toBe(true);
   });
   
   it('should handle initialization errors', async () => {
@@ -1320,7 +1615,38 @@ describe('Redis Plugin', () => {
     
     // Should not throw
     await expect(plugin.terminate?.(server as any)).resolves.toBeUndefined();
+    
+    // Factory should throw after cleanup
+    expect(() => getRedis()).toThrow('Redis not initialized');
+    expect(isRedisInitialized()).toBe(false);
   });
+});
+```
+
+### Mocking Factory Functions in Route Tests
+
+```typescript
+// test/routes/cache.test.ts
+import { vi } from 'vitest';
+
+// Mock the factory function
+vi.mock('../../plugins/redis', () => ({
+  getRedis: vi.fn(() => mockRedis),
+  isRedisInitialized: vi.fn(() => true),
+}));
+
+const mockRedis = {
+  get: vi.fn().mockResolvedValue('cached-value'),
+  set: vi.fn().mockResolvedValue(undefined),
+};
+
+test('gets cached value', async () => {
+  const response = await request(app)
+    .get('/cache/my-key');
+
+  expect(mockRedis.get).toHaveBeenCalledWith('my-key');
+  expect(response.status).toBe(200);
+  expect(response.body.value).toBe('cached-value');
 });
 ```
 
@@ -1365,20 +1691,27 @@ describe('Redis Plugin Middleware', () => {
 
 **✅ Good:**
 ```typescript
+let _connection: Connection | null = null;
+
+export function getConnection(): Connection {
+  if (!_connection) throw new Error('Not initialized');
+  return _connection;
+}
+
 const plugin = createPlugin<{}, {}, {}>({
   name: 'clean',
   version: '1.0.0',
   
   setup: () => {
-    let connection: Connection;
-    
     return {
       initialize: async () => {
-        connection = await connect();
+        _connection = await connect();
       },
       
       terminate: async () => {
-        await connection.close(); // ← Always clean up!
+        const connection = getConnection();
+        await connection.close();
+        _connection = null; // ← Always clear!
       },
     };
   },
@@ -1387,16 +1720,16 @@ const plugin = createPlugin<{}, {}, {}>({
 
 **❌ Bad:**
 ```typescript
+let _connection: Connection | null = null;
+
 const plugin = createPlugin<{}, {}, {}>({
   name: 'leaky',
   version: '1.0.0',
   
   setup: () => {
-    let connection: Connection;
-    
     return {
       initialize: async () => {
-        connection = await connect();
+        _connection = await connect();
       },
       // Missing terminate! Resource leak!
     };
@@ -1404,19 +1737,28 @@ const plugin = createPlugin<{}, {}, {}>({
 });
 ```
 
-### 2. Use Closure Pattern for Singletons
+### 2. Use Factory Pattern for External Access
 
 **✅ Good:**
 ```typescript
+// Internal singleton
+let _service: Service | null = null;
+
+// Public factory
+export function getService(): Service {
+  if (!_service) {
+    throw new Error('Service not initialized.');
+  }
+  return _service;
+}
+
 setup: ({ config }) => {
-  let db: Database; // ← Singleton in closure
-  
   return {
     register: async (server) => {
       server.use(
-        createMiddleware<{}, { db: Database }>({
+        createMiddleware<{}, { service: Service }>({
           handler: async ({ ctx, next }) => {
-            ctx.services.db = db; // ← Reference
+            ctx.services.service = getService(); // Use factory
             await next();
           },
         })
@@ -1424,7 +1766,13 @@ setup: ({ config }) => {
     },
     
     initialize: async () => {
-      db = await Database.connect(config.url);
+      _service = new Service(config);
+    },
+    
+    terminate: async () => {
+      const service = getService();
+      await service.cleanup();
+      _service = null;
     },
   };
 }
@@ -1432,19 +1780,15 @@ setup: ({ config }) => {
 
 **❌ Bad:**
 ```typescript
+// Direct export (no safety checks)
+export let service: Service;
+
 setup: ({ config }) => {
   return {
-    register: async (server) => {
-      server.use(
-        createMiddleware({
-          handler: async ({ ctx, next }) => {
-            // Creating new instance on EVERY request!
-            ctx.services.db = await Database.connect(config.url);
-            await next();
-          },
-        })
-      );
+    initialize: async () => {
+      service = new Service(config);
     },
+    // Users access `service` directly, might be undefined!
   };
 }
 ```
@@ -1477,7 +1821,7 @@ setup: () => {
 
 **❌ Bad:**
 ```typescript
-setup: () => {
+setup: (server) => { // Wrong signature!
   let service: Service;
   
   // Wrong! Don't register middleware in setup body
@@ -1498,7 +1842,30 @@ setup: () => {
 }
 ```
 
-### 4. Provide Meaningful Defaults
+### 4. Use Only Exported Factory Functions
+
+**✅ Good:**
+```typescript
+// In job handler
+import { getDatabase } from '../../plugins/database';
+
+export const handler = async (data) => {
+  const db = getDatabase(); // Safe!
+  await db.query(...);
+};
+```
+
+**❌ Bad:**
+```typescript
+// In job handler
+import { _db } from '../../plugins/database'; // Don't import internal!
+
+export const handler = async (data) => {
+  await _db.query(...); // Might be null!
+};
+```
+
+### 5. Provide Meaningful Defaults
 
 **✅ Good:**
 ```typescript
@@ -1535,7 +1902,7 @@ const plugin = createPlugin<Config, {}, {}>({
 });
 ```
 
-### 5. Capture Type Information
+### 6. Capture Type Information
 
 **✅ Good:**
 ```typescript
@@ -1557,7 +1924,7 @@ type AppContext = InferContext<typeof server>;
 // services = {} ❌
 ```
 
-### 6. Use Semantic Versioning
+### 7. Use Semantic Versioning
 
 **✅ Good:**
 ```typescript
@@ -1577,7 +1944,7 @@ const plugin = createPlugin({
 });
 ```
 
-### 7. Log Important Lifecycle Events
+### 8. Log Important Lifecycle Events
 
 **✅ Good:**
 ```typescript
@@ -1598,7 +1965,7 @@ setup: ({ config, logger }) => {
 }
 ```
 
-### 8. Handle Errors Gracefully
+### 9. Handle Errors Gracefully
 
 **✅ Good:**
 ```typescript
@@ -1616,6 +1983,26 @@ setup: ({ logger }) => {
 }
 ```
 
+### 10. Test Factory Functions
+
+**✅ Good:**
+```typescript
+test('factory throws before initialization', () => {
+  expect(() => getDatabase()).toThrow('Database not initialized');
+});
+
+test('factory works after initialization', async () => {
+  await plugin.initialize();
+  expect(() => getDatabase()).not.toThrow();
+});
+
+test('factory throws after cleanup', async () => {
+  await plugin.initialize();
+  await plugin.terminate();
+  expect(() => getDatabase()).toThrow('Database not initialized');
+});
+```
+
 ---
 
 ## 🔗 Related Documentation
@@ -1623,7 +2010,7 @@ setup: ({ logger }) => {
 - **[Middleware Guide](./middleware.md)** — For per-request logic
 - **[Type System Guide](../architecture/type-system.md)** — How types flow through plugins
 - **[Context Guide](../architecture/context.md)** — Understanding `ctx.services`
-- **[Database Integration](./database-integration.md)** — Using database plugins
+- **[Database Integration](./database-integration.md)** — Using database plugins with factory pattern
 - **[Testing Guide](./testing.md)** — Testing plugins and middleware
 
 ---
