@@ -6,7 +6,7 @@
  */
 import { createMockContext, createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 
-import { createQueuePlugin, QueueService } from './plugin';
+import { createQueuePlugin, QueueService, getQueueService } from './plugin';
 import { InMemoryStorage } from './storage/memory';
 
 import type { QueueStorageAdapter, QueuePluginConfig } from './types';
@@ -778,5 +778,227 @@ describe('Handler Registration via Config', () => {
 
     await hooks.onServerStop?.();
     await hooks.terminate?.();
+  });
+});
+
+// ==========================================================================
+// Factory Function Tests
+// ==========================================================================
+describe('Factory Functions', () => {
+  // Clean state between tests
+  afterEach(async () => {
+    // We need to get a fresh reference after each test
+    // because _terminateQueueService is private
+    const plugin = createQueuePlugin(createTestConfig());
+    const hooks = getPluginHooks(plugin);
+    const server = createMockServer();
+
+    await hooks.register?.(server);
+    await hooks.initialize?.(server);
+    await hooks.terminate?.();
+  });
+
+  describe('getQueueService()', () => {
+    it('throws error when called before initialization', async () => {
+      // Ensure clean state by running full terminate cycle
+      const cleanupPlugin = createQueuePlugin(createTestConfig());
+      const cleanupHooks = getPluginHooks(cleanupPlugin);
+      const cleanupServer = createMockServer();
+
+      await cleanupHooks.register?.(cleanupServer);
+      await cleanupHooks.initialize?.(cleanupServer);
+      await cleanupHooks.terminate?.();
+
+      // Now it should throw
+      expect(() => getQueueService()).toThrow(
+        'Queue service not initialized. ' +
+          'Make sure you have registered the queue plugin with createQueuePlugin().'
+      );
+    });
+
+    it('returns service instance after initialization', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+
+      // Should not throw
+      expect(() => getQueueService()).not.toThrow();
+
+      // Should return actual service
+      const service = getQueueService();
+      expect(service).toBeInstanceOf(QueueService);
+      expect(typeof service.add).toBe('function');
+      expect(typeof service.getJob).toBe('function');
+      expect(typeof service.cancelJob).toBe('function');
+      expect(typeof service.registerHandler).toBe('function');
+      expect(typeof service.listQueues).toBe('function');
+
+      // Cleanup
+      await hooks.terminate?.();
+    });
+
+    it('throws error after termination', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+
+      // Works before termination
+      expect(() => getQueueService()).not.toThrow();
+
+      await hooks.terminate?.();
+
+      // Throws after termination
+      expect(() => getQueueService()).toThrow('not initialized');
+    });
+
+    it('returns same instance on multiple calls', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+
+      const service1 = getQueueService();
+      const service2 = getQueueService();
+      const service3 = getQueueService();
+
+      // Should be exact same instance
+      expect(service1).toBe(service2);
+      expect(service2).toBe(service3);
+
+      await hooks.terminate?.();
+    });
+
+    it('returns same instance used by middleware', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+
+      // Get service from factory
+      const serviceFromFactory = getQueueService();
+
+      // Get service from middleware
+      const middleware = server.middleware[0] as {
+        execute: (mc: any) => Promise<void>;
+      };
+
+      const ctx = createMockContext();
+      await middleware.execute({
+        ctx,
+        next: vi.fn(),
+        logger: createMockLogger(),
+        eventBus: createMockEventBus(),
+      });
+
+      const serviceFromMiddleware = ctx.services.queue;
+
+      // Should be the same instance
+      expect(serviceFromFactory).toBe(serviceFromMiddleware);
+
+      await hooks.terminate?.();
+    });
+  });
+
+  describe('Lifecycle integration', () => {
+    it('factory works after full server lifecycle', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      // Full lifecycle
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+      await hooks.onServerStart?.();
+
+      // Factory should work
+      const queue = getQueueService();
+      expect(queue.listQueues()).toEqual(['emails', 'reports']);
+
+      await hooks.onServerStop?.();
+
+      // Still works before terminate
+      expect(() => getQueueService()).not.toThrow();
+
+      await hooks.terminate?.();
+
+      // Now it should throw
+      expect(() => getQueueService()).toThrow('not initialized');
+    });
+
+    it('can be used in onServerStart hook', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+
+      // onServerStart uses getQueueService() internally
+      await expect(hooks.onServerStart?.()).resolves.toBeUndefined();
+
+      await hooks.terminate?.();
+    });
+
+    it('can be used in onServerStop hook', async () => {
+      const plugin = createQueuePlugin(createTestConfig());
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+      await hooks.onServerStart?.();
+
+      // onServerStop uses getQueueService() internally
+      await expect(hooks.onServerStop?.()).resolves.toBeUndefined();
+
+      await hooks.terminate?.();
+    });
+  });
+
+  describe('Error scenarios', () => {
+    it('provides helpful error message when not initialized', async () => {
+      const cleanupPlugin = createQueuePlugin(createTestConfig());
+      const cleanupHooks = getPluginHooks(cleanupPlugin);
+      const cleanupServer = createMockServer();
+
+      await cleanupHooks.register?.(cleanupServer);
+      await cleanupHooks.initialize?.(cleanupServer);
+      await cleanupHooks.terminate?.();
+
+      try {
+        getQueueService();
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toContain('Queue service not initialized');
+        expect((error as Error).message).toContain('createQueuePlugin()');
+      }
+    });
+
+    it('handles rapid initialize/terminate cycles', async () => {
+      for (let i = 0; i < 3; i++) {
+        const plugin = createQueuePlugin(createTestConfig());
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+
+        expect(() => getQueueService()).not.toThrow();
+
+        await hooks.terminate?.();
+
+        expect(() => getQueueService()).toThrow();
+      }
+    });
   });
 });

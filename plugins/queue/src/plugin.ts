@@ -35,6 +35,30 @@ const DEFAULT_CONFIG = {
 } as const;
 
 // ============================================================================
+// Service Factory
+// ============================================================================
+// packages/plugins/queue/src/index.ts
+let _queueService: QueueService | null = null;
+
+export function getQueueService(): QueueService {
+  if (!_queueService) {
+    throw new Error(
+      'Queue service not initialized. ' +
+        'Make sure you have registered the queue plugin with createQueuePlugin().'
+    );
+  }
+  return _queueService;
+}
+
+function _initializeQueueService(service: QueueService) {
+  _queueService = service;
+}
+
+function _terminateQueueService() {
+  _queueService = null;
+}
+
+// ============================================================================
 // Plugin Factory
 // ============================================================================
 
@@ -126,13 +150,6 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
      */
     let storage: QueueStorageAdapter;
 
-    /**
-     * Queue service instance
-     * Created in `initialize()`, started in `onServerStart()`,
-     * stopped in `onServerStop()`, cleaned up in `terminate()`
-     */
-    let queueService: QueueService;
-
     // ========================================================================
     // Lifecycle Hooks
     // ========================================================================
@@ -156,7 +173,7 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
 
             handler: async ({ ctx, next }) => {
               // Expose queue service to route handlers
-              ctx.services.queue = queueService;
+              ctx.services.queue = getQueueService();
               await next();
             },
           })
@@ -214,13 +231,15 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
         }
 
         // Create queue service
-        queueService = new QueueService({
-          queues: queuesConfig,
-          storage,
-          logger: pluginLogger,
-          eventBus: server.eventBus, // Pass EventBus if serverId provided
-          serverId: config.serverId ?? 'unknown', // Pass serverId for event attribution
-        });
+        _initializeQueueService(
+          new QueueService({
+            queues: queuesConfig,
+            storage,
+            logger: pluginLogger,
+            eventBus: server.eventBus, // Pass EventBus if serverId provided
+            serverId: config.serverId ?? 'unknown', // Pass serverId for event attribution
+          })
+        );
 
         if (config.serverId) {
           pluginLogger.info('EventBus integration enabled', {
@@ -236,10 +255,11 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
         // Register handlers from config
         if (config.handlers) {
           let handlerCount = 0;
+          const queue = getQueueService();
 
           for (const [queueName, jobTypes] of Object.entries(config.handlers)) {
             for (const [jobType, handler] of Object.entries(jobTypes)) {
-              queueService.registerHandler(queueName, jobType, handler);
+              queue.registerHandler(queueName, jobType, handler);
               handlerCount++;
               pluginLogger.debug('Handler registered from config', {
                 queueName,
@@ -269,9 +289,10 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
         pluginLogger.info('Starting queue processing');
 
         try {
-          await queueService.startAll();
+          const queue = getQueueService();
+          await queue.startAll();
           pluginLogger.info('Queue processing started', {
-            queues: queueService.listQueues(),
+            queues: queue.listQueues(),
           });
         } catch (error) {
           pluginLogger.error('Failed to start queue processing', {
@@ -292,7 +313,8 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
 
         // Stop all queues gracefully
         try {
-          await queueService.stopAll({ graceful: true, timeout: 30000 });
+          const queue = getQueueService();
+          await queue.stopAll({ graceful: true, timeout: 30000 });
           pluginLogger.info('Queue processing stopped');
         } catch (error) {
           pluginLogger.error('Error stopping queue processing', {
@@ -330,8 +352,9 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
       terminate: async () => {
         pluginLogger.debug('Terminating queue plugin');
 
+        _terminateQueueService();
+
         // Clear references to allow garbage collection
-        queueService = null as unknown as QueueService;
         storage = null as unknown as QueueStorageAdapter;
 
         pluginLogger.debug('Queue plugin terminated');
