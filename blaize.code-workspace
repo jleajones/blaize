@@ -65,7 +65,9 @@
       "path": "plugins/queue",
     },
   ],
-  "settings": {},
+  "settings": {
+    "prettier.configPath": "../../.prettierrc",
+  },
   "extensions": {
     "recommendations": [
       "folke.vscode-monorepo-workspace",

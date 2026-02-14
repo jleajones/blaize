@@ -1,6 +1,6 @@
 # @blaizejs/plugin-cache
 
-> Event-driven cache plugin for BlaizeJS with Redis support and multi-server coordination
+> **Event-driven cache plugin** for BlaizeJS with Redis support and multi-server coordination
 
 [![npm version](https://badge.fury.io/js/%40blaizejs%2Fplugin-cache.svg)](https://badge.fury.io/js/%40blaizejs%2Fplugin-cache)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -35,17 +35,407 @@ yarn add @blaizejs/plugin-cache
 import { createServer } from 'blaizejs';
 import { createCachePlugin } from '@blaizejs/plugin-cache';
 
-const server = createServer();
-
-// Zero configuration - uses in-memory adapter
-server.register(createCachePlugin());
+const server = createServer({
+  plugins: [
+    // Zero configuration - uses in-memory adapter
+    createCachePlugin({
+      maxEntries: 1000,
+      defaultTtl: 3600, // 1 hour
+    }),
+  ],
+});
 
 await server.listen(3000);
+
+// Use cache in routes
+export default createGetRoute()({
+  handler: async ctx => {
+    // Check cache first
+    const cached = await ctx.services.cache.get('user:123');
+
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    // Fetch from database
+    const user = await db.users.findById('123');
+
+    // Cache for 1 hour
+    await ctx.services.cache.set('user:123', JSON.stringify(user), 3600);
+
+    return user;
+  },
+});
 ```
 
-## 📖 Documentation
+## 📖 Usage Patterns
 
-(Full documentation coming soon)
+### In Route Handlers (via ctx.services)
+
+Most common usage - cache data from API endpoints:
+
+```typescript
+// routes/users/[id].ts
+export default createGetRoute()({
+  handler: async ctx => {
+    const userId = ctx.params.id;
+    const cacheKey = `user:${userId}`;
+
+    // ✅ Use ctx.services.cache in routes
+    const cached = await ctx.services.cache.get(cacheKey);
+
+    if (cached) {
+      ctx.logger.info('Cache hit', { userId });
+      return JSON.parse(cached);
+    }
+
+    // Cache miss - fetch from database
+    const user = await db.users.findById(userId);
+
+    // Cache for 30 minutes
+    await ctx.services.cache.set(cacheKey, JSON.stringify(user), 1800);
+
+    return user;
+  },
+});
+```
+
+### In Job Handlers (direct import)
+
+Warm cache or invalidate keys from background jobs:
+
+```typescript
+// queues/cache/warm-popular-products.ts
+import { getCacheService } from '@blaizejs/plugin-cache';
+import type { JobContext } from '@blaizejs/plugin-queue';
+
+export const warmPopularProducts = async (ctx: JobContext) => {
+  // ✅ Import cache directly in job handlers
+  const cache = getCacheService();
+
+  ctx.progress(10, 'Fetching popular products...');
+  const products = await db.products.findPopular(100);
+
+  ctx.progress(50, 'Warming cache...');
+
+  for (const product of products) {
+    await cache.set(
+      `product:${product.id}`,
+      JSON.stringify(product),
+      3600 // 1 hour
+    );
+  }
+
+  ctx.progress(100, 'Cache warmed');
+  ctx.logger.info('Warmed cache for popular products', {
+    count: products.length,
+  });
+
+  return { productsWarmed: products.length };
+};
+```
+
+### In Utility Functions
+
+Share caching logic across your application:
+
+```typescript
+// lib/cache-utils.ts
+import { getCacheService } from '@blaizejs/plugin-cache';
+
+/**
+ * Get user from cache or database
+ */
+export async function getUserFromCache(userId: string) {
+  const cache = getCacheService();
+
+  const cached = await cache.get(`user:${userId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const user = await db.users.findById(userId);
+
+  if (user) {
+    await cache.set(
+      `user:${userId}`,
+      JSON.stringify(user),
+      1800 // 30 minutes
+    );
+  }
+
+  return user;
+}
+
+/**
+ * Invalidate user cache
+ */
+export async function invalidateUserCache(userId: string) {
+  const cache = getCacheService();
+
+  await cache.delete(`user:${userId}`);
+
+  // Also invalidate related keys
+  const relatedKeys = await cache.keys(`user:${userId}:*`);
+
+  for (const key of relatedKeys) {
+    await cache.delete(key);
+  }
+}
+
+/**
+ * Warm cache with fresh data
+ */
+export async function warmUserCache(userId: string) {
+  const cache = getCacheService();
+
+  const user = await db.users.findById(userId);
+
+  if (user) {
+    await cache.set(
+      `user:${userId}`,
+      JSON.stringify(user),
+      3600 // 1 hour
+    );
+
+    return true;
+  }
+
+  return false;
+}
+```
+
+### In Background Tasks
+
+Periodic cache maintenance and cleanup:
+
+```typescript
+// scripts/cache-cleanup.ts
+import { getCacheService } from '@blaizejs/plugin-cache';
+
+async function cleanupExpiredCache() {
+  const cache = getCacheService();
+
+  // Get all keys
+  const allKeys = await cache.keys('*');
+
+  let expiredCount = 0;
+
+  for (const key of allKeys) {
+    const ttl = await cache.getTTL(key);
+
+    // Remove keys with no TTL (shouldn't happen, but defensive)
+    if (ttl === -1) {
+      await cache.delete(key);
+      expiredCount++;
+    }
+  }
+
+  console.log('Cache cleanup complete:', {
+    totalKeys: allKeys.length,
+    expiredRemoved: expiredCount,
+  });
+
+  // Get cache stats
+  const stats = await cache.getStats();
+  console.log('Cache stats:', stats);
+}
+
+// Run every hour
+setInterval(cleanupExpiredCache, 3600000);
+```
+
+### Why Two Access Patterns?
+
+BlaizeJS provides two ways to access the cache service:
+
+- **`ctx.services.cache`** - For route handlers
+
+  - ✅ Convenient within HTTP request/response cycle
+  - ✅ Middleware automatically provides service
+  - ✅ No imports needed
+
+- **`getCacheService()`** - For job handlers, utilities, scripts
+  - ✅ Works outside HTTP context
+  - ✅ Portable across different environments
+  - ✅ Direct import, no framework dependency
+
+**Important:** Both patterns access the **same CacheService instance**.
+
+## 📖 Main Exports
+
+### Service Factory
+
+```typescript
+getCacheService(): CacheService  // Direct access to cache service
+```
+
+### Plugin Factory
+
+```typescript
+createCachePlugin(config?: CachePluginConfig): Plugin
+```
+
+### Cache Service API (via `ctx.services.cache` or `getCacheService()`)
+
+```typescript
+// Basic operations
+get(key: string): Promise<string | null>
+set(key: string, value: string, ttl?: number): Promise<void>
+delete(key: string): Promise<boolean>
+
+// Batch operations
+mget(keys: string[]): Promise<(string | null)[]>
+mset(entries: Array<[string, string, number?]>): Promise<void>
+
+// Pattern operations
+keys(pattern: string): Promise<string[]>
+clear(pattern?: string): Promise<number>
+
+// Metadata
+getTTL(key: string): Promise<number>
+getStats(): Promise<CacheStats>
+
+// Lifecycle
+disconnect(): Promise<void>
+healthCheck(): Promise<{ healthy: boolean; message?: string }>
+```
+
+### Configuration Type
+
+```typescript
+interface CachePluginConfig {
+  adapter?: CacheAdapter; // Custom adapter (default: MemoryAdapter)
+  maxEntries?: number; // Max entries (default: 1000)
+  defaultTtl?: number; // Default TTL in seconds (default: 3600)
+  serverId?: string; // Server ID for multi-server coordination
+}
+```
+
+## 🧪 Testing
+
+### Mocking in Route Tests
+
+```typescript
+import { vi } from 'vitest';
+
+describe('GET /users/:id', () => {
+  it('returns cached user when available', async () => {
+    // Routes use ctx.services
+    const mockCache = {
+      get: vi.fn().mockResolvedValue('{"id":"123","name":"Alice"}'),
+      set: vi.fn(),
+    };
+
+    const ctx = createMockContext({
+      params: { id: '123' },
+      services: { cache: mockCache },
+    });
+
+    const result = await GET.handler({ ctx });
+
+    expect(mockCache.get).toHaveBeenCalledWith('user:123');
+    expect(result).toEqual({ id: '123', name: 'Alice' });
+  });
+
+  it('fetches from database on cache miss', async () => {
+    const mockCache = {
+      get: vi.fn().mockResolvedValue(null), // Cache miss
+      set: vi.fn(),
+    };
+
+    const ctx = createMockContext({
+      params: { id: '456' },
+      services: { cache: mockCache },
+    });
+
+    const result = await GET.handler({ ctx });
+
+    expect(mockCache.get).toHaveBeenCalledWith('user:456');
+    expect(mockCache.set).toHaveBeenCalledWith('user:456', expect.any(String), 1800);
+  });
+});
+```
+
+### Mocking in Job Handler Tests
+
+```typescript
+import { vi } from 'vitest';
+
+// Mock the factory function
+vi.mock('@blaizejs/plugin-cache', () => ({
+  getCacheService: vi.fn(() => mockCache),
+}));
+
+const mockCache = {
+  set: vi.fn(),
+  get: vi.fn(),
+  keys: vi.fn(),
+};
+
+describe('warmPopularProducts handler', () => {
+  it('warms cache with popular products', async () => {
+    const products = [
+      { id: '1', name: 'Product 1' },
+      { id: '2', name: 'Product 2' },
+    ];
+
+    // Mock database call
+    vi.spyOn(db.products, 'findPopular').mockResolvedValue(products);
+
+    const result = await warmPopularProducts({
+      jobId: 'job-1',
+      data: {},
+      logger: mockLogger,
+      signal: new AbortController().signal,
+      progress: vi.fn(),
+    });
+
+    expect(mockCache.set).toHaveBeenCalledTimes(2);
+    expect(mockCache.set).toHaveBeenCalledWith('product:1', JSON.stringify(products[0]), 3600);
+    expect(result.productsWarmed).toBe(2);
+  });
+});
+```
+
+## 🌐 Redis Adapter
+
+For production multi-server deployments:
+
+```typescript
+import { createCachePlugin } from '@blaizejs/plugin-cache';
+import { RedisAdapter } from '@blaizejs/adapter-redis';
+
+const server = createServer({
+  plugins: [
+    createCachePlugin({
+      adapter: new RedisAdapter({
+        host: 'localhost',
+        port: 6379,
+        // Optional password
+        password: process.env.REDIS_PASSWORD,
+      }),
+      serverId: process.env.SERVER_ID || 'server-1',
+    }),
+  ],
+});
+```
+
+## 📊 Cache Statistics
+
+```typescript
+// Get cache statistics
+const stats = await ctx.services.cache.getStats();
+
+console.log(stats);
+// {
+//   entries: 245,
+//   hits: 1250,
+//   misses: 180,
+//   hitRate: 0.874,
+//   evictions: 5
+// }
+```
 
 ---
 
@@ -63,7 +453,7 @@ The cache plugin includes a Docker Compose configuration for running integration
 #### Connection Details
 
 | Service | URL                      | Database | Password |
-|---------|--------------------------|----------|----------|
+| ------- | ------------------------ | -------- | -------- |
 | Redis   | `redis://localhost:6379` | 0        | None     |
 
 **⚠️ Security Note**: This configuration is for **development and testing only**. The Redis instance has no password and should never be exposed to production environments.
@@ -92,9 +482,6 @@ pnpm test:watch
 
 # Run tests with coverage
 pnpm test:coverage
-
-# Run only integration tests
-# TODO
 ```
 
 #### Stopping Test Services
@@ -119,79 +506,6 @@ docker-compose -f compose.test.yml exec redis redis-cli ping
 
 The health check ensures Redis is fully operational before integration tests begin running.
 
-#### Troubleshooting
-
-**Port Already in Use**
-
-If port 6379 is already in use, you can either:
-
-1. Stop the conflicting service:
-   ```bash
-   # Find process using port 6379
-   lsof -i :6379
-   # Kill the process
-   kill -9 <PID>
-   ```
-
-2. Or modify `docker-compose.test.yml` to use a different port:
-   ```yaml
-   ports:
-     - "6380:6379"  # Use port 6380 instead
-   ```
-
-**Redis Not Starting**
-
-```bash
-# Check container logs
-docker-compose -f docker-compose.test.yml logs redis
-
-# Remove old volumes and restart
-docker-compose -f docker-compose.test.yml down -v
-docker-compose -f docker-compose.test.yml up -d
-```
-
-**Tests Failing to Connect**
-
-Ensure Redis is healthy before running tests:
-
-```bash
-# Wait for health check to pass
-docker-compose -f docker-compose.test.yml up -d
-sleep 10
-pnpm test
-```
-
-#### CI/CD Integration
-
-For continuous integration environments:
-
-```yaml
-# Example GitHub Actions workflow
-- name: Start Redis
-  run: docker-compose -f plugins/cache/docker-compose.test.yml up -d
-
-- name: Wait for Redis
-  run: |
-    timeout 30 bash -c 'until docker-compose -f plugins/cache/docker-compose.test.yml exec -T redis redis-cli ping; do sleep 1; done'
-
-- name: Run Tests
-  run: pnpm --filter @blaizejs/plugin-cache test
-
-- name: Cleanup
-  if: always()
-  run: docker-compose -f plugins/cache/docker-compose.test.yml down -v
-```
-
-#### Network Isolation
-
-The test infrastructure uses an isolated Docker network (`blaize-cache-test-network`) to prevent conflicts with:
-
-- Other BlaizeJS plugin test environments
-- Local Redis instances
-- Other Docker Compose projects
-
-This ensures tests run reliably in parallel without port or network conflicts.
-
 ---
 
 ## 🤝 Contributing
@@ -206,4 +520,6 @@ MIT © J.Lea-Jones
 
 ---
 
-**Built with ❤️ for the BlaizeJS ecosystem**
+**Built with ❤️ by the BlaizeJS team**
+
+_Lightning-fast caching that scales - from simple API response caching to distributed multi-server coordination with Redis._

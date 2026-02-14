@@ -16,6 +16,29 @@ import pkg from '../package.json';
 import type { CacheAdapter, CachePluginConfig, CachePluginServices } from './types';
 import type { Server } from 'blaizejs';
 
+// ========================================================================
+// Service Factory
+// ========================================================================
+let _cacheService: CacheService | null = null;
+
+export function getCacheService(): CacheService {
+  if (!_cacheService) {
+    throw new Error(
+      'Cache service not initialized. ' +
+        'Make sure you have registered the cache plugin with createCachePlugin().'
+    );
+  }
+  return _cacheService;
+}
+
+function _initializeCacheService(service: CacheService) {
+  _cacheService = service;
+}
+
+function _terminateCacheService() {
+  _cacheService = null;
+}
+
 /**
  * Create cache plugin for BlaizeJS
  *
@@ -93,7 +116,6 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
     // ========================================================================
 
     let adapter: CacheAdapter;
-    let cacheService: CacheService;
 
     // ========================================================================
     // Lifecycle Hooks
@@ -115,7 +137,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
             name: 'cache',
             handler: async ({ ctx, next }) => {
               // Expose cache service to routes via ctx.services
-              ctx.services.cache = cacheService;
+              ctx.services.cache = getCacheService();
               await next();
             },
           })
@@ -159,12 +181,14 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
         }
 
         // Create cache service with EventBus from server
-        cacheService = new CacheService({
-          adapter,
-          eventBus: server.eventBus, // ← EventBus for multi-server coordination
-          serverId: config.serverId,
-          logger: pluginLogger,
-        });
+        _initializeCacheService(
+          new CacheService({
+            adapter,
+            eventBus: server.eventBus, // ← EventBus for multi-server coordination
+            serverId: config.serverId,
+            logger: pluginLogger,
+          })
+        );
 
         pluginLogger.info('Cache plugin initialized', {
           adapter: adapter.constructor.name,
@@ -183,6 +207,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
         });
 
         // Optional: Perform health check
+        const cacheService = getCacheService();
         const health = await cacheService.healthCheck();
         if (!health.healthy) {
           pluginLogger.warn('Cache health check failed', {
@@ -199,6 +224,8 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
        */
       onServerStop: async () => {
         pluginLogger.info('Cache plugin stopping');
+        const cacheService = getCacheService();
+        await cacheService.disconnect();
       },
 
       /**
@@ -218,9 +245,7 @@ export const createCachePlugin = createPlugin<CachePluginConfig, {}, CachePlugin
         }
 
         // Disconnect service (removes all listeners and EventBus subscriptions)
-        if (cacheService) {
-          await cacheService.disconnect();
-        }
+        _terminateCacheService();
 
         pluginLogger.info('Cache plugin terminated');
       },
