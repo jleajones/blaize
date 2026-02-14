@@ -21,7 +21,7 @@ export type {
 /**
  * Create cache plugin for BlaizeJS
  */
-export { createCachePlugin } from './plugin';
+export { createCachePlugin, getCacheService } from './plugin';
 
 /**
  * Cache service with automatic event emission

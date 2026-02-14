@@ -10,12 +10,12 @@
  * - Error handling
  */
 
-import { createMockContext, createMockEventBus } from '@blaizejs/testing-utils';
+import { createMockContext, createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
 
-import { createCachePlugin } from './plugin';
+import { CacheService } from './cache-service';
+import { createCachePlugin, getCacheService } from './plugin';
 import { MemoryAdapter } from './storage';
 
-import type { CacheService } from './cache-service';
 import type { CacheAdapter } from './types';
 
 /**
@@ -545,6 +545,205 @@ describe('createCachePlugin', () => {
 
       // Should propagate error
       await expect(hooks.terminate?.()).rejects.toThrow('Disconnect failed');
+    });
+  });
+
+  // ==========================================================================
+  // Factory Function Tests
+  // ==========================================================================
+  describe('Factory Functions', () => {
+    afterEach(async () => {
+      const plugin = createCachePlugin({});
+      const hooks = getPluginHooks(plugin);
+      const server = createMockServer();
+
+      await hooks.register?.(server);
+      await hooks.initialize?.(server);
+      await hooks.terminate?.();
+    });
+
+    describe('getCacheService()', () => {
+      it('throws error when called before initialization', async () => {
+        const cleanupPlugin = createCachePlugin({});
+        const cleanupHooks = getPluginHooks(cleanupPlugin);
+        const cleanupServer = createMockServer();
+
+        await cleanupHooks.register?.(cleanupServer);
+        await cleanupHooks.initialize?.(cleanupServer);
+        await cleanupHooks.terminate?.();
+
+        expect(() => getCacheService()).toThrow(
+          'Cache service not initialized. ' +
+            'Make sure you have registered the cache plugin with createCachePlugin().'
+        );
+      });
+
+      it('returns service instance after initialization', async () => {
+        const plugin = createCachePlugin({});
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+
+        expect(() => getCacheService()).not.toThrow();
+
+        const service = getCacheService();
+        expect(service).toBeInstanceOf(CacheService);
+        expect(typeof service.get).toBe('function');
+        expect(typeof service.set).toBe('function');
+        expect(typeof service.delete).toBe('function');
+
+        await hooks.terminate?.();
+      });
+
+      it('throws error after termination', async () => {
+        const plugin = createCachePlugin({});
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+
+        expect(() => getCacheService()).not.toThrow();
+
+        await hooks.terminate?.();
+
+        expect(() => getCacheService()).toThrow('not initialized');
+      });
+
+      it('returns same instance on multiple calls', async () => {
+        const plugin = createCachePlugin({});
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+
+        const service1 = getCacheService();
+        const service2 = getCacheService();
+        const service3 = getCacheService();
+
+        expect(service1).toBe(service2);
+        expect(service2).toBe(service3);
+
+        await hooks.terminate?.();
+      });
+
+      it('returns same instance used by middleware', async () => {
+        const plugin = createCachePlugin({});
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+
+        const serviceFromFactory = getCacheService();
+
+        const middleware = server.middleware[0] as {
+          execute: (mc: any) => Promise<void>;
+        };
+
+        const ctx = createMockContext();
+        await middleware.execute({
+          ctx,
+          next: vi.fn(),
+          logger: createMockLogger(),
+        });
+
+        const serviceFromMiddleware = ctx.services.cache;
+
+        expect(serviceFromFactory).toBe(serviceFromMiddleware);
+
+        await hooks.terminate?.();
+      });
+    });
+
+    describe('Lifecycle integration', () => {
+      it('factory works after full server lifecycle', async () => {
+        const plugin = createCachePlugin({ maxEntries: 500 });
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+        await hooks.onServerStart?.();
+
+        const cache = getCacheService();
+        expect(cache).toBeDefined();
+
+        await hooks.onServerStop?.();
+
+        expect(() => getCacheService()).not.toThrow();
+
+        await hooks.terminate?.();
+
+        expect(() => getCacheService()).toThrow('not initialized');
+      });
+
+      it('can be used in onServerStart hook', async () => {
+        const plugin = createCachePlugin({});
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+
+        await expect(hooks.onServerStart?.()).resolves.toBeUndefined();
+
+        await hooks.terminate?.();
+      });
+
+      it('can be used in onServerStop hook', async () => {
+        const plugin = createCachePlugin({});
+        const hooks = getPluginHooks(plugin);
+        const server = createMockServer();
+
+        await hooks.register?.(server);
+        await hooks.initialize?.(server);
+        await hooks.onServerStart?.();
+
+        await expect(hooks.onServerStop?.()).resolves.toBeUndefined();
+
+        await hooks.terminate?.();
+      });
+    });
+
+    describe('Error scenarios', () => {
+      it('provides helpful error message when not initialized', async () => {
+        const cleanupPlugin = createCachePlugin({});
+        const cleanupHooks = getPluginHooks(cleanupPlugin);
+        const cleanupServer = createMockServer();
+
+        await cleanupHooks.register?.(cleanupServer);
+        await cleanupHooks.initialize?.(cleanupServer);
+        await cleanupHooks.terminate?.();
+
+        try {
+          getCacheService();
+        } catch (error) {
+          expect(error).toBeInstanceOf(Error);
+          expect((error as Error).message).toContain('Cache service not initialized');
+          expect((error as Error).message).toContain('createCachePlugin()');
+        }
+      });
+
+      it('handles rapid initialize/terminate cycles', async () => {
+        for (let i = 0; i < 3; i++) {
+          const plugin = createCachePlugin({});
+          const hooks = getPluginHooks(plugin);
+          const server = createMockServer();
+
+          await hooks.register?.(server);
+          await hooks.initialize?.(server);
+
+          expect(() => getCacheService()).not.toThrow();
+
+          await hooks.terminate?.();
+
+          expect(() => getCacheService()).toThrow();
+        }
+      });
     });
   });
 });
