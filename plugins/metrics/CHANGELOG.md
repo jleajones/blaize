@@ -1,5 +1,11 @@
 # @blaizejs/plugin-metrics
 
+## 4.1.0
+
+### Minor Changes
+
+- 53e1e50: expose underlying service to be used outside for route handlers, like job handlers
+
 ## 4.0.0
 
 ### Minor Changes

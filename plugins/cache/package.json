@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/plugin-cache",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Event-driven cache plugin for BlaizeJS with Redis support and multi-server coordination",
   "author": "BlaizeJS Contributors",
   "repository": {
