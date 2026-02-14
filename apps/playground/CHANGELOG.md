@@ -1,5 +1,15 @@
 # @blaizejs/playground
 
+## 0.1.22
+
+### Patch Changes
+
+- Updated dependencies [53e1e50]
+  - @blaizejs/plugin-metrics@4.1.0
+  - @blaizejs/plugin-cache@2.1.0
+  - @blaizejs/plugin-queue@2.1.0
+  - @blaizejs/adapter-redis@2.0.0
+
 ## 0.1.21
 
 ### Patch Changes
