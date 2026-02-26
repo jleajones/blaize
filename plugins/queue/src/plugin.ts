@@ -15,6 +15,7 @@ import { QueueService } from './queue-service';
 import { createInMemoryStorage } from './storage';
 
 import type {
+  QueueConfig,
   QueuePluginConfig,
   QueuePluginServices,
   QueueStorageAdapter,
@@ -218,43 +219,15 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
         }
 
         // Build queue configurations with defaults applied
-        const queuesConfig: Record<
-          string,
-          {
-            concurrency?: number;
-            defaultTimeout?: number;
-            defaultMaxRetries?: number;
-          }
-        > = {};
+        const queuesConfig: Record<string, Omit<QueueConfig, 'name'>> = {};
 
         for (const [name, queueConfig] of Object.entries(config.queues)) {
           queuesConfig[name] = {
             concurrency: queueConfig.concurrency ?? config.defaultConcurrency,
             defaultTimeout: queueConfig.defaultTimeout ?? config.defaultTimeout,
             defaultMaxRetries: queueConfig.defaultMaxRetries ?? config.defaultMaxRetries,
+            jobs: queueConfig.jobs ?? {},
           };
-        }
-
-        // Create queue service
-        _initializeQueueService(
-          new QueueService({
-            queues: queuesConfig,
-            storage,
-            logger: pluginLogger,
-            eventBus: server.eventBus, // Pass EventBus if serverId provided
-            serverId: config.serverId ?? 'unknown', // Pass serverId for event attribution
-          })
-        );
-
-        if (config.serverId) {
-          pluginLogger.info('EventBus integration enabled', {
-            serverId: config.serverId ?? 'unknown',
-            eventBusAvailable: !!server.eventBus,
-          });
-        } else {
-          pluginLogger.info('EventBus integration disabled (no serverId provided)', {
-            note: 'Multi-server job visibility requires serverId in plugin config',
-          });
         }
 
         // Build handler registry from queue job definitions
@@ -281,15 +254,55 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
           }
         }
 
-        // Register handlers with QueueService
-        if (handlerRegistry.size > 0) {
-          const queue = getQueueService();
-
-          for (const [registryKey, registration] of handlerRegistry) {
-            const [queueName, jobType] = registryKey.split(':');
-            queue.registerHandler(queueName, jobType, registration.handler);
+        // Register handlers from legacy config.handlers
+        if (config.handlers) {
+          for (const [queueName, jobTypes] of Object.entries(config.handlers)) {
+            for (const [jobType, handler] of Object.entries(jobTypes)) {
+              const registryKey = `${queueName}:${jobType}`;
+              // Legacy handlers don't have schemas, use passthrough
+              if (!handlerRegistry.has(registryKey)) {
+                handlerRegistry.set(registryKey, {
+                  handler: handler as any,
+                  inputSchema: { safeParse: (d: unknown) => ({ success: true as const, data: d }) } as any,
+                  outputSchema: { safeParse: (d: unknown) => ({ success: true as const, data: d }) } as any,
+                });
+              }
+            }
           }
 
+          pluginLogger.info('Handlers registered from config', {
+            handlerCount: Object.values(config.handlers).reduce(
+              (acc, jobs) => acc + Object.keys(jobs).length,
+              0
+            ),
+            queues: Object.keys(config.handlers),
+          });
+        }
+
+        // Create queue service with handler registry
+        _initializeQueueService(
+          new QueueService({
+            queues: queuesConfig,
+            storage,
+            logger: pluginLogger,
+            eventBus: server.eventBus, // Pass EventBus if serverId provided
+            serverId: config.serverId ?? 'unknown', // Pass serverId for event attribution
+            handlerRegistry,
+          })
+        );
+
+        if (config.serverId) {
+          pluginLogger.info('EventBus integration enabled', {
+            serverId: config.serverId ?? 'unknown',
+            eventBusAvailable: !!server.eventBus,
+          });
+        } else {
+          pluginLogger.info('EventBus integration disabled (no serverId provided)', {
+            note: 'Multi-server job visibility requires serverId in plugin config',
+          });
+        }
+
+        if (handlerRegistry.size > 0) {
           pluginLogger.info('Handlers registered from job definitions', {
             handlerCount: handlerRegistry.size,
             registryKeys: Array.from(handlerRegistry.keys()),
