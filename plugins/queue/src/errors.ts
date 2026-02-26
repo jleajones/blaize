@@ -585,6 +585,7 @@ export class JobValidationError extends BlaizeError<JobValidationErrorDetails> {
    *
    * @param jobType - The job type being validated
    * @param queueName - Queue name
+   * @param stage - Validation stage where the error occurred
    * @param validationErrors - Array of validation error details
    * @param invalidData - Optional invalid data that was provided
    * @param correlationId - Optional correlation ID
@@ -592,19 +593,20 @@ export class JobValidationError extends BlaizeError<JobValidationErrorDetails> {
   constructor(
     jobType: string,
     queueName: string,
+    stage: JobValidationErrorDetails['stage'],
     validationErrors: JobValidationErrorDetails['validationErrors'],
     invalidData?: unknown,
     correlationId?: string
   ) {
     const errorMessages = validationErrors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-    const message = `Invalid data for job type '${jobType}': ${errorMessages}`;
+    const message = `Invalid data for job type '${jobType}' at ${stage}: ${errorMessages}`;
 
     super(
       ErrorType.VALIDATION_ERROR,
       message,
       400, // Bad Request
       correlationId ?? getCorrelationId(),
-      { jobType, queueName, validationErrors, invalidData }
+      { jobType, queueName, stage, validationErrors, invalidData }
     );
     this.name = 'JobValidationError';
   }
