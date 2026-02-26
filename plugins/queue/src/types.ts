@@ -365,6 +365,82 @@ export type JobHandler<TData = unknown, TResult = unknown> = (
 ) => Promise<TResult>;
 
 // ============================================================================
+// Job Definition Types (Type-Safe Job Primitives)
+// ============================================================================
+
+/**
+ * Configuration for defining a type-safe job via `defineJob()`
+ *
+ * @template I - Zod schema type for job input data
+ * @template O - Zod schema type for job output/result data
+ */
+export interface DefineJobConfig<I extends z.ZodType, O extends z.ZodType> {
+  /** Zod schema for validating job input data */
+  input: I;
+  /** Zod schema for validating job output/result data */
+  output: O;
+  /** Handler function that processes the job */
+  handler: (ctx: JobContext<z.output<I>>) => Promise<z.output<O>>;
+}
+
+/**
+ * A fully defined job with input/output schemas and handler
+ *
+ * Created by `defineJob()`. Used in queue config to register jobs.
+ *
+ * @template I - Zod schema type for job input data
+ * @template O - Zod schema type for job output/result data
+ */
+export interface JobDefinition<I extends z.ZodType, O extends z.ZodType> {
+  /** Discriminator tag for runtime identification */
+  readonly _type: 'definition';
+  /** Zod schema for validating job input data */
+  readonly input: I;
+  /** Zod schema for validating job output/result data */
+  readonly output: O;
+  /** Handler function that processes the job */
+  readonly handler: (ctx: JobContext<z.output<I>>) => Promise<z.output<O>>;
+}
+
+/**
+ * Queue manifest type — maps queue names to job types with their input/output shapes
+ *
+ * Used as the generic parameter for `QueueService<M>`.
+ */
+export type QueueManifest = Record<string, Record<string, { input: unknown; output: unknown }>>;
+
+/**
+ * Infers a QueueManifest type from a QueuePluginConfig
+ *
+ * Extracts the input/output types from each JobDefinition in the config.
+ *
+ * @template Config - The QueuePluginConfig type to infer from
+ */
+export type InferQueueManifest<Config extends QueuePluginConfig> = {
+  [Q in keyof Config['queues']]: Config['queues'][Q] extends { jobs: infer Jobs }
+    ? {
+        [J in keyof Jobs]: Jobs[J] extends JobDefinition<infer I, infer O>
+          ? { input: z.output<I>; output: z.output<O> }
+          : never;
+      }
+    : {};
+};
+
+/**
+ * Internal handler registration entry
+ *
+ * Stored in the handler registry map, keyed by `queueName:jobType`.
+ */
+export interface HandlerRegistration {
+  /** The job handler function */
+  handler: JobHandler<any, any>;
+  /** Zod schema for input validation */
+  inputSchema: z.ZodType;
+  /** Zod schema for output validation */
+  outputSchema: z.ZodType;
+}
+
+// ============================================================================
 // Queue Statistics Types
 // ============================================================================
 
@@ -657,6 +733,13 @@ export interface QueueConfig {
    * @default 3
    */
   defaultMaxRetries?: number;
+
+  /**
+   * Job definitions for this queue, keyed by job type name
+   *
+   * Each value is a `JobDefinition` created by `defineJob()`.
+   */
+  jobs: Record<string, JobDefinition<any, any>>;
 }
 
 /**
@@ -712,36 +795,6 @@ export interface QueuePluginConfig {
    * @default 3
    */
   defaultMaxRetries?: number;
-
-  /**
-   * Job handlers keyed by queue name and job type
-   *
-   * Register handlers declaratively in config. Handlers are registered
-   * during plugin initialization, before queues start processing.
-   *
-   * @example
-   * ```typescript
-   * import { sendEmailHandler, verifyEmailHandler } from './handlers/email';
-   * import { generateReportHandler } from './handlers/reports';
-   *
-   * createQueuePlugin({
-   *   queues: {
-   *     emails: { concurrency: 5 },
-   *     reports: { concurrency: 2 },
-   *   },
-   *   handlers: {
-   *     emails: {
-   *       'send': sendEmailHandler,
-   *       'verify': verifyEmailHandler,
-   *     },
-   *     reports: {
-   *       'generate': generateReportHandler,
-   *     },
-   *   },
-   * });
-   * ```
-   */
-  handlers?: Record<string, Record<string, JobHandler<any, any>>>;
 
   /**
    * Server ID for multi-server coordination
@@ -850,6 +903,13 @@ export interface QueueServiceConfig {
    * Required when using eventBus to track which server processed jobs.
    */
   serverId?: string;
+
+  /**
+   * Handler registry mapping `queueName:jobType` keys to handler registrations
+   *
+   * Built during plugin initialization from `defineJob()` definitions.
+   */
+  handlerRegistry?: Map<string, HandlerRegistration>;
 }
 
 // ============================================================================
@@ -1190,6 +1250,8 @@ export interface JobValidationErrorDetails {
   jobType: string;
   /** Queue name */
   queueName: string;
+  /** Validation stage where the error occurred */
+  stage: 'enqueue' | 'execution-input' | 'execution-output';
   /** Validation errors from Zod */
   validationErrors: Array<{
     path: (string | number)[];
@@ -1286,4 +1348,102 @@ export interface QueueStatusResponse {
     jobs: FormattedJob[];
   }>;
   timestamp: number;
+}
+
+// ============================================================================
+// defineJob() Primitive Types
+// ============================================================================
+
+/**
+ * Configuration for defining a job with `defineJob()`
+ *
+ * @template I - Zod schema type for job input validation
+ * @template O - Zod schema type for job output validation
+ *
+ * @example
+ * ```typescript
+ * import { z } from 'zod';
+ *
+ * const config: DefineJobConfig<typeof inputSchema, typeof outputSchema> = {
+ *   jobType: 'email:send',
+ *   queue: 'emails',
+ *   input: z.object({ to: z.string().email(), subject: z.string() }),
+ *   output: z.object({ messageId: z.string() }),
+ *   handler: async (ctx) => {
+ *     const result = await sendEmail(ctx.data);
+ *     return { messageId: result.id };
+ *   },
+ * };
+ * ```
+ */
+export interface DefineJobConfig<
+  I extends z.ZodType = z.ZodType,
+  O extends z.ZodType = z.ZodType,
+> {
+  /** Unique job type identifier (e.g. 'email:send') */
+  jobType: string;
+
+  /** Queue name this job belongs to (e.g. 'emails') */
+  queue: string;
+
+  /** Zod schema for validating job input data */
+  input: I;
+
+  /** Zod schema for validating job output/result */
+  output: O;
+
+  /** Async function that processes the job */
+  handler: JobHandler<z.infer<I>, z.infer<O>>;
+
+  /** Default job options (priority, retries, timeout, metadata) */
+  options?: JobOptions;
+}
+
+/**
+ * Immutable job definition returned by `defineJob()`
+ *
+ * Contains all configuration needed to register and execute a job type.
+ * The object is frozen to prevent accidental mutation.
+ *
+ * @template I - Zod schema type for job input validation
+ * @template O - Zod schema type for job output validation
+ *
+ * @example
+ * ```typescript
+ * const emailJob = defineJob({
+ *   jobType: 'email:send',
+ *   queue: 'emails',
+ *   input: z.object({ to: z.string().email() }),
+ *   output: z.object({ messageId: z.string() }),
+ *   handler: async (ctx) => ({ messageId: '123' }),
+ * });
+ *
+ * // emailJob._type === 'definition'
+ * // emailJob.jobType === 'email:send'
+ * ```
+ */
+export interface JobDefinition<
+  I extends z.ZodType = z.ZodType,
+  O extends z.ZodType = z.ZodType,
+> {
+  /** Discriminator tag identifying this as a job definition */
+  readonly _type: 'definition';
+
+  /** Unique job type identifier */
+  readonly jobType: string;
+
+  /** Queue name this job belongs to */
+  readonly queue: string;
+
+  /** Zod schema for validating job input data */
+  readonly input: I;
+
+  /** Zod schema for validating job output/result */
+  readonly output: O;
+
+  /** Async function that processes the job */
+  readonly handler: JobHandler<z.infer<I>, z.infer<O>>;
+
+  /** Default job options */
+  readonly options?: Readonly<JobOptions>;
 }
