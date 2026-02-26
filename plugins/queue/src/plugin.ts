@@ -14,7 +14,12 @@ import config from '../package.json';
 import { QueueService } from './queue-service';
 import { createInMemoryStorage } from './storage';
 
-import type { QueuePluginConfig, QueuePluginServices, QueueStorageAdapter } from './types';
+import type {
+  QueuePluginConfig,
+  QueuePluginServices,
+  QueueStorageAdapter,
+  HandlerRegistration,
+} from './types';
 import type { Server } from 'blaizejs';
 
 // ============================================================================
@@ -252,25 +257,42 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
           });
         }
 
-        // Register handlers from config
-        if (config.handlers) {
-          let handlerCount = 0;
-          const queue = getQueueService();
+        // Build handler registry from queue job definitions
+        const handlerRegistry = new Map<string, HandlerRegistration>();
 
-          for (const [queueName, jobTypes] of Object.entries(config.handlers)) {
-            for (const [jobType, handler] of Object.entries(jobTypes)) {
-              queue.registerHandler(queueName, jobType, handler);
-              handlerCount++;
-              pluginLogger.debug('Handler registered from config', {
-                queueName,
-                jobType,
-              });
+        for (const [queueName, queueConfig] of Object.entries(config.queues)) {
+          if (queueConfig.jobs) {
+            for (const [jobType, jobDef] of Object.entries(queueConfig.jobs)) {
+              if (jobDef._type === 'definition') {
+                const registryKey = `${queueName}:${jobType}`;
+                handlerRegistry.set(registryKey, {
+                  handler: jobDef.handler,
+                  inputSchema: jobDef.input,
+                  outputSchema: jobDef.output,
+                });
+
+                pluginLogger.debug('Handler registered from job definition', {
+                  queueName,
+                  jobType,
+                  registryKey,
+                });
+              }
             }
           }
+        }
 
-          pluginLogger.info('Handlers registered from config', {
-            handlerCount,
-            queues: Object.keys(config.handlers),
+        // Register handlers with QueueService
+        if (handlerRegistry.size > 0) {
+          const queue = getQueueService();
+
+          for (const [registryKey, registration] of handlerRegistry) {
+            const [queueName, jobType] = registryKey.split(':');
+            queue.registerHandler(queueName, jobType, registration.handler);
+          }
+
+          pluginLogger.info('Handlers registered from job definitions', {
+            handlerCount: handlerRegistry.size,
+            registryKeys: Array.from(handlerRegistry.keys()),
           });
         }
 
