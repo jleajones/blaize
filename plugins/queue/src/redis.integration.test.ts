@@ -157,6 +157,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should persist jobs in Redis', async () => {
+      handlerRegistry.set('default:test:job', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'test:job', { message: 'Hello Redis' });
 
       expect(jobId).toBeDefined();
@@ -171,6 +172,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should retrieve job after restart (persistence)', async () => {
+      handlerRegistry.set('default:persist:test', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'persist:test', { value: 42 });
 
       // Simulate restart by disconnecting and reconnecting
@@ -442,6 +444,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should limit number of jobs returned', async () => {
+      handlerRegistry.set('default:limit:test', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       // Add 10 jobs
       for (let i = 0; i < 10; i++) {
         await service.add('default', 'limit:test', { index: i });
@@ -457,6 +460,9 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should list all jobs when no filters provided', async () => {
+      handlerRegistry.set('default:all:test1', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
+      handlerRegistry.set('default:all:test2', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
+      handlerRegistry.set('default:all:test3', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       await service.add('default', 'all:test1', {});
       await service.add('default', 'all:test2', {});
       await service.add('default', 'all:test3', {});
