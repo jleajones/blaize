@@ -254,31 +254,6 @@ export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePlugin
           }
         }
 
-        // Register handlers from legacy config.handlers
-        if (config.handlers) {
-          for (const [queueName, jobTypes] of Object.entries(config.handlers)) {
-            for (const [jobType, handler] of Object.entries(jobTypes)) {
-              const registryKey = `${queueName}:${jobType}`;
-              // Legacy handlers don't have schemas, use passthrough
-              if (!handlerRegistry.has(registryKey)) {
-                handlerRegistry.set(registryKey, {
-                  handler: handler as any,
-                  inputSchema: { safeParse: (d: unknown) => ({ success: true as const, data: d }) } as any,
-                  outputSchema: { safeParse: (d: unknown) => ({ success: true as const, data: d }) } as any,
-                });
-              }
-            }
-          }
-
-          pluginLogger.info('Handlers registered from config', {
-            handlerCount: Object.values(config.handlers).reduce(
-              (acc, jobs) => acc + Object.keys(jobs).length,
-              0
-            ),
-            queues: Object.keys(config.handlers),
-          });
-        }
-
         // Create queue service with handler registry
         _initializeQueueService(
           new QueueService({

@@ -61,8 +61,8 @@ function createMockStorage(options?: {
 function createTestConfig(overrides?: Partial<QueuePluginConfig>): QueuePluginConfig {
   return {
     queues: {
-      emails: { concurrency: 5 },
-      reports: { concurrency: 2 },
+      emails: { concurrency: 5, jobs: {} },
+      reports: { concurrency: 2, jobs: {} },
     },
     ...overrides,
   };
@@ -463,7 +463,7 @@ describe('createQueuePlugin', () => {
     it('should apply default configuration values', async () => {
       const plugin = createQueuePlugin({
         queues: {
-          minimal: {}, // No specific config
+          minimal: { jobs: {} }, // No specific config
         },
         defaultConcurrency: 10,
         defaultTimeout: 60000,
@@ -726,7 +726,7 @@ describe('Handler Registration via Config', () => {
   it('should work without jobs in queue config', async () => {
     const plugin = createQueuePlugin({
       queues: {
-        emails: { concurrency: 5 },
+        emails: { concurrency: 5, jobs: {} },
       },
       // No jobs defined - should work fine
     });
