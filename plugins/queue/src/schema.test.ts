@@ -10,7 +10,6 @@
 import {
   jobPrioritySchema,
   jobOptionsSchema,
-  jobTypeDefinitionSchema,
   queueConfigSchema,
   queueConfigWithoutNameSchema,
   pluginConfigSchema,
@@ -227,36 +226,6 @@ describe('jobOptionsSchema', () => {
 });
 
 // ============================================================================
-// Job Type Definition Schema Tests
-// ============================================================================
-
-describe('jobTypeDefinitionSchema', () => {
-  it('should accept empty object', () => {
-    const result = jobTypeDefinitionSchema.parse({});
-    expect(result).toEqual({});
-  });
-
-  it('should accept defaultOptions', () => {
-    const result = jobTypeDefinitionSchema.parse({
-      defaultOptions: {
-        priority: 7,
-        timeout: 60000,
-      },
-    });
-    expect(result.defaultOptions?.priority).toBe(7);
-    expect(result.defaultOptions?.timeout).toBe(60000);
-  });
-
-  it('should apply defaults to defaultOptions', () => {
-    const result = jobTypeDefinitionSchema.parse({
-      defaultOptions: {},
-    });
-    expect(result.defaultOptions?.priority).toBe(5);
-    expect(result.defaultOptions?.maxRetries).toBe(3);
-  });
-});
-
-// ============================================================================
 // Queue Config Schema Tests
 // ============================================================================
 
@@ -282,9 +251,9 @@ describe('queueConfigSchema', () => {
       expect(result.concurrency).toBe(5);
     });
 
-    it('should apply jobTypes default', () => {
+    it('should apply jobs default', () => {
       const result = queueConfigSchema.parse({ name: 'test' });
-      expect(result.jobTypes).toEqual({});
+      expect(result.jobs).toEqual({});
     });
   });
 
@@ -293,19 +262,15 @@ describe('queueConfigSchema', () => {
       const config = {
         name: 'emails',
         concurrency: 10,
-        jobTypes: {
-          welcome: { defaultOptions: { priority: 7 } },
-          notification: { defaultOptions: { priority: 9 } },
+        jobs: {
+          welcome: { _type: 'definition', input: {}, output: {}, handler: () => {} },
+          notification: { _type: 'definition', input: {}, output: {}, handler: () => {} },
         },
       };
       const result = queueConfigSchema.parse(config);
       expect(result.name).toBe('emails');
       expect(result.concurrency).toBe(10);
-      expect(result.jobTypes.welcome!.defaultOptions?.priority).toBe(7);
-      expect(result.jobTypes.notification!.defaultOptions?.priority).toBe(9);
-      // Verify defaults are applied to defaultOptions
-      expect(result.jobTypes.welcome!.defaultOptions?.maxRetries).toBe(3);
-      expect(result.jobTypes.welcome!.defaultOptions?.timeout).toBe(30000);
+      expect(Object.keys(result.jobs)).toEqual(['welcome', 'notification']);
     });
 
     it('should accept minimum concurrency (1)', () => {
@@ -318,9 +283,9 @@ describe('queueConfigSchema', () => {
       expect(result.concurrency).toBe(100);
     });
 
-    it('should accept empty jobTypes', () => {
-      const result = queueConfigSchema.parse({ name: 'test', jobTypes: {} });
-      expect(result.jobTypes).toEqual({});
+    it('should accept empty jobs', () => {
+      const result = queueConfigSchema.parse({ name: 'test', jobs: {} });
+      expect(result.jobs).toEqual({});
     });
   });
 
@@ -357,7 +322,7 @@ describe('queueConfigWithoutNameSchema', () => {
   it('should apply defaults', () => {
     const result = queueConfigWithoutNameSchema.parse({});
     expect(result.concurrency).toBe(5);
-    expect(result.jobTypes).toEqual({});
+    expect(result.jobs).toEqual({});
   });
 });
 
