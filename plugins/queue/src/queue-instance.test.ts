@@ -14,18 +14,22 @@
  * @since 0.4.0
  */
 
+import { z } from 'zod';
+
 import { createMockEventBus, createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
-import { HandlerAlreadyRegisteredError } from './errors';
 import { QueueInstance } from './queue-instance';
 import { InMemoryStorage } from './storage/memory';
 
-import type { JobHandler, QueueStorageAdapter, QueueConfig } from './types';
+import type { JobHandler, QueueStorageAdapter, QueueConfig, HandlerRegistration } from './types';
 import type { EventBus } from 'blaizejs';
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
+
+/** Permissive schemas for tests that don't care about validation */
+const anySchema = z.any();
 
 function createTestConfig(overrides?: Partial<QueueConfig>): QueueConfig {
   return {
@@ -33,8 +37,33 @@ function createTestConfig(overrides?: Partial<QueueConfig>): QueueConfig {
     concurrency: 5,
     defaultTimeout: 30000,
     defaultMaxRetries: 3,
+    jobs: {},
     ...overrides,
   };
+}
+
+/**
+ * Create a handler registry with entries for the given queue.
+ * Each entry maps `queueName:jobType` to a HandlerRegistration.
+ */
+function createRegistry(
+  entries: Array<{
+    queueName: string;
+    jobType: string;
+    handler: JobHandler<any, any>;
+    inputSchema?: z.ZodType;
+    outputSchema?: z.ZodType;
+  }>
+): Map<string, HandlerRegistration> {
+  const registry = new Map<string, HandlerRegistration>();
+  for (const entry of entries) {
+    registry.set(`${entry.queueName}:${entry.jobType}`, {
+      handler: entry.handler,
+      inputSchema: entry.inputSchema ?? anySchema,
+      outputSchema: entry.outputSchema ?? anySchema,
+    });
+  }
+  return registry;
 }
 
 // ============================================================================
@@ -46,12 +75,14 @@ describe('QueueInstance', () => {
   let logger: MockLogger;
   let queue: QueueInstance;
   let eventBus: EventBus;
+  let handlerRegistry: Map<string, HandlerRegistration>;
 
   beforeEach(() => {
     storage = new InMemoryStorage();
     logger = createMockLogger();
     eventBus = createMockEventBus();
-    queue = new QueueInstance(createTestConfig(), storage, logger, eventBus);
+    handlerRegistry = new Map();
+    queue = new QueueInstance(createTestConfig(), storage, logger, eventBus, handlerRegistry);
   });
 
   afterEach(async () => {
@@ -103,7 +134,8 @@ describe('QueueInstance', () => {
         createTestConfig({ name: 'custom-queue' }),
         customStorage,
         logger,
-        eventBus
+        eventBus,
+        new Map()
       );
       expect(q.name).toBe('custom-queue');
     });
@@ -199,38 +231,47 @@ describe('QueueInstance', () => {
   });
 
   // ==========================================================================
-  // Handler Registration
+  // Handler Registry
   // ==========================================================================
-  describe('registerHandler()', () => {
-    it('should register a handler for a job type', () => {
-      const handler: JobHandler<unknown, unknown> = async () => {};
-      queue.registerHandler('email:send', handler);
-      expect(queue.hasHandler('email:send')).toBe(true);
+  describe('Handler Registry', () => {
+    it('should use handler from injected registry', async () => {
+      const handler = vi.fn().mockResolvedValue({ sent: true });
+      const registry = createRegistry([
+        { queueName: 'test-queue', jobType: 'email:send', handler },
+      ]);
+      const q = new QueueInstance(createTestConfig(), storage, logger, eventBus, registry);
+
+      await q.add('email:send', { to: 'test@example.com' });
+
+      const completedSpy = vi.fn();
+      q.on('job:completed', completedSpy);
+      await q.start();
+
+      await vi.waitFor(() => {
+        expect(completedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+      expect(handler).toHaveBeenCalled();
     });
 
-    it('should throw HandlerAlreadyRegisteredError for duplicate registration', () => {
-      queue.registerHandler('email:send', async () => {});
-      expect(() => {
-        queue.registerHandler('email:send', async () => {});
-      }).toThrow(HandlerAlreadyRegisteredError);
-    });
+    it('should fail job when no handler found in registry', async () => {
+      // Empty registry — no handlers
+      const q = new QueueInstance(createTestConfig(), storage, logger, eventBus, new Map());
 
-    it('should allow registering different handlers for different job types', () => {
-      queue.registerHandler('email:send', async () => {});
-      queue.registerHandler('report:generate', async () => {});
-      expect(queue.hasHandler('email:send')).toBe(true);
-      expect(queue.hasHandler('report:generate')).toBe(true);
-    });
-  });
+      await q.add('unknown:job', {});
 
-  describe('hasHandler()', () => {
-    it('should return false for unregistered handler', () => {
-      expect(queue.hasHandler('unknown')).toBe(false);
-    });
+      const failedSpy = vi.fn();
+      q.on('job:failed', failedSpy);
+      await q.start();
 
-    it('should return true for registered handler', () => {
-      queue.registerHandler('email:send', async () => {});
-      expect(queue.hasHandler('email:send')).toBe(true);
+      await vi.waitFor(() => {
+        expect(failedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+      const [, errorObj] = failedSpy.mock.calls[0];
+      expect(errorObj.code).toBe('HANDLER_NOT_FOUND');
     });
   });
 
