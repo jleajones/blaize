@@ -16,6 +16,7 @@ import { createInMemoryStorage } from './storage';
 
 import type {
   QueueConfig,
+  QueueManifest,
   QueuePluginConfig,
   QueuePluginServices,
   QueueStorageAdapter,
@@ -46,14 +47,14 @@ const DEFAULT_CONFIG = {
 // packages/plugins/queue/src/index.ts
 let _queueService: QueueService | null = null;
 
-export function getQueueService(): QueueService {
+export function getQueueService<M extends QueueManifest = QueueManifest>(): QueueService<M> {
   if (!_queueService) {
     throw new Error(
       'Queue service not initialized. ' +
         'Make sure you have registered the queue plugin with createQueuePlugin().'
     );
   }
-  return _queueService;
+  return _queueService as QueueService<M>;
 }
 
 function _initializeQueueService(service: QueueService) {

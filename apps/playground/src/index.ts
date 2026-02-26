@@ -16,18 +16,7 @@ import { createQueuePlugin } from '@blaizejs/plugin-queue';
 
 import { REDIS_CONFIG } from './config';
 import { playgroundEvents } from './events';
-import {
-  dataSyncJob,
-  generateReportJob,
-  processImageJob,
-  sendEmailJob,
-  sendNotificationJob,
-  unreliableTaskJob,
-  verifyEmailJob,
-  dataMigrationJob,
-  generateLongReportJob,
-  processVideoJob,
-} from './handlers';
+import { createQueueConfig } from './queue-config';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -83,79 +72,8 @@ const metricsPlugin = createMetricsPlugin({
 // ============================================================================
 // Queue Plugin
 // ============================================================================
-const queuePlugin = createQueuePlugin({
-  storage: queueAdapter,
-  serverId: 'playground-server-1',
-  // Define queues with different configurations and job definitions
-  queues: {
-    // Email queue - medium concurrency, fast jobs
-    emails: {
-      concurrency: 5,
-      defaultTimeout: 30000, // 30 seconds
-      defaultMaxRetries: 3,
-      jobs: {
-        send: sendEmailJob,
-        verify: verifyEmailJob,
-      },
-    },
-
-    // Reports queue - low concurrency, long-running jobs
-    reports: {
-      concurrency: 2,
-      defaultTimeout: 120000, // 2 minutes
-      defaultMaxRetries: 1, // Don't retry expensive operations
-      jobs: {
-        generate: generateReportJob,
-      },
-    },
-
-    // Processing queue - medium concurrency, variable duration
-    processing: {
-      concurrency: 3,
-      defaultTimeout: 60000, // 1 minute
-      defaultMaxRetries: 2,
-      jobs: {
-        image: processImageJob,
-        'data-sync': dataSyncJob,
-      },
-    },
-
-    // Notifications queue - high concurrency, quick jobs
-    notifications: {
-      concurrency: 10,
-      defaultTimeout: 10000, // 10 seconds
-      defaultMaxRetries: 5,
-      jobs: {
-        send: sendNotificationJob,
-      },
-    },
-
-    // Testing queue - for unreliable tasks
-    testing: {
-      concurrency: 2,
-      defaultTimeout: 30000,
-      defaultMaxRetries: 3,
-      jobs: {
-        unreliable: unreliableTaskJob,
-      },
-    },
-    longRunning: {
-      concurrency: 2,
-      defaultTimeout: 60000,
-      defaultMaxRetries: 1,
-      jobs: {
-        'long-report': generateLongReportJob,
-        video: processVideoJob,
-        migration: dataMigrationJob,
-      },
-    },
-  },
-
-  // Global defaults
-  defaultConcurrency: 5,
-  defaultTimeout: 30000,
-  defaultMaxRetries: 3,
-});
+const queuePluginConfig = createQueueConfig(queueAdapter);
+const queuePlugin = createQueuePlugin(queuePluginConfig);
 
 // ============================================================================
 // Cache Plugin
