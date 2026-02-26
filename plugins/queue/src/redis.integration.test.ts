@@ -7,10 +7,11 @@
  * Requires: docker compose -f compose.test.yaml up
  */
 // ✅ Import from adapter-redis package
+import { z } from 'zod';
+
 import { createRedisClient, RedisQueueAdapter } from '@blaizejs/adapter-redis';
 import type { RedisClient } from '@blaizejs/adapter-redis';
 import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
-import { z } from 'zod';
 
 import { QueueService } from './queue-service';
 
@@ -523,12 +524,14 @@ describe('Queue Plugin Redis Integration', () => {
     let service: QueueService;
     let adapter: RedisQueueAdapter;
     let redisClient: RedisClient;
+    let handlerRegistry: Map<string, HandlerRegistration>;
 
     beforeEach(async () => {
       const setup = await createTestQueueService();
       service = setup.service;
       adapter = setup.adapter;
       redisClient = setup.redisClient;
+      handlerRegistry = setup.handlerRegistry;
     });
 
     afterEach(async () => {
@@ -536,6 +539,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should cancel queued jobs', async () => {
+      handlerRegistry.set('default:cancel:test', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'cancel:test', {});
 
       // Cancel before processing
@@ -547,6 +551,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should persist cancelled status in Redis', async () => {
+      handlerRegistry.set('default:cancel:persist', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'cancel:persist', {});
       await service.cancelJob(jobId);
 
