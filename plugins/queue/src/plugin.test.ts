@@ -5,7 +5,9 @@
  * storage adapter lifecycle, and logger integration.
  */
 import { createMockContext, createMockEventBus, createMockLogger } from '@blaizejs/testing-utils';
+import { z } from 'zod';
 
+import { defineJob } from './define-job';
 import { createQueuePlugin, QueueService, getQueueService } from './plugin';
 import { InMemoryStorage } from './storage/memory';
 
@@ -348,7 +350,6 @@ describe('createQueuePlugin', () => {
       expect(typeof queueService.add).toBe('function');
       expect(typeof queueService.getJob).toBe('function');
       expect(typeof queueService.cancelJob).toBe('function');
-      expect(typeof queueService.registerHandler).toBe('function');
       expect(typeof queueService.listQueues).toBe('function');
     });
 
@@ -411,7 +412,20 @@ describe('createQueuePlugin', () => {
     });
 
     it('should allow job processing during server lifecycle', async () => {
-      const plugin = createQueuePlugin(createTestConfig());
+      const plugin = createQueuePlugin({
+        queues: {
+          emails: {
+            concurrency: 5,
+            jobs: {
+              'email:send': defineJob({
+                input: z.object({ to: z.string() }),
+                output: z.object({ sent: z.boolean() }),
+                handler: async () => ({ sent: true }),
+              }),
+            },
+          },
+        },
+      });
       const hooks = getPluginHooks(plugin);
       const server = createMockServer();
 
@@ -434,11 +448,7 @@ describe('createQueuePlugin', () => {
 
       const queueService = ctx.services.queue as QueueService;
 
-      // Register handler and add job
-      queueService.registerHandler('emails', 'email:send', async () => ({
-        sent: true,
-      }));
-
+      // Add job - handler is registered via config
       const jobId = await queueService.add('emails', 'email:send', {
         to: 'test@example.com',
       });
@@ -491,7 +501,20 @@ describe('createQueuePlugin', () => {
   // ==========================================================================
   describe('Storage Adapter Lifecycle', () => {
     it('should use InMemoryStorage by default', async () => {
-      const plugin = createQueuePlugin(createTestConfig());
+      const plugin = createQueuePlugin({
+        queues: {
+          emails: {
+            concurrency: 5,
+            jobs: {
+              'test:job': defineJob({
+                input: z.object({}),
+                output: z.object({}),
+                handler: async () => ({}),
+              }),
+            },
+          },
+        },
+      });
       const hooks = getPluginHooks(plugin);
       const server = createMockServer();
 
@@ -512,7 +535,6 @@ describe('createQueuePlugin', () => {
       });
 
       const queueService = ctx.services.queue as QueueService;
-      queueService.registerHandler('emails', 'test:job', async () => ({}));
 
       const jobId = await queueService.add('emails', 'test:job', {});
       const job = await queueService.getJob(jobId);
@@ -574,15 +596,25 @@ describe('Handler Registration via Config', () => {
 
     const plugin = createQueuePlugin({
       queues: {
-        emails: { concurrency: 5 },
-        reports: { concurrency: 2 },
-      },
-      handlers: {
         emails: {
-          send: emailHandler,
+          concurrency: 5,
+          jobs: {
+            send: defineJob({
+              input: z.object({ to: z.string() }),
+              output: z.object({ sent: z.boolean() }),
+              handler: emailHandler,
+            }),
+          },
         },
         reports: {
-          generate: reportHandler,
+          concurrency: 2,
+          jobs: {
+            generate: defineJob({
+              input: z.object({ type: z.string() }),
+              output: z.object({ generated: z.boolean() }),
+              handler: reportHandler,
+            }),
+          },
         },
       },
     });
@@ -638,12 +670,20 @@ describe('Handler Registration via Config', () => {
 
     const plugin = createQueuePlugin({
       queues: {
-        emails: { concurrency: 5 },
-      },
-      handlers: {
         emails: {
-          send: sendHandler,
-          verify: verifyHandler,
+          concurrency: 5,
+          jobs: {
+            send: defineJob({
+              input: z.object({ to: z.string() }),
+              output: z.object({ sent: z.boolean() }),
+              handler: sendHandler,
+            }),
+            verify: defineJob({
+              input: z.object({ email: z.string() }),
+              output: z.object({ verified: z.boolean() }),
+              handler: verifyHandler,
+            }),
+          },
         },
       },
     });
@@ -683,12 +723,12 @@ describe('Handler Registration via Config', () => {
     await hooks.terminate?.();
   });
 
-  it('should work without handlers config', async () => {
+  it('should work without jobs in queue config', async () => {
     const plugin = createQueuePlugin({
       queues: {
         emails: { concurrency: 5 },
       },
-      // No handlers - should work fine
+      // No jobs defined - should work fine
     });
 
     const hooks = getPluginHooks(plugin);
@@ -711,11 +751,8 @@ describe('Handler Registration via Config', () => {
     });
     const queueService = ctx.services.queue as QueueService;
 
-    // Can still register handlers manually
-    queueService.registerHandler('emails', 'send', async () => ({ sent: true }));
-
-    const jobId = await queueService.add('emails', 'send', {});
-    expect(jobId).toBeDefined();
+    // Queue should exist even without jobs defined
+    expect(queueService.listQueues()).toContain('emails');
 
     await hooks.onServerStop?.();
     await hooks.terminate?.();
@@ -731,11 +768,15 @@ describe('Handler Registration via Config', () => {
 
     const plugin = createQueuePlugin({
       queues: {
-        test: { concurrency: 1 },
-      },
-      handlers: {
         test: {
-          process: handler,
+          concurrency: 1,
+          jobs: {
+            process: defineJob({
+              input: z.object({ value: z.number() }),
+              output: z.object({ done: z.boolean() }),
+              handler,
+            }),
+          },
         },
       },
     });
@@ -833,7 +874,6 @@ describe('Factory Functions', () => {
       expect(typeof service.add).toBe('function');
       expect(typeof service.getJob).toBe('function');
       expect(typeof service.cancelJob).toBe('function');
-      expect(typeof service.registerHandler).toBe('function');
       expect(typeof service.listQueues).toBe('function');
 
       // Cleanup
