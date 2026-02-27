@@ -15,13 +15,12 @@ import { z } from 'zod';
 import type { JobPriority, QueueService } from '@blaizejs/plugin-queue';
 
 import { appRouter } from '../../app-router';
-import type { AppQueueManifest } from '../../queue';
 
 /**
  * Create sample jobs for demonstration
  */
 async function createDemoJobs(
-  queue: QueueService<AppQueueManifest>,
+  queue: QueueService,
   options: {
     count?: number;
     includeUnreliable?: boolean;
@@ -248,7 +247,7 @@ export const GET = appRouter.get({
     }),
   },
   handler: async ({ ctx, logger }) => {
-    const queue = ctx.services.queue;
+    const queue = ctx.services.queue as QueueService;
     const { includeUnreliable, includeLongRunning } = ctx.request.query as any;
 
     logger.info('Creating demo jobs', { includeUnreliable, includeLongRunning });
@@ -318,7 +317,7 @@ export const POST = appRouter.post({
     }),
   },
   handler: async ({ ctx, logger }) => {
-    const queue = ctx.services.queue;
+    const queue = ctx.services.queue as QueueService;
     const { count, includeUnreliable, includeLongRunning } = ctx.request.body;
 
     logger.info('Creating demo jobs', { batches: count, includeUnreliable, includeLongRunning });
