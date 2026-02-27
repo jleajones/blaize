@@ -260,14 +260,14 @@ export function createQueuePlugin<const C extends QueuePluginConfig>(
       }
 
       // Create queue service with handler registry
-      // Only pass eventBus and serverId when serverId is explicitly provided
-      // This fully disables event publishing for single-server setups
+      // Always pass eventBus (needed for SSE streaming, progress events)
+      // serverId is only passed when explicitly configured (for multi-server visibility)
       _initializeQueueService(
         new QueueService({
           queues: queuesConfig,
           storage,
           logger: pluginLogger,
-          eventBus: config.serverId ? server.eventBus : (undefined as unknown as import('blaizejs').EventBus),
+          eventBus: server.eventBus,
           serverId: config.serverId,
           handlerRegistry,
         })
