@@ -1280,9 +1280,9 @@ export interface HandlerAlreadyRegisteredDetails {
  *
  * These are accessible via `ctx.services.queue` in route handlers.
  */
-export interface QueuePluginServices extends Services {
+export interface QueuePluginServices<M extends QueueManifest = QueueManifest> extends Services {
   /** Queue service instance for job operations */
-  queue: QueueService;
+  queue: QueueService<M>;
 }
 
 // ============================================================================
