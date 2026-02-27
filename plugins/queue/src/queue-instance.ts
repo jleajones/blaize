@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-import { HandlerAlreadyRegisteredError } from './errors';
+import { JobValidationError } from './errors';
 
 import type {
   QueueStorageAdapter,
@@ -21,6 +21,7 @@ import type {
   Job,
   JobContext,
   JobHandler,
+  HandlerRegistration,
   JobOptions,
   JobStatus,
   JobError,
@@ -73,7 +74,8 @@ const DEFAULT_BACKOFF_MULTIPLIER = 2;
  *
  * QueueInstance provides:
  * - Type-safe job submission
- * - Handler registration for job types
+ * - Handler lookup from injected registry
+ * - Runtime input/output validation via Zod schemas
  * - Event emission for SSE streaming
  * - Job cancellation with AbortController
  * - Statistics via storage adapter
@@ -85,18 +87,17 @@ const DEFAULT_BACKOFF_MULTIPLIER = 2;
  *
  * const storage = createInMemoryStorage();
  * const logger = parentLogger.child({ component: 'queue' });
+ * const registry = new Map([
+ *   ['emails:email:send', { handler: sendEmailHandler, inputSchema, outputSchema }],
+ * ]);
  *
  * const queue = new QueueInstance(
  *   { name: 'emails', concurrency: 5, defaultTimeout: 30000, defaultMaxRetries: 3 },
  *   storage,
- *   logger
+ *   logger,
+ *   eventBus,
+ *   registry
  * );
- *
- * // Register handler
- * queue.registerHandler('email:send', async (ctx) => {
- *   await sendEmail(ctx.data);
- *   return { sent: true };
- * });
  *
  * // Add job
  * const jobId = await queue.add('email:send', { to: 'user@example.com' });
@@ -160,8 +161,8 @@ export class QueueInstance extends EventEmitter {
   // Private Runtime State
   // ==========================================================================
 
-  /** Registered job handlers by type */
-  private readonly handlers: Map<string, JobHandler<unknown, unknown>>;
+  /** Handler registry mapping `queueName:jobType` keys to handler registrations */
+  private readonly handlerRegistry: Map<string, HandlerRegistration>;
 
   /** Currently running job IDs */
   private readonly runningJobs: Set<string>;
@@ -188,26 +189,16 @@ export class QueueInstance extends EventEmitter {
    * @param config - Queue configuration (name, concurrency, defaults)
    * @param storage - Storage adapter for job persistence (injected)
    * @param logger - Logger instance (child logger will be created)
-   *
-   * @example
-   * ```typescript
-   * const queue = new QueueInstance(
-   *   {
-   *     name: 'emails',
-   *     concurrency: 5,
-   *     defaultTimeout: 30000,
-   *     defaultMaxRetries: 3,
-   *   },
-   *   storage,
-   *   logger
-   * );
-   * ```
+   * @param eventBus - EventBus for cross-server job coordination
+   * @param handlerRegistry - Handler registry mapping `queueName:jobType` keys to registrations
+   * @param serverId - Optional server ID for multi-server setups
    */
   constructor(
     config: QueueConfig,
     storage: QueueStorageAdapter,
     logger: BlaizeLogger,
     eventBus: EventBus,
+    handlerRegistry: Map<string, HandlerRegistration>,
     serverId?: string
   ) {
     super();
@@ -235,7 +226,7 @@ export class QueueInstance extends EventEmitter {
     this.logger = logger.child({ queue: this.name });
 
     // Runtime state
-    this.handlers = new Map();
+    this.handlerRegistry = handlerRegistry;
     this.runningJobs = new Set();
     this.abortControllers = new Map();
     this.pendingRetryTimers = new Map();
@@ -424,73 +415,6 @@ export class QueueInstance extends EventEmitter {
     });
 
     return jobId;
-  }
-
-  // ==========================================================================
-  // Handler Registration
-  // ==========================================================================
-
-  /**
-   * Register a handler for a job type
-   *
-   * Each job type can only have one handler. Attempting to register
-   * a second handler for the same type throws an error.
-   *
-   * @typeParam TData - Type of job data the handler receives
-   * @typeParam TResult - Type of result the handler returns
-   * @param jobType - Type of job to handle
-   * @param handler - Async function to process the job
-   *
-   * @throws {HandlerAlreadyRegisteredError} If handler already registered
-   *
-   * @example
-   * ```typescript
-   * queue.registerHandler<EmailData, EmailResult>('email:send', async (ctx) => {
-   *   ctx.logger.info('Sending email', { to: ctx.data.to });
-   *
-   *   // Check for cancellation
-   *   if (ctx.signal.aborted) {
-   *     throw new Error('Job cancelled');
-   *   }
-   *
-   *   await ctx.progress(50, 'Connecting to SMTP');
-   *   const result = await sendEmail(ctx.data);
-   *   await ctx.progress(100, 'Email sent');
-   *
-   *   return result;
-   * });
-   * ```
-   */
-  registerHandler<TData, TResult>(jobType: string, handler: JobHandler<TData, TResult>): void {
-    // Check for duplicate registration
-    if (this.handlers.has(jobType)) {
-      throw new HandlerAlreadyRegisteredError(jobType, this.name);
-    }
-
-    // Store handler
-    this.handlers.set(jobType, handler as JobHandler<unknown, unknown>);
-
-    this.logger.debug('Handler registered', {
-      jobType,
-      queue: this.name,
-    });
-  }
-
-  /**
-   * Check if a handler is registered for a job type
-   *
-   * @param jobType - Type of job to check
-   * @returns true if handler is registered
-   *
-   * @example
-   * ```typescript
-   * if (!queue.hasHandler('email:send')) {
-   *   queue.registerHandler('email:send', emailHandler);
-   * }
-   * ```
-   */
-  hasHandler(jobType: string): boolean {
-    return this.handlers.has(jobType);
   }
 
   // ==========================================================================
@@ -893,15 +817,26 @@ export class QueueInstance extends EventEmitter {
       return;
     }
 
-    // Get handler for job type
-    const handler = this.handlers.get(job.type);
-    if (!handler) {
+    // Look up handler from registry using queueName:jobType key
+    const registryKey = `${this.name}:${job.type}`;
+    const registration = this.handlerRegistry.get(registryKey);
+    if (!registration) {
       await this.handleNoHandler(job);
       return;
     }
 
     // Create job-scoped child logger with context
     const jobLogger = this.createJobLogger(job);
+
+    // Validate input data against schema (validation errors fail immediately, no retry)
+    let validatedInput: unknown;
+    try {
+      validatedInput = registration.inputSchema.parse(job.data);
+    } catch (err) {
+      const validationError = this.createValidationError(job.type, err);
+      await this.handleValidationFailure(job, validationError, jobLogger);
+      return;
+    }
 
     // Create AbortController for this job
     const controller = new AbortController();
@@ -930,14 +865,24 @@ export class QueueInstance extends EventEmitter {
         attempt: job.retries + 1,
       });
 
-      // Create JobContext for handler execution
-      const ctx = this.createJobContext(job, jobLogger, controller.signal, this.eventBus);
+      // Create JobContext for handler execution with validated data
+      const ctx = this.createJobContext(job, validatedInput, jobLogger, controller.signal, this.eventBus);
 
       // Execute the handler with timeout
-      const result = await this.executeWithTimeout(handler, ctx, job.timeout, controller);
+      const result = await this.executeWithTimeout(registration.handler, ctx, job.timeout, controller);
+
+      // Validate output data against schema (validation errors fail immediately, no retry)
+      let validatedOutput: unknown;
+      try {
+        validatedOutput = registration.outputSchema.parse(result);
+      } catch (err) {
+        const validationError = this.createValidationError(job.type, err, 'execution-output');
+        await this.handleValidationFailure(job, validationError, jobLogger);
+        return;
+      }
 
       // Handle successful completion
-      await this.handleJobCompletion(job, result, jobLogger);
+      await this.handleJobCompletion(job, validatedOutput, jobLogger);
     } catch (err) {
       // Handle job failure
       await this.handleJobFailure(job, err, jobLogger);
@@ -971,14 +916,17 @@ export class QueueInstance extends EventEmitter {
    * Create the JobContext passed to handlers
    *
    * @param job - Job being executed
+   * @param validatedData - Data validated against the input schema
    * @param logger - Job-scoped logger
    * @param signal - AbortSignal for cancellation
+   * @param eventBus - EventBus for cross-server coordination
    * @returns JobContext object
    *
    * @internal
    */
   private createJobContext(
     job: Job,
+    validatedData: unknown,
     logger: BlaizeLogger,
     signal: AbortSignal,
     eventBus: EventBus
@@ -987,7 +935,7 @@ export class QueueInstance extends EventEmitter {
 
     return {
       jobId: job.id,
-      data: job.data,
+      data: validatedData,
       logger,
       signal,
       eventBus,
@@ -1082,18 +1030,102 @@ export class QueueInstance extends EventEmitter {
    * @internal
    */
   private async handleNoHandler(job: Job): Promise<void> {
+    // Extract available job types for this queue from registry keys
+    const availableJobTypes = Array.from(this.handlerRegistry.keys())
+      .filter(key => key.startsWith(`${this.name}:`))
+      .map(key => key.slice(this.name.length + 1));
+
     this.logger.error('No handler registered for job type', {
       jobId: job.id,
       jobType: job.type,
       queue: this.name,
-      registeredHandlers: Array.from(this.handlers.keys()),
+      availableJobTypes,
     });
 
     const errorObj: JobError = {
-      message: `No handler registered for job type '${job.type}'`,
+      message: `No handler registered for job type '${job.type}'. Available job types: [${availableJobTypes.join(', ')}]`,
       code: 'HANDLER_NOT_FOUND',
     };
 
+    await this.storage.updateJob(job.id, {
+      status: 'failed',
+      completedAt: Date.now(),
+      error: errorObj,
+    });
+
+    const failedJob = await this.storage.getJob(job.id, this.name);
+    if (failedJob) {
+      this.emit('job:failed', failedJob, errorObj);
+      await this.publishStateChange({
+        jobId: job.id,
+        jobType: job.type,
+        state: 'failed',
+        error: {
+          message: errorObj.message,
+          code: errorObj.code,
+        },
+      });
+    }
+
+    this.runningJobs.delete(job.id);
+  }
+
+  /**
+   * Create a JobValidationError from a Zod parse error
+   *
+   * @param jobType - The job type being validated
+   * @param err - The error from Zod schema.parse()
+   * @returns JobValidationError instance
+   *
+   * @internal
+   */
+  private createValidationError(
+    jobType: string,
+    err: unknown,
+    stage: 'execution-input' | 'execution-output' = 'execution-input'
+  ): JobValidationError {
+    const zodError = err as { issues?: Array<{ path: (string | number)[]; message: string }> };
+    const validationErrors = (zodError.issues ?? []).map(issue => ({
+      path: issue.path,
+      message: issue.message,
+    }));
+
+    return new JobValidationError(
+      jobType,
+      this.name,
+      stage,
+      validationErrors,
+      undefined
+    );
+  }
+
+  /**
+   * Handle validation failure — fails the job immediately without retry
+   *
+   * @param job - Job that failed validation
+   * @param validationError - The validation error
+   * @param logger - Job-scoped logger
+   *
+   * @internal
+   */
+  private async handleValidationFailure(
+    job: Job,
+    validationError: JobValidationError,
+    logger: BlaizeLogger
+  ): Promise<void> {
+    logger.error('Job validation failed', {
+      jobId: job.id,
+      jobType: job.type,
+      queue: this.name,
+      error: validationError.message,
+    });
+
+    const errorObj: JobError = {
+      message: validationError.message,
+      code: 'VALIDATION_ERROR',
+    };
+
+    // Fail immediately — set maxRetries to current retries to prevent retry
     await this.storage.updateJob(job.id, {
       status: 'failed',
       completedAt: Date.now(),

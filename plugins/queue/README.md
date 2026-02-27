@@ -1,9 +1,3 @@
-**Great! Let's update the Queue plugin README to include the factory function pattern.**
-
-Here's the updated README with a new section on direct access:
-
----
-
 # 📋 @blaizejs/queue
 
 > **Type-safe background job processing** for BlaizeJS applications - Priority scheduling, automatic retries, and real-time SSE monitoring built for AI/ML workloads
@@ -26,41 +20,41 @@ pnpm add @blaizejs/queue
 
 ```typescript
 import { createServer } from 'blaizejs';
-import { createQueuePlugin } from '@blaizejs/queue';
-import type { JobContext } from '@blaizejs/queue';
+import { createQueuePlugin, defineJob } from '@blaizejs/queue';
+import { z } from 'zod';
 
-// 1. Define your job handlers
-interface ImageData {
-  prompt: string;
-}
+// 1. Define your jobs with defineJob()
+const generateImageJob = defineJob({
+  input: z.object({ prompt: z.string() }),
+  output: z.object({ url: z.string(), generatedAt: z.number() }),
+  handler: async (ctx) => {
+    const { prompt } = ctx.data;
 
-const generateImageHandler = async (ctx: JobContext<ImageData>) => {
-  const { prompt } = ctx.data;
+    ctx.progress(10, 'Starting AI model...');
+    const model = await loadModel();
 
-  ctx.progress(10, 'Starting AI model...');
-  const model = await loadModel();
+    ctx.progress(50, 'Generating image...');
+    const image = await model.generate(prompt);
 
-  ctx.progress(50, 'Generating image...');
-  const image = await model.generate(prompt);
+    ctx.progress(90, 'Saving result...');
+    const url = await saveToStorage(image);
 
-  ctx.progress(90, 'Saving result...');
-  const url = await saveToStorage(image);
+    return { url, generatedAt: Date.now() };
+  },
+});
 
-  return { url, generatedAt: Date.now() };
-};
-
-// 2. Register plugin with handlers
+// 2. Register plugin with job definitions
 const server = createServer({
   port: 3000,
   plugins: [
     createQueuePlugin({
       queues: {
-        default: { concurrency: 5 },
-        ai: { concurrency: 2, defaultTimeout: 120000 },
-      },
-      handlers: {
         ai: {
-          'generate-image': generateImageHandler,
+          concurrency: 2,
+          defaultTimeout: 120000,
+          jobs: {
+            'generate-image': generateImageJob,
+          },
         },
       },
     }),
@@ -70,16 +64,12 @@ const server = createServer({
 // 3. Enqueue jobs from routes
 // routes/images/generate.ts
 export default createPostRoute()({
-  handler: async ctx => {
+  handler: async (ctx) => {
     const jobId = await ctx.services.queue.add(
       'ai',
       'generate-image',
-      {
-        prompt: ctx.body.prompt,
-      },
-      {
-        priority: 8,
-      }
+      { prompt: ctx.body.prompt },
+      { priority: 8 }
     );
 
     return { jobId, status: 'queued' };
@@ -110,6 +100,131 @@ export default createSSERoute()({
 - 🔌 **Storage Adapter Pattern** - In-memory default, swappable backends for Redis/PostgreSQL
 - 📈 **Built-in Observability** - Prometheus metrics, HTML dashboard, and structured logging
 
+## 📖 Defining Jobs
+
+Use `defineJob()` to create type-safe job definitions with Zod schemas for input/output validation:
+
+```typescript
+import { defineJob } from '@blaizejs/queue';
+import { z } from 'zod';
+
+// defineJob() takes { input, output, handler } — that's it
+const sendEmailJob = defineJob({
+  input: z.object({
+    to: z.string().email(),
+    subject: z.string(),
+    body: z.string(),
+  }),
+  output: z.object({
+    messageId: z.string(),
+    sentAt: z.number(),
+  }),
+  handler: async (ctx) => {
+    const result = await emailService.send(ctx.data);
+    return { messageId: result.id, sentAt: Date.now() };
+  },
+});
+```
+
+Jobs are registered in the config under `queues[name].jobs[type]`:
+
+```typescript
+createQueuePlugin({
+  queues: {
+    emails: {
+      concurrency: 10,
+      jobs: {
+        'send-welcome': sendEmailJob,
+        'send-notification': sendNotificationJob,
+      },
+    },
+    reports: {
+      concurrency: 2,
+      jobs: {
+        generate: generateReportJob,
+      },
+    },
+  },
+});
+```
+
+## 🔒 Type-Safe Manifest with `InferQueueManifest`
+
+Use the `InferQueueManifest` type utility to extract a full type manifest from your config. This powers type-safe access throughout your app:
+
+```typescript
+import { createQueuePlugin, defineJob } from '@blaizejs/queue';
+import type { InferQueueManifest, QueuePluginConfig } from '@blaizejs/queue';
+import { z } from 'zod';
+
+const sendEmailJob = defineJob({
+  input: z.object({ to: z.string(), subject: z.string() }),
+  output: z.object({ messageId: z.string(), sentAt: z.number() }),
+  handler: async (ctx) => ({ messageId: 'id', sentAt: Date.now() }),
+});
+
+const generateReportJob = defineJob({
+  input: z.object({ reportId: z.number(), format: z.enum(['pdf', 'csv']) }),
+  output: z.object({ url: z.string() }),
+  handler: async (ctx) => ({ url: 'https://example.com/report.pdf' }),
+});
+
+// Define config with `satisfies` to preserve literal types
+const queueConfig = {
+  queues: {
+    emails: { jobs: { sendEmail: sendEmailJob } },
+    reports: { jobs: { generate: generateReportJob } },
+  },
+} satisfies QueuePluginConfig;
+
+// Infer the manifest type from config
+type AppManifest = InferQueueManifest<typeof queueConfig>;
+// → { emails: { sendEmail: { input: { to: string; subject: string }; output: { ... } } }; ... }
+```
+
+## 🏭 Typed Accessor Pattern
+
+Create a typed wrapper around `getQueueService()` for type-safe queue access across your app:
+
+```typescript
+// lib/queue.ts
+import { getQueueService } from '@blaizejs/queue';
+import type { AppManifest } from './queue-config';
+
+export const getQueue = () => getQueueService<AppManifest>();
+```
+
+Now all calls through `getQueue()` are fully typed:
+
+```typescript
+import { getQueue } from '../lib/queue';
+
+// ✅ Type-safe: input is validated against the manifest
+await getQueue().add('emails', 'sendEmail', {
+  to: 'user@example.com',
+  subject: 'Welcome',
+});
+```
+
+## 🔍 Typed `getJob()` Overload
+
+When you provide both `queueName` and `jobType`, `getJob()` returns a typed `Job` with narrowed input/output:
+
+```typescript
+const queue = getQueue();
+
+// Untyped — returns Job<unknown, unknown> | undefined
+const job = await queue.getJob(jobId);
+
+// Typed — returns Job<{ to: string; subject: string }, { messageId: string; sentAt: number }> | undefined
+const typedJob = await queue.getJob(jobId, 'emails', 'sendEmail');
+
+if (typedJob) {
+  typedJob.data.to;       // ✅ string
+  typedJob.result?.sentAt; // ✅ number | undefined
+}
+```
+
 ## 📖 Usage Patterns
 
 ### In Route Handlers (via ctx.services)
@@ -119,11 +234,10 @@ Most common usage - enqueue jobs from API endpoints:
 ```typescript
 // routes/emails/send.ts
 export default createPostRoute()({
-  handler: async ctx => {
-    // ✅ Use ctx.services.queue in routes
-    const jobId = await ctx.services.queue.add('emails', 'send-welcome', {
+  handler: async (ctx) => {
+    const jobId = await ctx.services.queue.add('emails', 'sendEmail', {
       to: ctx.body.email,
-      name: ctx.body.name,
+      subject: 'Welcome!',
     });
 
     return { jobId, status: 'queued' };
@@ -131,132 +245,38 @@ export default createPostRoute()({
 });
 ```
 
-### In Job Handlers (direct import)
+### Direct Import (job handlers, utilities, workers)
 
-Access queue service directly in job handlers for monitoring or managing other jobs:
-
-```typescript
-// queues/monitoring/stats.ts
-import { getQueueService } from '@blaizejs/plugin-queue';
-import type { JobContext } from '@blaizejs/queue';
-
-interface StatsData {
-  queueName: string;
-}
-
-export const collectQueueStats = async (ctx: JobContext<StatsData>) => {
-  // ✅ Import service directly in job handlers
-  const queue = getQueueService();
-
-  const stats = await queue.getQueueStats(ctx.data.queueName);
-  const isPaused = queue.isPaused(ctx.data.queueName);
-
-  ctx.logger.info('Queue stats collected', {
-    stats,
-    isPaused,
-  });
-
-  return { stats, isPaused };
-};
-```
-
-### In Utility Functions
-
-Share queue logic across your application:
+Access the queue service directly outside of HTTP context:
 
 ```typescript
-// lib/queue-utils.ts
-import { getQueueService } from '@blaizejs/plugin-queue';
+import { getQueueService } from '@blaizejs/queue';
 
-/**
- * Get health status of all queues
- */
-export async function getQueueHealth() {
-  const queue = getQueueService();
-  const queues = queue.listQueues();
-
-  return await Promise.all(
-    queues.map(async name => ({
-      name,
-      stats: await queue.getQueueStats(name),
-      isPaused: queue.isPaused(name),
-      workers: queue.getWorkerCount?.(name) ?? 0,
-    }))
-  );
-}
-
-/**
- * Bulk cancel jobs by pattern
- */
-export async function cancelJobsByPattern(queueName: string, pattern: RegExp) {
-  const queue = getQueueService();
-  const jobs = await queue.listJobs(queueName, { status: 'pending' });
-
-  const matching = jobs.filter(job => pattern.test(JSON.stringify(job.data)));
-
-  for (const job of matching) {
-    await queue.cancelJob(job.id, queueName, 'Bulk cancellation');
-  }
-
-  return { cancelled: matching.length };
-}
+const queue = getQueueService();
+const stats = await queue.getQueueStats('emails');
+const jobs = await queue.listJobs('emails', { status: 'failed', limit: 10 });
 ```
 
-### In Worker Processes
-
-Run standalone workers without the full BlaizeJS server:
-
-```typescript
-// worker.ts
-import { getQueueService } from '@blaizejs/plugin-queue';
-
-async function startWorker() {
-  // Get queue service (plugin must be registered in main process)
-  const queue = getQueueService();
-
-  // Start processing
-  await queue.startAll();
-
-  console.log('Worker processing queues:', queue.listQueues());
-
-  // Graceful shutdown
-  process.on('SIGTERM', async () => {
-    console.log('Shutting down worker...');
-    await queue.stopAll({ graceful: true, timeout: 30000 });
-    process.exit(0);
-  });
-}
-
-startWorker();
-```
-
-### Why Two Access Patterns?
-
-BlaizeJS provides two ways to access the queue service:
-
-- **`ctx.services.queue`** - For route handlers
-
-  - ✅ Convenient within HTTP request/response cycle
-  - ✅ Middleware automatically provides service
-  - ✅ No imports needed
-
-- **`getQueueService()`** - For job handlers, utilities, workers
-  - ✅ Works outside HTTP context
-  - ✅ Portable across different environments
-  - ✅ Direct import, no framework dependency
-
-**Important:** Both patterns access the **same QueueService instance**.
+**Important:** Both `ctx.services.queue` and `getQueueService()` access the **same QueueService instance**.
 
 ## 📖 Main Exports
 
 ```typescript
+// Job Definition
+defineJob({ input, output, handler })  // Create a type-safe job definition
+
 // Service Factory
-getQueueService(): QueueService  // Direct access to queue service
+getQueueService<M>(): QueueService<M>  // Direct access to queue service
 
 // Plugin Factory
 createQueuePlugin(config: QueuePluginConfig): Plugin
 
-// Route Handlers (import separately from schemas)
+// Type Utilities
+type InferQueueManifest<Config>        // Infer manifest from config
+type QueueManifest                     // Base manifest type
+type JobDefinition<I, O>               // Job definition type
+
+// Route Handlers
 jobStreamHandler        // SSE: Real-time job progress
 queueStatusHandler      // JSON: Queue stats and job list
 queuePrometheusHandler  // Text: Prometheus metrics
@@ -264,7 +284,8 @@ queueDashboardHandler   // HTML: Dashboard UI
 
 // Context API (via ctx.services.queue or getQueueService())
 add(queueName, jobType, data, options?): Promise<string>
-getJob(jobId, queueName?): Promise<Job | null>
+getJob(jobId): Promise<Job | undefined>
+getJob(jobId, queueName, jobType): Promise<Job<TInput, TOutput> | undefined>
 cancelJob(jobId, queueName?, reason?): Promise<boolean>
 listJobs(queueName, filters?): Promise<Job[]>
 subscribe(jobId, callbacks): () => void
@@ -281,14 +302,11 @@ interface JobContext<TData> {
 
 ## 🧪 Testing
 
-### Mocking in Route Tests
-
 ```typescript
 import { vi } from 'vitest';
 
 describe('POST /emails/send', () => {
   it('enqueues email job', async () => {
-    // Routes use ctx.services
     const mockQueue = {
       add: vi.fn().mockResolvedValue('job-123'),
       getJob: vi.fn(),
@@ -302,46 +320,9 @@ describe('POST /emails/send', () => {
 
     expect(mockQueue.add).toHaveBeenCalledWith(
       'emails',
-      'send-welcome',
+      'sendEmail',
       expect.objectContaining({ to: 'user@example.com' })
     );
-  });
-});
-```
-
-### Mocking in Job Handler Tests
-
-```typescript
-import { vi } from 'vitest';
-
-// Mock the factory function
-vi.mock('@blaizejs/plugin-queue', () => ({
-  getQueueService: vi.fn(() => mockQueueService),
-}));
-
-const mockQueueService = {
-  getQueueStats: vi.fn(),
-  isPaused: vi.fn(),
-};
-
-describe('collectQueueStats handler', () => {
-  it('collects and returns stats', async () => {
-    mockQueueService.getQueueStats.mockResolvedValue({
-      pending: 5,
-      processing: 2,
-    });
-    mockQueueService.isPaused.mockReturnValue(false);
-
-    const result = await collectQueueStats({
-      jobId: 'job-1',
-      data: { queueName: 'emails' },
-      logger: mockLogger,
-      signal: new AbortController().signal,
-      progress: vi.fn(),
-    });
-
-    expect(result.stats.pending).toBe(5);
-    expect(result.isPaused).toBe(false);
   });
 });
 ```

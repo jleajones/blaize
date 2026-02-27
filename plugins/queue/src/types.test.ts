@@ -278,6 +278,7 @@ describe('Configuration Types', () => {
     it('should require name and allow optional fields', () => {
       const minimalConfig: QueueConfig = {
         name: 'default',
+        jobs: {},
       };
       expect(minimalConfig.name).toBe('default');
 
@@ -286,6 +287,7 @@ describe('Configuration Types', () => {
         concurrency: 10,
         defaultTimeout: 60000,
         defaultMaxRetries: 5,
+        jobs: {},
       };
       expect(fullConfig.concurrency).toBe(10);
     });
@@ -295,15 +297,15 @@ describe('Configuration Types', () => {
     it('should require queues and allow optional fields', () => {
       const minimalConfig: QueuePluginConfig = {
         queues: {
-          default: {},
+          default: { jobs: {} },
         },
       };
       expect(minimalConfig.queues).toBeDefined();
 
       const fullConfig: QueuePluginConfig = {
         queues: {
-          default: { concurrency: 5 },
-          emails: { concurrency: 10 },
+          default: { concurrency: 5, jobs: {} },
+          emails: { concurrency: 10, jobs: {} },
         },
         // storage: mockStorageAdapter, // Would be set in real usage
         defaultConcurrency: 5,
@@ -357,6 +359,7 @@ describe('Configuration Types', () => {
         concurrency: 5,
         defaultTimeout: 30000,
         defaultMaxRetries: 3,
+        jobs: {},
       };
 
       expect(config.name).toBe('default');

@@ -122,50 +122,22 @@ export const jobOptionsSchema = z.object({
 });
 
 // ============================================================================
-// Job Type Definition Schema
-// ============================================================================
-
-/**
- * Schema for a single job type definition
- *
- * Defines how a specific job type should be configured within a queue.
- * The handler is registered separately via `queue.registerHandler()`.
- *
- * @example
- * ```typescript
- * const emailJobType = jobTypeDefinitionSchema.parse({
- *   defaultOptions: {
- *     priority: 7,
- *     timeout: 60000,
- *   },
- * });
- * ```
- */
-export const jobTypeDefinitionSchema = z.object({
-  /**
-   * Default options for this job type
-   * These are merged with job-specific options at runtime
-   */
-  defaultOptions: jobOptionsSchema.optional(),
-});
-
-// ============================================================================
 // Queue Configuration Schema
 // ============================================================================
 
 /**
  * Queue configuration schema
  *
- * Configures a single named queue with its concurrency and job types.
+ * Configures a single named queue with its concurrency and job definitions.
  *
  * @example
  * ```typescript
  * const emailQueue = queueConfigSchema.parse({
  *   name: 'emails',
  *   concurrency: 10,
- *   jobTypes: {
- *     'welcome': { defaultOptions: { priority: 5 } },
- *     'notification': { defaultOptions: { priority: 8 } },
+ *   jobs: {
+ *     'welcome': defineJob({ ... }),
+ *     'notification': defineJob({ ... }),
  *   },
  * });
  * ```
@@ -197,11 +169,14 @@ export const queueConfigSchema = z.object({
     .default(5),
 
   /**
-   * Job type definitions
-   * Keys are job type names, values are their configurations
+   * Job definitions keyed by job type name
+   *
+   * Each value is a `JobDefinition` created by `defineJob()`.
+   * Validated as `z.record(z.any())` since JobDefinition objects
+   * contain functions and Zod schemas that can't be deeply validated.
    * @default {}
    */
-  jobTypes: z.record(jobTypeDefinitionSchema).optional().default({}),
+  jobs: z.record(z.any()).optional().default({}),
 });
 
 // ============================================================================
@@ -377,12 +352,6 @@ export type JobOptionsConfig = z.infer<typeof jobOptionsSchema>;
  * All fields are optional
  */
 export type JobOptionsInput = z.input<typeof jobOptionsSchema>;
-
-/**
- * Job type definition
- * Inferred from jobTypeDefinitionSchema
- */
-export type JobTypeDefinitionConfig = z.infer<typeof jobTypeDefinitionSchema>;
 
 /**
  * Queue configuration type with all fields required (after defaults applied)

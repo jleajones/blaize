@@ -55,7 +55,7 @@
       "cache": false
     },
     "test": {
-      "dependsOn": ["@blaizejs/testing-utils#build"],
+      "dependsOn": ["@blaizejs/testing-utils#build", "@blaizejs/adapter-redis#build"],
       "inputs": ["src/**/*.test.ts", "src/**/*.test.tsx", "vitest.config.ts"],
       "outputs": [],
       "cache": false,

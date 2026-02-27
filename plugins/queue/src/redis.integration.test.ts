@@ -7,13 +7,15 @@
  * Requires: docker compose -f compose.test.yaml up
  */
 // ✅ Import from adapter-redis package
+import { z } from 'zod';
+
 import { createRedisClient, RedisQueueAdapter } from '@blaizejs/adapter-redis';
 import type { RedisClient } from '@blaizejs/adapter-redis';
 import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
 
 import { QueueService } from './queue-service';
 
-import type { JobHandler } from './types';
+import type { HandlerRegistration, JobHandler } from './types';
 
 // ============================================================================
 // Test Configuration
@@ -46,6 +48,7 @@ async function createTestQueueService(): Promise<{
   service: QueueService;
   redisClient: RedisClient;
   adapter: RedisQueueAdapter;
+  handlerRegistry: Map<string, HandlerRegistration>;
 }> {
   // Create Redis client
   const redisClient = createRedisClient(TEST_REDIS_CONFIG);
@@ -59,20 +62,22 @@ async function createTestQueueService(): Promise<{
   await adapter.connect();
 
   const eventBus = createWorkingMockEventBus();
+  const handlerRegistry = new Map<string, HandlerRegistration>();
 
   // Create QueueService
   const service = new QueueService({
     queues: {
-      default: { concurrency: 5 },
-      emails: { concurrency: 10 },
-      reports: { concurrency: 2 },
+      default: { concurrency: 5, jobs: {} },
+      emails: { concurrency: 10, jobs: {} },
+      reports: { concurrency: 2, jobs: {} },
     },
     storage: adapter,
     logger: createMockLogger(),
     eventBus,
+    handlerRegistry,
   });
 
-  return { service, redisClient, adapter };
+  return { service, redisClient, adapter, handlerRegistry };
 }
 
 /**
@@ -137,12 +142,14 @@ describe('Queue Plugin Redis Integration', () => {
     let service: QueueService;
     let adapter: RedisQueueAdapter;
     let redisClient: RedisClient;
+    let handlerRegistry: Map<string, HandlerRegistration>;
 
     beforeEach(async () => {
       const setup = await createTestQueueService();
       service = setup.service;
       adapter = setup.adapter;
       redisClient = setup.redisClient;
+      handlerRegistry = setup.handlerRegistry;
     });
 
     afterEach(async () => {
@@ -150,6 +157,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should persist jobs in Redis', async () => {
+      handlerRegistry.set('default:test:job', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'test:job', { message: 'Hello Redis' });
 
       expect(jobId).toBeDefined();
@@ -164,6 +172,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should retrieve job after restart (persistence)', async () => {
+      handlerRegistry.set('default:persist:test', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'persist:test', { value: 42 });
 
       // Simulate restart by disconnecting and reconnecting
@@ -191,9 +200,9 @@ describe('Queue Plugin Redis Integration', () => {
         return { processed: true };
       });
 
-      service.registerHandler('default', 'low', handler);
-      service.registerHandler('default', 'high', handler);
-      service.registerHandler('default', 'medium', handler);
+      handlerRegistry.set('default:low', { handler, inputSchema: z.any(), outputSchema: z.any() });
+      handlerRegistry.set('default:high', { handler, inputSchema: z.any(), outputSchema: z.any() });
+      handlerRegistry.set('default:medium', { handler, inputSchema: z.any(), outputSchema: z.any() });
 
       // Start queue processing
       await service.startAll();
@@ -217,7 +226,7 @@ describe('Queue Plugin Redis Integration', () => {
         return { result: 'success' };
       });
 
-      service.registerHandler('default', 'complete:test', handler);
+      handlerRegistry.set('default:complete:test', { handler, inputSchema: z.any(), outputSchema: z.any() });
 
       await service.startAll();
       await wait(100); // Give queue time to start
@@ -245,7 +254,7 @@ describe('Queue Plugin Redis Integration', () => {
         return { succeeded: true };
       });
 
-      service.registerHandler('default', 'retry:test', handler);
+      handlerRegistry.set('default:retry:test', { handler, inputSchema: z.any(), outputSchema: z.any() });
       await service.startAll();
       await wait(200); // Give queue time to start
 
@@ -282,12 +291,14 @@ describe('Queue Plugin Redis Integration', () => {
     let service: QueueService;
     let adapter: RedisQueueAdapter;
     let redisClient: RedisClient;
+    let handlerRegistry: Map<string, HandlerRegistration>;
 
     beforeEach(async () => {
       const setup = await createTestQueueService();
       service = setup.service;
       adapter = setup.adapter;
       redisClient = setup.redisClient;
+      handlerRegistry = setup.handlerRegistry;
     });
 
     afterEach(async () => {
@@ -299,14 +310,22 @@ describe('Queue Plugin Redis Integration', () => {
       const reportsProcessed: string[] = [];
 
       // Register handlers for different queues
-      service.registerHandler('emails', 'send', async ctx => {
-        emailsProcessed.push(ctx.jobId);
-        return { sent: true };
+      handlerRegistry.set('emails:send', {
+        handler: async ctx => {
+          emailsProcessed.push(ctx.jobId);
+          return { sent: true };
+        },
+        inputSchema: z.any(),
+        outputSchema: z.any(),
       });
 
-      service.registerHandler('reports', 'generate', async ctx => {
-        reportsProcessed.push(ctx.jobId);
-        return { generated: true };
+      handlerRegistry.set('reports:generate', {
+        handler: async ctx => {
+          reportsProcessed.push(ctx.jobId);
+          return { generated: true };
+        },
+        inputSchema: z.any(),
+        outputSchema: z.any(),
       });
 
       // Start both queues
@@ -349,8 +368,8 @@ describe('Queue Plugin Redis Integration', () => {
         return { generated: true };
       });
 
-      service.registerHandler('emails', 'send', emailHandler);
-      service.registerHandler('reports', 'generate', reportHandler);
+      handlerRegistry.set('emails:send', { handler: emailHandler, inputSchema: z.any(), outputSchema: z.any() });
+      handlerRegistry.set('reports:generate', { handler: reportHandler, inputSchema: z.any(), outputSchema: z.any() });
 
       await service.startAll(); // Starts all queues
 
@@ -381,12 +400,14 @@ describe('Queue Plugin Redis Integration', () => {
     let service: QueueService;
     let adapter: RedisQueueAdapter;
     let redisClient: RedisClient;
+    let handlerRegistry: Map<string, HandlerRegistration>;
 
     beforeEach(async () => {
       const setup = await createTestQueueService();
       service = setup.service;
       adapter = setup.adapter;
       redisClient = setup.redisClient;
+      handlerRegistry = setup.handlerRegistry;
     });
 
     afterEach(async () => {
@@ -399,7 +420,7 @@ describe('Queue Plugin Redis Integration', () => {
         return { done: true };
       });
 
-      service.registerHandler('default', 'list:test', handler);
+      handlerRegistry.set('default:list:test', { handler, inputSchema: z.any(), outputSchema: z.any() });
 
       // Add multiple jobs
       await service.add('default', 'list:test', { index: 1 });
@@ -423,6 +444,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should limit number of jobs returned', async () => {
+      handlerRegistry.set('default:limit:test', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       // Add 10 jobs
       for (let i = 0; i < 10; i++) {
         await service.add('default', 'limit:test', { index: i });
@@ -438,6 +460,9 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should list all jobs when no filters provided', async () => {
+      handlerRegistry.set('default:all:test1', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
+      handlerRegistry.set('default:all:test2', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
+      handlerRegistry.set('default:all:test3', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       await service.add('default', 'all:test1', {});
       await service.add('default', 'all:test2', {});
       await service.add('default', 'all:test3', {});
@@ -456,12 +481,14 @@ describe('Queue Plugin Redis Integration', () => {
     let service: QueueService;
     let adapter: RedisQueueAdapter;
     let redisClient: RedisClient;
+    let handlerRegistry: Map<string, HandlerRegistration>;
 
     beforeEach(async () => {
       const setup = await createTestQueueService();
       service = setup.service;
       adapter = setup.adapter;
       redisClient = setup.redisClient;
+      handlerRegistry = setup.handlerRegistry;
     });
 
     afterEach(async () => {
@@ -474,7 +501,7 @@ describe('Queue Plugin Redis Integration', () => {
         return { done: true };
       });
 
-      service.registerHandler('default', 'stats:test', slowHandler);
+      handlerRegistry.set('default:stats:test', { handler: slowHandler, inputSchema: z.any(), outputSchema: z.any() });
 
       // Add multiple jobs
       await service.add('default', 'stats:test', {});
@@ -503,12 +530,14 @@ describe('Queue Plugin Redis Integration', () => {
     let service: QueueService;
     let adapter: RedisQueueAdapter;
     let redisClient: RedisClient;
+    let handlerRegistry: Map<string, HandlerRegistration>;
 
     beforeEach(async () => {
       const setup = await createTestQueueService();
       service = setup.service;
       adapter = setup.adapter;
       redisClient = setup.redisClient;
+      handlerRegistry = setup.handlerRegistry;
     });
 
     afterEach(async () => {
@@ -516,6 +545,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should cancel queued jobs', async () => {
+      handlerRegistry.set('default:cancel:test', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'cancel:test', {});
 
       // Cancel before processing
@@ -527,6 +557,7 @@ describe('Queue Plugin Redis Integration', () => {
     });
 
     it('should persist cancelled status in Redis', async () => {
+      handlerRegistry.set('default:cancel:persist', { handler: vi.fn(async () => ({})), inputSchema: z.any(), outputSchema: z.any() });
       const jobId = await service.add('default', 'cancel:persist', {});
       await service.cancelJob(jobId);
 

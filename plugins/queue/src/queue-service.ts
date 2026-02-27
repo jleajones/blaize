@@ -7,14 +7,15 @@
  * @packageDocumentation
  */
 
-import { QueueNotFoundError } from './errors';
+import { HandlerNotFoundError, JobValidationError, QueueNotFoundError } from './errors';
 import { QueueInstance } from './queue-instance';
 
 import type {
   QueueServiceConfig,
   QueueStorageAdapter,
+  QueueManifest,
+  HandlerRegistration,
   Job,
-  JobHandler,
   JobOptions,
   JobStatus,
   JobError,
@@ -32,37 +33,38 @@ import type { BlaizeLogger, EventBus } from 'blaizejs';
  * Manages multiple queue instances with a unified API
  *
  * QueueService provides:
+ * - Type-safe job submission with input validation via handler registry
  * - Multi-queue management with shared storage
  * - Cross-queue job lookup
  * - Unified event subscription
  * - Coordinated lifecycle management (startAll/stopAll)
  *
+ * @template M - Queue manifest mapping queue names to job types with input/output shapes
+ *
  * @example Basic usage
  * ```typescript
- * import { QueueService, createInMemoryStorage } from '@blaizejs/queue';
+ * import { QueueService, createInMemoryStorage, defineJob } from '@blaizejs/queue';
+ * import { z } from 'zod';
  *
- * const storage = createInMemoryStorage();
+ * const sendEmailJob = defineJob({
+ *   input: z.object({ to: z.string().email(), subject: z.string() }),
+ *   output: z.object({ sent: z.boolean() }),
+ *   handler: async (ctx) => {
+ *     await sendEmail(ctx.data);
+ *     return { sent: true };
+ *   },
+ * });
  *
  * const queueService = new QueueService({
  *   queues: {
- *     emails: { concurrency: 5 },
- *     reports: { concurrency: 2, defaultTimeout: 60000 },
+ *     emails: { concurrency: 5, jobs: { 'email:send': sendEmailJob } },
  *   },
  *   storage,
  *   logger,
  * });
  *
- * // Register handlers
- * queueService.registerHandler('emails', 'email:send', async (ctx) => {
- *   await sendEmail(ctx.data);
- *   return { sent: true };
- * });
- *
- * // Start all queues
- * await queueService.startAll();
- *
- * // Add jobs
- * const jobId = await queueService.add('emails', 'email:send', { to: 'user@example.com' });
+ * // Add jobs (input is validated against the schema)
+ * const jobId = await queueService.add('emails', 'email:send', { to: 'user@example.com', subject: 'Hello' });
  *
  * // Stop all queues gracefully
  * await queueService.stopAll();
@@ -86,7 +88,7 @@ import type { BlaizeLogger, EventBus } from 'blaizejs';
  * unsubscribe();
  * ```
  */
-export class QueueService {
+export class QueueService<M = QueueManifest> {
   // ==========================================================================
   // Private State
   // ==========================================================================
@@ -108,6 +110,9 @@ export class QueueService {
 
   /** Server ID for multi-server setups (optional) */
   private readonly serverId?: string;
+
+  /** Handler registry mapping `queueName:jobType` keys to handler registrations */
+  private readonly handlerRegistry: Map<string, HandlerRegistration>;
 
   // ==========================================================================
   // Constructor
@@ -138,6 +143,7 @@ export class QueueService {
     this.storage = config.storage;
     this.eventBus = config.eventBus;
     this.serverId = config.serverId;
+    this.handlerRegistry = config.handlerRegistry;
 
     this.logger = config.logger.child({ service: 'QueueService' });
     this.queues = new Map();
@@ -147,13 +153,12 @@ export class QueueService {
       const queue = new QueueInstance(
         {
           name,
-          concurrency: queueConfig.concurrency,
-          defaultTimeout: queueConfig.defaultTimeout,
-          defaultMaxRetries: queueConfig.defaultMaxRetries,
+          ...queueConfig,
         },
         this.storage,
         config.logger,
         this.eventBus,
+        this.handlerRegistry,
         this.serverId
       );
 
@@ -163,6 +168,7 @@ export class QueueService {
     this.logger.info('QueueService created', {
       queues: Array.from(this.queues.keys()),
       queueCount: this.queues.size,
+      handlerCount: this.handlerRegistry.size,
       multiServer: !!this.eventBus,
       serverId: this.serverId,
     });
@@ -230,42 +236,63 @@ export class QueueService {
   /**
    * Add a job to a specific queue
    *
-   * @typeParam TData - Type of job data
+   * Validates input data against the job's input schema before enqueuing.
+   * If no handler registration is found, throws HandlerNotFoundError with
+   * available job types listed.
+   *
+   * @template Q - Queue name (constrained to keys of manifest M)
+   * @template J - Job type (constrained to keys of M[Q])
    * @param queueName - Name of the queue
    * @param jobType - Type of job (must have a registered handler)
-   * @param data - Job data payload
+   * @param data - Job data payload (validated against input schema)
    * @param options - Optional job-specific options
    * @returns Promise resolving to the job ID
    * @throws QueueNotFoundError if queue doesn't exist
+   * @throws HandlerNotFoundError if job type has no registered handler
+   * @throws JobValidationError if input data fails schema validation
    *
    * @example
    * ```typescript
    * const jobId = await queueService.add('emails', 'email:send', {
    *   to: 'user@example.com',
    *   subject: 'Hello',
-   *   body: 'World',
-   * });
-   * console.log(`Job created: ${jobId}`);
-   * ```
-   *
-   * @example With options
-   * ```typescript
-   * const jobId = await queueService.add('reports', 'report:generate', {
-   *   reportId: 'monthly-sales',
-   * }, {
-   *   priority: 10,
-   *   timeout: 120000,
    * });
    * ```
    */
-  async add<TData>(
-    queueName: string,
-    jobType: string,
-    data: TData,
+  async add<Q extends string & keyof M, J extends string & keyof M[Q]>(
+    queueName: Q,
+    jobType: J,
+    data: M[Q][J] extends { input: infer I } ? I : unknown,
     options?: JobOptions
   ): Promise<string> {
     const queue = this.getQueueOrThrow(queueName);
-    const jobId = await queue.add(jobType, data, options);
+
+    // Look up handler registration for input validation
+    const registryKey = `${queueName}:${jobType}`;
+    const registration = this.handlerRegistry.get(registryKey);
+
+    if (!registration) {
+      // Collect available job types for this queue
+      const availableJobTypes: string[] = [];
+      for (const key of this.handlerRegistry.keys()) {
+        if (key.startsWith(`${queueName}:`)) {
+          availableJobTypes.push(key.slice(queueName.length + 1));
+        }
+      }
+      throw new HandlerNotFoundError(jobType, queueName, availableJobTypes);
+    }
+
+    // Validate input data against the schema
+    const parseResult = registration.inputSchema.safeParse(data);
+    if (!parseResult.success) {
+      const validationErrors = parseResult.error.errors.map(e => ({
+        path: e.path,
+        message: e.message,
+      }));
+      throw new JobValidationError(jobType, queueName, 'enqueue', validationErrors, data);
+    }
+
+    const jobId = await queue.add(jobType, parseResult.data, options);
 
     // Track job-to-queue mapping for cross-queue lookup
     this.jobQueueMap.set(jobId, queueName);
@@ -280,7 +307,32 @@ export class QueueService {
   }
 
   /**
-   * Get a job by ID
+   * Get a job by ID (typed overload)
+   *
+   * When queueName and jobType are provided, returns a typed Job
+   * with narrowed input/output types from the manifest.
+   *
+   * @template Q - Queue name
+   * @template J - Job type
+   * @param jobId - Unique job identifier
+   * @param queueName - Queue name to search
+   * @param jobType - Job type for type narrowing
+   * @returns The typed job if found, or undefined
+   */
+  async getJob<Q extends string & keyof M, J extends string & keyof M[Q]>(
+    jobId: string,
+    queueName: Q,
+    jobType: J
+  ): Promise<
+    | Job<
+        M[Q][J] extends { input: infer I } ? I : unknown,
+        M[Q][J] extends { output: infer O } ? O : unknown
+      >
+    | undefined
+  >;
+
+  /**
+   * Get a job by ID (untyped overload)
    *
    * If queueName is provided, searches only that queue.
    * Otherwise, searches all queues.
@@ -298,7 +350,9 @@ export class QueueService {
    * const job = await queueService.getJob(jobId);
    * ```
    */
-  async getJob(jobId: string, queueName?: string): Promise<Job | undefined> {
+  async getJob(jobId: string, queueName?: string): Promise<Job | undefined>;
+
+  async getJob(jobId: string, queueName?: string, _jobType?: string): Promise<Job | undefined> {
     // If queueName provided, search only that queue
     if (queueName) {
       const queue = this.queues.get(queueName);
@@ -397,50 +451,6 @@ export class QueueService {
     }
 
     return false;
-  }
-
-  // ==========================================================================
-  // Handler Registration
-  // ==========================================================================
-
-  /**
-   * Register a handler for a job type in a specific queue
-   *
-   * @typeParam TData - Type of job data
-   * @typeParam TResult - Type of handler result
-   * @param queueName - Name of the queue
-   * @param jobType - Type of job
-   * @param handler - Handler function
-   * @throws QueueNotFoundError if queue doesn't exist
-   * @throws HandlerAlreadyRegisteredError if handler already exists
-   *
-   * @example
-   * ```typescript
-   * queueService.registerHandler('emails', 'email:send', async (ctx) => {
-   *   const { to, subject, body } = ctx.data;
-   *
-   *   ctx.logger.info('Sending email', { to, subject });
-   *   ctx.progress(10, 'Preparing email');
-   *
-   *   await sendEmail(to, subject, body);
-   *
-   *   ctx.progress(100, 'Email sent');
-   *   return { sent: true, timestamp: Date.now() };
-   * });
-   * ```
-   */
-  registerHandler<TData, TResult>(
-    queueName: string,
-    jobType: string,
-    handler: JobHandler<TData, TResult>
-  ): void {
-    const queue = this.getQueueOrThrow(queueName);
-    queue.registerHandler(jobType, handler);
-
-    this.logger.debug('Handler registered via service', {
-      queueName,
-      jobType,
-    });
   }
 
   // ==========================================================================

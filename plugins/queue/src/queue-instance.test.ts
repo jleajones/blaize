@@ -2,9 +2,10 @@
  * Unit Tests for QueueInstance
  *
  * Tests verify:
- * - Constructor with (config, storage, logger) signature
+ * - Constructor with (config, storage, logger, eventBus, handlerRegistry) signature
  * - Job submission and retrieval
- * - Handler registration
+ * - Handler registry lookup and validation
+ * - Input/output validation via Zod schemas
  * - Event emission (job:queued, job:started, job:completed, etc.)
  * - Job cancellation
  * - Queue start/stop lifecycle
@@ -14,18 +15,22 @@
  * @since 0.4.0
  */
 
+import { z } from 'zod';
+
 import { createMockEventBus, createMockLogger, MockLogger } from '@blaizejs/testing-utils';
 
-import { HandlerAlreadyRegisteredError } from './errors';
 import { QueueInstance } from './queue-instance';
 import { InMemoryStorage } from './storage/memory';
 
-import type { JobHandler, QueueStorageAdapter, QueueConfig } from './types';
+import type { JobHandler, QueueStorageAdapter, QueueConfig, HandlerRegistration } from './types';
 import type { EventBus } from 'blaizejs';
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
+
+/** Permissive schemas for tests that don't care about validation */
+const anySchema = z.any();
 
 function createTestConfig(overrides?: Partial<QueueConfig>): QueueConfig {
   return {
@@ -33,8 +38,33 @@ function createTestConfig(overrides?: Partial<QueueConfig>): QueueConfig {
     concurrency: 5,
     defaultTimeout: 30000,
     defaultMaxRetries: 3,
+    jobs: {},
     ...overrides,
   };
+}
+
+/**
+ * Create a handler registry with entries for the given queue.
+ * Each entry maps `queueName:jobType` to a HandlerRegistration.
+ */
+function createRegistry(
+  entries: Array<{
+    queueName: string;
+    jobType: string;
+    handler: JobHandler<any, any>;
+    inputSchema?: z.ZodType;
+    outputSchema?: z.ZodType;
+  }>
+): Map<string, HandlerRegistration> {
+  const registry = new Map<string, HandlerRegistration>();
+  for (const entry of entries) {
+    registry.set(`${entry.queueName}:${entry.jobType}`, {
+      handler: entry.handler,
+      inputSchema: entry.inputSchema ?? anySchema,
+      outputSchema: entry.outputSchema ?? anySchema,
+    });
+  }
+  return registry;
 }
 
 // ============================================================================
@@ -46,12 +76,14 @@ describe('QueueInstance', () => {
   let logger: MockLogger;
   let queue: QueueInstance;
   let eventBus: EventBus;
+  let handlerRegistry: Map<string, HandlerRegistration>;
 
   beforeEach(() => {
     storage = new InMemoryStorage();
     logger = createMockLogger();
     eventBus = createMockEventBus();
-    queue = new QueueInstance(createTestConfig(), storage, logger, eventBus);
+    handlerRegistry = new Map();
+    queue = new QueueInstance(createTestConfig(), storage, logger, eventBus, handlerRegistry);
   });
 
   afterEach(async () => {
@@ -103,7 +135,8 @@ describe('QueueInstance', () => {
         createTestConfig({ name: 'custom-queue' }),
         customStorage,
         logger,
-        eventBus
+        eventBus,
+        new Map()
       );
       expect(q.name).toBe('custom-queue');
     });
@@ -199,38 +232,209 @@ describe('QueueInstance', () => {
   });
 
   // ==========================================================================
-  // Handler Registration
+  // Handler Registry
   // ==========================================================================
-  describe('registerHandler()', () => {
-    it('should register a handler for a job type', () => {
-      const handler: JobHandler<unknown, unknown> = async () => {};
-      queue.registerHandler('email:send', handler);
-      expect(queue.hasHandler('email:send')).toBe(true);
+  describe('Handler Registry', () => {
+    it('should use handler from injected registry', async () => {
+      const handler = vi.fn().mockResolvedValue({ sent: true });
+      const registry = createRegistry([
+        { queueName: 'test-queue', jobType: 'email:send', handler },
+      ]);
+      const q = new QueueInstance(createTestConfig(), storage, logger, eventBus, registry);
+
+      await q.add('email:send', { to: 'test@example.com' });
+
+      const completedSpy = vi.fn();
+      q.on('job:completed', completedSpy);
+      await q.start();
+
+      await vi.waitFor(() => {
+        expect(completedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+      expect(handler).toHaveBeenCalled();
     });
 
-    it('should throw HandlerAlreadyRegisteredError for duplicate registration', () => {
-      queue.registerHandler('email:send', async () => {});
-      expect(() => {
-        queue.registerHandler('email:send', async () => {});
-      }).toThrow(HandlerAlreadyRegisteredError);
-    });
+    it('should fail job when no handler found in registry', async () => {
+      // Empty registry — no handlers
+      const q = new QueueInstance(createTestConfig(), storage, logger, eventBus, new Map());
 
-    it('should allow registering different handlers for different job types', () => {
-      queue.registerHandler('email:send', async () => {});
-      queue.registerHandler('report:generate', async () => {});
-      expect(queue.hasHandler('email:send')).toBe(true);
-      expect(queue.hasHandler('report:generate')).toBe(true);
+      await q.add('unknown:job', {});
+
+      const failedSpy = vi.fn();
+      q.on('job:failed', failedSpy);
+      await q.start();
+
+      await vi.waitFor(() => {
+        expect(failedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+      const [, errorObj] = failedSpy.mock.calls[0]!;
+      expect(errorObj.code).toBe('HANDLER_NOT_FOUND');
     });
   });
 
-  describe('hasHandler()', () => {
-    it('should return false for unregistered handler', () => {
-      expect(queue.hasHandler('unknown')).toBe(false);
+  // ==========================================================================
+  // Input/Output Validation
+  // ==========================================================================
+  describe('Input/Output Validation', () => {
+    it('should fail immediately (no retry) when input data is invalid', async () => {
+      const emailSchema = z.object({
+        to: z.string().email(),
+        subject: z.string(),
+      });
+      const handler = vi.fn().mockResolvedValue({ sent: true });
+      const registry = createRegistry([
+        {
+          queueName: 'test-queue',
+          jobType: 'email:send',
+          handler,
+          inputSchema: emailSchema,
+        },
+      ]);
+      const q = new QueueInstance(
+        createTestConfig({ defaultMaxRetries: 3 }),
+        storage,
+        logger,
+        eventBus,
+        registry
+      );
+
+      // Add job with invalid data (missing required fields)
+      await q.add('email:send', { to: 'not-an-email' });
+
+      const failedSpy = vi.fn();
+      const retrySpy = vi.fn();
+      q.on('job:failed', failedSpy);
+      q.on('job:retry', retrySpy);
+      await q.start();
+
+      await vi.waitFor(() => {
+        expect(failedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+
+      // Should fail immediately with VALIDATION_ERROR, no retries
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      const [, errorObj] = failedSpy.mock.calls[0]!;
+      expect(errorObj.code).toBe('VALIDATION_ERROR');
     });
 
-    it('should return true for registered handler', () => {
-      queue.registerHandler('email:send', async () => {});
-      expect(queue.hasHandler('email:send')).toBe(true);
+    it('should fail immediately (no retry) when handler returns wrong output shape', async () => {
+      const outputSchema = z.object({
+        sent: z.boolean(),
+        messageId: z.string(),
+      });
+      const handler = vi.fn().mockResolvedValue({ wrongField: 123 });
+      const registry = createRegistry([
+        {
+          queueName: 'test-queue',
+          jobType: 'email:send',
+          handler,
+          outputSchema,
+        },
+      ]);
+      const q = new QueueInstance(
+        createTestConfig({ defaultMaxRetries: 3 }),
+        storage,
+        logger,
+        eventBus,
+        registry
+      );
+
+      await q.add('email:send', { to: 'test@example.com' });
+
+      const failedSpy = vi.fn();
+      const retrySpy = vi.fn();
+      q.on('job:failed', failedSpy);
+      q.on('job:retry', retrySpy);
+      await q.start();
+
+      await vi.waitFor(() => {
+        expect(failedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+
+      // Should fail immediately with VALIDATION_ERROR, no retries
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(handler).toHaveBeenCalled(); // Handler ran but output was invalid
+      const [, errorObj] = failedSpy.mock.calls[0]!;
+      expect(errorObj.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should pass validated input data to handler', async () => {
+      const inputSchema = z.object({
+        to: z.string().email(),
+        count: z.number().default(1),
+      });
+      let receivedData: any;
+      const handler = vi.fn(async (ctx: any) => {
+        receivedData = ctx.data;
+        return {};
+      });
+      const registry = createRegistry([
+        {
+          queueName: 'test-queue',
+          jobType: 'validated:job',
+          handler,
+          inputSchema,
+        },
+      ]);
+      const q = new QueueInstance(createTestConfig(), storage, logger, eventBus, registry);
+
+      // count should get default value from schema
+      await q.add('validated:job', { to: 'user@example.com' });
+
+      const completedSpy = vi.fn();
+      q.on('job:completed', completedSpy);
+      await q.start();
+
+      await vi.waitFor(() => {
+        expect(completedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+
+      expect(receivedData).toEqual({ to: 'user@example.com', count: 1 });
+    });
+  });
+
+  // ==========================================================================
+  // Missing Handler — Available Job Types
+  // ==========================================================================
+  describe('Missing Handler Error', () => {
+    it('should list available job types in error when handler not found', async () => {
+      const registry = createRegistry([
+        { queueName: 'test-queue', jobType: 'email:send', handler: vi.fn() },
+        { queueName: 'test-queue', jobType: 'report:generate', handler: vi.fn() },
+        { queueName: 'other-queue', jobType: 'other:job', handler: vi.fn() },
+      ]);
+      const q = new QueueInstance(createTestConfig(), storage, logger, eventBus, registry);
+
+      await q.add('unknown:job', {});
+
+      const failedSpy = vi.fn();
+      q.on('job:failed', failedSpy);
+      await q.start();
+
+      await vi.waitFor(() => {
+        expect(failedSpy).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      await q.stop();
+
+      const [, errorObj] = failedSpy.mock.calls[0]!;
+      expect(errorObj.code).toBe('HANDLER_NOT_FOUND');
+      // Error message should list available job types for this queue only
+      expect(errorObj.message).toContain('email:send');
+      expect(errorObj.message).toContain('report:generate');
+      // Should NOT include job types from other queues
+      expect(errorObj.message).not.toContain('other:job');
     });
   });
 
@@ -403,19 +607,19 @@ describe('QueueInstance', () => {
   // ==========================================================================
   describe('Graceful Shutdown (T9)', () => {
     it('should wait for running jobs on graceful stop', async () => {
-      const slowQueue = new QueueInstance(
-        createTestConfig({ name: 'graceful-slow-queue', concurrency: 1 }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let jobCompleted = false;
-      slowQueue.registerHandler('slow:job', async () => {
+      const slowHandler = vi.fn(async () => {
         await new Promise(resolve => setTimeout(resolve, 300));
         jobCompleted = true;
         return { done: true };
       });
+      const slowQueue = new QueueInstance(
+        createTestConfig({ name: 'graceful-slow-queue', concurrency: 1 }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'graceful-slow-queue', jobType: 'slow:job', handler: slowHandler }])
+      );
 
       await slowQueue.add('slow:job', {});
       await slowQueue.start();
@@ -432,15 +636,8 @@ describe('QueueInstance', () => {
     });
 
     it('should cancel running jobs on forceful stop', async () => {
-      const forceQueue = new QueueInstance(
-        createTestConfig({ name: 'force-stop-queue', concurrency: 1 }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let _jobWasCancelled = false;
-      forceQueue.registerHandler('long:job', async ctx => {
+      const longHandler = vi.fn(async (ctx: any) => {
         try {
           // Long running job
           await new Promise((resolve, reject) => {
@@ -456,6 +653,13 @@ describe('QueueInstance', () => {
           throw new Error('Job cancelled');
         }
       });
+      const forceQueue = new QueueInstance(
+        createTestConfig({ name: 'force-stop-queue', concurrency: 1 }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'force-stop-queue', jobType: 'long:job', handler: longHandler }])
+      );
 
       const jobId = await forceQueue.add('long:job', {});
       await forceQueue.start();
@@ -473,20 +677,20 @@ describe('QueueInstance', () => {
     });
 
     it('should timeout graceful shutdown and continue', async () => {
-      const timeoutQueue = new QueueInstance(
-        createTestConfig({ name: 'timeout-shutdown-queue', concurrency: 1 }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let jobStarted = false;
-      timeoutQueue.registerHandler('very-long:job', async () => {
+      const veryLongHandler = vi.fn(async () => {
         jobStarted = true;
         // Job that takes longer than shutdown timeout
         await new Promise(resolve => setTimeout(resolve, 5000));
         return {};
       });
+      const timeoutQueue = new QueueInstance(
+        createTestConfig({ name: 'timeout-shutdown-queue', concurrency: 1 }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'timeout-shutdown-queue', jobType: 'very-long:job', handler: veryLongHandler }])
+      );
 
       await timeoutQueue.add('very-long:job', {});
       await timeoutQueue.start();
@@ -510,19 +714,19 @@ describe('QueueInstance', () => {
     });
 
     it('should prevent new jobs from starting after stop called', async () => {
-      const preventQueue = new QueueInstance(
-        createTestConfig({ name: 'prevent-new-jobs-queue', concurrency: 1 }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       const processedJobIds: string[] = [];
-      preventQueue.registerHandler('count:job', async ctx => {
+      const countHandler = vi.fn(async (ctx: any) => {
         processedJobIds.push(ctx.jobId);
         await new Promise(resolve => setTimeout(resolve, 200));
         return {};
       });
+      const preventQueue = new QueueInstance(
+        createTestConfig({ name: 'prevent-new-jobs-queue', concurrency: 1 }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'prevent-new-jobs-queue', jobType: 'count:job', handler: countHandler }])
+      );
 
       // Add first job
       const job1Id = await preventQueue.add('count:job', {});
@@ -555,7 +759,8 @@ describe('QueueInstance', () => {
         createTestConfig({ name: 'log-shutdown-queue' }),
         storage,
         mockLogger,
-        eventBus
+        eventBus,
+        new Map()
       );
 
       await logQueue.start();
@@ -581,7 +786,8 @@ describe('QueueInstance', () => {
         createTestConfig({ name: 'log-duration-queue' }),
         storage,
         mockLogger,
-        eventBus
+        eventBus,
+        new Map()
       );
 
       await logQueue.start();
@@ -602,6 +808,9 @@ describe('QueueInstance', () => {
     });
 
     it('should clear pending retry timers on stop', async () => {
+      const failHandler = vi.fn(async () => {
+        throw new Error('Fail to trigger retry');
+      });
       const retryQueue = new QueueInstance(
         createTestConfig({
           name: 'retry-timer-shutdown-queue',
@@ -609,12 +818,9 @@ describe('QueueInstance', () => {
         }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'retry-timer-shutdown-queue', jobType: 'fail:job', handler: failHandler }])
       );
-
-      retryQueue.registerHandler('fail:job', async () => {
-        throw new Error('Fail to trigger retry');
-      });
 
       await retryQueue.add('fail:job', {});
 
@@ -645,7 +851,8 @@ describe('QueueInstance', () => {
         createTestConfig({ name: 'immediate-flag-queue' }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        new Map()
       );
 
       await immediateQueue.start();
@@ -668,8 +875,16 @@ describe('QueueInstance', () => {
   // ==========================================================================
   describe('Processing Loop', () => {
     beforeEach(() => {
-      queue.registerHandler('email:send', async () => ({ sent: true }));
-      queue.registerHandler('report:generate', async () => ({ generated: true }));
+      handlerRegistry.set('test-queue:email:send', {
+        handler: async () => ({ sent: true }),
+        inputSchema: anySchema,
+        outputSchema: anySchema,
+      });
+      handlerRegistry.set('test-queue:report:generate', {
+        handler: async () => ({ generated: true }),
+        inputSchema: anySchema,
+        outputSchema: anySchema,
+      });
     });
 
     it('should process queued jobs when started', async () => {
@@ -755,23 +970,23 @@ describe('QueueInstance', () => {
     });
 
     it('should respect concurrency limit', async () => {
-      const lowConcurrencyQueue = new QueueInstance(
-        createTestConfig({ name: 'low-concurrency', concurrency: 2 }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let maxConcurrent = 0;
       let currentConcurrent = 0;
 
-      lowConcurrencyQueue.registerHandler('email:send', async () => {
+      const concurrencyHandler = vi.fn(async () => {
         currentConcurrent++;
         maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
         await new Promise(resolve => setTimeout(resolve, 50));
         currentConcurrent--;
         return {};
       });
+      const lowConcurrencyQueue = new QueueInstance(
+        createTestConfig({ name: 'low-concurrency', concurrency: 2 }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'low-concurrency', jobType: 'email:send', handler: concurrencyHandler }])
+      );
 
       for (let i = 0; i < 5; i++) {
         await lowConcurrencyQueue.add('email:send', { index: i });
@@ -797,7 +1012,8 @@ describe('QueueInstance', () => {
         createTestConfig({ name: 'no-handler' }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        new Map()
       );
 
       const jobId = await noHandlerQueue.add('unknown:job', { data: 'test' });
@@ -822,16 +1038,16 @@ describe('QueueInstance', () => {
     });
 
     it('should emit job:failed event on handler error', async () => {
+      const failingHandler = vi.fn(async () => {
+        throw new Error('Handler failed!');
+      });
       const errorQueue = new QueueInstance(
         createTestConfig({ name: 'error-queue', defaultMaxRetries: 0 }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'error-queue', jobType: 'failing:job', handler: failingHandler }])
       );
-
-      errorQueue.registerHandler('failing:job', async () => {
-        throw new Error('Handler failed!');
-      });
 
       await errorQueue.add('failing:job', { data: 'test' });
 
@@ -854,18 +1070,18 @@ describe('QueueInstance', () => {
     });
 
     it('should emit job:progress event', async () => {
-      const progressQueue = new QueueInstance(
-        createTestConfig({ name: 'progress-queue' }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
-      progressQueue.registerHandler('progress:job', async ctx => {
+      const progressHandler = vi.fn(async (ctx: any) => {
         await ctx.progress(50, 'Halfway there');
         await ctx.progress(100, 'Done');
         return { success: true };
       });
+      const progressQueue = new QueueInstance(
+        createTestConfig({ name: 'progress-queue' }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'progress-queue', jobType: 'progress:job', handler: progressHandler }])
+      );
 
       await progressQueue.add('progress:job', {});
 
@@ -889,6 +1105,11 @@ describe('QueueInstance', () => {
     });
 
     it('should timeout job that exceeds timeout limit', async () => {
+      const slowHandler = vi.fn(async () => {
+        // This will take longer than the 100ms timeout
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return { shouldNotReach: true };
+      });
       const timeoutQueue = new QueueInstance(
         createTestConfig({
           name: 'timeout-queue',
@@ -897,14 +1118,9 @@ describe('QueueInstance', () => {
         }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'timeout-queue', jobType: 'slow:job', handler: slowHandler }])
       );
-
-      timeoutQueue.registerHandler('slow:job', async () => {
-        // This will take longer than the 100ms timeout
-        await new Promise(resolve => setTimeout(resolve, 500));
-        return { shouldNotReach: true };
-      });
 
       const jobId = await timeoutQueue.add('slow:job', {});
 
@@ -928,18 +1144,18 @@ describe('QueueInstance', () => {
     });
 
     it('should pass abort signal to handler', async () => {
+      let receivedSignal: AbortSignal | undefined;
+      const signalHandler = vi.fn(async (ctx: any) => {
+        receivedSignal = ctx.signal;
+        return { signalReceived: true };
+      });
       const signalQueue = new QueueInstance(
         createTestConfig({ name: 'signal-queue' }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'signal-queue', jobType: 'signal:job', handler: signalHandler }])
       );
-
-      let receivedSignal: AbortSignal | undefined;
-      signalQueue.registerHandler('signal:job', async ctx => {
-        receivedSignal = ctx.signal;
-        return { signalReceived: true };
-      });
 
       await signalQueue.add('signal:job', {});
 
@@ -962,19 +1178,19 @@ describe('QueueInstance', () => {
     });
 
     it('should provide job-scoped logger with context', async () => {
-      const loggerQueue = new QueueInstance(
-        createTestConfig({ name: 'logger-queue' }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let receivedLogger: any;
-      loggerQueue.registerHandler('logger:job', async ctx => {
+      const loggerHandler = vi.fn(async (ctx: any) => {
         receivedLogger = ctx.logger;
         ctx.logger.info('Test log from handler');
         return {};
       });
+      const loggerQueue = new QueueInstance(
+        createTestConfig({ name: 'logger-queue' }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'logger-queue', jobType: 'logger:job', handler: loggerHandler }])
+      );
 
       await loggerQueue.add('logger:job', {});
 
@@ -998,20 +1214,20 @@ describe('QueueInstance', () => {
     });
 
     it('should update job progress in storage', async () => {
-      const progressQueue = new QueueInstance(
-        createTestConfig({ name: 'progress-storage-queue' }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let jobIdCapture: string | undefined;
-      progressQueue.registerHandler('progress:job', async ctx => {
+      const progressStorageHandler = vi.fn(async (ctx: any) => {
         jobIdCapture = ctx.jobId;
         await ctx.progress(25, 'Quarter done');
         await ctx.progress(75, 'Three quarters');
         return {};
       });
+      const progressQueue = new QueueInstance(
+        createTestConfig({ name: 'progress-storage-queue' }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'progress-storage-queue', jobType: 'progress:job', handler: progressStorageHandler }])
+      );
 
       const jobId = await progressQueue.add('progress:job', {});
 
@@ -1033,15 +1249,8 @@ describe('QueueInstance', () => {
     });
 
     it('should handle cancellation during execution', async () => {
-      const cancelQueue = new QueueInstance(
-        createTestConfig({ name: 'cancel-queue', concurrency: 1 }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let handlerStarted = false;
-      cancelQueue.registerHandler('cancel:job', async ctx => {
+      const cancelHandler = vi.fn(async (ctx: any) => {
         handlerStarted = true;
         // Wait long enough for cancellation to happen
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -1051,6 +1260,13 @@ describe('QueueInstance', () => {
         }
         return {};
       });
+      const cancelQueue = new QueueInstance(
+        createTestConfig({ name: 'cancel-queue', concurrency: 1 }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'cancel-queue', jobType: 'cancel:job', handler: cancelHandler }])
+      );
 
       const jobId = await cancelQueue.add('cancel:job', {});
 
@@ -1089,15 +1305,19 @@ describe('QueueInstance', () => {
     it('should provide all required context properties', async () => {
       let capturedContext: any;
 
-      queue.registerHandler('context:job', async ctx => {
-        capturedContext = {
-          jobId: ctx.jobId,
-          data: ctx.data,
-          hasLogger: !!ctx.logger,
-          hasSignal: !!ctx.signal,
-          hasProgress: typeof ctx.progress === 'function',
-        };
-        return {};
+      handlerRegistry.set('test-queue:context:job', {
+        handler: async (ctx: any) => {
+          capturedContext = {
+            jobId: ctx.jobId,
+            data: ctx.data,
+            hasLogger: !!ctx.logger,
+            hasSignal: !!ctx.signal,
+            hasProgress: typeof ctx.progress === 'function',
+          };
+          return {};
+        },
+        inputSchema: anySchema,
+        outputSchema: anySchema,
       });
 
       const testData = { foo: 'bar', count: 42 };
@@ -1126,19 +1346,19 @@ describe('QueueInstance', () => {
 
     it('should provide logger with job context', async () => {
       const mockLogger = createMockLogger();
-      const contextQueue = new QueueInstance(
-        createTestConfig({ name: 'context-logger-queue' }),
-        storage,
-        mockLogger,
-        eventBus
-      );
-
       let loggerUsed = false;
-      contextQueue.registerHandler('log:job', async ctx => {
+      const logHandler = vi.fn(async (ctx: any) => {
         ctx.logger.info('Handler logging test');
         loggerUsed = true;
         return {};
       });
+      const contextQueue = new QueueInstance(
+        createTestConfig({ name: 'context-logger-queue' }),
+        storage,
+        mockLogger,
+        eventBus,
+        createRegistry([{ queueName: 'context-logger-queue', jobType: 'log:job', handler: logHandler }])
+      );
 
       await contextQueue.add('log:job', {});
 
@@ -1163,6 +1383,14 @@ describe('QueueInstance', () => {
   // ==========================================================================
   describe('Retry Logic', () => {
     it('should retry failed job with exponential backoff', async () => {
+      let attempts = 0;
+      const flakyHandler = vi.fn(async () => {
+        attempts++;
+        if (attempts < 3) {
+          throw new Error(`Attempt ${attempts} failed`);
+        }
+        return { success: true };
+      });
       const retryQueue = new QueueInstance(
         createTestConfig({
           name: 'retry-queue',
@@ -1170,17 +1398,9 @@ describe('QueueInstance', () => {
         }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'retry-queue', jobType: 'flaky:job', handler: flakyHandler }])
       );
-
-      let attempts = 0;
-      retryQueue.registerHandler('flaky:job', async () => {
-        attempts++;
-        if (attempts < 3) {
-          throw new Error(`Attempt ${attempts} failed`);
-        }
-        return { success: true };
-      });
 
       const _jobId = await retryQueue.add('flaky:job', {});
 
@@ -1211,6 +1431,9 @@ describe('QueueInstance', () => {
     });
 
     it('should emit job:failed after exhausting retries', async () => {
+      const alwaysFailHandler = vi.fn(async () => {
+        throw new Error('Always fails');
+      });
       const failQueue = new QueueInstance(
         createTestConfig({
           name: 'exhaust-retry-queue',
@@ -1218,12 +1441,9 @@ describe('QueueInstance', () => {
         }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'exhaust-retry-queue', jobType: 'always:fail', handler: alwaysFailHandler }])
       );
-
-      failQueue.registerHandler('always:fail', async () => {
-        throw new Error('Always fails');
-      });
 
       const jobId = await failQueue.add('always:fail', {});
 
@@ -1255,18 +1475,8 @@ describe('QueueInstance', () => {
     });
 
     it('should not retry cancelled jobs', async () => {
-      const cancelRetryQueue = new QueueInstance(
-        createTestConfig({
-          name: 'cancel-retry-queue',
-          defaultMaxRetries: 3,
-        }),
-        storage,
-        createMockLogger(),
-        eventBus
-      );
-
       let handlerStarted = false;
-      cancelRetryQueue.registerHandler('cancelable:job', async ctx => {
+      const cancelableHandler = vi.fn(async (ctx: any) => {
         handlerStarted = true;
         // Wait for cancellation
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -1275,6 +1485,16 @@ describe('QueueInstance', () => {
         }
         return {};
       });
+      const cancelRetryQueue = new QueueInstance(
+        createTestConfig({
+          name: 'cancel-retry-queue',
+          defaultMaxRetries: 3,
+        }),
+        storage,
+        createMockLogger(),
+        eventBus,
+        createRegistry([{ queueName: 'cancel-retry-queue', jobType: 'cancelable:job', handler: cancelableHandler }])
+      );
 
       const jobId = await cancelRetryQueue.add('cancelable:job', {});
 
@@ -1309,6 +1529,9 @@ describe('QueueInstance', () => {
     });
 
     it('should not retry job with maxRetries = 0', async () => {
+      const failOnceHandler = vi.fn(async () => {
+        throw new Error('Failed once');
+      });
       const noRetryQueue = new QueueInstance(
         createTestConfig({
           name: 'no-retry-queue',
@@ -1316,12 +1539,9 @@ describe('QueueInstance', () => {
         }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'no-retry-queue', jobType: 'fail:once', handler: failOnceHandler }])
       );
-
-      noRetryQueue.registerHandler('fail:once', async () => {
-        throw new Error('Failed once');
-      });
 
       await noRetryQueue.add('fail:once', {});
 
@@ -1351,7 +1571,8 @@ describe('QueueInstance', () => {
         createTestConfig({ name: 'backoff-test' }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        new Map()
       );
 
       // Use type assertion to access private method
@@ -1387,6 +1608,9 @@ describe('QueueInstance', () => {
     });
 
     it('should increment retries counter on each attempt', async () => {
+      const failJobHandler = vi.fn(async () => {
+        throw new Error('Fail');
+      });
       const retriesQueue = new QueueInstance(
         createTestConfig({
           name: 'retries-counter-queue',
@@ -1394,12 +1618,9 @@ describe('QueueInstance', () => {
         }),
         storage,
         createMockLogger(),
-        eventBus
+        eventBus,
+        createRegistry([{ queueName: 'retries-counter-queue', jobType: 'fail:job', handler: failJobHandler }])
       );
-
-      retriesQueue.registerHandler('fail:job', async () => {
-        throw new Error('Fail');
-      });
 
       const jobId = await retriesQueue.add('fail:job', {});
 
@@ -1516,7 +1737,7 @@ describe('QueueInstance', () => {
 
     describe('Event Publishing', () => {
       it('should publish enqueued event when job is added', async () => {
-        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, new Map(), 'test-server');
 
         const jobId = await testQueue.add('test-job', { foo: 'bar' });
 
@@ -1536,12 +1757,15 @@ describe('QueueInstance', () => {
       });
 
       it('should publish started, progress, completed events during processing', async () => {
-        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
-
-        testQueue.registerHandler('test-job', async ctx => {
+        const progressHandler = vi.fn(async (ctx: any) => {
           await ctx.progress(50, 'Half done');
           return { success: true };
         });
+        testQueue = new QueueInstance(
+          createTestConfig(), storage, logger, eventBus,
+          createRegistry([{ queueName: 'test-queue', jobType: 'test-job', handler: progressHandler }]),
+          'test-server'
+        );
 
         const jobId = await testQueue.add('test-job', {});
         await new Promise(resolve => setTimeout(resolve, 10));
@@ -1573,6 +1797,9 @@ describe('QueueInstance', () => {
       });
 
       it('should publish failed event when job fails', async () => {
+        const failHandler = vi.fn(async () => {
+          throw new Error('Test error');
+        });
         testQueue = new QueueInstance(
           createTestConfig({
             defaultMaxRetries: 0, // No retries to test immediate failure
@@ -1580,12 +1807,9 @@ describe('QueueInstance', () => {
           storage,
           logger,
           eventBus,
+          createRegistry([{ queueName: 'test-queue', jobType: 'test-job', handler: failHandler }]),
           'test-server'
         );
-
-        testQueue.registerHandler('test-job', async () => {
-          throw new Error('Test error');
-        });
 
         const jobId = await testQueue.add('test-job', {});
         await testQueue.start();
@@ -1608,14 +1832,17 @@ describe('QueueInstance', () => {
       });
 
       it('should publish cancelled event when job is cancelled', async () => {
-        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
-
-        testQueue.registerHandler('test-job', async ctx => {
+        const longRunHandler = vi.fn(async (ctx: any) => {
           // Long-running job
           await new Promise(resolve => setTimeout(resolve, 5000));
           if (ctx.signal.aborted) throw new Error('Cancelled');
           return { success: true };
         });
+        testQueue = new QueueInstance(
+          createTestConfig(), storage, logger, eventBus,
+          createRegistry([{ queueName: 'test-queue', jobType: 'test-job', handler: longRunHandler }]),
+          'test-server'
+        );
 
         const jobId = await testQueue.add('test-job', {});
         await testQueue.start();
@@ -1646,10 +1873,9 @@ describe('QueueInstance', () => {
           storage,
           logger,
           eventBus,
+          createRegistry([{ queueName: 'test-queue', jobType: 'test-job', handler: async () => ({ success: true }) }]),
           'test-server-123'
         );
-
-        testQueue.registerHandler('test-job', async () => ({ success: true }));
 
         await testQueue.add('test-job', {});
         await testQueue.start();
@@ -1679,14 +1905,17 @@ describe('QueueInstance', () => {
       });
 
       it('should publish multiple progress events', async () => {
-        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
-
-        testQueue.registerHandler('test-job', async ctx => {
+        const multiProgressHandler = vi.fn(async (ctx: any) => {
           await ctx.progress(25, 'Quarter done');
           await ctx.progress(50, 'Half done');
           await ctx.progress(75, 'Three quarters');
           return { success: true };
         });
+        testQueue = new QueueInstance(
+          createTestConfig(), storage, logger, eventBus,
+          createRegistry([{ queueName: 'test-queue', jobType: 'test-job', handler: multiProgressHandler }]),
+          'test-server'
+        );
 
         await testQueue.add('test-job', {});
         await testQueue.start();
@@ -1714,11 +1943,13 @@ describe('QueueInstance', () => {
       });
 
       it('should publish completed event with result', async () => {
-        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
-
         const expectedResult = { status: 'success', recordsProcessed: 100 };
 
-        testQueue.registerHandler('test-job', async () => expectedResult);
+        testQueue = new QueueInstance(
+          createTestConfig(), storage, logger, eventBus,
+          createRegistry([{ queueName: 'test-queue', jobType: 'test-job', handler: async () => expectedResult }]),
+          'test-server'
+        );
 
         await testQueue.add('test-job', {});
         await testQueue.start();
@@ -1739,7 +1970,11 @@ describe('QueueInstance', () => {
 
     describe('Backward Compatibility', () => {
       it('should still emit local EventEmitter events', async () => {
-        testQueue = new QueueInstance(createTestConfig(), storage, logger, eventBus, 'test-server');
+        testQueue = new QueueInstance(
+          createTestConfig(), storage, logger, eventBus,
+          createRegistry([{ queueName: 'test-queue', jobType: 'test-job', handler: async () => ({ success: true }) }]),
+          'test-server'
+        );
 
         const queuedSpy = vi.fn();
         const startedSpy = vi.fn();
@@ -1748,8 +1983,6 @@ describe('QueueInstance', () => {
         testQueue.on('job:queued', queuedSpy);
         testQueue.on('job:started', startedSpy);
         testQueue.on('job:completed', completedSpy);
-
-        testQueue.registerHandler('test-job', async () => ({ success: true }));
 
         await testQueue.add('test-job', {});
         await testQueue.start();

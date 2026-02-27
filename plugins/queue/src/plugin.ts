@@ -8,14 +8,22 @@
  *
  * @packageDocumentation
  */
-import { createPlugin, createMiddleware } from 'blaizejs';
+import { createMiddleware } from 'blaizejs';
 
 import config from '../package.json';
 import { QueueService } from './queue-service';
 import { createInMemoryStorage } from './storage';
 
-import type { QueuePluginConfig, QueuePluginServices, QueueStorageAdapter } from './types';
-import type { Server } from 'blaizejs';
+import type {
+  QueueConfig,
+  QueueManifest,
+  QueuePluginConfig,
+  QueuePluginServices,
+  QueueStorageAdapter,
+  HandlerRegistration,
+  InferQueueManifest,
+} from './types';
+import type { Plugin, Server } from 'blaizejs';
 
 // ============================================================================
 // Constants
@@ -40,14 +48,14 @@ const DEFAULT_CONFIG = {
 // packages/plugins/queue/src/index.ts
 let _queueService: QueueService | null = null;
 
-export function getQueueService(): QueueService {
+export function getQueueService<M extends QueueManifest = QueueManifest>(): QueueService<M> {
   if (!_queueService) {
     throw new Error(
       'Queue service not initialized. ' +
         'Make sure you have registered the queue plugin with createQueuePlugin().'
     );
   }
-  return _queueService;
+  return _queueService as QueueService<M>;
 }
 
 function _initializeQueueService(service: QueueService) {
@@ -120,248 +128,256 @@ function _terminateQueueService() {
  * });
  * ```
  */
-export const createQueuePlugin = createPlugin<QueuePluginConfig, {}, QueuePluginServices>({
-  name: PLUGIN_NAME,
-  version: PLUGIN_VERSION,
+export function createQueuePlugin<const C extends QueuePluginConfig>(
+  userConfig: C
+): Plugin<{}, QueuePluginServices<InferQueueManifest<C>>> {
+  type M = InferQueueManifest<C>;
 
-  defaultConfig: {
-    queues: {},
-    defaultConcurrency: DEFAULT_CONFIG.defaultConcurrency,
-    defaultTimeout: DEFAULT_CONFIG.defaultTimeout,
-    defaultMaxRetries: DEFAULT_CONFIG.defaultMaxRetries,
-  },
+  // Merge with defaults
+  const config: C = {
+    ...({
+      queues: {},
+      defaultConcurrency: DEFAULT_CONFIG.defaultConcurrency,
+      defaultTimeout: DEFAULT_CONFIG.defaultTimeout,
+      defaultMaxRetries: DEFAULT_CONFIG.defaultMaxRetries,
+    } as C),
+    ...userConfig,
+  };
 
-  setup: ({ config, logger }) => {
-    // ========================================================================
-    // Plugin-Scoped State (Closure Variables)
-    // ========================================================================
+  /**
+   * Plugin-specific child logger, created from the server's logger
+   * Initialized in `register()`, used throughout the plugin lifecycle
+   */
+  let pluginLogger: import('blaizejs').BlaizeLogger;
+
+  /**
+   * Storage adapter instance
+   * Initialized in `initialize()`, cleaned up in `onServerStop()`
+   */
+  let storage: QueueStorageAdapter;
+
+  return {
+    name: PLUGIN_NAME,
+    version: PLUGIN_VERSION,
 
     /**
-     * Child logger with plugin context
+     * Register middleware and routes
+     *
+     * Called during `server.register()`.
+     * Middleware exposes `QueueService` via `ctx.services.queue`.
      */
-    const pluginLogger = logger.child({
-      plugin: PLUGIN_NAME,
-      version: PLUGIN_VERSION,
-    });
+    register: async (server: Server<any, any>) => {
+      // Create plugin-specific child logger from the server's logger
+      pluginLogger = server._logger.child({
+        plugin: PLUGIN_NAME,
+        version: PLUGIN_VERSION,
+      });
+
+      pluginLogger.debug('Registering queue middleware');
+
+      // Type assertion for server.use method
+      const serverWithUse = server as { use: (middleware: unknown) => void };
+
+      serverWithUse.use(
+        createMiddleware<Record<string, never>, QueuePluginServices<M>>({
+          name: 'queue',
+
+          handler: async ({ ctx, next }) => {
+            // Expose queue service to route handlers
+            ctx.services.queue = getQueueService();
+            await next();
+          },
+        })
+      );
+
+      pluginLogger.info('Queue middleware registered');
+    },
 
     /**
-     * Storage adapter instance
-     * Initialized in `initialize()`, cleaned up in `onServerStop()`
+     * Initialize resources
+     *
+     * Called before `server.listen()`.
+     * Sets up storage adapter and creates QueueService.
      */
-    let storage: QueueStorageAdapter;
+    initialize: async (server: Server<any, any>) => {
+      pluginLogger.info('Initializing queue plugin', {
+        queues: Object.keys(config.queues),
+        queueCount: Object.keys(config.queues).length,
+        hasCustomStorage: !!config.storage,
+      });
 
-    // ========================================================================
-    // Lifecycle Hooks
-    // ========================================================================
+      // Use provided storage or default to in-memory
+      storage = config.storage ?? createInMemoryStorage();
 
-    return {
-      /**
-       * Register middleware and routes
-       *
-       * Called during `server.register()`.
-       * Middleware exposes `QueueService` via `ctx.services.queue`.
-       */
-      register: async (server: Server<any, any>) => {
-        pluginLogger.debug('Registering queue middleware');
-
-        // Type assertion for server.use method
-        const serverWithUse = server as { use: (middleware: unknown) => void };
-
-        serverWithUse.use(
-          createMiddleware<Record<string, never>, QueuePluginServices>({
-            name: 'queue',
-
-            handler: async ({ ctx, next }) => {
-              // Expose queue service to route handlers
-              ctx.services.queue = getQueueService();
-              await next();
-            },
-          })
-        );
-
-        pluginLogger.info('Queue middleware registered');
-      },
-
-      /**
-       * Initialize resources
-       *
-       * Called before `server.listen()`.
-       * Sets up storage adapter and creates QueueService.
-       */
-      initialize: async (server: Server<any, any>) => {
-        pluginLogger.info('Initializing queue plugin', {
-          queues: Object.keys(config.queues),
-          queueCount: Object.keys(config.queues).length,
-          hasCustomStorage: !!config.storage,
-        });
-
-        // Use provided storage or default to in-memory
-        storage = config.storage ?? createInMemoryStorage();
-
-        // Connect if adapter supports it
-        if (storage.connect) {
-          pluginLogger.info('Connecting to storage adapter...');
-          try {
-            await storage.connect();
-            pluginLogger.info('Storage adapter connected');
-          } catch (error) {
-            pluginLogger.error('Failed to connect storage adapter', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw error;
-          }
-        }
-
-        // Build queue configurations with defaults applied
-        const queuesConfig: Record<
-          string,
-          {
-            concurrency?: number;
-            defaultTimeout?: number;
-            defaultMaxRetries?: number;
-          }
-        > = {};
-
-        for (const [name, queueConfig] of Object.entries(config.queues)) {
-          queuesConfig[name] = {
-            concurrency: queueConfig.concurrency ?? config.defaultConcurrency,
-            defaultTimeout: queueConfig.defaultTimeout ?? config.defaultTimeout,
-            defaultMaxRetries: queueConfig.defaultMaxRetries ?? config.defaultMaxRetries,
-          };
-        }
-
-        // Create queue service
-        _initializeQueueService(
-          new QueueService({
-            queues: queuesConfig,
-            storage,
-            logger: pluginLogger,
-            eventBus: server.eventBus, // Pass EventBus if serverId provided
-            serverId: config.serverId ?? 'unknown', // Pass serverId for event attribution
-          })
-        );
-
-        if (config.serverId) {
-          pluginLogger.info('EventBus integration enabled', {
-            serverId: config.serverId ?? 'unknown',
-            eventBusAvailable: !!server.eventBus,
-          });
-        } else {
-          pluginLogger.info('EventBus integration disabled (no serverId provided)', {
-            note: 'Multi-server job visibility requires serverId in plugin config',
-          });
-        }
-
-        // Register handlers from config
-        if (config.handlers) {
-          let handlerCount = 0;
-          const queue = getQueueService();
-
-          for (const [queueName, jobTypes] of Object.entries(config.handlers)) {
-            for (const [jobType, handler] of Object.entries(jobTypes)) {
-              queue.registerHandler(queueName, jobType, handler);
-              handlerCount++;
-              pluginLogger.debug('Handler registered from config', {
-                queueName,
-                jobType,
-              });
-            }
-          }
-
-          pluginLogger.info('Handlers registered from config', {
-            handlerCount,
-            queues: Object.keys(config.handlers),
-          });
-        }
-
-        pluginLogger.info('Queue plugin initialized', {
-          queues: Object.keys(config.queues),
-        });
-      },
-
-      /**
-       * Server started listening
-       *
-       * Called after `server.listen()` succeeds.
-       * Starts queue processing.
-       */
-      onServerStart: async () => {
-        pluginLogger.info('Starting queue processing');
-
+      // Connect if adapter supports it
+      if (storage.connect) {
+        pluginLogger.info('Connecting to storage adapter...');
         try {
-          const queue = getQueueService();
-          await queue.startAll();
-          pluginLogger.info('Queue processing started', {
-            queues: queue.listQueues(),
-          });
+          await storage.connect();
+          pluginLogger.info('Storage adapter connected');
         } catch (error) {
-          pluginLogger.error('Failed to start queue processing', {
+          pluginLogger.error('Failed to connect storage adapter', {
             error: error instanceof Error ? error.message : String(error),
           });
           throw error;
         }
-      },
+      }
 
-      /**
-       * Server stopping
-       *
-       * Called when `server.close()` is initiated.
-       * Stops queue processing and disconnects storage.
-       */
-      onServerStop: async () => {
-        pluginLogger.info('Stopping queue plugin');
+      // Build queue configurations with defaults applied
+      const queuesConfig: Record<string, Omit<QueueConfig, 'name'>> = {};
 
-        // Stop all queues gracefully
-        try {
-          const queue = getQueueService();
-          await queue.stopAll({ graceful: true, timeout: 30000 });
-          pluginLogger.info('Queue processing stopped');
-        } catch (error) {
-          pluginLogger.error('Error stopping queue processing', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          // Continue cleanup even if stop fails
-        }
+      for (const [name, queueConfig] of Object.entries(config.queues)) {
+        queuesConfig[name] = {
+          concurrency: queueConfig.concurrency ?? config.defaultConcurrency,
+          defaultTimeout: queueConfig.defaultTimeout ?? config.defaultTimeout,
+          defaultMaxRetries: queueConfig.defaultMaxRetries ?? config.defaultMaxRetries,
+          jobs: queueConfig.jobs ?? {},
+        };
+      }
 
-        // Disconnect storage if adapter supports it
-        if (storage.disconnect) {
-          pluginLogger.info('Disconnecting storage adapter...');
-          try {
-            await storage.disconnect();
-            pluginLogger.info('Storage adapter disconnected');
-          } catch (error) {
-            pluginLogger.error('Error disconnecting storage adapter', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-            // Continue cleanup even if disconnect fails
+      // Build handler registry from queue job definitions
+      const handlerRegistry = new Map<string, HandlerRegistration>();
+
+      for (const [queueName, queueConfig] of Object.entries(config.queues)) {
+        if (queueConfig.jobs) {
+          for (const [jobType, jobDef] of Object.entries(queueConfig.jobs)) {
+            if (jobDef._type === 'definition') {
+              const registryKey = `${queueName}:${jobType}`;
+              handlerRegistry.set(registryKey, {
+                handler: jobDef.handler,
+                inputSchema: jobDef.input,
+                outputSchema: jobDef.output,
+              });
+
+              pluginLogger.debug('Handler registered from job definition', {
+                queueName,
+                jobType,
+                registryKey,
+              });
+            }
           }
         }
+      }
 
-        // Flush logs before exit
-        if (pluginLogger.flush) {
-          await pluginLogger.flush();
+      // Create queue service with handler registry
+      // Always pass eventBus (needed for SSE streaming, progress events)
+      // serverId is only passed when explicitly configured (for multi-server visibility)
+      _initializeQueueService(
+        new QueueService({
+          queues: queuesConfig,
+          storage,
+          logger: pluginLogger,
+          eventBus: server.eventBus,
+          serverId: config.serverId,
+          handlerRegistry,
+        })
+      );
+
+      if (config.serverId) {
+        pluginLogger.info('EventBus integration enabled', {
+          serverId: config.serverId ?? 'unknown',
+          eventBusAvailable: !!server.eventBus,
+        });
+      } else {
+        pluginLogger.info('EventBus integration disabled (no serverId provided)', {
+          note: 'Multi-server job visibility requires serverId in plugin config',
+        });
+      }
+
+      if (handlerRegistry.size > 0) {
+        pluginLogger.info('Handlers registered from job definitions', {
+          handlerCount: handlerRegistry.size,
+          registryKeys: Array.from(handlerRegistry.keys()),
+        });
+      }
+
+      pluginLogger.info('Queue plugin initialized', {
+        queues: Object.keys(config.queues),
+      });
+    },
+
+    /**
+     * Server started listening
+     *
+     * Called after `server.listen()` succeeds.
+     * Starts queue processing.
+     */
+    onServerStart: async () => {
+      pluginLogger.info('Starting queue processing');
+
+      try {
+        const queue = getQueueService();
+        await queue.startAll();
+        pluginLogger.info('Queue processing started', {
+          queues: queue.listQueues(),
+        });
+      } catch (error) {
+        pluginLogger.error('Failed to start queue processing', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+
+    /**
+     * Server stopping
+     *
+     * Called when `server.close()` is initiated.
+     * Stops queue processing and disconnects storage.
+     */
+    onServerStop: async () => {
+      pluginLogger.info('Stopping queue plugin');
+
+      // Stop all queues gracefully
+      try {
+        const queue = getQueueService();
+        await queue.stopAll({ graceful: true, timeout: 30000 });
+        pluginLogger.info('Queue processing stopped');
+      } catch (error) {
+        pluginLogger.error('Error stopping queue processing', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Continue cleanup even if stop fails
+      }
+
+      // Disconnect storage if adapter supports it
+      if (storage.disconnect) {
+        pluginLogger.info('Disconnecting storage adapter...');
+        try {
+          await storage.disconnect();
+          pluginLogger.info('Storage adapter disconnected');
+        } catch (error) {
+          pluginLogger.error('Error disconnecting storage adapter', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // Continue cleanup even if disconnect fails
         }
-      },
+      }
 
-      /**
-       * Cleanup resources
-       *
-       * Called after server is closed.
-       * Final cleanup of references.
-       */
-      terminate: async () => {
-        pluginLogger.debug('Terminating queue plugin');
+      // Flush logs before exit
+      if (pluginLogger.flush) {
+        await pluginLogger.flush();
+      }
+    },
 
-        _terminateQueueService();
+    /**
+     * Cleanup resources
+     *
+     * Called after server is closed.
+     * Final cleanup of references.
+     */
+    terminate: async () => {
+      pluginLogger.debug('Terminating queue plugin');
 
-        // Clear references to allow garbage collection
-        storage = null as unknown as QueueStorageAdapter;
+      _terminateQueueService();
 
-        pluginLogger.debug('Queue plugin terminated');
-      },
-    };
-  },
-});
+      // Clear references to allow garbage collection
+      storage = null as unknown as QueueStorageAdapter;
+
+      pluginLogger.debug('Queue plugin terminated');
+    },
+  };
+}
 
 // ============================================================================
 // Re-exports for Convenience

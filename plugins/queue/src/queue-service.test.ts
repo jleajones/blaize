@@ -10,12 +10,68 @@ import {
   createWorkingMockEventBus,
   MockLogger,
 } from '@blaizejs/testing-utils';
+import { z } from 'zod';
 
-import { QueueNotFoundError } from './errors';
+import { defineJob } from './define-job';
+import { HandlerNotFoundError, JobValidationError, QueueNotFoundError } from './errors';
 import { QueueService } from './queue-service';
 import { InMemoryStorage } from './storage/memory';
 
-import type { JobSubscription } from './types';
+import type { HandlerRegistration, JobSubscription } from './types';
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+// ============================================================================
+// Job Definitions
+// ============================================================================
+
+const emailSendJob = defineJob({
+  input: z.object({ to: z.string().email(), subject: z.string().optional() }),
+  output: z.object({ sent: z.boolean() }),
+  handler: async () => ({ sent: true }),
+});
+
+const emailFailJob = defineJob({
+  input: z.object({}),
+  output: z.object({}),
+  handler: async () => {
+    throw new Error('Email failed');
+  },
+});
+
+const emailSlowJob = defineJob({
+  input: z.object({}),
+  output: z.object({}),
+  handler: async () => {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    return {};
+  },
+});
+
+const reportGenerateJob = defineJob({
+  input: z.object({}),
+  output: z.object({}),
+  handler: async () => ({}),
+});
+
+/**
+ * Build a handler registry Map from job definitions keyed by `queueName:jobType`.
+ */
+function buildHandlerRegistry(
+  entries: Array<{ queueName: string; jobType: string; definition: { handler: any; input: z.ZodType; output: z.ZodType } }>
+): Map<string, HandlerRegistration> {
+  const registry = new Map<string, HandlerRegistration>();
+  for (const { queueName, jobType, definition } of entries) {
+    registry.set(`${queueName}:${jobType}`, {
+      handler: definition.handler,
+      inputSchema: definition.input,
+      outputSchema: definition.output,
+    });
+  }
+  return registry;
+}
 
 // ============================================================================
 // Tests
@@ -26,19 +82,39 @@ describe('QueueService', () => {
   let storage: InMemoryStorage;
   let logger: MockLogger;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
+  let handlerRegistry: Map<string, HandlerRegistration>;
 
   beforeEach(() => {
     storage = new InMemoryStorage();
     logger = createMockLogger();
     eventBus = createWorkingMockEventBus();
+    handlerRegistry = buildHandlerRegistry([
+      { queueName: 'emails', jobType: 'email:send', definition: emailSendJob },
+      { queueName: 'emails', jobType: 'email:fail', definition: emailFailJob },
+      { queueName: 'emails', jobType: 'email:slow', definition: emailSlowJob },
+      { queueName: 'reports', jobType: 'report:generate', definition: reportGenerateJob },
+    ]);
     service = new QueueService({
       queues: {
-        emails: { concurrency: 5, defaultMaxRetries: 0 },
-        reports: { concurrency: 2, defaultMaxRetries: 0 },
+        emails: {
+          concurrency: 5,
+          defaultMaxRetries: 0,
+          jobs: {
+            'email:send': emailSendJob,
+            'email:fail': emailFailJob,
+            'email:slow': emailSlowJob,
+          },
+        },
+        reports: {
+          concurrency: 2,
+          defaultMaxRetries: 0,
+          jobs: { 'report:generate': reportGenerateJob },
+        },
       },
       storage,
       logger,
       eventBus,
+      handlerRegistry,
     });
   });
 
@@ -110,8 +186,6 @@ describe('QueueService', () => {
   // ==========================================================================
   describe('add()', () => {
     it('should add job to specified queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-
       const jobId = await service.add('emails', 'email:send', {
         to: 'test@example.com',
       });
@@ -120,24 +194,66 @@ describe('QueueService', () => {
       expect(typeof jobId).toBe('string');
     });
 
-    it('should throw QueueNotFoundError for invalid queue', async () => {
-      await expect(service.add('nonexistent', 'job:type', {})).rejects.toThrow(QueueNotFoundError);
+    it('should validate input against schema', async () => {
+      // email:send requires { to: string().email() }
+      const jobId = await service.add('emails', 'email:send', {
+        to: 'valid@example.com',
+        subject: 'Hello',
+      });
+      expect(jobId).toBeDefined();
     });
 
-    it('should include available queues in error', async () => {
+    it('should throw JobValidationError for invalid input data', async () => {
+      // 'to' must be a valid email
+      await expect(
+        service.add('emails', 'email:send', { to: 'not-an-email' })
+      ).rejects.toThrow(JobValidationError);
+    });
+
+    it('should throw JobValidationError with details for missing required fields', async () => {
       try {
-        await service.add('nonexistent', 'job:type', {});
+        await service.add('emails', 'email:send', {} as any);
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(JobValidationError);
+        expect((err as Error).message).toContain('email:send');
+      }
+    });
+
+    it('should throw HandlerNotFoundError for unregistered job type', async () => {
+      await expect(
+        service.add('emails', 'email:unknown' as any, {})
+      ).rejects.toThrow(HandlerNotFoundError);
+    });
+
+    it('should include available job types in HandlerNotFoundError', async () => {
+      try {
+        await service.add('emails', 'email:unknown' as any, {});
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(HandlerNotFoundError);
+        const message = (err as Error).message;
+        expect(message).toContain('email:unknown');
+        expect(message).toContain('emails');
+      }
+    });
+
+    it('should throw QueueNotFoundError for invalid queue', async () => {
+      await expect(service.add('nonexistent' as any, 'job:type' as any, {})).rejects.toThrow(QueueNotFoundError);
+    });
+
+    it('should include available queues in QueueNotFoundError', async () => {
+      try {
+        await service.add('nonexistent' as any, 'job:type' as any, {});
         expect.fail('Should have thrown');
       } catch (err) {
         expect(err).toBeInstanceOf(QueueNotFoundError);
-        expect((err as QueueNotFoundError).message).toContain('emails');
-        expect((err as QueueNotFoundError).message).toContain('reports');
+        expect((err as Error).message).toContain('emails');
+        expect((err as Error).message).toContain('reports');
       }
     });
 
     it('should pass options to queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-
       const jobId = await service.add(
         'emails',
         'email:send',
@@ -153,8 +269,7 @@ describe('QueueService', () => {
 
   describe('getJob()', () => {
     it('should find job in specific queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      const jobId = await service.add('emails', 'email:send', {});
+      const jobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       const job = await service.getJob(jobId, 'emails');
       expect(job).toBeDefined();
@@ -162,7 +277,6 @@ describe('QueueService', () => {
     });
 
     it('should find job across all queues when queueName not provided', async () => {
-      service.registerHandler('reports', 'report:generate', async () => ({}));
       const jobId = await service.add('reports', 'report:generate', {});
 
       // Search without specifying queue
@@ -177,8 +291,7 @@ describe('QueueService', () => {
     });
 
     it('should return undefined for wrong queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      const jobId = await service.add('emails', 'email:send', {});
+      const jobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       // Search in wrong queue
       const job = await service.getJob(jobId, 'reports');
@@ -186,8 +299,7 @@ describe('QueueService', () => {
     });
 
     it('should use cached queue mapping for performance', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      const jobId = await service.add('emails', 'email:send', {});
+      const jobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       // First lookup (caches the mapping)
       await service.getJob(jobId);
@@ -200,8 +312,7 @@ describe('QueueService', () => {
 
   describe('cancelJob()', () => {
     it('should cancel job in specific queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      const jobId = await service.add('emails', 'email:send', {});
+      const jobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       const cancelled = await service.cancelJob(jobId, 'emails', 'Test reason');
       expect(cancelled).toBe(true);
@@ -211,7 +322,6 @@ describe('QueueService', () => {
     });
 
     it('should cancel job across all queues when queueName not provided', async () => {
-      service.registerHandler('reports', 'report:generate', async () => ({}));
       const jobId = await service.add('reports', 'report:generate', {});
 
       const cancelled = await service.cancelJob(jobId, undefined, 'Test reason');
@@ -224,30 +334,10 @@ describe('QueueService', () => {
     });
 
     it('should return false for wrong queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      const jobId = await service.add('emails', 'email:send', {});
+      const jobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       const cancelled = await service.cancelJob(jobId, 'reports');
       expect(cancelled).toBe(false);
-    });
-  });
-
-  // ==========================================================================
-  // Handler Registration
-  // ==========================================================================
-  describe('registerHandler()', () => {
-    it('should register handler on specified queue', async () => {
-      const handler = vi.fn().mockResolvedValue({ sent: true });
-      service.registerHandler('emails', 'email:send', handler);
-
-      const queue = service.getQueue('emails');
-      expect(queue?.hasHandler('email:send')).toBe(true);
-    });
-
-    it('should throw QueueNotFoundError for invalid queue', () => {
-      expect(() => {
-        service.registerHandler('nonexistent', 'job:type', async () => ({}));
-      }).toThrow(QueueNotFoundError);
     });
   });
 
@@ -319,8 +409,7 @@ describe('QueueService', () => {
   // ==========================================================================
   describe('getQueueStats()', () => {
     it('should return stats for specific queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      await service.add('emails', 'email:send', {});
+      await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       const stats = await service.getQueueStats('emails');
       expect(stats.total).toBe(1);
@@ -334,11 +423,8 @@ describe('QueueService', () => {
 
   describe('getAllStats()', () => {
     it('should return aggregated stats for all queues', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      service.registerHandler('reports', 'report:generate', async () => ({}));
-
-      await service.add('emails', 'email:send', {});
-      await service.add('emails', 'email:send', {});
+      await service.add('emails', 'email:send', { to: 'a@example.com' });
+      await service.add('emails', 'email:send', { to: 'b@example.com' });
       await service.add('reports', 'report:generate', {});
 
       const stats = await service.getAllStats();
@@ -356,18 +442,16 @@ describe('QueueService', () => {
 
   describe('listJobs()', () => {
     it('should list jobs in specific queue', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      await service.add('emails', 'email:send', { id: 1 });
-      await service.add('emails', 'email:send', { id: 2 });
+      await service.add('emails', 'email:send', { to: 'a@example.com' });
+      await service.add('emails', 'email:send', { to: 'b@example.com' });
 
       const jobs = await service.listJobs('emails');
       expect(jobs).toHaveLength(2);
     });
 
     it('should filter by status', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      const jobId1 = await service.add('emails', 'email:send', {});
-      await service.add('emails', 'email:send', {});
+      const jobId1 = await service.add('emails', 'email:send', { to: 'a@example.com' });
+      await service.add('emails', 'email:send', { to: 'b@example.com' });
 
       await service.cancelJob(jobId1);
 
@@ -379,10 +463,9 @@ describe('QueueService', () => {
     });
 
     it('should respect limit', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      await service.add('emails', 'email:send', {});
-      await service.add('emails', 'email:send', {});
-      await service.add('emails', 'email:send', {});
+      await service.add('emails', 'email:send', { to: 'a@example.com' });
+      await service.add('emails', 'email:send', { to: 'b@example.com' });
+      await service.add('emails', 'email:send', { to: 'c@example.com' });
 
       const jobs = await service.listJobs('emails', { limit: 2 });
       expect(jobs).toHaveLength(2);
@@ -398,12 +481,7 @@ describe('QueueService', () => {
   // ==========================================================================
   describe('subscribe()', () => {
     it('should subscribe to job events', async () => {
-      service.registerHandler('emails', 'email:send', async ctx => {
-        await ctx.progress(50, 'Halfway');
-        return { sent: true };
-      });
-
-      const jobId = await service.add('emails', 'email:send', {});
+      const jobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       const callbacks: JobSubscription = {
         onProgress: vi.fn(),
@@ -424,15 +502,10 @@ describe('QueueService', () => {
       await service.stopAll();
       unsubscribe();
 
-      expect(callbacks.onProgress).toHaveBeenCalledWith(50, 'Halfway');
       expect(callbacks.onCompleted).toHaveBeenCalledWith({ sent: true });
     });
 
     it('should call onFailed when job fails', async () => {
-      service.registerHandler('emails', 'email:fail', async () => {
-        throw new Error('Email failed');
-      });
-
       const jobId = await service.add('emails', 'email:fail', {});
 
       const callbacks: JobSubscription = {
@@ -461,11 +534,6 @@ describe('QueueService', () => {
     });
 
     it('should call onCancelled when job is cancelled', async () => {
-      service.registerHandler('emails', 'email:slow', async () => {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        return {};
-      });
-
       const jobId = await service.add('emails', 'email:slow', {});
 
       const callbacks: JobSubscription = {
@@ -494,12 +562,7 @@ describe('QueueService', () => {
     });
 
     it('should return unsubscribe function', async () => {
-      service.registerHandler('emails', 'email:send', async ctx => {
-        await ctx.progress(50, 'Progress');
-        return {};
-      });
-
-      const jobId = await service.add('emails', 'email:send', {});
+      const jobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
 
       const callbacks: JobSubscription = {
         onProgress: vi.fn(),
@@ -528,10 +591,8 @@ describe('QueueService', () => {
     });
 
     it('should filter events by jobId', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({ sent: true }));
-
-      const jobId1 = await service.add('emails', 'email:send', {});
-      const jobId2 = await service.add('emails', 'email:send', {});
+      const jobId1 = await service.add('emails', 'email:send', { to: 'a@example.com' });
+      const jobId2 = await service.add('emails', 'email:send', { to: 'b@example.com' });
 
       const callbacks1: JobSubscription = {
         onCompleted: vi.fn(),
@@ -568,10 +629,7 @@ describe('QueueService', () => {
   // ==========================================================================
   describe('Cross-Queue Operations', () => {
     it('should find jobs across different queues', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      service.registerHandler('reports', 'report:generate', async () => ({}));
-
-      const emailJobId = await service.add('emails', 'email:send', {});
+      const emailJobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
       const reportJobId = await service.add('reports', 'report:generate', {});
 
       // Find both without specifying queue
@@ -585,10 +643,7 @@ describe('QueueService', () => {
     });
 
     it('should cancel jobs across different queues', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      service.registerHandler('reports', 'report:generate', async () => ({}));
-
-      const emailJobId = await service.add('emails', 'email:send', {});
+      const emailJobId = await service.add('emails', 'email:send', { to: 'test@example.com' });
       const reportJobId = await service.add('reports', 'report:generate', {});
 
       // Cancel without specifying queue
@@ -608,10 +663,7 @@ describe('QueueService', () => {
   // ==========================================================================
   describe('Shared Storage', () => {
     it('should share storage between queues', async () => {
-      service.registerHandler('emails', 'email:send', async () => ({}));
-      service.registerHandler('reports', 'report:generate', async () => ({}));
-
-      await service.add('emails', 'email:send', {});
+      await service.add('emails', 'email:send', { to: 'test@example.com' });
       await service.add('reports', 'report:generate', {});
 
       // Both queues use the same storage, so total should be 2
@@ -624,14 +676,23 @@ describe('QueueService', () => {
     it('should accept and store eventBus and serverId', () => {
       const eventBus = createMockEventBus();
 
+      const testJob = defineJob({
+        input: z.object({}),
+        output: z.object({}),
+        handler: async () => ({}),
+      });
+
       const service = new QueueService({
         queues: {
-          test: { concurrency: 1 },
+          test: { concurrency: 1, jobs: { 'test:job': testJob } },
         },
         storage,
         logger,
         eventBus,
         serverId: 'test-server',
+        handlerRegistry: buildHandlerRegistry([
+          { queueName: 'test', jobType: 'test:job', definition: testJob },
+        ]),
       });
 
       // Just verify the service was created successfully with eventBus config

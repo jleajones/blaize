@@ -10,7 +10,9 @@
  * @module @blaizejs/queue/tests/sse-integration
  */
 import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
+import { z } from 'zod';
 
+import { defineJob } from './define-job';
 import { QueueService } from './queue-service';
 import {
   jobProgressEventSchema,
@@ -20,30 +22,65 @@ import {
 } from './schema';
 import { InMemoryStorage } from './storage/memory';
 
-import type { QueueStorageAdapter, JobError } from './types';
+import type { QueueStorageAdapter, JobError, HandlerRegistration, JobDefinition } from './types';
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 /**
+ * Create a simple defineJob() definition for tests that don't care about schemas
+ */
+function createTestJob(handler: (...args: any[]) => Promise<any>): JobDefinition<any, any> {
+  return defineJob({
+    input: z.any(),
+    output: z.any(),
+    handler,
+  });
+}
+
+/**
+ * Build a handler registry from an array of { queueName, jobType, definition } entries
+ */
+function buildHandlerRegistry(
+  entries: Array<{ queueName: string; jobType: string; definition: JobDefinition<any, any> }>
+): Map<string, HandlerRegistration> {
+  const registry = new Map<string, HandlerRegistration>();
+  for (const { queueName, jobType, definition } of entries) {
+    registry.set(`${queueName}:${jobType}`, {
+      handler: definition.handler,
+      inputSchema: definition.input,
+      outputSchema: definition.output,
+    });
+  }
+  return registry;
+}
+
+/**
  * Create a QueueService with test configuration
  */
 function createTestQueueService(options?: {
-  queues?: Record<string, { concurrency?: number }>;
+  queues?: Record<string, { concurrency?: number; jobs?: Record<string, JobDefinition<any, any>> }>;
   storage?: QueueStorageAdapter;
+  handlerRegistry?: Map<string, HandlerRegistration>;
 }) {
   const storage = options?.storage ?? new InMemoryStorage();
   const logger = createMockLogger();
   const eventBus = createWorkingMockEventBus();
 
+  // Add jobs: {} to each queue config if not provided
+  const queues: Record<string, { concurrency?: number; jobs: Record<string, JobDefinition<any, any>> }> = {};
+  const rawQueues = options?.queues ?? { default: { concurrency: 5 } };
+  for (const [name, config] of Object.entries(rawQueues)) {
+    queues[name] = { ...config, jobs: config.jobs ?? {} };
+  }
+
   return new QueueService({
-    queues: options?.queues ?? {
-      default: { concurrency: 5 },
-    },
+    queues,
     storage,
     logger,
     eventBus,
+    handlerRegistry: options?.handlerRegistry ?? new Map(),
   });
 }
 
@@ -67,11 +104,6 @@ function createDeferred<T = void>() {
 describe('SSE Integration: Progress Events', () => {
   let queueService: QueueService;
 
-  beforeEach(async () => {
-    queueService = createTestQueueService();
-    await queueService.startAll();
-  });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -80,8 +112,7 @@ describe('SSE Integration: Progress Events', () => {
     const progressEvents: Array<{ percent: number; message?: string }> = [];
     const completed = createDeferred();
 
-    // Register handler that reports progress
-    queueService.registerHandler('default', 'progress:test', async ctx => {
+    const progressTestJob = createTestJob(async (ctx: any) => {
       ctx.progress(25, 'Starting...');
       await new Promise(r => setTimeout(r, 10));
       ctx.progress(50, 'Halfway...');
@@ -91,6 +122,14 @@ describe('SSE Integration: Progress Events', () => {
       ctx.progress(100, 'Complete!');
       return { success: true };
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'progress:test': progressTestJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'progress:test', definition: progressTestJob },
+      ]),
+    });
+    await queueService.startAll();
 
     // Add job and subscribe before it processes
     const jobId = await queueService.add('default', 'progress:test', {});
@@ -119,10 +158,18 @@ describe('SSE Integration: Progress Events', () => {
     const progressPayloads: unknown[] = [];
     const completed = createDeferred();
 
-    queueService.registerHandler('default', 'schema:progress', async ctx => {
+    const schemaProgressJob = createTestJob(async (ctx: any) => {
       ctx.progress(50, 'Test message');
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'schema:progress': schemaProgressJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'schema:progress', definition: schemaProgressJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'schema:progress', {});
 
@@ -152,10 +199,18 @@ describe('SSE Integration: Progress Events', () => {
     const progressEvents: Array<{ percent: number; message?: string }> = [];
     const completed = createDeferred();
 
-    queueService.registerHandler('default', 'progress:no-msg', async ctx => {
+    const noMsgJob = createTestJob(async (ctx: any) => {
       ctx.progress(50); // No message
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'progress:no-msg': noMsgJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'progress:no-msg', definition: noMsgJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'progress:no-msg', {});
 
@@ -179,11 +234,6 @@ describe('SSE Integration: Progress Events', () => {
 describe('SSE Integration: Completion Events', () => {
   let queueService: QueueService;
 
-  beforeEach(async () => {
-    queueService = createTestQueueService();
-    await queueService.startAll();
-  });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -197,9 +247,15 @@ describe('SSE Integration: Completion Events', () => {
       nested: { value: 'test' },
     };
 
-    queueService.registerHandler('default', 'complete:result', async () => {
-      return expectedResult;
+    const completeResultJob = createTestJob(async () => expectedResult);
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'complete:result': completeResultJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'complete:result', definition: completeResultJob },
+      ]),
     });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'complete:result', {});
 
@@ -216,9 +272,15 @@ describe('SSE Integration: Completion Events', () => {
   it('should emit completed event with valid schema payload', async () => {
     const completed = createDeferred<unknown>();
 
-    queueService.registerHandler('default', 'schema:complete', async () => {
-      return { success: true };
+    const schemaCompleteJob = createTestJob(async () => ({ success: true }));
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'schema:complete': schemaCompleteJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'schema:complete', definition: schemaCompleteJob },
+      ]),
     });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'schema:complete', {});
 
@@ -242,9 +304,15 @@ describe('SSE Integration: Completion Events', () => {
   it('should emit completed event with null result', async () => {
     const completed = createDeferred<unknown>();
 
-    queueService.registerHandler('default', 'complete:null', async () => {
-      return null;
+    const completeNullJob = createTestJob(async () => null);
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'complete:null': completeNullJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'complete:null', definition: completeNullJob },
+      ]),
     });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'complete:null', {});
 
@@ -261,9 +329,17 @@ describe('SSE Integration: Completion Events', () => {
   it('should emit completed event with undefined result', async () => {
     const completed = createDeferred<unknown>();
 
-    queueService.registerHandler('default', 'complete:undefined', async () => {
+    const completeUndefinedJob = createTestJob(async () => {
       // No explicit return
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'complete:undefined': completeUndefinedJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'complete:undefined', definition: completeUndefinedJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'complete:undefined', {});
 
@@ -285,11 +361,6 @@ describe('SSE Integration: Completion Events', () => {
 describe('SSE Integration: Failure Events', () => {
   let queueService: QueueService;
 
-  beforeEach(async () => {
-    queueService = createTestQueueService();
-    await queueService.startAll();
-  });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -297,9 +368,17 @@ describe('SSE Integration: Failure Events', () => {
   it('should emit failed event with error details', async () => {
     const failed = createDeferred<JobError>();
 
-    queueService.registerHandler('default', 'fail:error', async () => {
+    const failErrorJob = createTestJob(async () => {
       throw new Error('Something went wrong');
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'fail:error': failErrorJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'fail:error', definition: failErrorJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add(
       'default',
@@ -323,11 +402,19 @@ describe('SSE Integration: Failure Events', () => {
   it('should emit failed event with valid schema payload', async () => {
     const failed = createDeferred<unknown>();
 
-    queueService.registerHandler('default', 'schema:fail', async () => {
+    const schemaFailJob = createTestJob(async () => {
       const error = new Error('Test failure');
       (error as any).code = 'TEST_ERROR';
       throw error;
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'schema:fail': schemaFailJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'schema:fail', definition: schemaFailJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add(
       'default',
@@ -362,10 +449,18 @@ describe('SSE Integration: Failure Events', () => {
     let attempts = 0;
     const failed = createDeferred<JobError>();
 
-    queueService.registerHandler('default', 'fail:retry', async () => {
+    const failRetryJob = createTestJob(async () => {
       attempts++;
       throw new Error(`Attempt ${attempts} failed`);
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'fail:retry': failRetryJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'fail:retry', definition: failRetryJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add(
       'default',
@@ -390,11 +485,19 @@ describe('SSE Integration: Failure Events', () => {
   it('should emit failed event with error code when available', async () => {
     const failed = createDeferred<JobError>();
 
-    queueService.registerHandler('default', 'fail:code', async () => {
+    const failCodeJob = createTestJob(async () => {
       const error = new Error('Connection timeout') as Error & { code: string };
       error.code = 'JOB_TIMEOUT';
       throw error;
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'fail:code': failCodeJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'fail:code', definition: failCodeJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add(
       'default',
@@ -423,11 +526,6 @@ describe('SSE Integration: Failure Events', () => {
 describe('SSE Integration: Cancellation Events', () => {
   let queueService: QueueService;
 
-  beforeEach(async () => {
-    queueService = createTestQueueService();
-    await queueService.startAll();
-  });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -436,7 +534,7 @@ describe('SSE Integration: Cancellation Events', () => {
     const cancelled = createDeferred<string | undefined>();
     const jobStarted = createDeferred();
 
-    queueService.registerHandler('default', 'cancel:test', async ctx => {
+    const cancelTestJob = createTestJob(async (ctx: any) => {
       jobStarted.resolve();
       // Long running job that checks for cancellation
       for (let i = 0; i < 100; i++) {
@@ -447,6 +545,14 @@ describe('SSE Integration: Cancellation Events', () => {
       }
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'cancel:test': cancelTestJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'cancel:test', definition: cancelTestJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'cancel:test', {});
 
@@ -468,11 +574,19 @@ describe('SSE Integration: Cancellation Events', () => {
     const cancelled = createDeferred<unknown>();
     const jobStarted = createDeferred();
 
-    queueService.registerHandler('default', 'schema:cancel', async _ctx => {
+    const schemaCancelJob = createTestJob(async (_ctx: any) => {
       jobStarted.resolve();
       await new Promise(r => setTimeout(r, 5000));
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'schema:cancel': schemaCancelJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'schema:cancel', definition: schemaCancelJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'schema:cancel', {});
 
@@ -500,11 +614,19 @@ describe('SSE Integration: Cancellation Events', () => {
     const cancelled = createDeferred<string | undefined>();
     const jobStarted = createDeferred();
 
-    queueService.registerHandler('default', 'cancel:no-reason', async _ctx => {
+    const cancelNoReasonJob = createTestJob(async (_ctx: any) => {
       jobStarted.resolve();
       await new Promise(r => setTimeout(r, 5000));
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'cancel:no-reason': cancelNoReasonJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'cancel:no-reason', definition: cancelNoReasonJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'cancel:no-reason', {});
 
@@ -529,11 +651,6 @@ describe('SSE Integration: Cancellation Events', () => {
 describe('SSE Integration: Subscription Cleanup', () => {
   let queueService: QueueService;
 
-  beforeEach(async () => {
-    queueService = createTestQueueService();
-    await queueService.startAll();
-  });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -543,7 +660,7 @@ describe('SSE Integration: Subscription Cleanup', () => {
     const jobStarted = createDeferred();
     const jobCompleted = createDeferred();
 
-    queueService.registerHandler('default', 'cleanup:unsub', async ctx => {
+    const cleanupUnsubJob = createTestJob(async (ctx: any) => {
       jobStarted.resolve();
       for (let i = 1; i <= 5; i++) {
         ctx.progress(i * 20);
@@ -552,6 +669,14 @@ describe('SSE Integration: Subscription Cleanup', () => {
       jobCompleted.resolve();
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'cleanup:unsub': cleanupUnsubJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'cleanup:unsub', definition: cleanupUnsubJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'cleanup:unsub', {});
 
@@ -576,10 +701,18 @@ describe('SSE Integration: Subscription Cleanup', () => {
     const events2: string[] = [];
     const completed = createDeferred();
 
-    queueService.registerHandler('default', 'cleanup:resub', async ctx => {
+    const cleanupResubJob = createTestJob(async (ctx: any) => {
       ctx.progress(50, 'halfway');
       return { done: true };
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'cleanup:resub': cleanupResubJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'cleanup:resub', definition: cleanupResubJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'cleanup:resub', {});
 
@@ -611,9 +744,15 @@ describe('SSE Integration: Subscription Cleanup', () => {
   it('should handle multiple unsubscribe calls gracefully', async () => {
     const completed = createDeferred();
 
-    queueService.registerHandler('default', 'cleanup:multi-unsub', async () => {
-      return {};
+    const cleanupMultiUnsubJob = createTestJob(async () => ({}));
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'cleanup:multi-unsub': cleanupMultiUnsubJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'cleanup:multi-unsub', definition: cleanupMultiUnsubJob },
+      ]),
     });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'cleanup:multi-unsub', {});
 
@@ -639,11 +778,6 @@ describe('SSE Integration: Subscription Cleanup', () => {
 describe('SSE Integration: Multiple Subscribers', () => {
   let queueService: QueueService;
 
-  beforeEach(async () => {
-    queueService = createTestQueueService();
-    await queueService.startAll();
-  });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -655,13 +789,21 @@ describe('SSE Integration: Multiple Subscribers', () => {
     const allCompleted = createDeferred();
     let completedCount = 0;
 
-    queueService.registerHandler('default', 'multi:progress', async ctx => {
+    const multiProgressJob = createTestJob(async (ctx: any) => {
       ctx.progress(25);
       ctx.progress(50);
       ctx.progress(75);
       ctx.progress(100);
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'multi:progress': multiProgressJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'multi:progress', definition: multiProgressJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'multi:progress', {});
 
@@ -703,9 +845,15 @@ describe('SSE Integration: Multiple Subscribers', () => {
 
     const expectedResult = { value: 'shared result' };
 
-    queueService.registerHandler('default', 'multi:complete', async () => {
-      return expectedResult;
+    const multiCompleteJob = createTestJob(async () => expectedResult);
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'multi:complete': multiCompleteJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'multi:complete', definition: multiCompleteJob },
+      ]),
     });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'multi:complete', {});
 
@@ -736,9 +884,17 @@ describe('SSE Integration: Multiple Subscribers', () => {
     const allFailed = createDeferred();
     let failedCount = 0;
 
-    queueService.registerHandler('default', 'multi:fail', async () => {
+    const multiFailJob = createTestJob(async () => {
       throw new Error('Shared failure');
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'multi:fail': multiFailJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'multi:fail', definition: multiFailJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add(
       'default',
@@ -776,11 +932,19 @@ describe('SSE Integration: Multiple Subscribers', () => {
     const subscriber2Events: string[] = [];
     const completed = createDeferred();
 
-    queueService.registerHandler('default', 'multi:unsub', async ctx => {
+    const multiUnsubJob = createTestJob(async (ctx: any) => {
       ctx.progress(50);
       await new Promise(r => setTimeout(r, 50));
       return {};
     });
+
+    queueService = createTestQueueService({
+      queues: { default: { concurrency: 5, jobs: { 'multi:unsub': multiUnsubJob } } },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'default', jobType: 'multi:unsub', definition: multiUnsubJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId = await queueService.add('default', 'multi:unsub', {});
 
@@ -818,16 +982,6 @@ describe('SSE Integration: Multiple Subscribers', () => {
 describe('SSE Integration: Cross-Queue Events', () => {
   let queueService: QueueService;
 
-  beforeEach(async () => {
-    queueService = createTestQueueService({
-      queues: {
-        emails: { concurrency: 2 },
-        reports: { concurrency: 2 },
-      },
-    });
-    await queueService.startAll();
-  });
-
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
   });
@@ -835,9 +989,18 @@ describe('SSE Integration: Cross-Queue Events', () => {
   it('should receive events for job without knowing queue name', async () => {
     const completed = createDeferred<unknown>();
 
-    queueService.registerHandler('emails', 'cross:test', async () => {
-      return { sent: true };
+    const crossTestJob = createTestJob(async () => ({ sent: true }));
+
+    queueService = createTestQueueService({
+      queues: {
+        emails: { concurrency: 2, jobs: { 'cross:test': crossTestJob } },
+        reports: { concurrency: 2, jobs: {} },
+      },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'emails', jobType: 'cross:test', definition: crossTestJob },
+      ]),
     });
+    await queueService.startAll();
 
     const jobId = await queueService.add('emails', 'cross:test', {});
 
@@ -858,15 +1021,27 @@ describe('SSE Integration: Cross-Queue Events', () => {
     const allCompleted = createDeferred();
     let completedCount = 0;
 
-    queueService.registerHandler('emails', 'isolate:email', async ctx => {
+    const isolateEmailJob = createTestJob(async (ctx: any) => {
       ctx.progress(50, 'email progress');
       return { type: 'email' };
     });
 
-    queueService.registerHandler('reports', 'isolate:report', async ctx => {
+    const isolateReportJob = createTestJob(async (ctx: any) => {
       ctx.progress(50, 'report progress');
       return { type: 'report' };
     });
+
+    queueService = createTestQueueService({
+      queues: {
+        emails: { concurrency: 2, jobs: { 'isolate:email': isolateEmailJob } },
+        reports: { concurrency: 2, jobs: { 'isolate:report': isolateReportJob } },
+      },
+      handlerRegistry: buildHandlerRegistry([
+        { queueName: 'emails', jobType: 'isolate:email', definition: isolateEmailJob },
+        { queueName: 'reports', jobType: 'isolate:report', definition: isolateReportJob },
+      ]),
+    });
+    await queueService.startAll();
 
     const jobId1 = await queueService.add('emails', 'isolate:email', {});
     const jobId2 = await queueService.add('reports', 'isolate:report', {});

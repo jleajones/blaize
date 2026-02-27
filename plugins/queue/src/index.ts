@@ -21,6 +21,11 @@ export { getQueueService } from './plugin';
 export { createQueuePlugin } from './plugin';
 
 // ============================================================================
+// Job Definition Primitive
+// ============================================================================
+export { defineJob } from './define-job';
+
+// ============================================================================
 // Core Types
 // ============================================================================
 export type {
@@ -34,9 +39,11 @@ export type {
   JobHandler,
   JobFilters,
   JobSubscription,
-  // Job type schema (for advanced usage with Zod validation)
-  JobTypeDefinition,
-  JobTypesSchema,
+  // Job definition types (type-safe job primitives)
+  JobDefinition,
+  DefineJobConfig,
+  QueueManifest,
+  InferQueueManifest,
   // Queue types
   QueueStats,
   QueueConfig,
@@ -114,7 +121,6 @@ export {
   // Configuration schemas
   jobPrioritySchema,
   jobOptionsSchema,
-  jobTypeDefinitionSchema,
   queueConfigSchema,
   queueConfigWithoutNameSchema,
   pluginConfigSchema,
@@ -155,7 +161,6 @@ export type {
   JobPriorityConfig,
   JobOptionsConfig,
   JobOptionsInput,
-  JobTypeDefinitionConfig,
   QueueConfigSchema,
   QueueConfigInput,
   PluginConfigSchema,

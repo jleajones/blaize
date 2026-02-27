@@ -12,6 +12,7 @@
  */
 
 import { createWorkingMockEventBus } from '@blaizejs/testing-utils';
+import { z } from 'zod';
 
 import { QueueService } from './queue-service';
 import {
@@ -31,6 +32,7 @@ import {
 } from './schema';
 import { InMemoryStorage } from './storage';
 
+import type { HandlerRegistration } from './types';
 import type { JobSSEStream } from './routes';
 import type { BlaizeLogger, Context } from 'blaizejs';
 
@@ -185,24 +187,27 @@ function createMockContext(
  */
 async function createTestQueueService(): Promise<{
   queueService: QueueService;
+  handlerRegistry: Map<string, HandlerRegistration>;
   eventBus: ReturnType<typeof createWorkingMockEventBus>;
 }> {
   const storage = new InMemoryStorage();
   await storage.connect?.();
 
   const eventBus = createWorkingMockEventBus();
+  const handlerRegistry = new Map<string, HandlerRegistration>();
 
   const queueService = new QueueService({
     queues: {
-      default: { concurrency: 1 },
+      default: { concurrency: 1, jobs: {} },
     },
     storage,
     logger: createMockLogger() as any,
     eventBus, // ✅ Pass EventBus so jobs publish events
     serverId: 'test-server', // ✅ Required for EventBus integration
+    handlerRegistry,
   });
 
-  return { queueService, eventBus };
+  return { queueService, handlerRegistry, eventBus };
 }
 
 /**
@@ -340,12 +345,14 @@ describe('jobStreamHandler error handling', () => {
 
 describe('jobStreamHandler progress events', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
 
   afterEach(async () => {
@@ -357,12 +364,16 @@ describe('jobStreamHandler progress events', () => {
     const logger = createMockLogger();
 
     // Register handler that reports progress
-    queueService.registerHandler('default', 'progress:test', async ctx => {
-      await ctx.progress(25, 'Step 1');
-      await ctx.progress(50, 'Step 2');
-      await ctx.progress(75, 'Step 3');
-      await ctx.progress(100, 'Done');
-      return 'success';
+    handlerRegistry.set('default:progress:test', {
+      handler: async ctx => {
+        await ctx.progress(25, 'Step 1');
+        await ctx.progress(50, 'Step 2');
+        await ctx.progress(75, 'Step 3');
+        await ctx.progress(100, 'Done');
+        return 'success';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     // Add job
@@ -397,9 +408,13 @@ describe('jobStreamHandler progress events', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'progress:message', async ctx => {
-      await ctx.progress(50, 'Processing halfway');
-      return 'done';
+    handlerRegistry.set('default:progress:message', {
+      handler: async ctx => {
+        await ctx.progress(50, 'Processing halfway');
+        return 'done';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'progress:message', {});
@@ -422,12 +437,14 @@ describe('jobStreamHandler progress events', () => {
 
 describe('jobStreamHandler completion events', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
   afterEach(async () => {
     await queueService.stopAll({ graceful: false, timeout: 1000 });
@@ -437,8 +454,10 @@ describe('jobStreamHandler completion events', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'complete:test', async () => {
-      return { success: true, count: 42 };
+    handlerRegistry.set('default:complete:test', {
+      handler: async () => ({ success: true, count: 42 }),
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'complete:test', {});
@@ -461,7 +480,11 @@ describe('jobStreamHandler completion events', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'complete:close', async () => 'done');
+    handlerRegistry.set('default:complete:close', {
+      handler: async () => 'done',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
 
     const jobId = await queueService.add('default', 'complete:close', {});
     const ctx = createMockContext({ jobId }, queueService);
@@ -481,12 +504,14 @@ describe('jobStreamHandler completion events', () => {
 
 describe('jobStreamHandler failure events', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
 
   afterEach(async () => {
@@ -497,8 +522,12 @@ describe('jobStreamHandler failure events', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'fail:test', async () => {
-      throw new Error('Something went wrong');
+    handlerRegistry.set('default:fail:test', {
+      handler: async () => {
+        throw new Error('Something went wrong');
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add(
@@ -528,10 +557,14 @@ describe('jobStreamHandler failure events', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'fail:code', async () => {
-      const error = new Error('Connection failed') as Error & { code: string };
-      error.code = 'ECONNREFUSED';
-      throw error;
+    handlerRegistry.set('default:fail:code', {
+      handler: async () => {
+        const error = new Error('Connection failed') as Error & { code: string };
+        error.code = 'ECONNREFUSED';
+        throw error;
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add(
@@ -559,8 +592,12 @@ describe('jobStreamHandler failure events', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'fail:close', async () => {
-      throw new Error('Fail');
+    handlerRegistry.set('default:fail:close', {
+      handler: async () => {
+        throw new Error('Fail');
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add(
@@ -588,12 +625,14 @@ describe('jobStreamHandler failure events', () => {
 
 describe('jobStreamHandler cancellation events', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
 
   afterEach(async () => {
@@ -605,9 +644,13 @@ describe('jobStreamHandler cancellation events', () => {
     const logger = createMockLogger();
 
     // Register handler
-    queueService.registerHandler('default', 'cancel:test', async _ctx => {
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      return 'should not reach';
+    handlerRegistry.set('default:cancel:test', {
+      handler: async _ctx => {
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        return 'should not reach';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'cancel:test', {});
@@ -658,9 +701,13 @@ describe('jobStreamHandler cancellation events', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'cancel:close', async _ctx => {
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      return 'should not reach';
+    handlerRegistry.set('default:cancel:close', {
+      handler: async _ctx => {
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        return 'should not reach';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'cancel:close', {});
@@ -695,12 +742,14 @@ describe('jobStreamHandler cancellation events', () => {
 
 describe('jobStreamHandler cleanup', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
 
   afterEach(async () => {
@@ -712,14 +761,18 @@ describe('jobStreamHandler cleanup', () => {
     const logger = createMockLogger();
     let handlerStarted = false;
 
-    queueService.registerHandler('default', 'cleanup:test', async ctx => {
-      handlerStarted = true;
-      // Long-running job
-      for (let i = 1; i <= 10; i++) {
-        await ctx.progress(i * 10);
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      return 'done';
+    handlerRegistry.set('default:cleanup:test', {
+      handler: async ctx => {
+        handlerStarted = true;
+        // Long-running job
+        for (let i = 1; i <= 10; i++) {
+          await ctx.progress(i * 10);
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return 'done';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'cleanup:test', {});
@@ -750,14 +803,18 @@ describe('jobStreamHandler cleanup', () => {
     let _handlerStarted = false;
     let progressCount = 0;
 
-    queueService.registerHandler('default', 'cleanup:noevents', async ctx => {
-      _handlerStarted = true;
-      for (let i = 1; i <= 10; i++) {
-        progressCount++;
-        await ctx.progress(i * 10);
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-      return 'done';
+    handlerRegistry.set('default:cleanup:noevents', {
+      handler: async ctx => {
+        _handlerStarted = true;
+        for (let i = 1; i <= 10; i++) {
+          progressCount++;
+          await ctx.progress(i * 10);
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return 'done';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'cleanup:noevents', {});
@@ -791,12 +848,14 @@ describe('jobStreamHandler cleanup', () => {
 
 describe('jobStreamHandler initial state', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
 
   afterEach(async () => {
@@ -808,8 +867,10 @@ describe('jobStreamHandler initial state', () => {
     const logger = createMockLogger();
 
     // Create and complete a job
-    queueService.registerHandler('default', 'initial:completed', async () => {
-      return { data: 'result' };
+    handlerRegistry.set('default:initial:completed', {
+      handler: async () => ({ data: 'result' }),
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'initial:completed', {});
@@ -843,8 +904,12 @@ describe('jobStreamHandler initial state', () => {
     const _stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'initial:failed', async () => {
-      throw new Error('Already failed');
+    handlerRegistry.set('default:initial:failed', {
+      handler: async () => {
+        throw new Error('Already failed');
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add(
@@ -884,12 +949,14 @@ describe('jobStreamHandler initial state', () => {
 
 describe('jobStreamHandler logging', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
 
   afterEach(async () => {
@@ -900,7 +967,11 @@ describe('jobStreamHandler logging', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'log:open', async () => 'done');
+    handlerRegistry.set('default:log:open', {
+      handler: async () => 'done',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
     const jobId = await queueService.add('default', 'log:open', {});
     const ctx = createMockContext({ jobId, queueName: 'default' }, queueService);
 
@@ -919,7 +990,11 @@ describe('jobStreamHandler logging', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'log:complete', async () => 'done');
+    handlerRegistry.set('default:log:complete', {
+      handler: async () => 'done',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
     const jobId = await queueService.add('default', 'log:complete', {});
     const ctx = createMockContext({ jobId }, queueService);
 
@@ -939,10 +1014,14 @@ describe('jobStreamHandler logging', () => {
     const logger = createMockLogger();
     let handlerStarted = false;
 
-    queueService.registerHandler('default', 'log:close', async () => {
-      handlerStarted = true;
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      return 'done';
+    handlerRegistry.set('default:log:close', {
+      handler: async () => {
+        handlerStarted = true;
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return 'done';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'log:close', {});
@@ -968,12 +1047,14 @@ describe('jobStreamHandler logging', () => {
 
 describe('jobStreamHandler edge cases', () => {
   let queueService: QueueService;
+  let handlerRegistry: Map<string, HandlerRegistration>;
   let eventBus: ReturnType<typeof createWorkingMockEventBus>;
 
   beforeEach(async () => {
-    const testEnv = await createTestQueueService(); // ✅ Destructure
+    const testEnv = await createTestQueueService();
     queueService = testEnv.queueService;
-    eventBus = testEnv.eventBus; // ✅ Use shared eventBus
+    handlerRegistry = testEnv.handlerRegistry;
+    eventBus = testEnv.eventBus;
   });
 
   afterEach(async () => {
@@ -984,8 +1065,12 @@ describe('jobStreamHandler edge cases', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'edge:undefined', async () => {
-      // Return nothing
+    handlerRegistry.set('default:edge:undefined', {
+      handler: async () => {
+        // Return nothing
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'edge:undefined', {});
@@ -1005,7 +1090,11 @@ describe('jobStreamHandler edge cases', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'edge:null', async () => null);
+    handlerRegistry.set('default:edge:null', {
+      handler: async () => null,
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
 
     const jobId = await queueService.add('default', 'edge:null', {});
     const ctx = createMockContext({ jobId }, queueService);
@@ -1023,11 +1112,15 @@ describe('jobStreamHandler edge cases', () => {
     const stream = createMockStream();
     const logger = createMockLogger();
 
-    queueService.registerHandler('default', 'edge:rapid', async ctx => {
-      for (let i = 1; i <= 100; i++) {
-        await ctx.progress(i);
-      }
-      return 'done';
+    handlerRegistry.set('default:edge:rapid', {
+      handler: async ctx => {
+        for (let i = 1; i <= 100; i++) {
+          await ctx.progress(i);
+        }
+        return 'done';
+      },
+      inputSchema: z.any(),
+      outputSchema: z.any(),
     });
 
     const jobId = await queueService.add('default', 'edge:rapid', {});
@@ -1052,18 +1145,24 @@ describe('jobStreamHandler edge cases', () => {
     const storage = new InMemoryStorage();
     await storage.connect?.();
 
+    const multiRegistry = new Map<string, HandlerRegistration>();
+    multiRegistry.set('emails:email:send', {
+      handler: async () => 'sent',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const multiQueueService = new QueueService({
       queues: {
-        emails: { concurrency: 1 },
-        reports: { concurrency: 1 },
+        emails: { concurrency: 1, jobs: {} },
+        reports: { concurrency: 1, jobs: {} },
       },
       storage,
       logger: createMockLogger() as any,
       eventBus, // ✅ Shared EventBus
       serverId: 'test-server',
+      handlerRegistry: multiRegistry,
     });
-
-    multiQueueService.registerHandler('emails', 'email:send', async () => 'sent');
     const jobId = await multiQueueService.add('emails', 'email:send', {});
 
     const stream = createMockStream();
@@ -1229,14 +1328,21 @@ describe('queueStatusHandler', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const registry = new Map<string, HandlerRegistration>();
+    registry.set('default:test', {
+      handler: async () => 'done',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const queueService = new QueueService({
-      queues: { default: { concurrency: 1 } },
+      queues: { default: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: registry,
     });
 
-    queueService.registerHandler('default', 'test', async () => 'done');
     await queueService.add('default', 'test', { foo: 'bar' });
 
     const ctx = createMockContext({ limit: '20' }, queueService);
@@ -1255,17 +1361,24 @@ describe('queueStatusHandler', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const registry = new Map<string, HandlerRegistration>();
+    registry.set('emails:send', {
+      handler: async () => 'sent',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const queueService = new QueueService({
       queues: {
-        emails: { concurrency: 1 },
-        reports: { concurrency: 1 },
+        emails: { concurrency: 1, jobs: {} },
+        reports: { concurrency: 1, jobs: {} },
       },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: registry,
     });
 
-    queueService.registerHandler('emails', 'send', async () => 'sent');
     await queueService.add('emails', 'send', {});
 
     const ctx = createMockContext({ queueName: 'emails', limit: '20' }, queueService);
@@ -1284,10 +1397,11 @@ describe('queueStatusHandler', () => {
     await storage.connect?.();
 
     const queueService = new QueueService({
-      queues: { default: { concurrency: 1 } },
+      queues: { default: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({ limit: '20' }, queueService);
@@ -1315,14 +1429,21 @@ describe('queuePrometheusHandler', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const registry = new Map<string, HandlerRegistration>();
+    registry.set('emails:send', {
+      handler: async () => 'sent',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: registry,
     });
 
-    queueService.registerHandler('emails', 'send', async () => 'sent');
     await queueService.add('emails', 'send', {});
 
     const ctx = createMockContext({}, queueService);
@@ -1344,10 +1465,11 @@ describe('queuePrometheusHandler', () => {
     await storage.connect?.();
 
     const queueService = new QueueService({
-      queues: { default: { concurrency: 1 } },
+      queues: { default: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1381,10 +1503,11 @@ describe('queueDashboardHandler', () => {
     await storage.connect?.();
 
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1406,10 +1529,11 @@ describe('queueDashboardHandler', () => {
     await storage.connect?.();
 
     const queueService = new QueueService({
-      queues: { default: { concurrency: 1 } },
+      queues: { default: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({ refresh: '30' }, queueService);
@@ -1429,10 +1553,11 @@ describe('queueDashboardHandler', () => {
     await storage.connect?.();
 
     const queueService = new QueueService({
-      queues: { default: { concurrency: 1 } },
+      queues: { default: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1463,14 +1588,20 @@ describe('createJobHandler', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const registry = new Map<string, HandlerRegistration>();
+    registry.set('emails:send-welcome', {
+      handler: async () => 'sent',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: registry,
     });
-
-    queueService.registerHandler('emails', 'send-welcome', async () => 'sent');
 
     const ctx = createMockContext({}, queueService, {
       queueName: 'emails',
@@ -1495,14 +1626,20 @@ describe('createJobHandler', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const registry = new Map<string, HandlerRegistration>();
+    registry.set('emails:send', {
+      handler: async () => 'sent',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: registry,
     });
-
-    queueService.registerHandler('emails', 'send', async () => 'sent');
 
     const ctx = createMockContext({}, queueService, {
       queueName: 'emails',
@@ -1533,14 +1670,21 @@ describe('cancelJobHandler', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const registry = new Map<string, HandlerRegistration>();
+    registry.set('emails:send', {
+      handler: async () => 'sent',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: registry,
     });
 
-    queueService.registerHandler('emails', 'send', async () => 'sent');
     const jobId = await queueService.add('emails', 'send', {});
 
     const ctx = createMockContext({}, queueService, {
@@ -1565,10 +1709,11 @@ describe('cancelJobHandler', () => {
     await storage.connect?.();
 
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService, {
@@ -1588,14 +1733,21 @@ describe('cancelJobHandler', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const registry = new Map<string, HandlerRegistration>();
+    registry.set('emails:send', {
+      handler: async () => 'sent',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    });
+
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: registry,
     });
 
-    queueService.registerHandler('emails', 'send', async () => 'sent');
     const jobId = await queueService.add('emails', 'send', {});
 
     const ctx = createMockContext({}, queueService, {

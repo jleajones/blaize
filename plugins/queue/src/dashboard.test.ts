@@ -16,7 +16,7 @@ import {
 import { QueueService } from './queue-service';
 import { InMemoryStorage } from './storage';
 
-import type { DashboardData } from './types';
+import type { DashboardData, HandlerRegistration } from './types';
 
 // ============================================================================
 // Test Helpers
@@ -495,14 +495,23 @@ describe('gatherDashboardData', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const handlerRegistry = new Map<string, HandlerRegistration>();
+    const passthrough = { safeParse: (d: unknown) => ({ success: true, data: d }), parse: (d: unknown) => d } as any;
+    const sendHandler = async () => 'sent';
+    handlerRegistry.set('emails:send', {
+      handler: sendHandler,
+      inputSchema: passthrough,
+      outputSchema: passthrough,
+    });
+
     const queueService = new QueueService({
-      queues: { emails: { concurrency: 1 } },
+      queues: { emails: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry,
     });
 
-    queueService.registerHandler('emails', 'send', async () => 'sent');
     await queueService.add('emails', 'send', { to: 'test@example.com' });
 
     const data = await gatherDashboardData(queueService, ['emails']);
@@ -521,18 +530,30 @@ describe('gatherDashboardData', () => {
     const eventBus = createWorkingMockEventBus();
     await storage.connect?.();
 
+    const handlerRegistry = new Map<string, HandlerRegistration>();
+    const passthrough = { safeParse: (d: unknown) => ({ success: true, data: d }), parse: (d: unknown) => d } as any;
+    handlerRegistry.set('emails:send', {
+      handler: async () => 'sent',
+      inputSchema: passthrough,
+      outputSchema: passthrough,
+    });
+    handlerRegistry.set('reports:generate', {
+      handler: async () => 'done',
+      inputSchema: passthrough,
+      outputSchema: passthrough,
+    });
+
     const queueService = new QueueService({
       queues: {
-        emails: { concurrency: 1 },
-        reports: { concurrency: 1 },
+        emails: { concurrency: 1, jobs: {} },
+        reports: { concurrency: 1, jobs: {} },
       },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry,
     });
 
-    queueService.registerHandler('emails', 'send', async () => 'sent');
-    queueService.registerHandler('reports', 'generate', async () => 'done');
     await queueService.add('emails', 'send', {});
     await queueService.add('reports', 'generate', {});
 
@@ -550,10 +571,11 @@ describe('gatherDashboardData', () => {
     await storage.connect?.();
 
     const queueService = new QueueService({
-      queues: { empty: { concurrency: 1 } },
+      queues: { empty: { concurrency: 1, jobs: {} } },
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const data = await gatherDashboardData(queueService, ['empty']);
