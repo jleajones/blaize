@@ -28,6 +28,7 @@ function createMockServer() {
       middleware.push(mw);
     }),
     eventBus: createMockEventBus(),
+    _logger: createMockLogger(),
   };
 }
 

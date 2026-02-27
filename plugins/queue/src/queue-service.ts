@@ -143,7 +143,7 @@ export class QueueService<M = QueueManifest> {
     this.storage = config.storage;
     this.eventBus = config.eventBus;
     this.serverId = config.serverId;
-    this.handlerRegistry = config.handlerRegistry ?? new Map();
+    this.handlerRegistry = config.handlerRegistry;
 
     this.logger = config.logger.child({ service: 'QueueService' });
     this.queues = new Map();

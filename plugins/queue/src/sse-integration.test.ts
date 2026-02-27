@@ -80,7 +80,7 @@ function createTestQueueService(options?: {
     storage,
     logger,
     eventBus,
-    handlerRegistry: options?.handlerRegistry,
+    handlerRegistry: options?.handlerRegistry ?? new Map(),
   });
 }
 

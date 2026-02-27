@@ -575,6 +575,7 @@ describe('gatherDashboardData', () => {
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const data = await gatherDashboardData(queueService, ['empty']);

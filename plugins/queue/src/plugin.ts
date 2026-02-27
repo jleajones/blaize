@@ -8,7 +8,7 @@
  *
  * @packageDocumentation
  */
-import { createLogger, createMiddleware } from 'blaizejs';
+import { createMiddleware } from 'blaizejs';
 
 import config from '../package.json';
 import { QueueService } from './queue-service';
@@ -144,11 +144,11 @@ export function createQueuePlugin<const C extends QueuePluginConfig>(
     ...userConfig,
   };
 
-  // Create plugin-specific child logger with context
-  const pluginLogger = createLogger().child({
-    plugin: PLUGIN_NAME,
-    version: PLUGIN_VERSION,
-  });
+  /**
+   * Plugin-specific child logger, created from the server's logger
+   * Initialized in `register()`, used throughout the plugin lifecycle
+   */
+  let pluginLogger: import('blaizejs').BlaizeLogger;
 
   /**
    * Storage adapter instance
@@ -167,6 +167,12 @@ export function createQueuePlugin<const C extends QueuePluginConfig>(
      * Middleware exposes `QueueService` via `ctx.services.queue`.
      */
     register: async (server: Server<any, any>) => {
+      // Create plugin-specific child logger from the server's logger
+      pluginLogger = server._logger.child({
+        plugin: PLUGIN_NAME,
+        version: PLUGIN_VERSION,
+      });
+
       pluginLogger.debug('Registering queue middleware');
 
       // Type assertion for server.use method
@@ -254,13 +260,15 @@ export function createQueuePlugin<const C extends QueuePluginConfig>(
       }
 
       // Create queue service with handler registry
+      // Only pass eventBus and serverId when serverId is explicitly provided
+      // This fully disables event publishing for single-server setups
       _initializeQueueService(
         new QueueService({
           queues: queuesConfig,
           storage,
           logger: pluginLogger,
-          eventBus: server.eventBus, // Pass EventBus if serverId provided
-          serverId: config.serverId ?? 'unknown', // Pass serverId for event attribution
+          eventBus: config.serverId ? server.eventBus : (undefined as unknown as import('blaizejs').EventBus),
+          serverId: config.serverId,
           handlerRegistry,
         })
       );

@@ -1401,6 +1401,7 @@ describe('queueStatusHandler', () => {
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({ limit: '20' }, queueService);
@@ -1468,6 +1469,7 @@ describe('queuePrometheusHandler', () => {
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1505,6 +1507,7 @@ describe('queueDashboardHandler', () => {
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1530,6 +1533,7 @@ describe('queueDashboardHandler', () => {
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({ refresh: '30' }, queueService);
@@ -1553,6 +1557,7 @@ describe('queueDashboardHandler', () => {
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService);
@@ -1708,6 +1713,7 @@ describe('cancelJobHandler', () => {
       storage,
       logger: createMockLogger() as any,
       eventBus,
+      handlerRegistry: new Map(),
     });
 
     const ctx = createMockContext({}, queueService, {

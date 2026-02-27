@@ -420,7 +420,7 @@ export type InferQueueManifest<Config extends QueuePluginConfig> = {
   [Q in keyof Config['queues']]: Config['queues'][Q] extends { jobs: infer Jobs }
     ? {
         [J in keyof Jobs]: Jobs[J] extends JobDefinition<infer I, infer O>
-          ? { input: z.output<I>; output: z.output<O> }
+          ? { input: z.input<I>; output: z.output<O> }
           : never;
       }
     : {};
@@ -909,7 +909,7 @@ export interface QueueServiceConfig {
    *
    * Built during plugin initialization from `defineJob()` definitions.
    */
-  handlerRegistry?: Map<string, HandlerRegistration>;
+  handlerRegistry: Map<string, HandlerRegistration>;
 }
 
 // ============================================================================

@@ -690,6 +690,9 @@ describe('QueueService', () => {
         logger,
         eventBus,
         serverId: 'test-server',
+        handlerRegistry: buildHandlerRegistry([
+          { queueName: 'test', jobType: 'test:job', definition: testJob },
+        ]),
       });
 
       // Just verify the service was created successfully with eventBus config
