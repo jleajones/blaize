@@ -5,8 +5,9 @@
  * Tests input validation rejection at enqueue time
  * Tests output validation failure during processing
  */
-import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
 import { z } from 'zod';
+
+import { createMockLogger, createWorkingMockEventBus } from '@blaizejs/testing-utils';
 
 import { defineJob } from '../define-job';
 import { JobValidationError } from '../errors';
@@ -54,7 +55,7 @@ const emailSendJob = defineJob({
     messageId: z.string(),
     sentAt: z.number(),
   }),
-  handler: async ctx => ({
+  handler: async () => ({
     messageId: `msg-${Date.now()}`,
     sentAt: Date.now(),
   }),
@@ -247,4 +248,3 @@ describe('Queue Plugin Integration (defineJob API)', () => {
     });
   });
 });
-
