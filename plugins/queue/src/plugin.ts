@@ -130,7 +130,7 @@ function _terminateQueueService() {
  */
 export function createQueuePlugin<const C extends QueuePluginConfig>(
   userConfig: C
-): Plugin<{}, { queue: QueueService<InferQueueManifest<C>> }> {
+): Plugin<{}, QueuePluginServices<InferQueueManifest<C>>> {
   type M = InferQueueManifest<C>;
 
   // Merge with defaults

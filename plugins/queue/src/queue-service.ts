@@ -88,7 +88,7 @@ import type { BlaizeLogger, EventBus } from 'blaizejs';
  * unsubscribe();
  * ```
  */
-export class QueueService<M extends QueueManifest = QueueManifest> {
+export class QueueService<M = QueueManifest> {
   // ==========================================================================
   // Private State
   // ==========================================================================
