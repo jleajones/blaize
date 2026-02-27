@@ -1,5 +1,12 @@
 # @blaizejs/plugin-queue
 
+## 2.2.0
+
+### Minor Changes
+
+- f8f6542: 🐛 fix queue bugs
+- c134a68: ✨ Add end-to-end type safety with defineJob() and manifest inference
+
 ## 2.1.0
 
 ### Minor Changes

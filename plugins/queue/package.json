@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/plugin-queue",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Background job processing plugin for BlaizeJS with priority scheduling and SSE monitoring",
   "author": "BlaizeJS Contributors",
   "repository": {
