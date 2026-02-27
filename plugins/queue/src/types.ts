@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
 /**
  * Core Type Definitions for Queue Plugin
  *
@@ -1349,4 +1350,3 @@ export interface QueueStatusResponse {
   }>;
   timestamp: number;
 }
-
