@@ -346,7 +346,8 @@ async function createDemoJobs(
       'generate',
       {
         reportId: \`report-\${Date.now()}\`,
-        type: 'monthly',
+        reportType: 'monthly',
+        dateRange: { start: '2024-01-01', end: '2024-01-31' },
       },
       { priority: 7, metadata: { requestedBy: \`user\${i + 1}\` } }
     );
@@ -440,6 +441,7 @@ async function createDemoJobs(
         {
           videoId: \`video-\${Date.now()}\`,
           resolution: '1080p',
+          duration: 120,
         },
         { priority: 5 }
       );
