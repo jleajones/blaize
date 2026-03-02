@@ -13,7 +13,7 @@
 
 import { configFiles } from './files/config';
 import { coreFiles } from './files/core';
-import { cacheRoutes, healthMetricsRoutes, queueRoutes } from './files/routes';
+import { cacheRoutes, healthMetricsRoutes, queueRoutes, userRoutes } from './files/routes';
 import { scripts } from './scripts';
 import { getDependencies, getDevDependencies } from '../../utils/versions';
 
@@ -24,7 +24,7 @@ import type { Template } from '@/types';
  */
 export const advancedTemplate: Template = {
   name: 'advanced',
-  files: [...coreFiles, ...healthMetricsRoutes, ...cacheRoutes, ...queueRoutes, ...configFiles],
+  files: [...coreFiles, ...healthMetricsRoutes, ...cacheRoutes, ...queueRoutes, ...userRoutes, ...configFiles],
   scripts,
   getDependencies: async () => {
     const base = await getDependencies();

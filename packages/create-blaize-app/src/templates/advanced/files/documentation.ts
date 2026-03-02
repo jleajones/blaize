@@ -102,7 +102,7 @@ This template includes everything you need for production:
 │   ├── index.ts              # Server entry point
 │   ├── config.ts             # Configuration (Redis, etc.)
 │   ├── events.ts             # Event schemas
-│   ├── handlers.ts           # Queue job handlers
+│   ├── handlers/             # Queue job handlers (defineJob)
 │   ├── app-router.ts         # Route factory
 │   ├── app-type.ts           # Type exports
 │   ├── routes/               # API routes
@@ -461,7 +461,7 @@ Handles background job processing with Redis.
 - \`longRunning\` - Long tasks (concurrency: 1)
 - \`notifications\` - Push notifications (concurrency: 10)
 
-**Job Handlers** (in \`src/handlers.ts\`):
+**Job Handlers** (in \`src/handlers/\`):
 - \`emails/send\` - Send email
 - \`emails/verify\` - Verify email address
 - \`reports/generate\` - Generate PDF report
@@ -472,12 +472,28 @@ Handles background job processing with Redis.
 \`\`\`typescript
 const queuePlugin = createQueuePlugin({
   storage: queueAdapter,
-  concurrency: {
-    emails: 5,
-    reports: 2,
-    processing: 3,
+  queues: {
+    emails: {
+      concurrency: 5,
+      jobs: {
+        send: sendEmailJob,
+        verify: verifyEmailJob,
+      },
+    },
+    reports: {
+      concurrency: 2,
+      jobs: {
+        generate: generateReportJob,
+      },
+    },
+    processing: {
+      concurrency: 3,
+      jobs: {
+        image: processImageJob,
+        'data-sync': dataSyncJob,
+      },
+    },
   },
-  handlers: { /* see src/handlers.ts */ },
   logger: Blaize.logger,
 });
 \`\`\`
@@ -768,26 +784,42 @@ describe('GET /products', () => {
 });
 \`\`\`
 
-### Adding a Queue Handler
+### Adding a Job Handler
 
-1. **Create handler function:**
+1. **Define a job with \`defineJob()\`:**
 \`\`\`typescript
-// src/handlers.ts
-export async function processOrder(data: { orderId: string }) {
-  console.log('Processing order:', data.orderId);
-  
-  // Your processing logic
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  return { processed: true, orderId: data.orderId };
-}
+// src/handlers/orders.ts
+import { z } from 'zod';
+import { defineJob } from '@blaizejs/plugin-queue';
+
+export const processOrderJob = defineJob({
+  input: z.object({
+    orderId: z.string(),
+  }),
+  output: z.object({
+    processed: z.boolean(),
+    orderId: z.string(),
+  }),
+  handler: async (ctx) => {
+    ctx.logger.info('Processing order:', ctx.data.orderId);
+
+    await ctx.progress(50, 'Processing...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await ctx.progress(100, 'Done');
+
+    return { processed: true, orderId: ctx.data.orderId };
+  },
+});
 \`\`\`
 
-2. **Register in handlers object:**
+2. **Register in a queue block with \`jobs\`:**
 \`\`\`typescript
-handlers: {
+queues: {
   orders: {
-    process: processOrder,
+    concurrency: 3,
+    jobs: {
+      process: processOrderJob,
+    },
   },
 }
 \`\`\`
