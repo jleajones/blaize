@@ -346,11 +346,7 @@ async function createDemoJobs(
       'generate',
       {
         reportId: \`report-\${Date.now()}\`,
-        reportType: 'monthly',
-        dateRange: {
-          start: '2024-01-01',
-          end: '2024-01-31',
-        },
+        type: 'monthly',
       },
       { priority: 7, metadata: { requestedBy: \`user\${i + 1}\` } }
     );
@@ -428,11 +424,8 @@ async function createDemoJobs(
       const longReportId = await queue.add(
         'longRunning',
         'long-report',
-        {
-          reportId: \`long-report-\${Date.now()}\`,
-          complexity: 'medium',
-        },
-        { priority: 6 }
+        { reportType: 'annual', includeCharts: true },
+        { priority: 3, timeout: 120000 }
       );
       jobs.push({
         jobId: longReportId,
@@ -447,7 +440,6 @@ async function createDemoJobs(
         {
           videoId: \`video-\${Date.now()}\`,
           resolution: '1080p',
-          duration: 120,
         },
         { priority: 5 }
       );
