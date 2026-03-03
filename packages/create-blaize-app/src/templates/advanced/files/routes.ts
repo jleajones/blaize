@@ -45,6 +45,7 @@ export const getRoot = appRouter.get({
         user: z.object({
           list: z.string(),
           signup: z.string(),
+          getById: z.string(),
         }),
       }),
     }),
@@ -75,6 +76,7 @@ export const getRoot = appRouter.get({
         user: {
           list: 'GET /user',
           signup: 'POST /user/signup',
+          getById: 'GET /user/:userId',
         },
       },
     };
@@ -347,10 +349,7 @@ async function createDemoJobs(
       {
         reportId: \`report-\${Date.now()}\`,
         reportType: 'monthly',
-        dateRange: {
-          start: '2024-01-01',
-          end: '2024-01-31',
-        },
+        dateRange: { start: '2024-01-01', end: '2024-01-31' },
       },
       { priority: 7, metadata: { requestedBy: \`user\${i + 1}\` } }
     );
@@ -428,11 +427,8 @@ async function createDemoJobs(
       const longReportId = await queue.add(
         'longRunning',
         'long-report',
-        {
-          reportId: \`long-report-\${Date.now()}\`,
-          complexity: 'medium',
-        },
-        { priority: 6 }
+        { reportType: 'annual', includeCharts: true },
+        { priority: 3, timeout: 120000 }
       );
       jobs.push({
         jobId: longReportId,
@@ -1171,7 +1167,7 @@ export const getCacheStream = appRouter.sse({
  * GET /cache/prometheus
  *
  * Returns Prometheus/OpenMetrics format metrics for cache monitoring.
- * 
+ *
  * Metrics exported:
  * - blaize_cache_hits_total - Total cache hits
  * - blaize_cache_misses_total - Total cache misses
@@ -1202,11 +1198,11 @@ export const getCacheStream = appRouter.sse({
  * # HELP blaize_cache_hits_total Total cache hits
  * # TYPE blaize_cache_hits_total counter
  * blaize_cache_hits_total 1523
- * 
+ *
  * # HELP blaize_cache_misses_total Total cache misses
  * # TYPE blaize_cache_misses_total counter
  * blaize_cache_misses_total 142
- * 
+ *
  * # HELP blaize_cache_hit_rate Cache hit rate
  * # TYPE blaize_cache_hit_rate gauge
  * blaize_cache_hit_rate 0.915
@@ -1218,6 +1214,319 @@ import { appRouter } from '../../app-router';
 
 export const getCachePrometheus = appRouter.get({
   handler: cachePrometheusHandler,
+});
+`,
+  },
+];
+
+/**
+ * User Routes for Advanced Template
+ *
+ * Contains:
+ * - data/users.ts - Mock user data store
+ * - routes/user/index.ts - List users endpoint
+ * - routes/user/signup.ts - User signup with queue/cache integration
+ * - routes/user/[userId]/index.ts - Get user by ID
+ */
+
+export const userRoutes: TemplateFile[] = [
+  // ==========================================================================
+  // DATA MODULE - Mock user data store
+  // ==========================================================================
+  {
+    path: 'src/data/users.ts',
+    content: `/**
+ * Mock User Data Store
+ *
+ * Simple in-memory user store for demonstration.
+ * Replace with a real database in production.
+ */
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const users: User[] = [
+  {
+    id: 'user_1',
+    name: 'Alice Johnson',
+    email: 'alice@example.com',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'user_2',
+    name: 'Bob Smith',
+    email: 'bob@example.com',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+let nextId = 3;
+
+/**
+ * Check if an email is already registered
+ */
+export function emailExists(email: string): boolean {
+  return users.some(u => u.email === email);
+}
+
+/**
+ * Create a new user
+ */
+export function createUser(data: { name: string; email: string; avatar?: string }): User {
+  const user: User = {
+    id: \`user_\${nextId++}\`,
+    name: data.name,
+    email: data.email,
+    avatar: data.avatar,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  users.push(user);
+  return user;
+}
+
+/**
+ * Get all users
+ */
+export function getAllUsers(): User[] {
+  return [...users];
+}
+
+/**
+ * Find a user by ID
+ */
+export function findUserById(id: string): User | undefined {
+  return users.find(u => u.id === id);
+}
+`,
+  },
+
+  // ==========================================================================
+  // USER LIST ROUTE - GET /user
+  // ==========================================================================
+  {
+    path: 'src/routes/user/index.ts',
+    content: `import { z } from 'zod';
+
+import { appRouter } from '../../app-router';
+import { getAllUsers } from '../../data/users';
+
+/**
+ * GET /user
+ *
+ * List all registered users.
+ */
+export const getUsers = appRouter.get({
+  schema: {
+    response: z.object({
+      users: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          email: z.string(),
+          avatar: z.string().optional(),
+          createdAt: z.string(),
+          updatedAt: z.string(),
+        })
+      ),
+      count: z.number(),
+    }),
+  },
+  handler: async ({ logger }) => {
+    logger.info('Fetching users');
+
+    const users = getAllUsers();
+    return {
+      users,
+      count: users.length,
+    };
+  },
+});
+`,
+  },
+
+  // ==========================================================================
+  // USER SIGNUP ROUTE - POST /user/signup
+  // ==========================================================================
+  {
+    path: 'src/routes/user/signup.ts',
+    content: `import { z } from 'zod';
+
+import { ConflictError } from 'blaizejs';
+import type { QueueService } from '@blaizejs/plugin-queue';
+import type { CacheService } from '@blaizejs/plugin-cache';
+
+import { appRouter } from '../../app-router';
+import { emailExists, createUser } from '../../data/users';
+
+/**
+ * POST /user/signup
+ *
+ * Create a new user account.
+ * Demonstrates integration with Queue, Cache, and EventBus:
+ * - Queues a welcome email
+ * - Caches user data for fast lookups
+ * - Publishes user:created event
+ * - Optionally queues avatar processing
+ */
+export const postUserSignup = appRouter.post({
+  schema: {
+    body: z.object({
+      name: z.string().min(1, 'Name is required'),
+      email: z.string().email('Invalid email address'),
+      avatar: z.string().url().optional(),
+    }),
+    response: z.object({
+      message: z.string(),
+      user: z.object({
+        id: z.string(),
+        name: z.string(),
+        email: z.string(),
+        avatar: z.string().optional(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+      }),
+      jobs: z.object({
+        emailJobId: z.string(),
+        avatarJobId: z.string().optional(),
+      }),
+      nextSteps: z.array(z.string()),
+    }),
+  },
+  handler: async ({ ctx, logger, eventBus }) => {
+    const { name, email, avatar } = ctx.request.body;
+    const queue = ctx.services.queue as QueueService;
+    const cache = ctx.services.cache as CacheService;
+
+    logger.info('User signup initiated', { name, email });
+
+    // Check for duplicate email
+    if (emailExists(email)) {
+      throw new ConflictError('A user with this email already exists', {
+        conflictType: 'duplicate_key',
+        field: 'email',
+        providedValue: email,
+      });
+    }
+
+    // Create user
+    const user = createUser({ name, email, avatar });
+    logger.info('User created', { userId: user.id });
+
+    // Cache user data (30 minute TTL)
+    await cache.set(\`user:\${user.id}\`, JSON.stringify(user), 1800);
+    logger.info('User cached', { userId: user.id });
+
+    // Publish event
+    await eventBus.publish('user:created', {
+      userId: user.id,
+      email: user.email,
+      timestamp: Date.now(),
+    });
+
+    // Queue welcome email
+    const emailJobId = await queue.add(
+      'emails',
+      'send',
+      {
+        to: email,
+        subject: \`Welcome to {{projectName}}, \${name}!\`,
+        body: 'Thanks for signing up! We are excited to have you.',
+      },
+      { priority: 8 }
+    );
+    logger.info('Welcome email queued', { emailJobId });
+
+    // Optionally queue avatar processing
+    let avatarJobId: string | undefined;
+    if (avatar) {
+      avatarJobId = await queue.add(
+        'processing',
+        'image',
+        {
+          imageId: \`avatar-\${user.id}\`,
+          operations: ['resize', 'compress'],
+        },
+        { priority: 5 }
+      );
+      logger.info('Avatar processing queued', { avatarJobId });
+    }
+
+    return {
+      message: \`🎉 User signup success! Welcome, \${name}.\`,
+      user,
+      jobs: {
+        emailJobId,
+        avatarJobId,
+      },
+      nextSteps: [
+        \`📧 Welcome email queued (job: \${emailJobId})\`,
+        \`🔍 View user: GET /user/\${user.id}\`,
+        '📊 Check queue: GET /queue/status',
+        avatar ? \`🖼️ Avatar processing queued (job: \${avatarJobId})\` : '💡 Add an avatar URL to process it',
+      ].filter(Boolean),
+    };
+  },
+});
+`,
+  },
+
+  // ==========================================================================
+  // USER BY ID ROUTE - GET /user/:userId
+  // ==========================================================================
+  {
+    path: 'src/routes/user/[userId]/index.ts',
+    content: `import { z } from 'zod';
+
+import { NotFoundError } from 'blaizejs';
+
+import { appRouter } from '../../../app-router';
+import { findUserById } from '../../../data/users';
+
+/**
+ * GET /user/:userId
+ *
+ * Get a user by their ID.
+ * Returns user data or a 404 error if not found.
+ */
+export const getUserById = appRouter.get({
+  schema: {
+    params: z.object({
+      userId: z.string(),
+    }),
+    response: z.object({
+      user: z.object({
+        id: z.string(),
+        name: z.string(),
+        email: z.string(),
+        avatar: z.string().optional(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+      }),
+    }),
+  },
+  handler: async ({ params, logger }) => {
+    logger.info('User lookup', { userId: params.userId });
+
+    const user = findUserById(params.userId);
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'User',
+        resourceId: params.userId,
+        suggestion: 'Check the user ID or list all users at GET /user',
+      });
+    }
+
+    return { user };
+  },
 });
 `,
   },

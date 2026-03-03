@@ -167,8 +167,8 @@ export const createUser = appRouter.post({
     // Publish event for other services
     ctx.services.queue.add('emails', 'send', {
       to: email,
-      body: name,
       subject: 'Welcome to Our Service!',
+      body: `Hello ${name}, welcome to our service!`,
     });
 
     logger.info('User created successfully', {

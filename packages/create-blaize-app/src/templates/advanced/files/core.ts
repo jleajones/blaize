@@ -193,7 +193,9 @@ export const sleep = (ms: number): Promise<void> =>
   // ==========================================================================
   {
     path: 'src/handlers/email.ts',
-    content: `import type { JobContext } from '@blaizejs/plugin-queue';
+    content: `import { z } from 'zod';
+
+import { defineJob } from '@blaizejs/plugin-queue';
 
 import { sleep } from './utilities';
 
@@ -201,83 +203,90 @@ import { sleep } from './utilities';
 // Email Queue Handlers
 // ============================================================================
 
-interface SendEmailData {
-  to: string;
-  subject: string;
-  body: string;
-}
-
 /**
  * Send email handler - Medium duration (2-3 seconds)
  * Simulates sending an email with progress updates
  */
-export const sendEmailHandler = async (
-  ctx: JobContext<SendEmailData>
-): Promise<{ messageId: string; sentAt: number }> => {
-  const { logger, progress, signal } = ctx;
-  const { to, subject } = ctx.data;
+export const sendEmailJob = defineJob({
+  input: z.object({
+    to: z.string(),
+    subject: z.string(),
+    body: z.string(),
+  }),
+  output: z.object({
+    messageId: z.string(),
+    sentAt: z.number(),
+  }),
+  handler: async (ctx) => {
+    const { logger, progress, signal } = ctx;
+    const { to, subject } = ctx.data;
 
-  logger.info('Starting email send', { to, subject });
+    logger.info('Starting email send', { to, subject });
 
-  // Step 1: Validate
-  await progress(10, 'Validating recipient');
-  await sleep(300);
+    // Step 1: Validate
+    await progress(10, 'Validating recipient');
+    await sleep(300);
 
-  if (signal.aborted) throw new Error('Job cancelled');
+    if (signal.aborted) throw new Error('Job cancelled');
 
-  // Step 2: Prepare
-  await progress(30, 'Preparing email content');
-  await sleep(500);
+    // Step 2: Prepare
+    await progress(30, 'Preparing email content');
+    await sleep(500);
 
-  if (signal.aborted) throw new Error('Job cancelled');
+    if (signal.aborted) throw new Error('Job cancelled');
 
-  // Step 3: Connect to SMTP
-  await progress(50, 'Connecting to mail server');
-  await sleep(400);
+    // Step 3: Connect to SMTP
+    await progress(50, 'Connecting to mail server');
+    await sleep(400);
 
-  if (signal.aborted) throw new Error('Job cancelled');
+    if (signal.aborted) throw new Error('Job cancelled');
 
-  // Step 4: Send
-  await progress(80, 'Sending email');
-  await sleep(600);
+    // Step 4: Send
+    await progress(80, 'Sending email');
+    await sleep(600);
 
-  // Step 5: Verify
-  await progress(100, 'Email sent successfully');
-  const messageId = \`msg-\${Date.now()}-\${Math.random().toString(36).slice(2, 8)}\`;
+    // Step 5: Verify
+    await progress(100, 'Email sent successfully');
+    const messageId = \`msg-\${Date.now()}-\${Math.random().toString(36).slice(2, 8)}\`;
 
-  logger.info('Email sent', { messageId, to });
+    logger.info('Email sent', { messageId, to });
 
-  return { messageId, sentAt: Date.now() };
-};
-
-interface VerifyEmailData {
-  email: string;
-}
+    return { messageId, sentAt: Date.now() };
+  },
+});
 
 /**
  * Verify email handler - Short duration (0.5-1 second)
  */
-export const verifyEmailHandler = async (
-  ctx: JobContext<VerifyEmailData>
-): Promise<{ email: string; isValid: boolean; provider: string }> => {
-  const { email } = ctx.data;
+export const verifyEmailJob = defineJob({
+  input: z.object({
+    email: z.string(),
+  }),
+  output: z.object({
+    email: z.string(),
+    isValid: z.boolean(),
+    provider: z.string(),
+  }),
+  handler: async (ctx) => {
+    const { email } = ctx.data;
 
-  ctx.logger.info('Verifying email', { email });
+    ctx.logger.info('Verifying email', { email });
 
-  await ctx.progress(30, 'Checking format');
-  await sleep(200);
+    await ctx.progress(30, 'Checking format');
+    await sleep(200);
 
-  await ctx.progress(60, 'Looking up MX records');
-  await sleep(300);
+    await ctx.progress(60, 'Looking up MX records');
+    await sleep(300);
 
-  await ctx.progress(100, 'Verification complete');
+    await ctx.progress(100, 'Verification complete');
 
-  // Simulate validation
-  const isValid = email.includes('@') && email.includes('.');
-  const provider = email.split('@')[1] || 'unknown';
+    // Simulate validation
+    const isValid = email.includes('@') && email.includes('.');
+    const provider = email.split('@')[1] || 'unknown';
 
-  return { email, isValid, provider };
-};
+    return { email, isValid, provider };
+  },
+});
 `,
   },
 
@@ -286,7 +295,9 @@ export const verifyEmailHandler = async (
   // ==========================================================================
   {
     path: 'src/handlers/processing.ts',
-    content: `import type { JobContext } from '@blaizejs/plugin-queue';
+    content: `import { z } from 'zod';
+
+import { defineJob } from '@blaizejs/plugin-queue';
 
 import { sleep } from './utilities';
 
@@ -294,74 +305,80 @@ import { sleep } from './utilities';
 // Processing Queue Handlers
 // ============================================================================
 
-interface ProcessImageData {
-  imageId: string;
-  operations: string[];
-}
-
 /**
  * Process image handler - Medium duration (5 seconds)
  */
-export const processImageHandler = async (
-  ctx: JobContext<ProcessImageData>
-): Promise<{ imageId: string; processedUrl: string }> => {
-  const { imageId, operations } = ctx.data;
+export const processImageJob = defineJob({
+  input: z.object({
+    imageId: z.string(),
+    operations: z.array(z.string()),
+  }),
+  output: z.object({
+    imageId: z.string(),
+    processedUrl: z.string(),
+  }),
+  handler: async (ctx) => {
+    const { imageId, operations } = ctx.data;
 
-  ctx.logger.info('Starting image processing', { imageId, operations });
+    ctx.logger.info('Starting image processing', { imageId, operations });
 
-  await ctx.progress(20, 'Loading image');
-  await sleep(1000);
+    await ctx.progress(20, 'Loading image');
+    await sleep(1000);
 
-  await ctx.progress(40, 'Applying filters');
-  await sleep(1500);
+    await ctx.progress(40, 'Applying filters');
+    await sleep(1500);
 
-  await ctx.progress(60, 'Resizing');
-  await sleep(1000);
+    await ctx.progress(60, 'Resizing');
+    await sleep(1000);
 
-  await ctx.progress(80, 'Optimizing');
-  await sleep(1000);
+    await ctx.progress(80, 'Optimizing');
+    await sleep(1000);
 
-  await ctx.progress(100, 'Processing complete');
-  await sleep(500);
+    await ctx.progress(100, 'Processing complete');
+    await sleep(500);
 
-  return {
-    imageId,
-    processedUrl: \`https://cdn.example.com/images/\${imageId}-processed.jpg\`,
-  };
-};
-
-interface DataSyncData {
-  syncId: string;
-  recordCount: number;
-}
+    return {
+      imageId,
+      processedUrl: \`https://cdn.example.com/images/\${imageId}-processed.jpg\`,
+    };
+  },
+});
 
 /**
  * Data sync handler - Longer duration (8 seconds)
  */
-export const dataSyncHandler = async (
-  ctx: JobContext<DataSyncData>
-): Promise<{ syncId: string; synced: number }> => {
-  const { syncId, recordCount } = ctx.data;
+export const dataSyncJob = defineJob({
+  input: z.object({
+    syncId: z.string(),
+    recordCount: z.number(),
+  }),
+  output: z.object({
+    syncId: z.string(),
+    synced: z.number(),
+  }),
+  handler: async (ctx) => {
+    const { syncId, recordCount } = ctx.data;
 
-  ctx.logger.info('Starting data sync', { syncId, recordCount });
+    ctx.logger.info('Starting data sync', { syncId, recordCount });
 
-  await ctx.progress(10, 'Connecting to source');
-  await sleep(1000);
+    await ctx.progress(10, 'Connecting to source');
+    await sleep(1000);
 
-  await ctx.progress(30, 'Fetching records');
-  await sleep(2000);
+    await ctx.progress(30, 'Fetching records');
+    await sleep(2000);
 
-  await ctx.progress(60, 'Transforming data');
-  await sleep(2000);
+    await ctx.progress(60, 'Transforming data');
+    await sleep(2000);
 
-  await ctx.progress(80, 'Writing to destination');
-  await sleep(2000);
+    await ctx.progress(80, 'Writing to destination');
+    await sleep(2000);
 
-  await ctx.progress(100, 'Sync complete');
-  await sleep(1000);
+    await ctx.progress(100, 'Sync complete');
+    await sleep(1000);
 
-  return { syncId, synced: recordCount };
-};
+    return { syncId, synced: recordCount };
+  },
+});
 `,
   },
 
@@ -370,7 +387,9 @@ export const dataSyncHandler = async (
   // ==========================================================================
   {
     path: 'src/handlers/reports.ts',
-    content: `import type { JobContext } from '@blaizejs/plugin-queue';
+    content: `import { z } from 'zod';
+
+import { defineJob } from '@blaizejs/plugin-queue';
 
 import { sleep } from './utilities';
 
@@ -378,54 +397,57 @@ import { sleep } from './utilities';
 // Report Queue Handlers
 // ============================================================================
 
-interface GenerateReportData {
-  reportId: string;
-  reportType: string;
-  dateRange: {
-    start: string;
-    end: string;
-  };
-}
-
 /**
  * Generate report handler - Long duration (10 seconds)
  * Demonstrates detailed progress reporting
  */
-export const generateReportHandler = async (
-  ctx: JobContext<GenerateReportData>
-): Promise<{ reportId: string; url: string }> => {
-  const { reportId, reportType } = ctx.data;
+export const generateReportJob = defineJob({
+  input: z.object({
+    reportId: z.string(),
+    reportType: z.string(),
+    dateRange: z.object({
+      start: z.string(),
+      end: z.string(),
+    }),
+  }),
+  output: z.object({
+    reportId: z.string(),
+    url: z.string(),
+  }),
+  handler: async (ctx) => {
+    const { reportId, reportType } = ctx.data;
 
-  ctx.logger.info('Starting report generation', { reportId, reportType });
+    ctx.logger.info('Starting report generation', { reportId, reportType });
 
-  // Phase 1: Data collection
-  await ctx.progress(10, 'Querying database');
-  await sleep(1500);
+    // Phase 1: Data collection
+    await ctx.progress(10, 'Querying database');
+    await sleep(1500);
 
-  await ctx.progress(20, 'Aggregating data');
-  await sleep(1500);
+    await ctx.progress(20, 'Aggregating data');
+    await sleep(1500);
 
-  // Phase 2: Processing
-  await ctx.progress(40, 'Calculating metrics');
-  await sleep(2000);
+    // Phase 2: Processing
+    await ctx.progress(40, 'Calculating metrics');
+    await sleep(2000);
 
-  await ctx.progress(60, 'Generating charts');
-  await sleep(2000);
+    await ctx.progress(60, 'Generating charts');
+    await sleep(2000);
 
-  // Phase 3: Rendering
-  await ctx.progress(80, 'Formatting report');
-  await sleep(1500);
+    // Phase 3: Rendering
+    await ctx.progress(80, 'Formatting report');
+    await sleep(1500);
 
-  await ctx.progress(90, 'Creating PDF');
-  await sleep(1500);
+    await ctx.progress(90, 'Creating PDF');
+    await sleep(1500);
 
-  await ctx.progress(100, 'Report complete');
+    await ctx.progress(100, 'Report complete');
 
-  return {
-    reportId,
-    url: \`https://reports.example.com/\${reportId}.pdf\`,
-  };
-};
+    return {
+      reportId,
+      url: \`https://reports.example.com/\${reportId}.pdf\`,
+    };
+  },
+});
 `,
   },
 
@@ -434,41 +456,49 @@ export const generateReportHandler = async (
   // ==========================================================================
   {
     path: 'src/handlers/notifications.ts',
-    content: `import type { JobContext } from '@blaizejs/plugin-queue';
+    content: `import { z } from 'zod';
+
+import { defineJob } from '@blaizejs/plugin-queue';
 
 import { sleep } from './utilities';
-
 // ============================================================================
 // Notification Queue Handlers
 // ============================================================================
 
-interface SendNotificationData {
-  userId: string;
-  message: string;
-  type: 'email' | 'sms' | 'push';
-}
-
 /**
- * Send notification handler - Fast (1 second)
+ * Send notification handler - Quick (0.5-1 second)
  */
-export const sendNotificationHandler = async (
-  ctx: JobContext<SendNotificationData>
-): Promise<{ notificationId: string; delivered: boolean }> => {
-  const { userId, message, type } = ctx.data;
+export const sendNotificationJob = defineJob({
+  input: z.object({
+    userId: z.string(),
+    type: z.enum(['push', 'sms', 'in-app']),
+    message: z.string(),
+  }),
+  output: z.object({
+    notificationId: z.string(),
+    delivered: z.boolean(),
+  }),
+  handler: async (ctx) => {
+    const { userId, type } = ctx.data;
 
-  ctx.logger.info('Sending notification', { userId, type });
+    ctx.logger.info('Sending notification', { userId, type });
 
-  await ctx.progress(50, \`Sending \${type} notification\`);
-  await sleep(500);
+    await ctx.progress(30, \`Preparing \${type} notification\`);
+    await sleep(200);
 
-  await ctx.progress(100, 'Notification sent');
-  await sleep(500);
+    await ctx.progress(70, 'Delivering notification');
+    await sleep(300 + Math.random() * 200);
 
-  return {
-    notificationId: \`notif-\${Date.now()}\`,
-    delivered: true,
-  };
-};
+    await ctx.progress(100, 'Notification sent');
+
+    const notificationId = \`notif-\${Date.now()}-\${userId}\`;
+    const delivered = Math.random() > 0.1; // 90% success rate
+
+    ctx.logger.info('Notification result', { notificationId, delivered });
+
+    return { notificationId, delivered };
+  },
+});
 `,
   },
 
@@ -477,204 +507,277 @@ export const sendNotificationHandler = async (
   // ==========================================================================
   {
     path: 'src/handlers/long-running.ts',
-    content: `import type { JobContext } from '@blaizejs/plugin-queue';
+    content: `/**
+ * Long-Running Job Handlers for SSE Testing
+ *
+ * These handlers take 10-30 seconds to complete,
+ * giving you time to observe SSE progress updates.
+ */
 
-import { sleep } from './utilities';
+import { z } from 'zod';
 
-// ============================================================================
-// Long-Running Queue Handlers
-// ============================================================================
+import { defineJob } from '@blaizejs/plugin-queue';
 
-interface GenerateLongReportData {
-  reportId: string;
-  complexity: 'simple' | 'medium' | 'complex';
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// ============================================================================
+// Long-Running Handlers
+// ============================================================================
 
 /**
  * Generate long report - 20 seconds with detailed progress
  */
-export const generateLongReportHandler = async (
-  ctx: JobContext<GenerateLongReportData>
-): Promise<{ reportId: string; pages: number; duration: number }> => {
-  const startTime = Date.now();
-  const { reportId } = ctx.data;
+export const generateLongReportJob = defineJob({
+  input: z.object({
+    reportType: z.string(),
+    includeCharts: z.boolean(),
+  }),
+  output: z.object({
+    reportId: z.string(),
+    pages: z.number(),
+    duration: z.number(),
+  }),
+  handler: async (ctx) => {
+    const startTime = Date.now();
+    const { reportType, includeCharts } = ctx.data;
 
-  ctx.logger.info('Starting long report generation', { reportId });
+    ctx.logger.info('Starting long report generation', { reportType });
 
-  // Phase 1: Data gathering (5 seconds)
-  await ctx.progress(5, 'Connecting to databases');
-  await sleep(1000);
+    // Phase 1: Data collection (5 seconds)
+    await ctx.progress(5, 'Collecting data from database');
+    await sleep(2000);
 
-  await ctx.progress(10, 'Querying historical data');
-  await sleep(2000);
+    await ctx.progress(10, 'Processing 1000 records');
+    await sleep(1000);
 
-  await ctx.progress(20, 'Loading reference data');
-  await sleep(2000);
+    await ctx.progress(15, 'Processing 2000 records');
+    await sleep(1000);
 
-  // Phase 2: Analysis (5 seconds)
-  await ctx.progress(30, 'Running statistical analysis');
-  await sleep(2000);
+    await ctx.progress(20, 'Processing complete - 3500 records');
+    await sleep(1000);
 
-  await ctx.progress(45, 'Computing trends');
-  await sleep(2000);
+    // Phase 2: Analysis (5 seconds)
+    await ctx.progress(30, 'Running statistical analysis');
+    await sleep(2000);
 
-  await ctx.progress(55, 'Generating insights');
-  await sleep(1000);
+    await ctx.progress(40, 'Calculating trends');
+    await sleep(1500);
 
-  // Phase 3: Chart generation (5 seconds)
-  await ctx.progress(60, 'Creating charts');
-  await sleep(2000);
+    await ctx.progress(50, 'Generating insights');
+    await sleep(1500);
 
-  await ctx.progress(65, 'Rendering graphs');
-  await sleep(2000);
+    // Phase 3: Chart generation (5 seconds)
+    if (includeCharts) {
+      await ctx.progress(55, 'Creating line charts');
+      await sleep(1500);
 
-  await ctx.progress(70, 'Finalizing charts');
-  await sleep(1000);
+      await ctx.progress(60, 'Creating bar charts');
+      await sleep(1500);
 
-  // Phase 4: PDF rendering (5 seconds)
-  await ctx.progress(75, 'Rendering pages 1-3');
-  await sleep(1000);
+      await ctx.progress(65, 'Creating pie charts');
+      await sleep(2000);
+    }
 
-  await ctx.progress(80, 'Rendering pages 4-6');
-  await sleep(1000);
+    // Phase 4: PDF rendering (5 seconds)
+    await ctx.progress(70, 'Rendering page 1 of 10');
+    await sleep(500);
 
-  await ctx.progress(85, 'Rendering pages 7-9');
-  await sleep(1000);
+    await ctx.progress(75, 'Rendering page 3 of 10');
+    await sleep(500);
 
-  await ctx.progress(90, 'Rendering page 10');
-  await sleep(1000);
+    await ctx.progress(80, 'Rendering page 5 of 10');
+    await sleep(1000);
 
-  await ctx.progress(95, 'Finalizing PDF');
-  await sleep(1000);
+    await ctx.progress(85, 'Rendering page 7 of 10');
+    await sleep(1000);
 
-  await ctx.progress(100, 'Report complete');
+    await ctx.progress(90, 'Rendering page 9 of 10');
+    await sleep(1000);
 
-  const duration = Date.now() - startTime;
+    await ctx.progress(95, 'Finalizing PDF');
+    await sleep(1000);
 
-  return { reportId, pages: 10, duration };
-};
+    await ctx.progress(100, 'Report complete');
 
-interface VideoProcessingData {
-  videoId: string;
-  resolution: '720p' | '1080p' | '4k';
-  duration: number;
-}
+    const duration = Date.now() - startTime;
+    const reportId = \`long-report-\${Date.now()}\`;
+
+    ctx.logger.info('Long report completed', { reportId, duration });
+
+    return {
+      reportId,
+      pages: 10,
+      duration,
+    };
+  },
+});
 
 /**
  * Process video - 30 seconds with very detailed progress
  */
-export const processVideoHandler = async (
-  ctx: JobContext<VideoProcessingData>
-): Promise<{ videoId: string; outputUrl: string; processingTime: number }> => {
-  const startTime = Date.now();
-  const { videoId, resolution } = ctx.data;
+export const processVideoJob = defineJob({
+  input: z.object({
+    videoId: z.string(),
+    resolution: z.enum(['720p', '1080p', '4k']),
+    duration: z.number(),
+  }),
+  output: z.object({
+    videoId: z.string(),
+    outputUrl: z.string(),
+    processingTime: z.number(),
+  }),
+  handler: async (ctx) => {
+    const startTime = Date.now();
+    const { videoId, resolution, duration } = ctx.data;
 
-  ctx.logger.info('Starting video processing', { videoId, resolution });
+    ctx.logger.info('Starting video processing', { videoId, resolution, duration });
 
-  // Phase 1: Upload & validation (3 seconds)
-  await ctx.progress(2, 'Uploading video file');
-  await sleep(1000);
+    // Phase 1: Upload & validation (3 seconds)
+    await ctx.progress(2, 'Uploading video file');
+    await sleep(1000);
 
-  await ctx.progress(5, 'Validating video format');
-  await sleep(1000);
+    await ctx.progress(5, 'Validating video format');
+    await sleep(1000);
 
-  await ctx.progress(8, 'Checking video codec');
-  await sleep(1000);
+    await ctx.progress(8, 'Checking video codec');
+    await sleep(1000);
 
-  // Phase 2: Transcoding (15 seconds)
-  await ctx.progress(10, \`Transcoding to \${resolution} - 0%\`);
-  await sleep(1500);
+    // Phase 2: Transcoding (15 seconds)
+    await ctx.progress(10, \`Transcoding to \${resolution} - 0%\`);
+    await sleep(1500);
 
-  await ctx.progress(20, \`Transcoding to \${resolution} - 10%\`);
-  await sleep(1500);
+    await ctx.progress(20, \`Transcoding to \${resolution} - 10%\`);
+    await sleep(1500);
 
-  await ctx.progress(30, \`Transcoding to \${resolution} - 25%\`);
-  await sleep(1500);
+    await ctx.progress(30, \`Transcoding to \${resolution} - 25%\`);
+    await sleep(1500);
 
-  await ctx.progress(40, \`Transcoding to \${resolution} - 40%\`);
-  await sleep(1500);
+    await ctx.progress(40, \`Transcoding to \${resolution} - 40%\`);
+    await sleep(1500);
 
-  await ctx.progress(50, \`Transcoding to \${resolution} - 55%\`);
-  await sleep(1500);
+    await ctx.progress(50, \`Transcoding to \${resolution} - 55%\`);
+    await sleep(1500);
 
-  await ctx.progress(60, \`Transcoding to \${resolution} - 70%\`);
-  await sleep(1500);
+    await ctx.progress(60, \`Transcoding to \${resolution} - 70%\`);
+    await sleep(1500);
 
-  await ctx.progress(70, \`Transcoding to \${resolution} - 85%\`);
-  await sleep(1500);
+    await ctx.progress(70, \`Transcoding to \${resolution} - 85%\`);
+    await sleep(1500);
 
-  await ctx.progress(75, \`Transcoding to \${resolution} - 95%\`);
-  await sleep(1500);
+    await ctx.progress(75, \`Transcoding to \${resolution} - 95%\`);
+    await sleep(1500);
 
-  await ctx.progress(80, 'Transcoding complete');
-  await sleep(1500);
+    await ctx.progress(80, \`Transcoding complete\`);
+    await sleep(1500);
 
-  // Phase 3: Thumbnail generation (5 seconds)
-  await ctx.progress(82, 'Generating thumbnails');
-  await sleep(2000);
+    // Phase 3: Thumbnail generation (5 seconds)
+    await ctx.progress(82, 'Generating thumbnails at 0:10');
+    await sleep(1000);
 
-  await ctx.progress(85, 'Creating preview sprite');
-  await sleep(3000);
+    await ctx.progress(85, 'Generating thumbnails at 0:30');
+    await sleep(1000);
 
-  // Phase 4: Upload to CDN (7 seconds)
-  await ctx.progress(90, 'Uploading to CDN - 0%');
-  await sleep(2000);
+    await ctx.progress(88, 'Generating thumbnails at 1:00');
+    await sleep(1000);
 
-  await ctx.progress(95, 'Uploading to CDN - 50%');
-  await sleep(2000);
+    await ctx.progress(91, 'Creating preview sprite');
+    await sleep(2000);
 
-  await ctx.progress(98, 'Uploading to CDN - 90%');
-  await sleep(2000);
+    // Phase 4: Upload to CDN (7 seconds)
+    await ctx.progress(93, 'Uploading to CDN - 0%');
+    await sleep(2000);
 
-  await ctx.progress(100, 'Video processing complete');
-  await sleep(1000);
+    await ctx.progress(96, 'Uploading to CDN - 50%');
+    await sleep(2000);
 
-  const processingTime = Date.now() - startTime;
-  const outputUrl = \`https://cdn.example.com/videos/\${videoId}-\${resolution}.mp4\`;
+    await ctx.progress(98, 'Uploading to CDN - 90%');
+    await sleep(2000);
 
-  return { videoId, outputUrl, processingTime };
-};
+    await ctx.progress(100, 'Video processing complete');
+    await sleep(1000);
 
-interface DataMigrationData {
-  migrationId: string;
-  tables: string[];
-}
+    const processingTime = Date.now() - startTime;
+    const outputUrl = \`https://cdn.example.com/videos/\${videoId}-\${resolution}.mp4\`;
+
+    ctx.logger.info('Video processing completed', { videoId, outputUrl, processingTime });
+
+    return {
+      videoId,
+      outputUrl,
+      processingTime,
+    };
+  },
+});
 
 /**
- * Data migration - Very long (40 seconds)
+ * Data migration - 25 seconds with progress per batch
  */
-export const dataMigrationHandler = async (
-  ctx: JobContext<DataMigrationData>
-): Promise<{ migrationId: string; recordsMigrated: number }> => {
-  const { migrationId, tables } = ctx.data;
+export const dataMigrationJob = defineJob({
+  input: z.object({
+    fromDatabase: z.string(),
+    toDatabase: z.string(),
+    recordCount: z.number(),
+  }),
+  output: z.object({
+    migrated: z.number(),
+    failed: z.number(),
+    duration: z.number(),
+  }),
+  handler: async (ctx) => {
+    const startTime = Date.now();
+    const { fromDatabase, toDatabase, recordCount } = ctx.data;
 
-  ctx.logger.info('Starting data migration', { migrationId, tables });
+    ctx.logger.info('Starting data migration', { fromDatabase, toDatabase, recordCount });
 
-  let progress = 0;
-  const increment = 100 / (tables.length * 4);
+    let migrated = 0;
+    const batchSize = 1000;
+    const totalBatches = Math.ceil(recordCount / batchSize);
 
-  for (const table of tables) {
-    await ctx.progress(progress, \`Backing up \${table}\`);
+    await ctx.progress(0, \`Preparing to migrate \${recordCount} records in \${totalBatches} batches\`);
     await sleep(2000);
-    progress += increment;
 
-    await ctx.progress(progress, \`Migrating \${table}\`);
-    await sleep(4000);
-    progress += increment;
+    // Migrate in batches
+    for (let batch = 1; batch <= totalBatches; batch++) {
+      const recordsInBatch = Math.min(batchSize, recordCount - migrated);
+      const percent = Math.floor((batch / totalBatches) * 95); // Save 5% for finalization
 
-    await ctx.progress(progress, \`Validating \${table}\`);
+      await ctx.progress(
+        percent,
+        \`Batch \${batch}/\${totalBatches}: Migrating \${recordsInBatch} records\`
+      );
+
+      // Simulate migration time
+      await sleep(2000 + Math.random() * 1000);
+
+      migrated += recordsInBatch;
+
+      // Check for cancellation
+      if (ctx.signal.aborted) {
+        throw new Error('Migration cancelled');
+      }
+    }
+
+    await ctx.progress(95, 'Verifying migrated data');
     await sleep(2000);
-    progress += increment;
 
-    await ctx.progress(progress, \`Indexing \${table}\`);
-    await sleep(2000);
-    progress += increment;
-  }
+    await ctx.progress(98, 'Updating indexes');
+    await sleep(1500);
 
-  await ctx.progress(100, 'Migration complete');
+    await ctx.progress(100, 'Migration complete');
 
-  return { migrationId, recordsMigrated: tables.length * 1000 };
-};
+    const duration = Date.now() - startTime;
+
+    ctx.logger.info('Migration completed', { migrated, duration });
+
+    return {
+      migrated,
+      failed: 0,
+      duration,
+    };
+  },
+});
 `,
   },
 
@@ -684,63 +787,68 @@ export const dataMigrationHandler = async (
   {
     path: 'src/handlers/index.ts',
     content: `/**
- * Job Handlers for Queue Plugin
+ * Job Handlers for Queue Plugin Demo
  *
  * These handlers demonstrate different job types with varying durations
  * to allow testing SSE monitoring, dashboard, and status endpoints.
  */
-import type { JobContext } from '@blaizejs/plugin-queue';
+import { z } from 'zod';
+
+import { defineJob } from '@blaizejs/plugin-queue';
 
 import { sleep } from './utilities';
 
-export { sendEmailHandler, verifyEmailHandler } from './email';
-export { sendNotificationHandler } from './notifications';
-export { processImageHandler, dataSyncHandler } from './processing';
-export { generateReportHandler } from './reports';
+export { sendEmailJob, verifyEmailJob } from './email';
+export { sendNotificationJob } from './notifications';
+export { processImageJob, dataSyncJob } from './processing';
+export { generateReportJob } from './reports';
 export {
-  dataMigrationHandler,
-  generateLongReportHandler,
-  processVideoHandler,
+  dataMigrationJob,
+  generateLongReportJob,
+  processVideoJob,
 } from './long-running';
 
 // ============================================================================
 // Failing Job Handler (for testing error handling)
 // ============================================================================
 
-interface UnreliableTaskData {
-  taskId: string;
-  failureRate: number; // 0-1
-}
-
 /**
  * Unreliable task handler - May fail randomly (for testing retries)
  */
-export const unreliableTaskHandler = async (
-  ctx: JobContext<UnreliableTaskData>
-): Promise<{ taskId: string; attempt: number }> => {
-  const { taskId, failureRate } = ctx.data;
+export const unreliableTaskJob = defineJob({
+  input: z.object({
+    taskId: z.string(),
+    failureRate: z.number(),
+  }),
+  output: z.object({
+    taskId: z.string(),
+    attempt: z.number(),
+  }),
+  handler: async (ctx) => {
+    const { taskId, failureRate } = ctx.data;
 
-  ctx.logger.info('Starting unreliable task', { taskId, failureRate });
+    ctx.logger.info('Starting unreliable task', { taskId, failureRate });
 
-  await ctx.progress(25, 'Phase 1');
-  await sleep(300);
+    await ctx.progress(25, 'Phase 1');
+    await sleep(300);
 
-  await ctx.progress(50, 'Phase 2');
-  await sleep(300);
+    await ctx.progress(50, 'Phase 2');
+    await sleep(300);
 
-  // Random failure based on failure rate
-  if (Math.random() < failureRate) {
-    ctx.logger.error('Task failed randomly', { taskId });
-    throw new Error(\`Random failure for task \${taskId}\`);
-  }
+    // Random failure based on failure rate
+    if (Math.random() < failureRate) {
+      ctx.logger.error('Task failed randomly', { taskId });
+      throw new Error(\`Random failure for task \${taskId}\`);
+    }
 
-  await ctx.progress(75, 'Phase 3');
-  await sleep(300);
+    await ctx.progress(75, 'Phase 3');
+    await sleep(300);
 
-  await ctx.progress(100, 'Complete');
+    await ctx.progress(100, 'Complete');
 
-  return { taskId, attempt: 1 };
-};
+    return { taskId, attempt: 1 };
+  },
+});
 `,
   },
 
@@ -789,16 +897,16 @@ import { createQueuePlugin } from '@blaizejs/plugin-queue';
 import { REDIS_CONFIG } from './config';
 import { playgroundEvents } from './events';
 import {
-  dataSyncHandler,
-  generateReportHandler,
-  processImageHandler,
-  sendEmailHandler,
-  sendNotificationHandler,
-  unreliableTaskHandler,
-  verifyEmailHandler,
-  dataMigrationHandler,
-  generateLongReportHandler,
-  processVideoHandler,
+  dataSyncJob,
+  generateReportJob,
+  processImageJob,
+  sendEmailJob,
+  sendNotificationJob,
+  unreliableTaskJob,
+  verifyEmailJob,
+  dataMigrationJob,
+  generateLongReportJob,
+  processVideoJob,
 } from './handlers';
 
 // Get the directory name of the current module
@@ -856,14 +964,17 @@ const metricsPlugin = createMetricsPlugin({
 const queuePlugin = createQueuePlugin({
   storage: queueAdapter,
   serverId: '{{projectName}}-server-1',
-  
-  // Define queues with different configurations
+  // Define queues with different configurations and job definitions
   queues: {
     // Email queue - medium concurrency, fast jobs
     emails: {
       concurrency: 5,
       defaultTimeout: 30000, // 30 seconds
       defaultMaxRetries: 3,
+      jobs: {
+        send: sendEmailJob,
+        verify: verifyEmailJob,
+      },
     },
 
     // Reports queue - low concurrency, long-running jobs
@@ -871,6 +982,9 @@ const queuePlugin = createQueuePlugin({
       concurrency: 2,
       defaultTimeout: 120000, // 2 minutes
       defaultMaxRetries: 1, // Don't retry expensive operations
+      jobs: {
+        generate: generateReportJob,
+      },
     },
 
     // Processing queue - medium concurrency, variable duration
@@ -878,6 +992,10 @@ const queuePlugin = createQueuePlugin({
       concurrency: 3,
       defaultTimeout: 60000, // 1 minute
       defaultMaxRetries: 2,
+      jobs: {
+        image: processImageJob,
+        'data-sync': dataSyncJob,
+      },
     },
 
     // Notifications queue - high concurrency, quick jobs
@@ -885,6 +1003,9 @@ const queuePlugin = createQueuePlugin({
       concurrency: 10,
       defaultTimeout: 10000, // 10 seconds
       defaultMaxRetries: 5,
+      jobs: {
+        send: sendNotificationJob,
+      },
     },
 
     // Testing queue - for unreliable tasks
@@ -892,39 +1013,19 @@ const queuePlugin = createQueuePlugin({
       concurrency: 2,
       defaultTimeout: 30000,
       defaultMaxRetries: 3,
+      jobs: {
+        unreliable: unreliableTaskJob,
+      },
     },
-
-    // Long-running queue
     longRunning: {
       concurrency: 2,
       defaultTimeout: 60000,
       defaultMaxRetries: 1,
-    },
-  },
-
-  // Register handlers
-  handlers: {
-    emails: {
-      send: sendEmailHandler,
-      verify: verifyEmailHandler,
-    },
-    reports: {
-      generate: generateReportHandler,
-    },
-    processing: {
-      image: processImageHandler,
-      'data-sync': dataSyncHandler,
-    },
-    notifications: {
-      send: sendNotificationHandler,
-    },
-    testing: {
-      unreliable: unreliableTaskHandler,
-    },
-    longRunning: {
-      'long-report': generateLongReportHandler,
-      video: processVideoHandler,
-      migration: dataMigrationHandler,
+      jobs: {
+        'long-report': generateLongReportJob,
+        video: processVideoJob,
+        migration: dataMigrationJob,
+      },
     },
   },
 
