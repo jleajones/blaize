@@ -1,5 +1,13 @@
 # @blaizejs/playground
 
+## 0.1.23
+
+### Patch Changes
+
+- Updated dependencies [f8f6542]
+- Updated dependencies [c134a68]
+  - @blaizejs/plugin-queue@2.2.0
+
 ## 0.1.22
 
 ### Patch Changes
