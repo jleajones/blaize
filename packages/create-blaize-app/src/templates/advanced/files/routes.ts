@@ -45,6 +45,7 @@ export const getRoot = appRouter.get({
         user: z.object({
           list: z.string(),
           signup: z.string(),
+          getById: z.string(),
         }),
       }),
     }),
@@ -75,6 +76,7 @@ export const getRoot = appRouter.get({
         user: {
           list: 'GET /user',
           signup: 'POST /user/signup',
+          getById: 'GET /user/:userId',
         },
       },
     };
@@ -1224,6 +1226,7 @@ export const getCachePrometheus = appRouter.get({
  * - data/users.ts - Mock user data store
  * - routes/user/index.ts - List users endpoint
  * - routes/user/signup.ts - User signup with queue/cache integration
+ * - routes/user/[userId]/index.ts - Get user by ID
  */
 
 export const userRoutes: TemplateFile[] = [
@@ -1296,6 +1299,13 @@ export function createUser(data: { name: string; email: string; avatar?: string 
 export function getAllUsers(): User[] {
   return [...users];
 }
+
+/**
+ * Find a user by ID
+ */
+export function findUserById(id: string): User | undefined {
+  return users.find(u => u.id === id);
+}
 `,
   },
 
@@ -1350,6 +1360,7 @@ export const getUsers = appRouter.get({
     path: 'src/routes/user/signup.ts',
     content: `import { z } from 'zod';
 
+import { ConflictError } from 'blaizejs';
 import type { QueueService } from '@blaizejs/plugin-queue';
 import type { CacheService } from '@blaizejs/plugin-cache';
 
@@ -1399,7 +1410,11 @@ export const postUserSignup = appRouter.post({
 
     // Check for duplicate email
     if (emailExists(email)) {
-      throw new Error('Email already registered');
+      throw new ConflictError('A user with this email already exists', {
+        conflictType: 'duplicate_key',
+        field: 'email',
+        providedValue: email,
+      });
     }
 
     // Create user
@@ -1459,6 +1474,58 @@ export const postUserSignup = appRouter.post({
         avatar ? \`🖼️ Avatar processing queued (job: \${avatarJobId})\` : '💡 Add an avatar URL to process it',
       ].filter(Boolean),
     };
+  },
+});
+`,
+  },
+
+  // ==========================================================================
+  // USER BY ID ROUTE - GET /user/:userId
+  // ==========================================================================
+  {
+    path: 'src/routes/user/[userId]/index.ts',
+    content: `import { z } from 'zod';
+
+import { NotFoundError } from 'blaizejs';
+
+import { appRouter } from '../../../app-router';
+import { findUserById } from '../../../data/users';
+
+/**
+ * GET /user/:userId
+ *
+ * Get a user by their ID.
+ * Returns user data or a 404 error if not found.
+ */
+export const getUserById = appRouter.get({
+  schema: {
+    params: z.object({
+      userId: z.string(),
+    }),
+    response: z.object({
+      user: z.object({
+        id: z.string(),
+        name: z.string(),
+        email: z.string(),
+        avatar: z.string().optional(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+      }),
+    }),
+  },
+  handler: async ({ params, logger }) => {
+    logger.info('User lookup', { userId: params.userId });
+
+    const user = findUserById(params.userId);
+    if (!user) {
+      throw new NotFoundError('User not found', {
+        resourceType: 'User',
+        resourceId: params.userId,
+        suggestion: 'Check the user ID or list all users at GET /user',
+      });
+    }
+
+    return { user };
   },
 });
 `,
