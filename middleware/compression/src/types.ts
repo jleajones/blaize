@@ -1,4 +1,4 @@
-import type { Context } from '../../../packages/blaize-types/src/context';
+import type { Context } from '@blaize-types/context';
 
 /**
  * Supported compression algorithms

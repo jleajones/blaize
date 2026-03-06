@@ -1,4 +1,4 @@
-import { BlaizeError, ErrorType } from '../../../packages/blaize-types/src/errors';
+import { BlaizeError, ErrorType } from '@blaize-types/errors';
 import { getCorrelationId } from '../../../packages/blaize-core/src/tracing/correlation';
 
 interface CompressionConfigurationErrorDetails {

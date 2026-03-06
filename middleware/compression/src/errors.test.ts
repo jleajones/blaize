@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BlaizeError, ErrorType } from '../../../packages/blaize-types/src/errors';
+import { BlaizeError, ErrorType } from '@blaize-types/errors';
 
 import { CompressionConfigurationError } from './errors';
 
