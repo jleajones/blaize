@@ -11,7 +11,7 @@
       "@blaize-types/*": ["../../packages/blaize-types/src/*"]
     }
   },
-  "include": ["src/**/*", "../../packages/blaize-types/src/**/*.ts", "../../packages/blaize-core/src/tracing/**/*.ts"],
+  "include": ["src/**/*", "../../packages/blaize-types/src/**/*.ts"],
   "exclude": ["node_modules", "dist", "examples"]
 }
 
