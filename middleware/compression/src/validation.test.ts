@@ -5,9 +5,23 @@ import { parseCompressionOptions } from './validation';
 
 describe('parseCompressionOptions', () => {
   describe('defaults', () => {
-    it('should accept an empty object', () => {
+    it('should apply all defaults when given an empty object', () => {
       const result = parseCompressionOptions({});
-      expect(result).toEqual({});
+      expect(result.algorithms).toEqual(['br', 'gzip', 'deflate']);
+      expect(result.level).toBe('default');
+      expect(result.threshold).toBe(1024);
+      expect(result.vary).toBe(true);
+      expect(result.flush).toBe(false);
+      expect(result.memoryLevel).toBe(8);
+    });
+
+    it('should not override explicitly provided values with defaults', () => {
+      const result = parseCompressionOptions({ threshold: 512, vary: false });
+      expect(result.threshold).toBe(512);
+      expect(result.vary).toBe(false);
+      // Other defaults still applied
+      expect(result.algorithms).toEqual(['br', 'gzip', 'deflate']);
+      expect(result.level).toBe('default');
     });
   });
 

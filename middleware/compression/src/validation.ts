@@ -61,23 +61,24 @@ export const CompressionOptionsSchema = z.object({
       message: 'algorithms must be an array of compression algorithms',
     })
     .min(1, { message: 'algorithms must contain at least one algorithm' })
-    .optional(),
-  level: CompressionLevelSchema.optional(),
+    .default(['br', 'gzip', 'deflate'] as const),
+  level: CompressionLevelSchema.default('default'),
   threshold: z
     .number({ message: 'threshold must be a number' })
     .int({ message: 'threshold must be an integer' })
     .nonnegative({ message: 'threshold must be a non-negative integer' })
-    .optional(),
+    .default(1024),
   contentTypeFilter: ContentTypeFilterSchema.optional(),
-  skip: z.function().optional(),
-  vary: z.boolean({ message: 'vary must be a boolean' }).optional(),
-  flush: z.boolean({ message: 'flush must be a boolean' }).optional(),
+  /** Runtime type: (ctx: Context) => boolean | Promise<boolean> — Zod cannot validate return types of functions at parse time */
+  skip: z.function().args(z.any()).returns(z.union([z.boolean(), z.promise(z.boolean())])).optional(),
+  vary: z.boolean({ message: 'vary must be a boolean' }).default(true),
+  flush: z.boolean({ message: 'flush must be a boolean' }).default(false),
   memoryLevel: z
     .number({ message: 'memoryLevel must be a number' })
     .int({ message: 'memoryLevel must be an integer' })
     .min(1, { message: 'memoryLevel must be between 1 and 9' })
     .max(9, { message: 'memoryLevel must be between 1 and 9' })
-    .optional(),
+    .default(8),
   windowBits: z
     .number({ message: 'windowBits must be a number' })
     .int({ message: 'windowBits must be an integer' })
