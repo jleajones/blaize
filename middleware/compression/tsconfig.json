@@ -10,7 +10,7 @@
       "@blaize-types/*": ["../../packages/blaize-types/src/*"]
     }
   },
-  "include": ["src/**/*.ts", "../../packages/blaize-types/src/**/*.ts", "../../packages/blaize-core/src/tracing/**/*.ts"],
+  "include": ["src/**/*.ts", "../../packages/blaize-types/src/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist/**/*"]
 }
 
