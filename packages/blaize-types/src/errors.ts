@@ -280,6 +280,9 @@ export enum ErrorType {
 
   /** Service temporarily unavailable (503) */
   SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+
+  /** Compression middleware configuration error (500) */
+  COMPRESSION_CONFIGURATION_ERROR = 'COMPRESSION_CONFIGURATION_ERROR',
 }
 
 /**
