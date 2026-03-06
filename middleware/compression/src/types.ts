@@ -3,7 +3,7 @@ import type { Context } from '@blaize-types/context';
 /**
  * Supported compression algorithms
  */
-export type CompressionAlgorithm = 'gzip' | 'deflate' | 'br' | 'identity';
+export type CompressionAlgorithm = 'gzip' | 'deflate' | 'br' | 'zstd' | 'identity';
 
 /**
  * Compression level presets
