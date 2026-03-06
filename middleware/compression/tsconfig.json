@@ -7,10 +7,10 @@
     "exactOptionalPropertyTypes": false,
     "baseUrl": ".",
     "paths": {
-      "@blaize-types/*": ["../blaize-types/src/*"]
+      "@blaize-types/*": ["../../packages/blaize-types/src/*"]
     }
   },
-  "include": ["src/**/*.ts", "../blaize-types/src/**/*.ts"],
+  "include": ["src/**/*.ts", "../../packages/blaize-types/src/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist/**/*"]
 }
 
