@@ -1,5 +1,11 @@
 # create-blaize-app
 
+## 0.3.1
+
+### Patch Changes
+
+- ac45147: 🐛 Update advanced template to use defineJob() API with Zod schemas
+
 ## 0.3.0
 
 ### Minor Changes
