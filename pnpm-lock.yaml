@@ -99,6 +99,9 @@ importers:
       '@blaizejs/client':
         specifier: workspace:*
         version: link:../../packages/blaize-client
+      '@blaizejs/middleware-compression':
+        specifier: workspace:*
+        version: link:../../middleware/compression
       '@blaizejs/middleware-security':
         specifier: workspace:*
         version: link:../../middleware/security

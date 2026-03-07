@@ -17,43 +17,31 @@ npm install @blaizejs/middleware-compression
 ## Quick Start
 
 ```ts
-// src/app.ts
-import path from 'node:path';
-import { Blaize } from 'blaizejs';
-import { compression } from '@blaizejs/middleware-compression';
+import { createServer } from 'blaizejs';
+import { createCompressionMiddleware } from '@blaizejs/middleware-compression';
 
-const server = Blaize.createServer({
-  port: 3000,
-  routesDir: path.resolve(__dirname, './routes'),
-  middleware: [
-    compression(), // Zero-config — uses sensible defaults
-  ],
-});
+const server = createServer();
 
-await server.listen();
-```
+// Zero-config — uses sensible defaults
+server.use(createCompressionMiddleware());
 
-```ts
-// src/routes/hello.ts
-import { route } from '../app';
-
-export const getHello = route.get({
-  handler: async () => ({
-    message: 'Hello, compressed world!',
-  }),
+server.get('/hello', ({ ctx }) => {
+  ctx.response.json({ message: 'Hello, compressed world!' });
 });
 ```
+
+> **Alias:** `compression` is available as a shorter alias for `createCompressionMiddleware`.
 
 ## Configuration Reference
 
 Pass a `CompressionOptions` object to customise behaviour:
 
 ```ts
-compression({
+server.use(createCompressionMiddleware({
   algorithms: ['br', 'gzip'],
   level: 'best',
   threshold: 512,
-})
+}));
 ```
 
 | Option | Type | Default | Description |
@@ -76,7 +64,7 @@ Five built-in presets cover common use cases. Use them directly or via convenien
 
 ```ts
 import {
-  compression,
+  createCompressionMiddleware,
   compressionFast,
   compressionBest,
   compressionTextOnly,
@@ -84,14 +72,14 @@ import {
   getCompressionPreset,
 } from '@blaizejs/middleware-compression';
 
-// Via preset option — pass in middleware array
-compression({ preset: 'fast' })
+// Via preset option
+server.use(createCompressionMiddleware({ preset: 'fast' }));
 
 // Via convenience factory
-compressionFast()
+server.use(compressionFast());
 
 // Via getCompressionPreset helper
-compression(getCompressionPreset('best'))
+server.use(createCompressionMiddleware(getCompressionPreset('best')));
 ```
 
 | Preset | `threshold` | `level` | `flush` | `contentTypeFilter` | Use Case |
@@ -104,31 +92,24 @@ compression(getCompressionPreset('best'))
 
 ## Per-Route Configuration
 
-Override compression settings on individual routes using the `middleware` option in route definitions:
+Apply different compression settings to individual routes by using separate middleware instances:
 
 ```ts
-// src/routes/reports/[reportId].ts
-import { route } from '../../app';
-import { compression } from '@blaizejs/middleware-compression';
+import { createCompressionMiddleware, compressionFast } from '@blaizejs/middleware-compression';
 
-export const getReport = route.get({
-  middleware: [compression({ level: 'best', threshold: 256 })],
-  handler: async ({ params }) => {
-    return generateReport(params.reportId);
-  },
+// Global default
+server.use(createCompressionMiddleware());
+
+// Fast compression for a latency-sensitive API group
+server.group('/api/realtime', (group) => {
+  group.use(compressionFast());
+  group.get('/feed', handler);
 });
-```
 
-```ts
-// src/routes/api/realtime/feed.ts
-import { route } from '../../../app';
-import { compressionFast } from '@blaizejs/middleware-compression';
-
-export const getFeed = route.get({
-  middleware: [compressionFast()],
-  handler: async () => {
-    return getRealtimeFeed();
-  },
+// Best compression for a static-like endpoint
+server.group('/reports', (group) => {
+  group.use(createCompressionMiddleware({ level: 'best', threshold: 256 }));
+  group.get('/:id', handler);
 });
 ```
 
@@ -174,16 +155,17 @@ When the middleware is created, `detectAvailableAlgorithms` checks which algorit
 Compression middleware should be registered **early** in the middleware chain — before any middleware that sends responses.
 
 ```ts
-const server = Blaize.createServer({
-  port: 3000,
-  routesDir: path.resolve(__dirname, './routes'),
-  middleware: [
-    // ✅ Compression FIRST — order matters
-    compression(),
-    authMiddleware,
-    rateLimitMiddleware,
-  ],
-});
+const server = createServer();
+
+// ✅ Register compression FIRST
+server.use(createCompressionMiddleware());
+
+// Then other middleware
+server.use(cors());
+server.use(logger());
+
+// Route handlers
+server.get('/data', handler);
 ```
 
 The middleware works by wrapping `ctx.response.json`, `ctx.response.text`, `ctx.response.html`, and `ctx.response.stream` **before** `next()` is called. If registered too late (after a middleware that already sends the response), responses go out uncompressed — this is a silent failure. This follows the same pattern as Express's `compression()` middleware.
@@ -198,7 +180,8 @@ No special handling is needed. The compression middleware works transparently wi
 
 | Export | Type | Description |
 |---|---|---|
-| `compression(options?)` | `(options?: CompressionOptions) => Middleware` | Main factory — creates a compression middleware instance. |
+| `createCompressionMiddleware(options?)` | `(options?: CompressionOptions) => Middleware` | Main factory — creates a compression middleware instance. |
+| `compression(options?)` | Alias | Shorter alias for `createCompressionMiddleware`. |
 | `compressionFast()` | `() => Middleware` | Convenience factory using the `fast` preset. |
 | `compressionBest()` | `() => Middleware` | Convenience factory using the `best` preset. |
 | `compressionTextOnly()` | `() => Middleware` | Convenience factory using the `text-only` preset. |

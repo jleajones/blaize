@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   CompressionConfigurationError,
+  createCompressionMiddleware,
   compression,
   getCompressionPreset,
   compressionFast,
@@ -22,16 +23,20 @@ describe('@blaizejs/middleware-compression', () => {
     expect(error).toBeInstanceOf(Error);
   });
 
-  describe('compression()', () => {
+  it('should export compression as alias for createCompressionMiddleware', () => {
+    expect(compression).toBe(createCompressionMiddleware);
+  });
+
+  describe('createCompressionMiddleware()', () => {
     it('should return a middleware object with default options', () => {
-      const mw = compression();
+      const mw = createCompressionMiddleware();
       expect(mw).toBeDefined();
       expect(mw.name).toBe('compression');
       expect(typeof mw.execute).toBe('function');
     });
 
     it('should accept custom options', () => {
-      const mw = compression({ threshold: 512, level: 'fastest' });
+      const mw = createCompressionMiddleware({ threshold: 512, level: 'fastest' });
       expect(mw).toBeDefined();
       expect(mw.name).toBe('compression');
     });
@@ -97,7 +102,7 @@ describe('@blaizejs/middleware-compression', () => {
 
   describe('ctx.response.sent tracking after compression', () => {
     it('should return true for ctx.response.sent when res.writableEnded is true', async () => {
-      const mw = compression({ threshold: 0 });
+      const mw = createCompressionMiddleware({ threshold: 0 });
 
       // Create a mock context where shouldCompress will skip (no accept-encoding)
       // so we can test the sent override independently
