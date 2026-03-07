@@ -18,24 +18,26 @@ npm install @blaizejs/middleware-compression
 
 ```ts
 import { createServer } from 'blaizejs';
-import { compression } from '@blaizejs/middleware-compression';
+import { createCompressionMiddleware } from '@blaizejs/middleware-compression';
 
 const server = createServer();
 
 // Zero-config — uses sensible defaults
-server.use(compression());
+server.use(createCompressionMiddleware());
 
 server.get('/hello', ({ ctx }) => {
   ctx.response.json({ message: 'Hello, compressed world!' });
 });
 ```
 
+> **Note:** `compression` is available as a shorter alias for `createCompressionMiddleware`.
+
 ## Configuration Reference
 
 Pass a `CompressionOptions` object to customise behaviour:
 
 ```ts
-server.use(compression({
+server.use(createCompressionMiddleware({
   algorithms: ['br', 'gzip'],
   level: 'best',
   threshold: 512,
@@ -47,7 +49,7 @@ server.use(compression({
 | `algorithms` | `CompressionAlgorithm[]` | `['zstd','br','gzip','deflate']` | Preferred algorithm order for negotiation. |
 | `level` | `'fastest' \| 'default' \| 'best' \| number` | `'default'` | Compression level — named preset or numeric value clamped to the algorithm's valid range. |
 | `threshold` | `number` | `1024` | Minimum response size in bytes before compression is applied. |
-| `contentTypeFilter` | `boolean \| function \| { include?, exclude? }` | Built-in list | Filter which MIME types are compressed. Supports glob patterns in `include`/`exclude` arrays. |
+| `contentTypeFilter` | `boolean \| function \| { include?, exclude? }` | Built-in list | Filter which MIME types are compressed. Supports wildcard patterns (e.g., `text/*`) in `include`/`exclude` arrays. |
 | `skip` | `(ctx: Context) => boolean \| Promise<boolean>` | — | Return `true` to skip compression for a request. |
 | `vary` | `boolean` | `true` | Whether to set the `Vary: Accept-Encoding` response header. |
 | `flush` | `boolean` | `false` | Flush compression buffers after each write. Useful for streaming. |
@@ -62,7 +64,7 @@ Five built-in presets cover common use cases. Use them directly or via convenien
 
 ```ts
 import {
-  compression,
+  createCompressionMiddleware,
   compressionFast,
   compressionBest,
   compressionTextOnly,
@@ -71,13 +73,13 @@ import {
 } from '@blaizejs/middleware-compression';
 
 // Via preset option
-server.use(compression({ preset: 'fast' }));
+server.use(createCompressionMiddleware({ preset: 'fast' }));
 
 // Via convenience factory
 server.use(compressionFast());
 
 // Via getCompressionPreset helper
-server.use(compression(getCompressionPreset('best')));
+server.use(createCompressionMiddleware(getCompressionPreset('best')));
 ```
 
 | Preset | `threshold` | `level` | `flush` | `contentTypeFilter` | Use Case |
@@ -93,10 +95,10 @@ server.use(compression(getCompressionPreset('best')));
 Apply different compression settings to individual routes by using separate middleware instances:
 
 ```ts
-import { compression, compressionFast } from '@blaizejs/middleware-compression';
+import { createCompressionMiddleware, compressionFast } from '@blaizejs/middleware-compression';
 
 // Global default
-server.use(compression());
+server.use(createCompressionMiddleware());
 
 // Fast compression for a latency-sensitive API group
 server.group('/api/realtime', (group) => {
@@ -106,7 +108,7 @@ server.group('/api/realtime', (group) => {
 
 // Best compression for a static-like endpoint
 server.group('/reports', (group) => {
-  group.use(compression({ level: 'best', threshold: 256 }));
+  group.use(createCompressionMiddleware({ level: 'best', threshold: 256 }));
   group.get('/:id', handler);
 });
 ```
@@ -117,9 +119,8 @@ The `flush` option controls how aggressively compression buffers are flushed. Th
 
 | Value | Behaviour | Trade-off |
 |---|---|---|
-| `false` / `'none'` | No explicit flushing (default). | Best compression ratio; data may be buffered. |
-| `true` / `'sync'` | `Z_SYNC_FLUSH` after each write. | Lower latency for streamed chunks; slightly worse ratio. |
-| `'partial'` | `Z_PARTIAL_FLUSH` after each write. | Middle ground. **Silently falls back to no-op** if `Z_PARTIAL_FLUSH` is unavailable on the runtime. |
+| `false` | No explicit flushing (default). | Best compression ratio; data may be buffered. |
+| `true` | `Z_SYNC_FLUSH` after each write. | Lower latency for streamed chunks; slightly worse ratio. |
 
 ## Logging
 
@@ -130,7 +131,7 @@ Compression skipped  { reason: 'below-threshold' }
 Compressed response  { algorithm: 'br', originalSize: 14280, compressedSize: 3912, ratio: 0.274 }
 ```
 
-Warning-level logs are emitted when compression fails (the response is sent uncompressed as a fallback):
+Error-level logs are emitted when compression fails (the response is sent uncompressed as a fallback):
 
 ```
 Compression failed, sending uncompressed  { error: '...', algorithm: 'gzip' }
@@ -147,7 +148,7 @@ Compression failed, sending uncompressed  { error: '...', algorithm: 'gzip' }
 
 ### Fallback Chain
 
-Algorithms are negotiated in the order specified by `algorithms` (default: `zstd → br → gzip → deflate`). If the highest-priority algorithm isn't available at runtime (e.g., `zstd` on Node.js < 22.15), it is silently skipped and the next algorithm is tried. If the client's `Accept-Encoding` header doesn't match any available algorithm, the response is sent uncompressed.
+When the middleware is created, `detectAvailableAlgorithms` checks which algorithms are available in the current Node.js runtime. Unavailable algorithms (e.g., `zstd` on Node.js < 22.15) are excluded from negotiation. At request time, the client's `Accept-Encoding` header is matched against the remaining available algorithms in priority order. If no match is found, the response is sent uncompressed. If compression fails at runtime, the response falls back to uncompressed delivery and the error is logged.
 
 ## Middleware Placement
 
@@ -157,7 +158,7 @@ Compression middleware should be registered **early** in the middleware chain �
 const server = createServer();
 
 // ✅ Register compression FIRST
-server.use(compression());
+server.use(createCompressionMiddleware());
 
 // Then other middleware
 server.use(cors());
@@ -179,7 +180,8 @@ No special handling is needed. The compression middleware works transparently wi
 
 | Export | Type | Description |
 |---|---|---|
-| `compression(options?)` | `(options?: CompressionOptions) => Middleware` | Main factory — creates a compression middleware instance. |
+| `createCompressionMiddleware(options?)` | `(options?: CompressionOptions) => Middleware` | Main factory — creates a compression middleware instance. |
+| `compression(options?)` | Alias | Shorter alias for `createCompressionMiddleware`. |
 | `compressionFast()` | `() => Middleware` | Convenience factory using the `fast` preset. |
 | `compressionBest()` | `() => Middleware` | Convenience factory using the `best` preset. |
 | `compressionTextOnly()` | `() => Middleware` | Convenience factory using the `text-only` preset. |

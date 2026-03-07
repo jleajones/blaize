@@ -9,7 +9,7 @@ import {
   RedisEventBusAdapter,
   RedisQueueAdapter,
 } from '@blaizejs/adapter-redis';
-import { compression } from '@blaizejs/middleware-compression';
+import { createCompressionMiddleware } from '@blaizejs/middleware-compression';
 import { createSecurityMiddleware } from '@blaizejs/middleware-security';
 import { createCachePlugin } from '@blaizejs/plugin-cache';
 import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
@@ -174,7 +174,7 @@ const securityMiddleware = createSecurityMiddleware();
 // ============================================================================
 // Compression Middleware
 // ============================================================================
-const compressionMiddleware = compression();
+const compressionMiddleware = createCompressionMiddleware();
 
 // ============================================================================
 // Create and Start the Server

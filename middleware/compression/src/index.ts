@@ -23,7 +23,8 @@ export { compressionPresets } from './presets';
 export { shouldCompress, compressResponse } from './compress';
 export type { ShouldCompressResult, CompressionLogger } from './compress';
 export {
-  compression,
+  createCompressionMiddleware,
+  createCompressionMiddleware as compression,
   getCompressionPreset,
   compressionFast,
   compressionBest,

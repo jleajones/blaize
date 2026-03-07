@@ -6,12 +6,17 @@
  * Returns an NDJSON (newline-delimited JSON) stream to demonstrate
  * streaming compression with flush enabled.
  *
- * Uses route-level compression({ flush: true }) to ensure each chunk
- * is flushed through the compressor immediately.
+ * Uses route-level createCompressionMiddleware({ flush: true }) to ensure
+ * each chunk is flushed through the compressor immediately. The
+ * contentTypeFilter includes 'application/x-ndjson' so the NDJSON
+ * content type is compressed even though it is not in the global
+ * compressible-types list.
  */
 import { Readable } from 'node:stream';
 
 import { z } from 'zod';
+
+import { createCompressionMiddleware } from '@blaizejs/middleware-compression';
 
 import { appRouter } from '../../app-router';
 
@@ -48,6 +53,12 @@ function createNDJSONStream(count: number): Readable {
 }
 
 export const GET = appRouter.get({
+  middleware: [
+    createCompressionMiddleware({
+      flush: true,
+      contentTypeFilter: { include: ['application/x-ndjson'] },
+    }),
+  ],
   schema: {
     response: z.any(),
   },
