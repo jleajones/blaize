@@ -562,23 +562,30 @@ describe('algorithms coverage gaps', () => {
 
 describe('stream compressor error handling', () => {
   it('should log error and end response when compressor stream errors', async () => {
+    const { PassThrough } = await import('node:stream');
     const { ctx, rawRes } = createMockContext({ acceptEncoding: 'gzip' });
     const config = createDefaultConfig();
     const logger = createLogger();
 
-    // Make rawRes pipeable (needed for compressor.pipe(res))
-    rawRes.pipe = vi.fn().mockReturnThis();
-    (rawRes as any).write = vi.fn();
+    // Make rawRes writable (needed for compressor.pipe(res))
+    (rawRes as any).write = vi.fn().mockReturnValue(true);
     (rawRes as any).once = vi.fn();
     (rawRes as any).emit = vi.fn();
     (rawRes as any).removeListener = vi.fn();
 
+    // Create a fake compressor (PassThrough) so we can manually emit an error on it
+    const fakeCompressor = new PassThrough();
+    const origCreateCompressorStream = createCompressorStream;
+    const createSpy = vi.spyOn(
+      await import('./algorithms'),
+      'createCompressorStream',
+    ).mockReturnValue(fakeCompressor as any);
+
     compressResponse(ctx, config, 'gzip', logger);
 
-    // Create a readable stream that will push data then error
+    // Create a readable stream
     const readable = new Readable({
       read() {
-        // Push some data, then destroy with error after a tick
         this.push(Buffer.from('some data'));
         this.push(null);
       },
@@ -586,10 +593,21 @@ describe('stream compressor error handling', () => {
 
     ctx.response.stream(readable, { contentType: 'text/plain' });
 
-    // The compressor is a real gzip stream. We need to trigger an error on it.
-    // Since we can't easily access the internal compressor, we verify the setup works.
-    // The stream pipeline should complete without throwing.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Emit an error on the fake compressor to trigger the error handler
+    fakeCompressor.destroy(new Error('Simulated compressor failure'));
+
+    // Wait for the error to be processed
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith('Stream compression failed', {
+        error: 'Simulated compressor failure',
+        algorithm: 'gzip',
+      });
+    }, { timeout: 1000 });
+
+    // Verify res.end() was called as part of error handling
+    expect(rawRes.end).toHaveBeenCalled();
+
+    createSpy.mockRestore();
   });
 });
 
