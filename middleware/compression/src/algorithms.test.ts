@@ -37,8 +37,12 @@ describe('detectAvailableAlgorithms', () => {
   it('should silently exclude zstd when not available', () => {
     // Save original
     const original = (zlib as any).createZstdCompress;
-    // Remove zstd support
-    (zlib as any).createZstdCompress = undefined;
+    // Remove zstd support (use Object.defineProperty for read-only module properties)
+    Object.defineProperty(zlib, 'createZstdCompress', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
 
     vi.spyOn(console, 'warn');
     vi.spyOn(console, 'log');
@@ -56,7 +60,11 @@ describe('detectAvailableAlgorithms', () => {
       expect(console.log).not.toHaveBeenCalled();
     } finally {
       // Restore original
-      (zlib as any).createZstdCompress = original;
+      Object.defineProperty(zlib, 'createZstdCompress', {
+        value: original,
+        writable: true,
+        configurable: true,
+      });
     }
   });
 
@@ -85,7 +93,11 @@ describe('detectAvailableAlgorithms', () => {
   it('should return empty array when no algorithms are available', () => {
     const originalZstd = (zlib as any).createZstdCompress;
     const originalBrotli = zlib.createBrotliCompress;
-    (zlib as any).createZstdCompress = undefined;
+    Object.defineProperty(zlib, 'createZstdCompress', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
     Object.defineProperty(zlib, 'createBrotliCompress', {
       value: undefined,
       writable: true,
@@ -96,7 +108,11 @@ describe('detectAvailableAlgorithms', () => {
       const result = detectAvailableAlgorithms(['zstd', 'br']);
       expect(result).toEqual([]);
     } finally {
-      (zlib as any).createZstdCompress = originalZstd;
+      Object.defineProperty(zlib, 'createZstdCompress', {
+        value: originalZstd,
+        writable: true,
+        configurable: true,
+      });
       Object.defineProperty(zlib, 'createBrotliCompress', {
         value: originalBrotli,
         writable: false,
@@ -150,11 +166,21 @@ describe('createCompressorStream', () => {
 
   it('should throw for zstd when not available', () => {
     const original = (zlib as any).createZstdCompress;
-    (zlib as any).createZstdCompress = undefined;
+    Object.defineProperty(zlib, 'createZstdCompress', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
 
-    expect(() => createCompressorStream('zstd')).toThrow('not available');
-
-    (zlib as any).createZstdCompress = original;
+    try {
+      expect(() => createCompressorStream('zstd')).toThrow('not available');
+    } finally {
+      Object.defineProperty(zlib, 'createZstdCompress', {
+        value: original,
+        writable: true,
+        configurable: true,
+      });
+    }
   });
 });
 
