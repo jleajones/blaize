@@ -34,7 +34,7 @@ export interface ContentTypeFilterConfig {
 /**
  * Content type filter — can be a function or a config object
  */
-export type ContentTypeFilter = ContentTypeFilterFunction | ContentTypeFilterConfig;
+export type ContentTypeFilter = boolean | ContentTypeFilterFunction | ContentTypeFilterConfig;
 
 /**
  * Compression middleware options

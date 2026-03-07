@@ -45,6 +45,7 @@ const ContentTypeFilterConfigSchema = z.object({
  * Zod schema for ContentTypeFilter (function or config object).
  */
 const ContentTypeFilterSchema = z.union([
+  z.boolean(),
   z.function().args(z.string()).returns(z.boolean()),
   ContentTypeFilterConfigSchema,
 ]);

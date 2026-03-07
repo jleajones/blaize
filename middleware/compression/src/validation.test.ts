@@ -73,6 +73,16 @@ describe('parseCompressionOptions', () => {
         exclude: ['text/event-stream'],
       });
     });
+
+    it('should accept contentTypeFilter as boolean true', () => {
+      const result = parseCompressionOptions({ contentTypeFilter: true });
+      expect(result.contentTypeFilter).toBe(true);
+    });
+
+    it('should accept contentTypeFilter as boolean false', () => {
+      const result = parseCompressionOptions({ contentTypeFilter: false });
+      expect(result.contentTypeFilter).toBe(false);
+    });
   });
 
   describe('boundary values', () => {
