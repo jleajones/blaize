@@ -131,8 +131,12 @@ export function createRouter(options: RouterOptions): Router {
   /**
    * Initialize the router with parallel route loading
    */
-  async function initialize() {
-    if (initialized || initializationPromise) {
+  async function initialize(): Promise<void> {
+    if (initialized) {
+      return;
+    }
+
+    if (initializationPromise) {
       return initializationPromise;
     }
 
@@ -308,6 +312,8 @@ export function createRouter(options: RouterOptions): Router {
 
   // Public API
   return {
+    initialize,
+
     /**
      * Handle an incoming request
      */
