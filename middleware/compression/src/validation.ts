@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 import { CompressionConfigurationError } from './errors';
+import { DEFAULT_ALGORITHMS } from './constants';
 
 import type { CompressionOptions } from './types';
 
@@ -61,7 +62,7 @@ export const CompressionOptionsSchema = z.object({
       message: 'algorithms must be an array of compression algorithms',
     })
     .min(1, { message: 'algorithms must contain at least one algorithm' })
-    .default(['br', 'gzip', 'deflate'] as const),
+    .default([...DEFAULT_ALGORITHMS]),
   level: CompressionLevelSchema.default('default'),
   threshold: z
     .number({ message: 'threshold must be a number' })

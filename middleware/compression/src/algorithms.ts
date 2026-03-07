@@ -8,7 +8,15 @@ import type { Transform } from 'node:stream';
 
 import { ALGORITHM_LEVELS } from './constants';
 
-import type { CompressionAlgorithm, CompressionLevel } from './types';
+import type { CompressibleAlgorithm, CompressionAlgorithm, CompressionLevel } from './types';
+
+/**
+ * Zstd compression level parameter key.
+ * Equivalent to ZSTD_c_compressionLevel (value 3) in the zstd C API.
+ * Using a named constant since Node.js type definitions may not include ZSTD_c_compressionLevel yet.
+ */
+const ZSTD_C_COMPRESSION_LEVEL =
+  (zlib.constants as any).ZSTD_c_compressionLevel ?? 3;
 
 /**
  * Check if zstd compression is available in the current Node.js runtime.
@@ -80,7 +88,7 @@ export interface CompressorStreamOptions {
  * @throws {Error} If the algorithm is not available or not supported
  */
 export function createCompressorStream(
-  algorithm: CompressionAlgorithm,
+  algorithm: CompressibleAlgorithm,
   options: CompressorStreamOptions = {},
 ): Transform {
   const { level, memoryLevel, windowBits, flush } = options;
@@ -93,9 +101,9 @@ export function createCompressorStream(
       }
       return createZstdCompress({
         params: {
-          ...(level !== undefined && { [3 /* ZSTD_c_compressionLevel */]: level }),
+          ...(level !== undefined && { [ZSTD_C_COMPRESSION_LEVEL]: level }),
         },
-        ...(flush && { flush: zlib.constants.Z_SYNC_FLUSH }),
+        ...(flush && { flush: (zlib.constants as any).ZSTD_e_flush }),
       });
     }
     case 'br':

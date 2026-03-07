@@ -9,6 +9,10 @@ import {
 } from './algorithms';
 
 describe('detectAvailableAlgorithms', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('should always include gzip and deflate', () => {
     const result = detectAvailableAlgorithms(['gzip', 'deflate']);
     expect(result).toEqual(['gzip', 'deflate']);
@@ -36,24 +40,24 @@ describe('detectAvailableAlgorithms', () => {
     // Remove zstd support
     (zlib as any).createZstdCompress = undefined;
 
-    const consoleSpy = vi.spyOn(console, 'warn');
-    const consoleLogSpy = vi.spyOn(console, 'log');
+    vi.spyOn(console, 'warn');
+    vi.spyOn(console, 'log');
 
-    const result = detectAvailableAlgorithms(['zstd', 'br', 'gzip', 'deflate']);
+    try {
+      const result = detectAvailableAlgorithms(['zstd', 'br', 'gzip', 'deflate']);
 
-    expect(result).not.toContain('zstd');
-    expect(result).toContain('br');
-    expect(result).toContain('gzip');
-    expect(result).toContain('deflate');
+      expect(result).not.toContain('zstd');
+      expect(result).toContain('br');
+      expect(result).toContain('gzip');
+      expect(result).toContain('deflate');
 
-    // Verify NO log output occurred
-    expect(consoleSpy).not.toHaveBeenCalled();
-    expect(consoleLogSpy).not.toHaveBeenCalled();
-
-    consoleSpy.mockRestore();
-    consoleLogSpy.mockRestore();
-    // Restore original
-    (zlib as any).createZstdCompress = original;
+      // Verify NO log output occurred
+      expect(console.warn).not.toHaveBeenCalled();
+      expect(console.log).not.toHaveBeenCalled();
+    } finally {
+      // Restore original
+      (zlib as any).createZstdCompress = original;
+    }
   });
 
   it('should silently exclude brotli when not available', () => {
@@ -64,16 +68,18 @@ describe('detectAvailableAlgorithms', () => {
       configurable: true,
     });
 
-    const result = detectAvailableAlgorithms(['br', 'gzip']);
+    try {
+      const result = detectAvailableAlgorithms(['br', 'gzip']);
 
-    expect(result).not.toContain('br');
-    expect(result).toContain('gzip');
-
-    Object.defineProperty(zlib, 'createBrotliCompress', {
-      value: originalBrotli,
-      writable: false,
-      configurable: true,
-    });
+      expect(result).not.toContain('br');
+      expect(result).toContain('gzip');
+    } finally {
+      Object.defineProperty(zlib, 'createBrotliCompress', {
+        value: originalBrotli,
+        writable: false,
+        configurable: true,
+      });
+    }
   });
 
   it('should return empty array when no algorithms are available', () => {
@@ -86,15 +92,17 @@ describe('detectAvailableAlgorithms', () => {
       configurable: true,
     });
 
-    const result = detectAvailableAlgorithms(['zstd', 'br']);
-    expect(result).toEqual([]);
-
-    (zlib as any).createZstdCompress = originalZstd;
-    Object.defineProperty(zlib, 'createBrotliCompress', {
-      value: originalBrotli,
-      writable: false,
-      configurable: true,
-    });
+    try {
+      const result = detectAvailableAlgorithms(['zstd', 'br']);
+      expect(result).toEqual([]);
+    } finally {
+      (zlib as any).createZstdCompress = originalZstd;
+      Object.defineProperty(zlib, 'createBrotliCompress', {
+        value: originalBrotli,
+        writable: false,
+        configurable: true,
+      });
+    }
   });
 
   it('should return empty array for empty input', () => {
@@ -135,7 +143,9 @@ describe('createCompressorStream', () => {
   });
 
   it('should throw for unsupported algorithm', () => {
-    expect(() => createCompressorStream('identity')).toThrow('Unsupported');
+    // 'identity' is excluded from CompressibleAlgorithm at the type level,
+    // but we verify runtime behavior with a cast
+    expect(() => createCompressorStream('identity' as any)).toThrow('Unsupported');
   });
 
   it('should throw for zstd when not available', () => {
