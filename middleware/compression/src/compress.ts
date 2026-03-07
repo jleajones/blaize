@@ -6,6 +6,8 @@
 import type { Context } from '@blaize-types/context';
 import type { Transform } from 'node:stream';
 
+import { getCorrelationId } from 'blaizejs';
+
 import { createCompressorStream, getCompressionLevel } from './algorithms';
 import { configureFlushMode } from './flush';
 import { weakenEtag } from './etag';
@@ -310,9 +312,10 @@ export function compressResponse(
 
           // Preserve correlation-id header that core responders would set.
           // The compressed path bypasses core responders (which call addCorrelationHeader),
-          // so we set the header manually from ctx.state.correlationId.
-          if ((ctx.state as any).correlationId) {
-            res.setHeader('x-correlation-id', String((ctx.state as any).correlationId));
+          // so we retrieve it from AsyncLocalStorage via getCorrelationId().
+          const correlationId = getCorrelationId();
+          if (correlationId && correlationId !== 'unknown') {
+            res.setHeader('x-correlation-id', correlationId);
           }
 
           res.end(compressed);
@@ -433,8 +436,9 @@ export function compressResponse(
     res.removeHeader('Content-Length');
 
     // Preserve correlation-id header that core responders would set
-    if ((ctx.state as any).correlationId) {
-      res.setHeader('x-correlation-id', String((ctx.state as any).correlationId));
+    const correlationId = getCorrelationId();
+    if (correlationId && correlationId !== 'unknown') {
+      res.setHeader('x-correlation-id', correlationId);
     }
 
     // Pipe: readable → compressor → res
