@@ -61,7 +61,7 @@ compression({
 | `algorithms` | `CompressionAlgorithm[]` | `['zstd','br','gzip','deflate']` | Preferred algorithm order for negotiation. |
 | `level` | `'fastest' \| 'default' \| 'best' \| number` | `'default'` | Compression level — named preset or numeric value clamped to the algorithm's valid range. |
 | `threshold` | `number` | `1024` | Minimum response size in bytes before compression is applied. |
-| `contentTypeFilter` | `boolean \| function \| { include?, exclude? }` | Built-in list | Filter which MIME types are compressed. Supports glob patterns in `include`/`exclude` arrays. |
+| `contentTypeFilter` | `boolean \| function \| { include?, exclude? }` | Built-in list | Filter which MIME types are compressed. Supports wildcard patterns (e.g., `text/*`) in `include`/`exclude` arrays. |
 | `skip` | `(ctx: Context) => boolean \| Promise<boolean>` | — | Return `true` to skip compression for a request. |
 | `vary` | `boolean` | `true` | Whether to set the `Vary: Accept-Encoding` response header. |
 | `flush` | `boolean` | `false` | Flush compression buffers after each write. Useful for streaming. |
@@ -138,9 +138,8 @@ The `flush` option controls how aggressively compression buffers are flushed. Th
 
 | Value | Behaviour | Trade-off |
 |---|---|---|
-| `false` / `'none'` | No explicit flushing (default). | Best compression ratio; data may be buffered. |
-| `true` / `'sync'` | `Z_SYNC_FLUSH` after each write. | Lower latency for streamed chunks; slightly worse ratio. |
-| `'partial'` | `Z_PARTIAL_FLUSH` after each write. | Middle ground. **Silently falls back to no-op** if `Z_PARTIAL_FLUSH` is unavailable on the runtime. |
+| `false` | No explicit flushing (default). | Best compression ratio; data may be buffered. |
+| `true` | `Z_SYNC_FLUSH` after each write. | Lower latency for streamed chunks; slightly worse ratio. |
 
 ## Logging
 
@@ -151,7 +150,7 @@ Compression skipped  { reason: 'below-threshold' }
 Compressed response  { algorithm: 'br', originalSize: 14280, compressedSize: 3912, ratio: 0.274 }
 ```
 
-Warning-level logs are emitted when compression fails (the response is sent uncompressed as a fallback):
+Error-level logs are emitted when compression fails (the response is sent uncompressed as a fallback):
 
 ```
 Compression failed, sending uncompressed  { error: '...', algorithm: 'gzip' }
@@ -168,7 +167,7 @@ Compression failed, sending uncompressed  { error: '...', algorithm: 'gzip' }
 
 ### Fallback Chain
 
-Algorithms are negotiated in the order specified by `algorithms` (default: `zstd → br → gzip → deflate`). If the highest-priority algorithm isn't available at runtime (e.g., `zstd` on Node.js < 22.15), it is silently skipped and the next algorithm is tried. If the client's `Accept-Encoding` header doesn't match any available algorithm, the response is sent uncompressed.
+When the middleware is created, `detectAvailableAlgorithms` checks which algorithms are available in the current Node.js runtime. Unavailable algorithms (e.g., `zstd` on Node.js < 22.15) are excluded from negotiation. At request time, the client's `Accept-Encoding` header is matched against the remaining available algorithms in priority order. If no match is found, the response is sent uncompressed. If compression fails at runtime, the response falls back to uncompressed delivery and the error is logged.
 
 ## Middleware Placement
 
