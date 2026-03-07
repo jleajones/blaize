@@ -52,20 +52,23 @@ const noopLogger: CompressionLogger = {
 /**
  * Check entry-level conditions to determine if compression should be attempted.
  *
- * This is a pure function that checks conditions BEFORE the response body is available.
+ * This is an async function that checks conditions BEFORE the response body is available.
  * It does NOT check body-dependent conditions like threshold or content-type.
  *
  * @param ctx - The request context
  * @param config - Parsed compression configuration
  * @returns Whether to compress and the reason if not
  */
-export function shouldCompress(
+export async function shouldCompress(
   ctx: Context,
   config: ParsedCompressionConfig,
-): ShouldCompressResult {
+): Promise<ShouldCompressResult> {
   // Check if compression is disabled via skip function
-  if (config.skip && config.skip(ctx)) {
-    return { compress: false, reason: 'skip-function' };
+  if (config.skip) {
+    const shouldSkip = await config.skip(ctx);
+    if (shouldSkip) {
+      return { compress: false, reason: 'skip-function' };
+    }
   }
 
   // Check Accept-Encoding header
@@ -83,10 +86,28 @@ export function shouldCompress(
   const algorithm = negotiateEncoding(acceptEncoding, available);
 
   if (!algorithm) {
+    // Distinguish between "client prefers identity" and "no matching algorithm"
+    if (acceptEncoding && (acceptEncoding.includes('identity') || acceptEncoding.includes('*'))) {
+      return { compress: false, reason: 'identity-preferred' };
+    }
     return { compress: false, reason: 'no-supported-encoding' };
   }
 
   return { compress: true, reason: null, algorithm };
+}
+
+/**
+ * Safely get a response header as a string.
+ *
+ * `getHeader()` can return `string | string[] | number | undefined`.
+ * This helper normalizes to `string | undefined` to prevent runtime errors
+ * when calling string methods on non-string values.
+ */
+function getHeaderAsString(res: any, name: string): string | undefined {
+  const value = res.getHeader?.(name);
+  if (value === undefined || value === null) return undefined;
+  if (Array.isArray(value)) return value.join(', ');
+  return String(value);
 }
 
 /**
@@ -115,13 +136,13 @@ function checkBodySkipConditions(
   }
 
   // Check Cache-Control: no-transform
-  const cacheControl = (ctx.response.raw as any).getHeader?.('cache-control') as string | undefined;
+  const cacheControl = getHeaderAsString(ctx.response.raw, 'cache-control');
   if (cacheControl && cacheControl.toLowerCase().includes('no-transform')) {
     return 'no-transform';
   }
 
   // Check if already compressed (Content-Encoding already set)
-  const existingEncoding = (ctx.response.raw as any).getHeader?.('content-encoding') as string | undefined;
+  const existingEncoding = getHeaderAsString(ctx.response.raw, 'content-encoding');
   if (existingEncoding && existingEncoding !== 'identity') {
     return 'already-compressed';
   }
@@ -205,7 +226,7 @@ function setCompressionHeaders(
   res.removeHeader('Content-Length');
 
   // Weaken ETag if present
-  const etag = res.getHeader('etag') as string | undefined;
+  const etag = getHeaderAsString(res, 'etag');
   if (etag) {
     const weakened = weakenEtag(etag);
     if (weakened) {
@@ -215,7 +236,7 @@ function setCompressionHeaders(
 
   // Set Vary header
   if (config.vary) {
-    const existingVary = res.getHeader('vary') as string | undefined;
+    const existingVary = getHeaderAsString(res, 'vary');
     if (!existingVary) {
       res.setHeader('Vary', 'Accept-Encoding');
     } else if (!existingVary.toLowerCase().includes('accept-encoding')) {
@@ -286,10 +307,21 @@ export function compressResponse(
       compressBuffer(bodyBuffer, algorithm as CompressibleAlgorithm, config)
         .then((compressed) => {
           setCompressionHeaders(res, algorithm, config);
+
+          // Preserve correlation-id header that core responders would set.
+          // The compressed path bypasses core responders (which call addCorrelationHeader),
+          // so we set the header manually from ctx.state.correlationId.
+          if ((ctx.state as any).correlationId) {
+            res.setHeader('x-correlation-id', String((ctx.state as any).correlationId));
+          }
+
           res.end(compressed);
-          // Mark response as sent by setting the sent property
-          // We need to access the internal state - use Object.defineProperty
-          Object.defineProperty(ctx.response, 'sent', { value: true, writable: true, configurable: true });
+
+          // NOTE: ctx.response.sent is a getter backed by a closure-scoped responseState
+          // in blaize-core's createContext. We cannot set it externally without access to
+          // that closure. T10 (middleware factory) will address this by intercepting at
+          // the res.end() level to let the original responders handle sent state naturally.
+
           logger.debug('Compressed response', {
             algorithm,
             originalSize: bodyBuffer.length,
@@ -334,7 +366,7 @@ export function compressResponse(
     readable: NodeJS.ReadableStream,
     options: any = {},
   ) {
-    const streamContentType = options.contentType || (res.getHeader('content-type') as string | undefined);
+    const streamContentType = options.contentType || getHeaderAsString(res, 'content-type');
 
     // Check for SSE (text/event-stream) — skip compression
     const mime = extractMimeType(streamContentType);
@@ -345,7 +377,7 @@ export function compressResponse(
     }
 
     // Check Cache-Control: no-transform
-    const cacheControl = res.getHeader('cache-control') as string | undefined;
+    const cacheControl = getHeaderAsString(res, 'cache-control');
     if (cacheControl && cacheControl.toLowerCase().includes('no-transform')) {
       logger.debug('Skipping compression: no-transform');
       originalStream.call(ctx.response, readable, options);
@@ -353,7 +385,7 @@ export function compressResponse(
     }
 
     // Check if already compressed
-    const existingEncoding = res.getHeader('content-encoding') as string | undefined;
+    const existingEncoding = getHeaderAsString(res, 'content-encoding');
     if (existingEncoding && existingEncoding !== 'identity') {
       logger.debug('Skipping compression: already compressed');
       originalStream.call(ctx.response, readable, options);
@@ -381,10 +413,7 @@ export function compressResponse(
     // Apply flush mode
     compressor = configureFlushMode(compressor, config.flush) as Transform;
 
-    // Set compression headers
-    setCompressionHeaders(res, algorithm, config);
-
-    // Set stream options headers
+    // Apply stream options FIRST (status, content-type, custom headers)
     if (options.status !== undefined) {
       res.statusCode = options.status;
     }
@@ -395,6 +424,17 @@ export function compressResponse(
       for (const [name, value] of Object.entries(options.headers)) {
         res.setHeader(name, value as string);
       }
+    }
+
+    // Set compression headers AFTER options.headers so compression headers take precedence
+    setCompressionHeaders(res, algorithm, config);
+
+    // Explicitly remove Content-Length again in case options.headers reintroduced it
+    res.removeHeader('Content-Length');
+
+    // Preserve correlation-id header that core responders would set
+    if ((ctx.state as any).correlationId) {
+      res.setHeader('x-correlation-id', String((ctx.state as any).correlationId));
     }
 
     // Pipe: readable → compressor → res
@@ -414,9 +454,9 @@ export function compressResponse(
       }
     });
 
-    // Mark as sent when done
-    readable.on('end', () => {
-      Object.defineProperty(ctx.response, 'sent', { value: true, writable: true, configurable: true });
-    });
+    // NOTE: ctx.response.sent is a getter backed by a closure-scoped responseState
+    // in blaize-core's createContext. We cannot set it externally without access to
+    // that closure. T10 (middleware factory) will address this by intercepting at
+    // the res.end() level to let the original responders handle sent state naturally.
   };
 }

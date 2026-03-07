@@ -88,6 +88,7 @@ export type CompressionSkipReason =
   | 'disabled'
   | 'no-accept-encoding'
   | 'no-supported-encoding'
+  | 'identity-preferred'
   | 'sse-stream'
   | 'empty-body'
   | 'no-transform';

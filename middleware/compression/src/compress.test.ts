@@ -91,53 +91,85 @@ function createLogger(): CompressionLogger {
   };
 }
 
+/**
+ * Wait for res.end to be called instead of using flaky setTimeout.
+ */
+async function waitForResponse(rawRes: ReturnType<typeof createMockRawResponse>) {
+  await vi.waitFor(() => {
+    expect(rawRes.end).toHaveBeenCalled();
+  });
+}
+
 describe('compress', () => {
   describe('shouldCompress', () => {
-    it('should return compress: true when Accept-Encoding includes gzip', () => {
+    it('should return compress: true when Accept-Encoding includes gzip', async () => {
       const { ctx } = createMockContext({ acceptEncoding: 'gzip, deflate' });
       const config = createDefaultConfig();
-      const result = shouldCompress(ctx, config);
+      const result = await shouldCompress(ctx, config);
       expect(result.compress).toBe(true);
       expect(result.reason).toBeNull();
       expect(result.algorithm).toBeDefined();
     });
 
-    it('should return compress: false with skip-function reason when skip returns true', () => {
+    it('should return compress: false with skip-function reason when skip returns true', async () => {
       const { ctx } = createMockContext({ acceptEncoding: 'gzip' });
       const config = createDefaultConfig({ skip: () => true });
-      const result = shouldCompress(ctx, config);
+      const result = await shouldCompress(ctx, config);
       expect(result.compress).toBe(false);
       expect(result.reason).toBe('skip-function');
     });
 
-    it('should return compress: false with no-accept-encoding when header is empty', () => {
+    it('should handle async skip predicate returning Promise<true>', async () => {
+      const { ctx } = createMockContext({ acceptEncoding: 'gzip' });
+      const config = createDefaultConfig({ skip: () => Promise.resolve(true) });
+      const result = await shouldCompress(ctx, config);
+      expect(result.compress).toBe(false);
+      expect(result.reason).toBe('skip-function');
+    });
+
+    it('should handle async skip predicate returning Promise<false>', async () => {
+      const { ctx } = createMockContext({ acceptEncoding: 'gzip' });
+      const config = createDefaultConfig({ skip: () => Promise.resolve(false) });
+      const result = await shouldCompress(ctx, config);
+      expect(result.compress).toBe(true);
+    });
+
+    it('should return compress: false with no-accept-encoding when header is empty', async () => {
       const { ctx } = createMockContext({ acceptEncoding: '' });
       const config = createDefaultConfig();
-      const result = shouldCompress(ctx, config);
+      const result = await shouldCompress(ctx, config);
       expect(result.compress).toBe(false);
       expect(result.reason).toBe('no-accept-encoding');
     });
 
-    it('should return compress: false with no-supported-encoding when no algorithm matches', () => {
+    it('should return compress: false with no-supported-encoding when no algorithm matches', async () => {
       const { ctx } = createMockContext({ acceptEncoding: 'unsupported-algo' });
       const config = createDefaultConfig({ algorithms: ['gzip'] });
-      const result = shouldCompress(ctx, config);
+      const result = await shouldCompress(ctx, config);
       expect(result.compress).toBe(false);
       expect(result.reason).toBe('no-supported-encoding');
     });
 
-    it('should negotiate the best algorithm based on Accept-Encoding', () => {
+    it('should return identity-preferred when Accept-Encoding includes identity and no algorithm matches', async () => {
+      const { ctx } = createMockContext({ acceptEncoding: 'identity;q=1.0' });
+      const config = createDefaultConfig({ algorithms: ['gzip'] });
+      const result = await shouldCompress(ctx, config);
+      expect(result.compress).toBe(false);
+      expect(result.reason).toBe('identity-preferred');
+    });
+
+    it('should negotiate the best algorithm based on Accept-Encoding', async () => {
       const { ctx } = createMockContext({ acceptEncoding: 'gzip;q=0.5, deflate;q=1.0' });
       const config = createDefaultConfig({ algorithms: ['gzip', 'deflate'] });
-      const result = shouldCompress(ctx, config);
+      const result = await shouldCompress(ctx, config);
       expect(result.compress).toBe(true);
       expect(result.algorithm).toBe('deflate');
     });
 
-    it('should compress when Accept-Encoding header is absent (RFC 7231)', () => {
+    it('should compress when Accept-Encoding header is absent (RFC 7231)', async () => {
       const { ctx } = createMockContext(); // no acceptEncoding
       const config = createDefaultConfig({ algorithms: ['gzip'] });
-      const result = shouldCompress(ctx, config);
+      const result = await shouldCompress(ctx, config);
       expect(result.compress).toBe(true);
       expect(result.algorithm).toBe('gzip');
     });
@@ -157,12 +189,10 @@ describe('compress', () => {
         ctx.response.json(largeBody);
 
         // Wait for async compression
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         // Should have set Content-Encoding
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Encoding', 'gzip');
-        // Should have called res.end with compressed data
-        expect(rawRes.end).toHaveBeenCalled();
         const endArg = rawRes.end.mock.calls[0]?.[0];
         expect(Buffer.isBuffer(endArg)).toBe(true);
 
@@ -209,7 +239,7 @@ describe('compress', () => {
         const largeBody = { data: 'x'.repeat(2000) };
         ctx.response.json(largeBody, 201);
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         expect(rawRes.statusCode).toBe(201);
       });
@@ -225,10 +255,9 @@ describe('compress', () => {
         const largeText = 'Hello World! '.repeat(200);
         ctx.response.text(largeText);
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Encoding', 'gzip');
-        expect(rawRes.end).toHaveBeenCalled();
         const endArg = rawRes.end.mock.calls[0]?.[0];
         const decompressed = zlib.gunzipSync(endArg);
         expect(decompressed.toString()).toBe(largeText);
@@ -245,11 +274,10 @@ describe('compress', () => {
         const largeHtml = '<html>' + '<p>content</p>'.repeat(200) + '</html>';
         ctx.response.html(largeHtml);
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Encoding', 'gzip');
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html');
-        expect(rawRes.end).toHaveBeenCalled();
         const endArg = rawRes.end.mock.calls[0]?.[0];
         const decompressed = zlib.gunzipSync(endArg);
         expect(decompressed.toString()).toBe(largeHtml);
@@ -265,7 +293,7 @@ describe('compress', () => {
 
         ctx.response.json({ data: 'x'.repeat(2000) });
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         expect(rawRes.setHeader).toHaveBeenCalledWith('Vary', 'Accept-Encoding');
       });
@@ -278,7 +306,7 @@ describe('compress', () => {
 
         ctx.response.json({ data: 'x'.repeat(2000) });
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         expect(rawRes.removeHeader).toHaveBeenCalledWith('Content-Length');
       });
@@ -292,7 +320,7 @@ describe('compress', () => {
 
         ctx.response.json({ data: 'x'.repeat(2000) });
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         expect(rawRes.setHeader).toHaveBeenCalledWith('ETag', 'W/"abc123"');
       });
@@ -445,7 +473,7 @@ describe('compress', () => {
       });
 
       it('should log debug message on successful compression', async () => {
-        const { ctx } = createMockContext({ acceptEncoding: 'gzip' });
+        const { ctx, rawRes } = createMockContext({ acceptEncoding: 'gzip' });
         const config = createDefaultConfig({ threshold: 10 });
         const logger = createLogger();
 
@@ -453,7 +481,7 @@ describe('compress', () => {
 
         ctx.response.json({ data: 'x'.repeat(2000) });
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForResponse(rawRes);
 
         expect(logger.debug).toHaveBeenCalledWith(
           'Compressed response',
