@@ -20,4 +20,5 @@ export { isCompressible, createContentTypeFilter, extractMimeType } from './filt
 export { configureFlushMode, wrapWriteWithFlush } from './flush';
 export { weakenEtag } from './etag';
 export { compressionPresets } from './presets';
-
+export { shouldCompress, compressResponse } from './compress';
+export type { ShouldCompressResult, CompressionLogger } from './compress';

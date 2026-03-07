@@ -84,7 +84,13 @@ export type CompressionSkipReason =
   | 'already-compressed'
   | 'skip-function'
   | 'no-content'
-  | 'cache-hit';
+  | 'cache-hit'
+  | 'disabled'
+  | 'no-accept-encoding'
+  | 'no-supported-encoding'
+  | 'sse-stream'
+  | 'empty-body'
+  | 'no-transform';
 
 /**
  * Result of a compression operation
