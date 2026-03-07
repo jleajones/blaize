@@ -40,7 +40,7 @@ export type ContentTypeFilter = boolean | ContentTypeFilterFunction | ContentTyp
  * Compression middleware options
  */
 export interface CompressionOptions {
-  /** Preferred algorithm order (default: ['br', 'gzip', 'deflate']) */
+  /** Preferred algorithm order (default: ['zstd', 'br', 'gzip', 'deflate']) */
   algorithms?: CompressionAlgorithm[];
 
   /** Compression level (default: 'default') */

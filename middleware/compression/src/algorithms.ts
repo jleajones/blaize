@@ -12,8 +12,10 @@ import type { CompressibleAlgorithm, CompressionAlgorithm, CompressionLevel } fr
 
 /**
  * Zstd compression level parameter key.
- * Equivalent to ZSTD_c_compressionLevel (value 3) in the zstd C API.
- * Using a named constant since Node.js type definitions may not include ZSTD_c_compressionLevel yet.
+ * In the zstd C API, ZSTD_c_compressionLevel has the integer value 3.
+ * We read it from zlib.constants when available, falling back to the
+ * known value (3) for Node.js versions where the constant exists but
+ * isn't yet exposed in the type definitions.
  */
 const ZSTD_C_COMPRESSION_LEVEL =
   (zlib.constants as any).ZSTD_c_compressionLevel ?? 3;
@@ -106,7 +108,10 @@ export function createCompressorStream(
         ...(flush && { flush: (zlib.constants as any).ZSTD_e_flush }),
       });
     }
-    case 'br':
+    case 'br': {
+      if (typeof zlib.createBrotliCompress !== 'function') {
+        throw new Error('Brotli compression is not available in this Node.js version');
+      }
       return zlib.createBrotliCompress({
         params: {
           ...(level !== undefined && {
@@ -115,6 +120,7 @@ export function createCompressorStream(
         },
         ...(flush && { flush: zlib.constants.BROTLI_OPERATION_FLUSH }),
       });
+    }
     case 'gzip':
       return zlib.createGzip({
         ...(level !== undefined && { level }),

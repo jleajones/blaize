@@ -80,7 +80,8 @@ export function negotiateEncoding(
   // Absent header (undefined) → any encoding is acceptable per RFC 7231 §5.3.4.
   // Return the first available compression algorithm.
   if (acceptEncoding === undefined) {
-    return available[0] ?? null;
+    const first = available[0] ?? null;
+    return first === 'identity' ? null : first;
   }
 
   if (!acceptEncoding.trim()) {
