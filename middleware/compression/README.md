@@ -30,7 +30,7 @@ server.get('/hello', ({ ctx }) => {
 });
 ```
 
-> **Note:** `compression` is available as a shorter alias for `createCompressionMiddleware`.
+> **Alias:** `compression` is available as a shorter alias for `createCompressionMiddleware`.
 
 ## Configuration Reference
 
