@@ -19,4 +19,6 @@ export { negotiateEncoding, getAcceptEncodingState } from './negotiate';
 export { isCompressible, createContentTypeFilter, extractMimeType } from './filter';
 export { configureFlushMode, wrapWriteWithFlush } from './flush';
 export { weakenEtag } from './etag';
+export { compressionPresets } from './presets';
+export type { PresetName } from './presets';
 
