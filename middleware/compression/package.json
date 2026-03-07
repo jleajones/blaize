@@ -1,6 +1,6 @@
 {
   "name": "@blaizejs/middleware-compression",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Production-ready compression middleware for BlaizeJS",
   "author": "J.Lea-Jones <jason@careymarcel.com>",
   "repository": {
@@ -66,4 +66,3 @@
   ],
   "license": "MIT"
 }
-
