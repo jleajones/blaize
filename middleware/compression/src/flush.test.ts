@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import zlib from 'node:zlib';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Transform } from 'node:stream';
 
 import { configureFlushMode, wrapWriteWithFlush } from './flush';
 
@@ -38,6 +38,52 @@ describe('wrapWriteWithFlush', () => {
 
       transform.write('hello', 'utf8', () => {
         expect(transform.flush).toHaveBeenCalled();
+        resolve();
+      });
+    });
+  });
+
+  it('should throw a descriptive error when transform has no flush method', () => {
+    const transform = new Transform({
+      transform(chunk, _encoding, callback) {
+        callback(null, chunk);
+      },
+    });
+
+    expect(() => wrapWriteWithFlush(transform, zlib.constants.Z_SYNC_FLUSH)).toThrow(
+      'Transform stream does not have a flush method. Only zlib transform streams are supported.',
+    );
+  });
+
+  it('should propagate flush errors to the write callback (function overload)', () => {
+    return new Promise<void>((resolve) => {
+      const flushError = new Error('flush failed');
+      const transform = createMockTransform();
+      transform.flush = vi.fn((_flushConst: number, cb?: (err: Error | null) => void) => {
+        cb?.(flushError);
+      });
+
+      wrapWriteWithFlush(transform, zlib.constants.Z_SYNC_FLUSH);
+
+      transform.write('hello', (err: Error | null | undefined) => {
+        expect(err).toBe(flushError);
+        resolve();
+      });
+    });
+  });
+
+  it('should propagate flush errors to the write callback (encoding overload)', () => {
+    return new Promise<void>((resolve) => {
+      const flushError = new Error('flush failed');
+      const transform = createMockTransform();
+      transform.flush = vi.fn((_flushConst: number, cb?: (err: Error | null) => void) => {
+        cb?.(flushError);
+      });
+
+      wrapWriteWithFlush(transform, zlib.constants.Z_SYNC_FLUSH);
+
+      transform.write('hello', 'utf8', (err: Error | null | undefined) => {
+        expect(err).toBe(flushError);
         resolve();
       });
     });

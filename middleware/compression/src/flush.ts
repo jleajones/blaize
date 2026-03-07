@@ -10,11 +10,22 @@ import type { Transform } from 'node:stream';
  * Wrap a transform stream's `write` method to call `flush` with the given
  * flush constant after each write.
  *
- * @param transform - The transform stream to wrap
+ * **Note:** This function requires a zlib transform stream (e.g., `zlib.Gzip`,
+ * `zlib.Deflate`, `zlib.BrotliCompress`) that has a `flush()` method. Passing a
+ * plain `Transform` stream without `flush` will throw an error.
+ *
+ * @param transform - A zlib transform stream with a `flush` method
  * @param flushConstant - The zlib flush constant to use (e.g., Z_SYNC_FLUSH)
  * @returns The modified transform stream
+ * @throws {Error} If the transform stream does not have a `flush` method
  */
 export function wrapWriteWithFlush(transform: Transform, flushConstant: number): Transform {
+  if (typeof (transform as any).flush !== 'function') {
+    throw new Error(
+      'Transform stream does not have a flush method. Only zlib transform streams are supported.',
+    );
+  }
+
   const originalWrite = transform.write.bind(transform);
   // zlib transform streams have a flush() method not present on the base Transform type
   const zlibFlush = (transform as any).flush.bind(transform);
@@ -32,7 +43,7 @@ export function wrapWriteWithFlush(transform: Transform, flushConstant: number):
           encodingOrCallback(err);
           return;
         }
-        zlibFlush(flushConstant, () => encodingOrCallback(null));
+        zlibFlush(flushConstant, (flushErr: Error | null) => encodingOrCallback(flushErr ?? null));
       });
       return result;
     }
@@ -43,7 +54,7 @@ export function wrapWriteWithFlush(transform: Transform, flushConstant: number):
         callback?.(err);
         return;
       }
-      zlibFlush(flushConstant, () => callback?.(null));
+      zlibFlush(flushConstant, (flushErr: Error | null) => callback?.(flushErr ?? null));
     });
     return result;
   } as typeof transform.write;
