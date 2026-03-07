@@ -7,7 +7,7 @@ describe('parseCompressionOptions', () => {
   describe('defaults', () => {
     it('should apply all defaults when given an empty object', () => {
       const result = parseCompressionOptions({});
-      expect(result.algorithms).toEqual(['br', 'gzip', 'deflate']);
+      expect(result.algorithms).toEqual(['zstd', 'br', 'gzip', 'deflate']);
       expect(result.level).toBe('default');
       expect(result.threshold).toBe(1024);
       expect(result.vary).toBe(true);
@@ -20,7 +20,7 @@ describe('parseCompressionOptions', () => {
       expect(result.threshold).toBe(512);
       expect(result.vary).toBe(false);
       // Other defaults still applied
-      expect(result.algorithms).toEqual(['br', 'gzip', 'deflate']);
+      expect(result.algorithms).toEqual(['zstd', 'br', 'gzip', 'deflate']);
       expect(result.level).toBe('default');
     });
   });

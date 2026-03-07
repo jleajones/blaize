@@ -6,15 +6,21 @@
 import { z } from 'zod';
 
 import { CompressionConfigurationError } from './errors';
+import { DEFAULT_ALGORITHMS } from './constants';
 
 import type { CompressionOptions } from './types';
 
 /**
  * Zod schema for CompressionAlgorithm values.
  */
-const CompressionAlgorithmSchema = z.enum(['gzip', 'deflate', 'br', 'identity'], {
-  message: 'algorithms must be one of: gzip, deflate, br, identity',
-});
+const VALID_ALGORITHMS = [...DEFAULT_ALGORITHMS, 'identity'] as const;
+
+const CompressionAlgorithmSchema = z.enum(
+  VALID_ALGORITHMS as unknown as [string, ...string[]],
+  {
+    message: `algorithms must be one of: ${VALID_ALGORITHMS.join(', ')}`,
+  },
+);
 
 /**
  * Zod schema for CompressionLevel values.
@@ -61,7 +67,7 @@ export const CompressionOptionsSchema = z.object({
       message: 'algorithms must be an array of compression algorithms',
     })
     .min(1, { message: 'algorithms must contain at least one algorithm' })
-    .default(['br', 'gzip', 'deflate'] as const),
+    .default([...DEFAULT_ALGORITHMS]),
   level: CompressionLevelSchema.default('default'),
   threshold: z
     .number({ message: 'threshold must be a number' })
