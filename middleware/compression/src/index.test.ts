@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   CompressionConfigurationError,
   compression,
@@ -62,6 +62,11 @@ describe('@blaizejs/middleware-compression', () => {
       const opts = getCompressionPreset('default');
       expect(opts).toEqual(compressionPresets.default);
     });
+
+    it('should throw CompressionConfigurationError for an invalid preset name', () => {
+      expect(() => getCompressionPreset('invalid' as any)).toThrow(CompressionConfigurationError);
+      expect(() => getCompressionPreset('invalid' as any)).toThrow(/Unknown compression preset: "invalid"/);
+    });
   });
 
   describe('convenience factories', () => {
@@ -87,6 +92,92 @@ describe('@blaizejs/middleware-compression', () => {
       const mw = compressionStreaming();
       expect(mw.name).toBe('compression');
       expect(typeof mw.execute).toBe('function');
+    });
+  });
+
+  describe('ctx.response.sent tracking after compression', () => {
+    it('should return true for ctx.response.sent when res.writableEnded is true', async () => {
+      const mw = compression({ threshold: 0 });
+
+      // Create a mock context where shouldCompress will skip (no accept-encoding)
+      // so we can test the sent override independently
+      const rawRes = {
+        statusCode: 200,
+        setHeader: vi.fn(),
+        getHeader: vi.fn(),
+        removeHeader: vi.fn(),
+        end: vi.fn(),
+        pipe: vi.fn(),
+        on: vi.fn(),
+        writableEnded: false,
+        headersSent: false,
+      };
+
+      const ctx = {
+        request: {
+          raw: {} as any,
+          method: 'GET',
+          path: '/',
+          url: null,
+          query: {},
+          params: {},
+          protocol: 'http',
+          isHttp2: false,
+          header: (name: string) => name === 'accept-encoding' ? 'gzip' : undefined,
+          headers: () => ({ 'accept-encoding': 'gzip' }),
+          body: undefined,
+          files: undefined,
+        },
+        response: {
+          raw: rawRes as any,
+          sent: false,
+          statusCode: 200,
+          status: vi.fn().mockReturnThis(),
+          header: vi.fn().mockReturnThis(),
+          headers: vi.fn().mockReturnThis(),
+          type: vi.fn().mockReturnThis(),
+          json: vi.fn(),
+          text: vi.fn(),
+          html: vi.fn(),
+          redirect: vi.fn(),
+          stream: vi.fn(),
+        },
+        state: {},
+        services: {},
+      } as any;
+
+      const mockLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+        flush: vi.fn(),
+      };
+
+      const mockEventBus = {
+        serverId: 'test',
+        publish: vi.fn(),
+        subscribe: vi.fn(),
+        setAdapter: vi.fn(),
+        disconnect: vi.fn(),
+      };
+
+      // Execute the middleware — shouldCompress may or may not find an algorithm,
+      // but the sent getter override is installed before compressResponse is called.
+      await mw.execute({
+        ctx,
+        next: vi.fn(),
+        logger: mockLogger as any,
+        eventBus: mockEventBus as any,
+      });
+
+      // Simulate res.end() having been called (e.g. by compressResponse)
+      rawRes.writableEnded = true;
+      rawRes.headersSent = true;
+
+      // The overridden getter should now return true
+      expect(ctx.response.sent).toBe(true);
     });
   });
 });

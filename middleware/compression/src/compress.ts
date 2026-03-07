@@ -320,11 +320,6 @@ export function compressResponse(
 
           res.end(compressed);
 
-          // NOTE: ctx.response.sent is a getter backed by a closure-scoped responseState
-          // in blaize-core's createContext. We cannot set it externally without access to
-          // that closure. T10 (middleware factory) will address this by intercepting at
-          // the res.end() level to let the original responders handle sent state naturally.
-
           logger.debug('Compressed response', {
             algorithm,
             originalSize: bodyBuffer.length,
@@ -458,9 +453,5 @@ export function compressResponse(
       }
     });
 
-    // NOTE: ctx.response.sent is a getter backed by a closure-scoped responseState
-    // in blaize-core's createContext. We cannot set it externally without access to
-    // that closure. T10 (middleware factory) will address this by intercepting at
-    // the res.end() level to let the original responders handle sent state naturally.
   };
 }

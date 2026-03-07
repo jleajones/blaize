@@ -7,6 +7,7 @@ import { createMiddleware } from 'blaizejs';
 import type { Middleware } from 'blaizejs';
 
 import { shouldCompress, compressResponse } from './compress';
+import { CompressionConfigurationError } from './errors';
 import { parseCompressionOptions } from './validation';
 import { compressionPresets } from './presets';
 
@@ -44,6 +45,20 @@ export function compression(options?: CompressionOptions): Middleware {
         return;
       }
 
+      // Override the `sent` getter so it reflects the true state even when
+      // compressResponse() calls res.end() directly (bypassing core responders
+      // that update the closure-backed responseState.sent).
+      const res = ctx.response.raw;
+      const originalSentDescriptor = Object.getOwnPropertyDescriptor(ctx.response, 'sent');
+      Object.defineProperty(ctx.response, 'sent', {
+        get() {
+          // Check the original getter first, then fall back to Node's built-in flags
+          const originalSent = originalSentDescriptor?.get?.call(ctx.response) ?? false;
+          return originalSent || res.writableEnded || res.headersSent;
+        },
+        configurable: true,
+      });
+
       compressResponse(ctx, config, algorithm, {
         debug: (msg, meta) => logger.debug(msg, meta),
         warn: (msg, meta) => logger.warn(msg, meta),
@@ -70,7 +85,14 @@ export function compression(options?: CompressionOptions): Middleware {
  * ```
  */
 export function getCompressionPreset(name: CompressionPreset): CompressionOptions {
-  return compressionPresets[name];
+  const preset = compressionPresets[name];
+  if (!preset) {
+    throw new CompressionConfigurationError(
+      `Unknown compression preset: "${name}". Valid presets: ${Object.keys(compressionPresets).join(', ')}`,
+      'preset',
+    );
+  }
+  return preset;
 }
 
 /**
