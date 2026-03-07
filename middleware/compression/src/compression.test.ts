@@ -171,12 +171,8 @@ describe('compression integration', () => {
 
       const compressed = rawRes.end.mock.calls[0]?.[0] as Buffer;
       expect(Buffer.isBuffer(compressed)).toBe(true);
-      const decompressed = (zlib as any).zstdDecompressSync
-        ? (zlib as any).zstdDecompressSync(compressed)
-        : compressed; // fallback if no sync decompress
-      if ((zlib as any).zstdDecompressSync) {
-        expect(decompressed.toString()).toBe(largeText);
-      }
+      const decompressed = (zlib as any).zstdDecompressSync(compressed);
+      expect(decompressed.toString()).toBe(largeText);
     });
   });
 
@@ -300,26 +296,24 @@ describe('compression integration', () => {
     });
   });
 
-  describe('compression error fallback', () => {
-    it('should fall back to uncompressed when compression fails', async () => {
+  describe('compression success with gzip', () => {
+    it('should compress successfully with gzip', async () => {
+      // Note: Error fallback when compression fails is tested indirectly through
+      // the stream error handler test in "stream compressor error handling" below.
+      // This test verifies normal gzip compression completes end-to-end.
       const { ctx, rawRes } = createMockContext({ acceptEncoding: 'gzip' });
-      const originalJson = vi.fn();
-      ctx.response.json = originalJson;
       const config = createDefaultConfig({ threshold: 10 });
       const logger = createLogger();
 
-      // Use an invalid algorithm cast to trigger compression error
       compressResponse(ctx, config, 'gzip', logger);
 
-      // Mock createCompressorStream to fail by replacing the json wrapper
-      // We need to trigger the .catch path in compressBuffer
-      // The simplest way: pass a body that will compress, but mock the compressor to error
       const largeBody = { data: 'x'.repeat(2000) };
       ctx.response.json(largeBody);
 
-      // The compression should succeed normally with gzip
       await waitForResponse(rawRes);
-      // Verify it compressed successfully
+
+      // Verify compression completed: Content-Encoding header set and response ended
+      expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Encoding', 'gzip');
       expect(rawRes.end).toHaveBeenCalled();
     });
   });
@@ -462,6 +456,11 @@ describe('middleware handler coverage', () => {
     const { ctx, mockLogger, mockEventBus } = createMiddlewareContext('gzip');
     const next = vi.fn();
 
+    // Save references to original mock functions before compression wraps them
+    const originalJson = ctx.response.json;
+    const originalText = ctx.response.text;
+    const originalHtml = ctx.response.html;
+
     await mw.execute({
       ctx,
       next,
@@ -470,7 +469,10 @@ describe('middleware handler coverage', () => {
     });
 
     expect(next).toHaveBeenCalled();
-    // json/text/html should have been wrapped (they're no longer the original vi.fn())
+    // Response methods should have been wrapped (replaced with compression wrappers)
+    expect(ctx.response.json).not.toBe(originalJson);
+    expect(ctx.response.text).not.toBe(originalText);
+    expect(ctx.response.html).not.toBe(originalHtml);
   });
 });
 
@@ -536,8 +538,8 @@ describe('algorithms coverage gaps', () => {
   describe('getCompressionLevel edge cases', () => {
     it('should return default level for unknown algorithm', () => {
       const level = getCompressionLevel('identity', 'default');
-      // identity has no config in ALGORITHM_LEVELS, should return 6
-      expect(typeof level).toBe('number');
+      // identity has no config in ALGORITHM_LEVELS, falls back to 6 (zlib default)
+      expect(level).toBe(6);
     });
 
     it('should return numeric level for unknown algorithm with numeric input', () => {
@@ -548,7 +550,8 @@ describe('algorithms coverage gaps', () => {
     it('should return default level for unrecognized string level', () => {
       // Cast to bypass type checking for edge case
       const level = getCompressionLevel('gzip', 'unknown' as any);
-      expect(typeof level).toBe('number');
+      // Unrecognized string level hits the switch default → gzip defaultLevel = 6
+      expect(level).toBe(6);
     });
   });
 });
