@@ -17,16 +17,30 @@ npm install @blaizejs/middleware-compression
 ## Quick Start
 
 ```ts
-import { createServer } from 'blaizejs';
+// src/app.ts
+import path from 'node:path';
+import { Blaize } from 'blaizejs';
 import { compression } from '@blaizejs/middleware-compression';
 
-const server = createServer();
+const server = Blaize.createServer({
+  port: 3000,
+  routesDir: path.resolve(__dirname, './routes'),
+  middleware: [
+    compression(), // Zero-config — uses sensible defaults
+  ],
+});
 
-// Zero-config — uses sensible defaults
-server.use(compression());
+await server.listen();
+```
 
-server.get('/hello', ({ ctx }) => {
-  ctx.response.json({ message: 'Hello, compressed world!' });
+```ts
+// src/routes/hello.ts
+import { route } from '../app';
+
+export const getHello = route.get({
+  handler: async () => ({
+    message: 'Hello, compressed world!',
+  }),
 });
 ```
 
@@ -35,11 +49,11 @@ server.get('/hello', ({ ctx }) => {
 Pass a `CompressionOptions` object to customise behaviour:
 
 ```ts
-server.use(compression({
+compression({
   algorithms: ['br', 'gzip'],
   level: 'best',
   threshold: 512,
-}));
+})
 ```
 
 | Option | Type | Default | Description |
@@ -70,14 +84,14 @@ import {
   getCompressionPreset,
 } from '@blaizejs/middleware-compression';
 
-// Via preset option
-server.use(compression({ preset: 'fast' }));
+// Via preset option — pass in middleware array
+compression({ preset: 'fast' })
 
 // Via convenience factory
-server.use(compressionFast());
+compressionFast()
 
 // Via getCompressionPreset helper
-server.use(compression(getCompressionPreset('best')));
+compression(getCompressionPreset('best'))
 ```
 
 | Preset | `threshold` | `level` | `flush` | `contentTypeFilter` | Use Case |
@@ -90,24 +104,31 @@ server.use(compression(getCompressionPreset('best')));
 
 ## Per-Route Configuration
 
-Apply different compression settings to individual routes by using separate middleware instances:
+Override compression settings on individual routes using the `middleware` option in route definitions:
 
 ```ts
-import { compression, compressionFast } from '@blaizejs/middleware-compression';
+// src/routes/reports/[reportId].ts
+import { route } from '../../app';
+import { compression } from '@blaizejs/middleware-compression';
 
-// Global default
-server.use(compression());
-
-// Fast compression for a latency-sensitive API group
-server.group('/api/realtime', (group) => {
-  group.use(compressionFast());
-  group.get('/feed', handler);
+export const getReport = route.get({
+  middleware: [compression({ level: 'best', threshold: 256 })],
+  handler: async ({ params }) => {
+    return generateReport(params.reportId);
+  },
 });
+```
 
-// Best compression for a static-like endpoint
-server.group('/reports', (group) => {
-  group.use(compression({ level: 'best', threshold: 256 }));
-  group.get('/:id', handler);
+```ts
+// src/routes/api/realtime/feed.ts
+import { route } from '../../../app';
+import { compressionFast } from '@blaizejs/middleware-compression';
+
+export const getFeed = route.get({
+  middleware: [compressionFast()],
+  handler: async () => {
+    return getRealtimeFeed();
+  },
 });
 ```
 
@@ -154,17 +175,16 @@ Algorithms are negotiated in the order specified by `algorithms` (default: `zstd
 Compression middleware should be registered **early** in the middleware chain — before any middleware that sends responses.
 
 ```ts
-const server = createServer();
-
-// ✅ Register compression FIRST
-server.use(compression());
-
-// Then other middleware
-server.use(cors());
-server.use(logger());
-
-// Route handlers
-server.get('/data', handler);
+const server = Blaize.createServer({
+  port: 3000,
+  routesDir: path.resolve(__dirname, './routes'),
+  middleware: [
+    // ✅ Compression FIRST — order matters
+    compression(),
+    authMiddleware,
+    rateLimitMiddleware,
+  ],
+});
 ```
 
 The middleware works by wrapping `ctx.response.json`, `ctx.response.text`, `ctx.response.html`, and `ctx.response.stream` **before** `next()` is called. If registered too late (after a middleware that already sends the response), responses go out uncompressed — this is a silent failure. This follows the same pattern as Express's `compression()` middleware.
