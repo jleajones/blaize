@@ -13,9 +13,14 @@ import type { CompressionOptions } from './types';
 /**
  * Zod schema for CompressionAlgorithm values.
  */
-const CompressionAlgorithmSchema = z.enum(['gzip', 'deflate', 'br', 'zstd', 'identity'], {
-  message: 'algorithms must be one of: gzip, deflate, br, zstd, identity',
-});
+const VALID_ALGORITHMS = [...DEFAULT_ALGORITHMS, 'identity'] as const;
+
+const CompressionAlgorithmSchema = z.enum(
+  VALID_ALGORITHMS as unknown as [string, ...string[]],
+  {
+    message: `algorithms must be one of: ${VALID_ALGORITHMS.join(', ')}`,
+  },
+);
 
 /**
  * Zod schema for CompressionLevel values.
