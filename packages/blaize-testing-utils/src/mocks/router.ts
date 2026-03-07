@@ -21,6 +21,7 @@ import type {
  */
 export function createMockRouter(): Router {
   return {
+    initialize: vi.fn().mockResolvedValue(undefined),
     handleRequest: vi.fn().mockResolvedValue(undefined),
     getRoutes: vi.fn().mockReturnValue([]),
     addRoute: vi.fn(),
