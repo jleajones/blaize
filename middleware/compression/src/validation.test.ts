@@ -36,7 +36,7 @@ describe('parseCompressionOptions', () => {
         memoryLevel: 8,
         windowBits: 15,
         brotliQuality: 4,
-        preset: 'balanced',
+        preset: 'default',
       });
       expect(result.algorithms).toEqual(['br', 'gzip', 'deflate']);
       expect(result.level).toBe('default');

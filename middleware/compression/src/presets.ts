@@ -76,8 +76,5 @@ export const compressionPresets = {
   } satisfies CompressionOptions,
 } as const;
 
-/**
- * Type representing the available preset names.
- */
-export type PresetName = keyof typeof compressionPresets;
+
 

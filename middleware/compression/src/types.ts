@@ -129,5 +129,5 @@ export interface CompressionMetrics {
 /**
  * Named compression presets for common use cases
  */
-export type CompressionPreset = 'fast' | 'balanced' | 'maximum' | 'api' | 'static';
+export type CompressionPreset = 'default' | 'fast' | 'best' | 'text-only' | 'streaming';
 

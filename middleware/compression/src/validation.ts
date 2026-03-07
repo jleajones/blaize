@@ -53,8 +53,8 @@ const ContentTypeFilterSchema = z.union([
 /**
  * Zod schema for CompressionPreset values.
  */
-const CompressionPresetSchema = z.enum(['fast', 'balanced', 'maximum', 'api', 'static'], {
-  message: 'preset must be one of: fast, balanced, maximum, api, static',
+const CompressionPresetSchema = z.enum(['default', 'fast', 'best', 'text-only', 'streaming'], {
+  message: 'preset must be one of: default, fast, best, text-only, streaming',
 });
 
 /**
