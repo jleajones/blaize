@@ -89,7 +89,7 @@ export async function shouldCompress(
 
   if (!algorithm) {
     // Distinguish between "client prefers identity" and "no matching algorithm"
-    if (acceptEncoding && (acceptEncoding.includes('identity') || acceptEncoding.includes('*'))) {
+    if (acceptEncoding && (acceptEncoding.toLowerCase().includes('identity') || acceptEncoding.includes('*'))) {
       return { compress: false, reason: 'identity-preferred' };
     }
     return { compress: false, reason: 'no-supported-encoding' };
@@ -188,7 +188,7 @@ async function compressBuffer(
   });
 
   // Apply flush mode if configured
-  compressor = configureFlushMode(compressor, config.flush) as Transform;
+  compressor = configureFlushMode(compressor, config.flush, algorithm) as Transform;
 
   const chunks: Buffer[] = [];
 
@@ -401,57 +401,81 @@ export function compressResponse(
     }
 
     // Set up compression pipeline: readable → compressor → res
-    const level = getCompressionLevel(algorithm, config.level);
-    let compressor = createCompressorStream(algorithm as CompressibleAlgorithm, {
-      level,
-      memoryLevel: config.memoryLevel,
-      windowBits: config.windowBits,
-    });
+    try {
+      const level = getCompressionLevel(algorithm, config.level);
+      let compressor = createCompressorStream(algorithm as CompressibleAlgorithm, {
+        level,
+        memoryLevel: config.memoryLevel,
+        windowBits: config.windowBits,
+      });
 
-    // Apply flush mode
-    compressor = configureFlushMode(compressor, config.flush) as Transform;
+      // Apply flush mode
+      compressor = configureFlushMode(compressor, config.flush, algorithm) as Transform;
 
-    // Apply stream options FIRST (status, content-type, custom headers)
-    if (options.status !== undefined) {
-      res.statusCode = options.status;
-    }
-    if (options.contentType) {
-      res.setHeader('Content-Type', options.contentType);
-    }
-    if (options.headers) {
-      for (const [name, value] of Object.entries(options.headers)) {
-        res.setHeader(name, value as string);
+      // Apply stream options FIRST (status, content-type, custom headers)
+      if (options.status !== undefined) {
+        res.statusCode = options.status;
       }
-    }
+      if (options.contentType) {
+        res.setHeader('Content-Type', options.contentType);
+      }
+      if (options.headers) {
+        for (const [name, value] of Object.entries(options.headers)) {
+          res.setHeader(name, value as string);
+        }
+      }
 
-    // Set compression headers AFTER options.headers so compression headers take precedence
-    setCompressionHeaders(res, algorithm, config);
+      // Set compression headers AFTER options.headers so compression headers take precedence
+      setCompressionHeaders(res, algorithm, config);
 
-    // Explicitly remove Content-Length again in case options.headers reintroduced it
-    res.removeHeader('Content-Length');
+      // Explicitly remove Content-Length again in case options.headers reintroduced it
+      res.removeHeader('Content-Length');
 
-    // Preserve correlation-id header that core responders would set
-    const correlationId = getCorrelationId();
-    if (correlationId && correlationId !== 'unknown') {
-      res.setHeader('x-correlation-id', correlationId);
-    }
+      // Preserve correlation-id header that core responders would set
+      const correlationId = getCorrelationId();
+      if (correlationId && correlationId !== 'unknown') {
+        res.setHeader('x-correlation-id', correlationId);
+      }
 
-    // Pipe: readable → compressor → res
-    readable.pipe(compressor).pipe(res);
+      // Pipe: readable → compressor → res
+      readable.pipe(compressor).pipe(res);
 
-    // Handle errors
-    compressor.on('error', (err) => {
-      logger.error('Stream compression failed', {
+      // Handle errors on compressor
+      compressor.on('error', (err) => {
+        logger.error('Stream compression failed', {
+          error: (err as Error).message,
+          algorithm,
+        });
+        // Try to end the response
+        try {
+          res.end();
+        } catch {
+          // Response may already be closed
+        }
+      });
+
+      // Handle errors on source readable
+      readable.on('error', (err) => {
+        logger.error('Source stream error during compression', {
+          error: (err as Error).message,
+          algorithm,
+        });
+        // Destroy the compressor to clean up
+        compressor.destroy();
+        try {
+          res.end();
+        } catch {
+          // Response may already be closed
+        }
+      });
+    } catch (err) {
+      logger.error('Failed to create compressor stream, sending uncompressed', {
         error: (err as Error).message,
         algorithm,
       });
-      // Try to end the response
-      try {
-        res.end();
-      } catch {
-        // Ignore
-      }
-    });
+      originalStream.call(ctx.response, readable, options);
+      return;
+    }
 
   };
 }

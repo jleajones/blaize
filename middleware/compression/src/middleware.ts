@@ -7,6 +7,7 @@ import { createMiddleware } from 'blaizejs';
 import type { Middleware } from 'blaizejs';
 
 import { shouldCompress, compressResponse } from './compress';
+import { detectAvailableAlgorithms } from './algorithms';
 import { CompressionConfigurationError } from './errors';
 import { parseCompressionOptions } from './validation';
 import { compressionPresets } from './presets';
@@ -33,6 +34,11 @@ import type { CompressionOptions, CompressionPreset } from './types';
  */
 export function createCompressionMiddleware(options?: CompressionOptions): Middleware {
   const config = parseCompressionOptions(options ?? {});
+
+  // Filter algorithms to only those available on this runtime
+  config.algorithms = detectAvailableAlgorithms(
+    config.algorithms as import('./types').CompressionAlgorithm[],
+  );
 
   return createMiddleware({
     name: 'compression',

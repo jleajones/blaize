@@ -66,17 +66,36 @@ export function wrapWriteWithFlush(transform: Transform, flushConstant: number):
  * Configure the flush mode for a compression transform stream.
  *
  * @param transform - The compression transform stream
- * @param flush - Flush mode: `false`/`'none'` = no-op, `true`/`'sync'` = Z_SYNC_FLUSH,
+ * @param flush - Flush mode: `false`/`'none'` = no-op, `true`/`'sync'` = algorithm-appropriate sync flush,
  *                `'partial'` = Z_PARTIAL_FLUSH (falls back to no-op if unavailable)
+ * @param algorithm - The compression algorithm name (e.g., 'gzip', 'br', 'zstd').
+ *                    Used to select the correct flush constant. Defaults to gzip/deflate behavior.
  * @returns The (potentially modified) transform stream
  */
-export function configureFlushMode(transform: Transform, flush: boolean | string): Transform {
+export function configureFlushMode(
+  transform: Transform,
+  flush: boolean | string,
+  algorithm?: string,
+): Transform {
   if (flush === false || flush === 'none') {
     return transform;
   }
 
   if (flush === true || flush === 'sync') {
-    return wrapWriteWithFlush(transform, zlib.constants.Z_SYNC_FLUSH);
+    // Use algorithm-specific flush constants
+    let flushConstant: number;
+    switch (algorithm) {
+      case 'br':
+        flushConstant = zlib.constants.BROTLI_OPERATION_FLUSH;
+        break;
+      case 'zstd':
+        flushConstant = (zlib.constants as any).ZSTD_e_flush ?? 1;
+        break;
+      default:
+        // gzip/deflate use Z_SYNC_FLUSH
+        flushConstant = zlib.constants.Z_SYNC_FLUSH;
+    }
+    return wrapWriteWithFlush(transform, flushConstant);
   }
 
   if (flush === 'partial') {
