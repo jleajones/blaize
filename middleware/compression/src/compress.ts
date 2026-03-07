@@ -8,7 +8,7 @@ import type { Transform } from 'node:stream';
 
 import { getCorrelationId } from 'blaizejs';
 
-import { createCompressorStream, getCompressionLevel } from './algorithms';
+import { compressBufferSync, createCompressorStream, getCompressionLevel } from './algorithms';
 import { configureFlushMode } from './flush';
 import { weakenEtag } from './etag';
 import { extractMimeType, createContentTypeFilter } from './filter';
@@ -247,6 +247,26 @@ function setCompressionHeaders(
   }
 }
 
+function setCorrelationIdHeader(res: any): void {
+  const correlationId = getCorrelationId();
+  if (correlationId && correlationId !== 'unknown') {
+    res.setHeader('x-correlation-id', correlationId);
+  }
+}
+
+function markResponseSent(ctx: Context): void {
+  if (ctx.response.sent) {
+    return;
+  }
+
+  Object.defineProperty(ctx.response, 'sent', {
+    value: true,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  });
+}
+
 /**
  * Install compression wrappers on ctx.response methods.
  *
@@ -305,36 +325,65 @@ export function compressResponse(
         return;
       }
 
-      // Compress the body
-      compressBuffer(bodyBuffer, algorithm as CompressibleAlgorithm, config)
-        .then((compressed) => {
-          setCompressionHeaders(res, algorithm, config);
+      const compressionOptions = {
+        level: getCompressionLevel(algorithm, config.level),
+        memoryLevel: config.memoryLevel,
+        windowBits: config.windowBits,
+      };
 
-          // Preserve correlation-id header that core responders would set.
-          // The compressed path bypasses core responders (which call addCorrelationHeader),
-          // so we retrieve it from AsyncLocalStorage via getCorrelationId().
-          const correlationId = getCorrelationId();
-          if (correlationId && correlationId !== 'unknown') {
-            res.setHeader('x-correlation-id', correlationId);
-          }
+      const finishCompressedResponse = (compressed: Buffer) => {
+        setCompressionHeaders(res, algorithm, config);
+        setCorrelationIdHeader(res);
+        res.end(compressed);
+        markResponseSent(ctx);
 
-          res.end(compressed);
-
-          logger.debug('Compressed response', {
-            algorithm,
-            originalSize: bodyBuffer.length,
-            compressedSize: compressed.length,
-            ratio: compressed.length / bodyBuffer.length,
-          });
-        })
-        .catch((err) => {
-          logger.error('Compression failed, sending uncompressed', {
-            error: (err as Error).message,
-            algorithm,
-          });
-          // Fallback: send uncompressed
-          originalMethod.call(ctx.response, body, status);
+        logger.debug('Compressed response', {
+          algorithm,
+          originalSize: bodyBuffer.length,
+          compressedSize: compressed.length,
+          ratio: compressed.length / bodyBuffer.length,
         });
+      };
+
+      try {
+        const compressed = compressBufferSync(
+          bodyBuffer,
+          algorithm as CompressibleAlgorithm,
+          compressionOptions,
+        );
+        finishCompressedResponse(compressed);
+      } catch (err) {
+        const error = err as Error;
+
+        if (
+          algorithm === 'zstd' &&
+          error.message.includes('zstd synchronous compression is not available')
+        ) {
+          markResponseSent(ctx);
+
+          void compressBuffer(bodyBuffer, algorithm as CompressibleAlgorithm, config)
+            .then((compressed) => {
+              finishCompressedResponse(compressed);
+            })
+            .catch((asyncErr) => {
+              logger.error('Compression failed, sending uncompressed', {
+                error: (asyncErr as Error).message,
+                algorithm,
+              });
+              // Fallback: send uncompressed
+              originalMethod.call(ctx.response, body, status);
+            });
+
+          return;
+        }
+
+        logger.error('Compression failed, sending uncompressed', {
+          error: error.message,
+          algorithm,
+        });
+        // Fallback: send uncompressed
+        originalMethod.call(ctx.response, body, status);
+      }
     };
   }
 
@@ -432,10 +481,7 @@ export function compressResponse(
       res.removeHeader('Content-Length');
 
       // Preserve correlation-id header that core responders would set
-      const correlationId = getCorrelationId();
-      if (correlationId && correlationId !== 'unknown') {
-        res.setHeader('x-correlation-id', correlationId);
-      }
+      setCorrelationIdHeader(res);
 
       // Pipe: readable → compressor → res
       readable.pipe(compressor).pipe(res);

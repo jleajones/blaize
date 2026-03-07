@@ -141,6 +141,60 @@ export function createCompressorStream(
 }
 
 /**
+ * Compress a complete buffer synchronously.
+ *
+ * Used by buffered response wrappers so they preserve the synchronous
+ * response semantics expected by the BlaizeJS request handler.
+ */
+export function compressBufferSync(
+  body: Buffer,
+  algorithm: CompressibleAlgorithm,
+  options: CompressorStreamOptions = {},
+): Buffer {
+  const { level, memoryLevel, windowBits } = options;
+
+  switch (algorithm) {
+    case 'zstd': {
+      const zstdCompressSync = (zlib as any).zstdCompressSync;
+      if (typeof zstdCompressSync !== 'function') {
+        throw new Error('zstd synchronous compression is not available in this Node.js version');
+      }
+
+      return zstdCompressSync(body, {
+        params: {
+          ...(level !== undefined && { [ZSTD_C_COMPRESSION_LEVEL]: level }),
+        },
+      });
+    }
+    case 'br': {
+      if (typeof zlib.brotliCompressSync !== 'function') {
+        throw new Error('Brotli compression is not available in this Node.js version');
+      }
+
+      return zlib.brotliCompressSync(body, {
+        params: {
+          [zlib.constants.BROTLI_PARAM_QUALITY]: level ?? zlib.constants.BROTLI_DEFAULT_QUALITY,
+        },
+      });
+    }
+    case 'gzip':
+      return zlib.gzipSync(body, {
+        ...(level !== undefined && { level }),
+        ...(memoryLevel !== undefined && { memLevel: memoryLevel }),
+        ...(windowBits !== undefined && { windowBits }),
+      });
+    case 'deflate':
+      return zlib.deflateSync(body, {
+        ...(level !== undefined && { level }),
+        ...(memoryLevel !== undefined && { memLevel: memoryLevel }),
+        ...(windowBits !== undefined && { windowBits }),
+      });
+    default:
+      throw new Error(`Unsupported compression algorithm: ${algorithm}`);
+  }
+}
+
+/**
  * Get the numeric compression level for an algorithm given a named or numeric level.
  *
  * Named levels:

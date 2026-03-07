@@ -15,6 +15,7 @@ function createMockRawResponse() {
   const headers: Record<string, string> = {};
   return {
     statusCode: 200,
+    headersSent: false,
     setHeader: vi.fn((name: string, value: string) => {
       headers[name.toLowerCase()] = value;
     }),
@@ -22,7 +23,10 @@ function createMockRawResponse() {
     removeHeader: vi.fn((name: string) => {
       delete headers[name.toLowerCase()];
     }),
-    end: vi.fn(),
+    end: vi.fn(function (this: { headersSent: boolean }, chunk?: unknown) {
+      this.headersSent = true;
+      return chunk;
+    }),
     pipe: vi.fn(),
     on: vi.fn(),
     _headers: headers,
@@ -177,6 +181,45 @@ describe('compress', () => {
 
   describe('compressResponse', () => {
     describe('json wrapper', () => {
+      it('should synchronously mark buffered responses as sent before returning', () => {
+        const { ctx, rawRes } = createMockContext({ acceptEncoding: 'gzip' });
+        const config = createDefaultConfig({ threshold: 10 });
+
+        compressResponse(ctx, config, 'gzip');
+
+        ctx.response.json({ data: 'x'.repeat(2000) });
+
+        expect(rawRes.end).toHaveBeenCalled();
+        expect(rawRes.headersSent || ctx.response.sent).toBe(true);
+      });
+
+      it('should mark zstd buffered responses as sent even when sync zstd is unavailable', () => {
+        const originalZstdCompressSync = (zlib as any).zstdCompressSync;
+
+        Object.defineProperty(zlib, 'zstdCompressSync', {
+          value: undefined,
+          writable: true,
+          configurable: true,
+        });
+
+        try {
+          const { ctx } = createMockContext({ acceptEncoding: 'zstd' });
+          const config = createDefaultConfig({ threshold: 10 });
+
+          compressResponse(ctx, config, 'zstd');
+
+          ctx.response.json({ data: 'x'.repeat(2000) });
+
+          expect(ctx.response.sent).toBe(true);
+        } finally {
+          Object.defineProperty(zlib, 'zstdCompressSync', {
+            value: originalZstdCompressSync,
+            writable: true,
+            configurable: true,
+          });
+        }
+      });
+
       it('should compress JSON response when body exceeds threshold', async () => {
         const { ctx, rawRes } = createMockContext({ acceptEncoding: 'gzip' });
         const config = createDefaultConfig({ threshold: 10 });
@@ -184,16 +227,11 @@ describe('compress', () => {
 
         compressResponse(ctx, config, 'gzip', logger);
 
-        // Call the wrapped json method with a large body
         const largeBody = { data: 'x'.repeat(2000) };
         ctx.response.json(largeBody);
 
-        // Wait for async compression
-        await waitForResponse(rawRes);
-
-        // Should have set Content-Encoding
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Encoding', 'gzip');
-        const endArg = rawRes.end.mock.calls[0]?.[0];
+        const endArg = rawRes.end.mock.calls[0]?.[0] as Buffer;
         expect(Buffer.isBuffer(endArg)).toBe(true);
 
         // Verify it's actually gzip compressed
@@ -258,7 +296,7 @@ describe('compress', () => {
         await waitForResponse(rawRes);
 
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Encoding', 'gzip');
-        const endArg = rawRes.end.mock.calls[0]?.[0];
+        const endArg = rawRes.end.mock.calls[0]?.[0] as Buffer;
         const decompressed = zlib.gunzipSync(endArg);
         expect(decompressed.toString()).toBe(largeText);
       });
@@ -278,7 +316,7 @@ describe('compress', () => {
 
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Encoding', 'gzip');
         expect(rawRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html');
-        const endArg = rawRes.end.mock.calls[0]?.[0];
+        const endArg = rawRes.end.mock.calls[0]?.[0] as Buffer;
         const decompressed = zlib.gunzipSync(endArg);
         expect(decompressed.toString()).toBe(largeHtml);
       });

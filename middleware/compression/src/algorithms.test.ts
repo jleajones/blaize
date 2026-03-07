@@ -3,6 +3,7 @@ import zlib from 'node:zlib';
 import { Transform } from 'node:stream';
 
 import {
+  compressBufferSync,
   detectAvailableAlgorithms,
   createCompressorStream,
   getCompressionLevel,
@@ -176,6 +177,38 @@ describe('createCompressorStream', () => {
       expect(() => createCompressorStream('zstd')).toThrow('not available');
     } finally {
       Object.defineProperty(zlib, 'createZstdCompress', {
+        value: original,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+});
+
+describe('compressBufferSync', () => {
+  it('should synchronously compress gzip buffers', () => {
+    const source = Buffer.from('hello world '.repeat(100));
+
+    const compressed = compressBufferSync(source, 'gzip', { level: 6 });
+
+    expect(Buffer.isBuffer(compressed)).toBe(true);
+    expect(zlib.gunzipSync(compressed).toString()).toBe(source.toString());
+  });
+
+  it('should throw for zstd when sync compression is unavailable', () => {
+    const original = (zlib as any).zstdCompressSync;
+    Object.defineProperty(zlib, 'zstdCompressSync', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+
+    try {
+      expect(() => compressBufferSync(Buffer.from('hello'), 'zstd')).toThrow(
+        'zstd synchronous compression is not available',
+      );
+    } finally {
+      Object.defineProperty(zlib, 'zstdCompressSync', {
         value: original,
         writable: true,
         configurable: true,
