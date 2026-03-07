@@ -25,13 +25,13 @@ import type { CompressionOptions, CompressionPreset } from './types';
  * @example
  * ```ts
  * import { createServer } from 'blaizejs';
- * import { compression } from '@blaizejs/middleware-compression';
+ * import { createCompressionMiddleware } from '@blaizejs/middleware-compression';
  *
  * const server = createServer();
- * server.use(compression());
+ * server.use(createCompressionMiddleware());
  * ```
  */
-export function compression(options?: CompressionOptions): Middleware {
+export function createCompressionMiddleware(options?: CompressionOptions): Middleware {
   const config = parseCompressionOptions(options ?? {});
 
   return createMiddleware({
@@ -78,10 +78,10 @@ export function compression(options?: CompressionOptions): Middleware {
  *
  * @example
  * ```ts
- * import { getCompressionPreset, compression } from '@blaizejs/middleware-compression';
+ * import { getCompressionPreset, createCompressionMiddleware } from '@blaizejs/middleware-compression';
  *
  * const opts = getCompressionPreset('fast');
- * server.use(compression(opts));
+ * server.use(createCompressionMiddleware(opts));
  * ```
  */
 export function getCompressionPreset(name: CompressionPreset): CompressionOptions {
@@ -99,23 +99,26 @@ export function getCompressionPreset(name: CompressionPreset): CompressionOption
  * Convenience factory — fast compression (low latency).
  * Uses the "fast" preset.
  */
-export const compressionFast = (): Middleware => compression(compressionPresets.fast);
+export const compressionFast = (): Middleware => createCompressionMiddleware(compressionPresets.fast);
 
 /**
  * Convenience factory — best compression (maximum ratio).
  * Uses the "best" preset.
  */
-export const compressionBest = (): Middleware => compression(compressionPresets.best);
+export const compressionBest = (): Middleware => createCompressionMiddleware(compressionPresets.best);
 
 /**
  * Convenience factory — text-only compression.
  * Uses the "text-only" preset.
  */
-export const compressionTextOnly = (): Middleware => compression(compressionPresets['text-only']);
+export const compressionTextOnly = (): Middleware => createCompressionMiddleware(compressionPresets['text-only']);
 
 /**
  * Convenience factory — streaming-optimised compression.
  * Uses the "streaming" preset.
  */
-export const compressionStreaming = (): Middleware => compression(compressionPresets.streaming);
+export const compressionStreaming = (): Middleware => createCompressionMiddleware(compressionPresets.streaming);
+
+/** Backward-compatible alias for {@link createCompressionMiddleware}. */
+export { createCompressionMiddleware as compression };
 
