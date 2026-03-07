@@ -9,6 +9,7 @@ import {
   RedisEventBusAdapter,
   RedisQueueAdapter,
 } from '@blaizejs/adapter-redis';
+import { createCompressionMiddleware } from '@blaizejs/middleware-compression';
 import { createSecurityMiddleware } from '@blaizejs/middleware-security';
 import { createCachePlugin } from '@blaizejs/plugin-cache';
 import { createMetricsPlugin } from '@blaizejs/plugin-metrics';
@@ -171,6 +172,11 @@ const cachePlugin = createCachePlugin({
 const securityMiddleware = createSecurityMiddleware();
 
 // ============================================================================
+// Compression Middleware
+// ============================================================================
+const compressionMiddleware = createCompressionMiddleware();
+
+// ============================================================================
 // Create and Start the Server
 // ============================================================================
 export const server = Blaize.createServer({
@@ -180,6 +186,7 @@ export const server = Blaize.createServer({
     enabled: true,
   },
   middleware: [
+    compressionMiddleware,
     securityMiddleware,
     Blaize.Middleware.requestLoggerMiddleware({
       includeHeaders: true,
@@ -210,6 +217,9 @@ try {
   Blaize.logger.info('   SSE Cache: GET  http://localhost:7485/cache/events');
   Blaize.logger.info('   SSE Queue: GET  http://localhost:7485/queue/stream?jobId=<id>');
   Blaize.logger.info('   SSE User:  GET  http://localhost:7485/user/:userId/notifications');
+  Blaize.logger.info('   Compress:  GET  http://localhost:7485/compression/json');
+  Blaize.logger.info('   Stream:    GET  http://localhost:7485/compression/stream');
+  Blaize.logger.info('   Info:      GET  http://localhost:7485/compression/info');
   Blaize.logger.info('');
   Blaize.logger.info('🔄 Events published from route handlers');
   Blaize.logger.info('📡 SSE routes subscribe and stream events to clients');

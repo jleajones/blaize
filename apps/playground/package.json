@@ -16,6 +16,7 @@
     "blaizejs": "workspace:*",
     "@blaizejs/adapter-redis": "workspace:*",
     "@blaizejs/client": "workspace:*",
+    "@blaizejs/middleware-compression": "workspace:*",
     "@blaizejs/middleware-security": "workspace:*",
     "@blaizejs/plugin-cache": "workspace:*",
     "@blaizejs/plugin-metrics": "workspace:*",
