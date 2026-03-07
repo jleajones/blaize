@@ -35,8 +35,11 @@ function parseAcceptEncoding(header: string): EncodingEntry[] {
       const param = (segments[i] ?? '').trim().toLowerCase();
       if (param.startsWith('q=')) {
         const parsed = parseFloat(param.slice(2));
-        if (!Number.isNaN(parsed)) {
-          quality = Math.max(0, Math.min(1, parsed));
+        // RFC 7231 §5.3.1: quality values must be in [0, 1].
+        // Out-of-range values are treated as invalid; the q parameter
+        // is ignored and the encoding keeps its default quality (1.0).
+        if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+          quality = parsed;
         }
       }
     }
@@ -58,15 +61,29 @@ function parseAcceptEncoding(header: string): EncodingEntry[] {
  * - `identity` participates in negotiation but returns `null` when it wins
  *   (meaning "don't compress"), since identity is not a compression algorithm
  *
- * @param acceptEncoding - The raw Accept-Encoding header value
+ * @param acceptEncoding - The raw Accept-Encoding header value, or `undefined` if the header is absent.
+ *   - `undefined` (absent header): Per RFC 7231 §5.3.4, an absent Accept-Encoding header means
+ *     any encoding is acceptable. Returns the first available algorithm.
+ *   - Empty/whitespace string: No encoding desired. Returns `null`.
+ *   - Non-empty string: Parses and negotiates normally.
+ *
+ * Callers needing fine-grained control over absent vs empty vs present should use
+ * {@link getAcceptEncodingState} first.
+ *
  * @param available - Server's available algorithms in preference order
  * @returns The best matching algorithm, or `null` if identity wins or none is acceptable
  */
 export function negotiateEncoding(
-  acceptEncoding: string,
+  acceptEncoding: string | undefined,
   available: CompressionAlgorithm[],
 ): CompressionAlgorithm | null {
-  if (!acceptEncoding || !acceptEncoding.trim()) {
+  // Absent header (undefined) → any encoding is acceptable per RFC 7231 §5.3.4.
+  // Return the first available compression algorithm.
+  if (acceptEncoding === undefined) {
+    return available[0] ?? null;
+  }
+
+  if (!acceptEncoding.trim()) {
     return null;
   }
 

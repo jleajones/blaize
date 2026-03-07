@@ -112,6 +112,32 @@ describe('negotiate', () => {
       const result = negotiateEncoding('*;q=0', ['gzip', 'br']);
       expect(result).toBeNull();
     });
+
+    it('should treat q=2 (out-of-range) as invalid and use default quality', () => {
+      const result = negotiateEncoding('gzip;q=2', ['gzip', 'br']);
+      expect(result).toBe('gzip');
+    });
+
+    it('should treat q=-1 (negative) as invalid and use default quality', () => {
+      const result = negotiateEncoding('gzip;q=-1', ['gzip', 'br']);
+      expect(result).toBe('gzip');
+    });
+
+    it('should ignore invalid q=1.5 and use default quality, keeping valid q=0.5', () => {
+      const result = negotiateEncoding('gzip;q=1.5, br;q=0.5', ['gzip', 'br']);
+      // gzip gets default 1.0 (invalid q ignored), br gets 0.5 → gzip wins
+      expect(result).toBe('gzip');
+    });
+
+    it('should return first available algorithm when header is undefined (absent)', () => {
+      const result = negotiateEncoding(undefined, ['zstd', 'br', 'gzip']);
+      expect(result).toBe('zstd');
+    });
+
+    it('should return null when header is undefined and no algorithms available', () => {
+      const result = negotiateEncoding(undefined, []);
+      expect(result).toBeNull();
+    });
   });
 
   describe('getAcceptEncodingState', () => {
