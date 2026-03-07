@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { negotiateEncoding, isAcceptEncodingEmpty } from './negotiate';
+import { negotiateEncoding, getAcceptEncodingState } from './negotiate';
 import type { CompressionAlgorithm } from './types';
 
 describe('negotiate', () => {
@@ -114,25 +114,25 @@ describe('negotiate', () => {
     });
   });
 
-  describe('isAcceptEncodingEmpty', () => {
-    it('should return true for undefined', () => {
-      expect(isAcceptEncodingEmpty(undefined)).toBe(true);
+  describe('getAcceptEncodingState', () => {
+    it('should return "absent" for undefined', () => {
+      expect(getAcceptEncodingState(undefined)).toBe('absent');
     });
 
-    it('should return true for empty string', () => {
-      expect(isAcceptEncodingEmpty('')).toBe(true);
+    it('should return "empty" for empty string', () => {
+      expect(getAcceptEncodingState('')).toBe('empty');
     });
 
-    it('should return true for whitespace-only string', () => {
-      expect(isAcceptEncodingEmpty('   ')).toBe(true);
+    it('should return "empty" for whitespace-only string', () => {
+      expect(getAcceptEncodingState('   ')).toBe('empty');
     });
 
-    it('should return false for non-empty header', () => {
-      expect(isAcceptEncodingEmpty('gzip')).toBe(false);
+    it('should return "present" for non-empty header', () => {
+      expect(getAcceptEncodingState('gzip')).toBe('present');
     });
 
-    it('should return false for wildcard', () => {
-      expect(isAcceptEncodingEmpty('*')).toBe(false);
+    it('should return "present" for multiple encodings', () => {
+      expect(getAcceptEncodingState('gzip, br')).toBe('present');
     });
   });
 });

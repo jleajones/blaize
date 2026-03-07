@@ -15,5 +15,5 @@ export {
   getCompressionLevel,
 } from './algorithms';
 export type { CompressorStreamOptions } from './algorithms';
-export { negotiateEncoding, isAcceptEncodingEmpty } from './negotiate';
+export { negotiateEncoding, getAcceptEncodingState } from './negotiate';
 

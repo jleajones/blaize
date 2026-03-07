@@ -128,18 +128,17 @@ export function negotiateEncoding(
 }
 
 /**
- * Check if the Accept-Encoding header is empty or absent.
+ * Determine the state of the Accept-Encoding header per RFC 7231 §5.3.4.
  *
- * **Deliberate simplification:** RFC 7231 §5.3.4 distinguishes between an absent header
- * (any encoding is acceptable) and an empty header (no encoding is desired). This utility
- * intentionally treats both cases the same — returning `true` to signal that the middleware
- * should skip compression. The middleware factory (T10) is responsible for distinguishing
- * absent vs. empty if different behavior is needed.
- *
- * @param acceptEncoding - The raw Accept-Encoding header value (may be undefined)
- * @returns `true` if the header is undefined, empty, or whitespace-only
+ * - `'absent'` — Header not present. Any encoding is acceptable; middleware should compress.
+ * - `'empty'` — Header present but empty. No encoding desired; middleware should skip compression.
+ * - `'present'` — Header present with values. Parse and negotiate.
  */
-export function isAcceptEncodingEmpty(acceptEncoding: string | undefined): boolean {
-  return acceptEncoding === undefined || acceptEncoding.trim() === '';
+export function getAcceptEncodingState(
+  acceptEncoding: string | undefined,
+): 'absent' | 'empty' | 'present' {
+  if (acceptEncoding === undefined) return 'absent';
+  if (acceptEncoding.trim() === '') return 'empty';
+  return 'present';
 }
 
