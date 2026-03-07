@@ -14,7 +14,7 @@ interface EncodingEntry {
 }
 
 /**
- * Parse an Accept-Encoding header value into sorted entries.
+ * Parse an Accept-Encoding header value into entries (preserves input order).
  *
  * Handles quality values (e.g. `gzip;q=0.8`), wildcards (`*`),
  * and malformed input (returns empty array, never throws).
@@ -55,11 +55,12 @@ function parseAcceptEncoding(header: string): EncodingEntry[] {
  * - Quality values determine client preference (`q=0` means "not acceptable")
  * - When multiple algorithms have the same quality, server preference (order in `available`) wins
  * - The `*` wildcard matches any available algorithm
- * - `identity` always returns `null` (it's not a compression algorithm)
+ * - `identity` participates in negotiation but returns `null` when it wins
+ *   (meaning "don't compress"), since identity is not a compression algorithm
  *
  * @param acceptEncoding - The raw Accept-Encoding header value
  * @param available - Server's available algorithms in preference order
- * @returns The best matching algorithm, or `null` if none is acceptable
+ * @returns The best matching algorithm, or `null` if identity wins or none is acceptable
  */
 export function negotiateEncoding(
   acceptEncoding: string,
@@ -82,13 +83,18 @@ export function negotiateEncoding(
 
   const wildcardQuality = qualityMap.get('*');
 
-  let bestAlgorithm: CompressionAlgorithm | null = null;
+  // Track best candidate (compression algorithm or identity)
+  let bestAlgorithm: CompressionAlgorithm | 'identity' | null = null;
   let bestQuality = -1;
 
-  for (const algorithm of available) {
-    // Skip identity — it's not a compression algorithm
-    if (algorithm === 'identity') continue;
+  // Also consider identity as a candidate for negotiation.
+  // identity is always implicitly available unless explicitly rejected.
+  const candidates: Array<CompressionAlgorithm | 'identity'> = [...available];
+  if (!candidates.includes('identity' as CompressionAlgorithm)) {
+    candidates.push('identity' as CompressionAlgorithm);
+  }
 
+  for (const algorithm of candidates) {
     const algoLower = algorithm.toLowerCase();
     let quality: number | undefined = qualityMap.get(algoLower);
 
@@ -98,23 +104,37 @@ export function negotiateEncoding(
     }
 
     // If still undefined, client didn't mention it — skip
+    // Note: identity only participates when explicitly listed in the header or matched by wildcard.
+    // Per RFC 7231, identity is implicitly acceptable, but the middleware should only prefer it
+    // over compression when the client explicitly indicates that preference.
     if (quality === undefined) continue;
 
     // q=0 means explicitly rejected
     if (quality === 0) continue;
 
-    // Higher quality wins; on tie, first in available (server preference) wins
+    // Higher quality wins; on tie, first in candidates (server preference) wins
     if (quality > bestQuality) {
       bestQuality = quality;
       bestAlgorithm = algorithm;
     }
   }
 
-  return bestAlgorithm;
+  // If identity wins, return null (no compression needed)
+  if (bestAlgorithm === 'identity') {
+    return null;
+  }
+
+  return bestAlgorithm as CompressionAlgorithm | null;
 }
 
 /**
  * Check if the Accept-Encoding header is empty or absent.
+ *
+ * **Deliberate simplification:** RFC 7231 §5.3.4 distinguishes between an absent header
+ * (any encoding is acceptable) and an empty header (no encoding is desired). This utility
+ * intentionally treats both cases the same — returning `true` to signal that the middleware
+ * should skip compression. The middleware factory (T10) is responsible for distinguishing
+ * absent vs. empty if different behavior is needed.
  *
  * @param acceptEncoding - The raw Accept-Encoding header value (may be undefined)
  * @returns `true` if the header is undefined, empty, or whitespace-only

@@ -89,9 +89,28 @@ describe('negotiate', () => {
       expect(result).toBeNull();
     });
 
-    it('should skip identity in available list even with wildcard', () => {
-      const result = negotiateEncoding('*', ['identity', 'gzip']);
+    it('should return null when identity wins negotiation via wildcard', () => {
+      // identity is first in available, wildcard gives both q=1, identity wins
+      const result = negotiateEncoding('*', ['identity', 'gzip'] as CompressionAlgorithm[]);
+      expect(result).toBeNull();
+    });
+
+    it('should return null when identity is explicitly preferred over compression', () => {
+      const result = negotiateEncoding('identity;q=1.0, gzip;q=0.5', [
+        'gzip',
+        'identity',
+      ] as CompressionAlgorithm[]);
+      expect(result).toBeNull();
+    });
+
+    it('should return gzip when *;q=0 rejects everything except explicit gzip', () => {
+      const result = negotiateEncoding('*;q=0, gzip;q=1.0', ['gzip']);
       expect(result).toBe('gzip');
+    });
+
+    it('should return null when *;q=0 with no explicit algorithms', () => {
+      const result = negotiateEncoding('*;q=0', ['gzip', 'br']);
+      expect(result).toBeNull();
     });
   });
 
