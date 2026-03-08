@@ -137,8 +137,11 @@ function createListenMethod(
   return async () => {
     // Configure correlation before starting the server
     configureCorrelation(validatedOptions);
+
+    await serverInstance.router.initialize();
+
     // Initialize middleware and plugins
-    await initializePlugins(serverInstance);
+    await registerPlugins(serverInstance);
 
     // Use the functional manager
     await serverInstance.pluginManager.initializePlugins(serverInstance);
@@ -156,9 +159,9 @@ function createListenMethod(
 }
 
 /**
- * Initializes plugins
+ * Registers plugins
  */
-async function initializePlugins(serverInstance: UnknownServer): Promise<void> {
+async function registerPlugins(serverInstance: UnknownServer): Promise<void> {
   // Register plugins from options
   for (const p of serverInstance.plugins) {
     await p.register(serverInstance);

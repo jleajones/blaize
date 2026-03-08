@@ -229,6 +229,13 @@ export interface RouterOptions {
  * Router interface
  */
 export interface Router {
+  /**
+   * Initialize the router. This method is idempotent: repeated calls must not re-run
+   * initialization, may return the same in-flight promise while startup is still
+   * running, and must resolve immediately once initialization has already completed.
+   */
+  initialize(): Promise<void>;
+
   /** Handle an incoming request */
   handleRequest: (
     ctx: Context,

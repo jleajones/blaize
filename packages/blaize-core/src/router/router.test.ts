@@ -203,16 +203,13 @@ describe('Router', () => {
     expect(createRouteRegistry).toHaveBeenCalled();
   });
 
-  test('initializes routes using parallel loading on creation', async () => {
+  test('does not initialize routes on creation', async () => {
     // Arrange & Act
     createRouter({ routesDir: './routes' });
 
-    // Wait for initialization promise to resolve
-    await vi.runAllTimersAsync();
-
-    // Assert - should use parallel loading instead of findRoutes
-    expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
-    expect(addRouteToMatcher).toHaveBeenCalled();
+    // Assert - initialization is deferred to explicit initialize() or first request
+    expect(loadInitialRoutesParallel).not.toHaveBeenCalled();
+    expect(addRouteToMatcher).not.toHaveBeenCalled();
   });
 
   test('sets up file watcher in development mode', async () => {
@@ -401,28 +398,90 @@ describe('Router', () => {
     );
   });
 
-  test('initializes router during creation (not on first request)', async () => {
-    const mockLogger = createMockLogger();
-    // Arrange - Clear any previous calls
-    vi.clearAllMocks();
-
-    // Mock the initialization process
-    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValue(mockRoutes);
-
-    // Act - Router initializes during creation
+  test('initializes deferred route directories together on first initialize', async () => {
+    // Arrange
     const router = createRouter({ routesDir: './routes' });
 
-    // Wait for async initialization to complete
-    await vi.runAllTimersAsync();
+    await router.addRouteDirectory('./plugins/auth/routes');
 
-    // Assert - Router should have initialized during creation
-    expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
+    // Act
+    await router.initialize();
 
-    // Additional test: handling request should work without additional initialization
-    await router.handleRequest(mockContext, mockLogger, mockEventBus);
+    // Assert
+    expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(2);
+    expect(loadInitialRoutesParallel).toHaveBeenNthCalledWith(1, './routes');
+    expect(loadInitialRoutesParallel).toHaveBeenNthCalledWith(2, './plugins/auth/routes');
+  });
 
-    // Should not have called loadInitialRoutesParallel again
-    expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(1);
+  test('preserves prefix for deferred plugin directories during initialize and watching', async () => {
+    // Arrange
+    const pluginRoute: Route = {
+      path: '/login',
+      POST: {
+        handler: vi.fn(),
+        middleware: [],
+      },
+    };
+    const routeWithPrefix = { ...pluginRoute, path: '/api/v1/login' };
+
+    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockReset();
+    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([pluginRoute]);
+    (watchRoutes as ReturnType<typeof vi.fn>).mockReset();
+    (watchRoutes as ReturnType<typeof vi.fn>).mockReturnValue(mockWatcher);
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReset();
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce({ added: [], changed: [], removed: [] })
+      .mockReturnValueOnce({ added: [routeWithPrefix], changed: [], removed: [] });
+
+    const router = createRouter({ routesDir: './routes', watchMode: true });
+    await router.addRouteDirectory('./plugins/auth/routes', { prefix: '/api/v1' });
+
+    // Act
+    await router.initialize();
+
+    // Assert - deferred initialization preserves prefix
+    expect(addRouteToMatcher).toHaveBeenCalledWith(routeWithPrefix, mockMatcher);
+    expect(watchRoutes).toHaveBeenCalledWith('./plugins/auth/routes', expect.any(Object));
+
+    const pluginWatchCall = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([directory]) => directory === './plugins/auth/routes'
+    );
+    if (!pluginWatchCall) {
+      throw new Error('watchRoutes should have been called for the deferred plugin directory');
+    }
+
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockClear();
+    (addRouteToMatcher as ReturnType<typeof vi.fn>).mockClear();
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReturnValue({
+      added: [routeWithPrefix],
+      changed: [],
+      removed: [],
+    });
+
+    pluginWatchCall[1].onRouteAdded('./plugins/auth/routes/login.ts', [pluginRoute]);
+
+    expect(updateRoutesFromFile).toHaveBeenCalledWith(mockRegistry, './plugins/auth/routes/login.ts', [
+      routeWithPrefix,
+    ]);
+    expect(addRouteToMatcher).toHaveBeenCalledWith(routeWithPrefix, mockMatcher);
+  });
+
+  test('retries initialization after a failed attempt', async () => {
+    // Arrange
+    const initializationError = new Error('transient failure');
+    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(initializationError)
+      .mockResolvedValueOnce(mockRoutes);
+
+    const router = createRouter({ routesDir: './routes' });
+
+    // Act & Assert
+    await expect(router.initialize()).rejects.toThrow(initializationError);
+    await expect(router.initialize()).resolves.toBeUndefined();
+
+    expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(2);
   });
 
   // ==========================================
@@ -481,10 +540,10 @@ describe('Router', () => {
       removed: [],
     });
 
-    createRouter({ routesDir: './routes', watchMode: true });
+    const router = createRouter({ routesDir: './routes', watchMode: true });
 
     // Wait for initialization to complete with empty routes
-    await vi.runAllTimersAsync();
+    await router.initialize();
 
     // Clear any initialization calls completely
     (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockClear();
@@ -526,8 +585,8 @@ describe('Router', () => {
 
   test('file watcher handles route removals with cache clearing', async () => {
     // Arrange
-    const _router = createRouter({ routesDir: './routes', watchMode: true });
-    await vi.runAllTimersAsync();
+    const router = createRouter({ routesDir: './routes', watchMode: true });
+    await router.initialize();
 
     const onRouteRemoved = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls[0]![1]
       .onRouteRemoved;
@@ -562,8 +621,7 @@ describe('Router', () => {
       (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
       router = createRouter({ routesDir: './routes', watchMode: true });
-      // Wait for initial initialization
-      await vi.runAllTimersAsync();
+      await router.initialize();
     });
 
     test('addRouteDirectory adds routes from plugin directory', async () => {
@@ -657,8 +715,8 @@ describe('Router', () => {
   describe('Registry Integration', () => {
     test('uses performance tracking for route changes', async () => {
       // Arrange
-      createRouter({ routesDir: './routes', watchMode: true });
-      await vi.runAllTimersAsync();
+      const router = createRouter({ routesDir: './routes', watchMode: true });
+      await router.initialize();
 
       const onRouteChanged = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls[0]![1]
         .onRouteChanged;
