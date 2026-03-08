@@ -174,6 +174,7 @@ export function resetServerMocks<TState = {}, TServices = {}>(
 
   // Reset router mocks
   const router = server.router as any;
+  if (vi.isMockFunction(router.initialize)) vi.mocked(router.initialize).mockClear();
   if (vi.isMockFunction(router.handleRequest)) vi.mocked(router.handleRequest).mockClear();
   if (vi.isMockFunction(router.getRoutes)) vi.mocked(router.getRoutes).mockClear();
   if (vi.isMockFunction(router.addRoute)) vi.mocked(router.addRoute).mockClear();
