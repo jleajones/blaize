@@ -195,6 +195,7 @@ describe('Router', () => {
 
     // Assert
     expect(router).toBeDefined();
+    expect(router.initialize).toBeInstanceOf(Function);
     expect(router.handleRequest).toBeInstanceOf(Function);
     expect(router.getRoutes).toBeInstanceOf(Function);
     expect(router.addRoute).toBeInstanceOf(Function);
@@ -210,6 +211,54 @@ describe('Router', () => {
     // Assert - initialization is deferred to explicit initialize() or first request
     expect(loadInitialRoutesParallel).not.toHaveBeenCalled();
     expect(addRouteToMatcher).not.toHaveBeenCalled();
+  });
+
+  test('reuses in-flight initialization work for repeated initialize calls', async () => {
+    // Arrange
+    let resolveRoutes: ((routes: Route[]) => void) | undefined;
+    const routeLoad = new Promise<Route[]>(resolve => {
+      resolveRoutes = resolve;
+    });
+    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockReturnValueOnce(routeLoad);
+
+    const router = createRouter({ routesDir: './routes' });
+
+    // Act
+    const firstInitialize = router.initialize();
+    const secondInitialize = router.initialize();
+
+    // Assert
+    expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(1);
+
+    const finishInitialization = resolveRoutes;
+    expect(finishInitialization).toBeDefined();
+    if (!finishInitialization) {
+      throw new Error('Expected initialize test resolver to be captured');
+    }
+    finishInitialization(mockRoutes);
+
+    await expect(Promise.all([firstInitialize, secondInitialize])).resolves.toEqual([
+      undefined,
+      undefined,
+    ]);
+  });
+
+  test('populates discovered routes during initialize', async () => {
+    // Arrange
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReturnValue({
+      added: mockRoutes,
+      changed: [],
+      removed: [],
+    });
+    const router = createRouter({ routesDir: './routes' });
+
+    // Act
+    await router.initialize();
+
+    // Assert
+    expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
+    expect(addRouteToMatcher).toHaveBeenNthCalledWith(1, mockRoutes[0], mockMatcher);
+    expect(addRouteToMatcher).toHaveBeenNthCalledWith(2, mockRoutes[1], mockMatcher);
   });
 
   test('sets up file watcher in development mode', async () => {
