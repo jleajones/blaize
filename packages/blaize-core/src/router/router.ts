@@ -251,7 +251,8 @@ export function createRouter(options: RouterOptions): Router {
      * Handle an incoming request
      */
     async handleRequest(ctx: Context, logger: BlaizeLogger, eventBus: TypedEventBus<EventSchemas>) {
-      // Ensure router is initialized
+      // createRouter() kicks off initialization in the background, so the first
+      // request may still need to await it here before matching routes.
       if (!initialized) {
         console.log('🔄 Router not initialized, initializing...');
         await initialize();
