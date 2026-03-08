@@ -192,11 +192,10 @@ describe('Server Module', () => {
       expect(serverInstance.host).toBe('0.0.0.0');
     });
 
-    it('should initialize plugins', async () => {
+    it('should not initialize plugins', async () => {
       await startServer(serverInstance, serverOptions);
 
-      // Verify plugin initialization was called
-      expect(serverInstance.plugins[0]!.initialize).toHaveBeenCalledWith(serverInstance);
+      expect(serverInstance.plugins[0]!.initialize).not.toHaveBeenCalled();
     });
 
     it('should handle file system errors when reading certificates', async () => {

@@ -104,14 +104,6 @@ function listenOnPort(
   });
 }
 
-async function initializePlugins(serverInstance: UnknownServer): Promise<void> {
-  for (const plugin of serverInstance.plugins) {
-    if (typeof plugin.initialize === 'function') {
-      await plugin.initialize(serverInstance);
-    }
-  }
-}
-
 // Main server start function - now with much lower complexity
 export async function startServer(
   serverInstance: UnknownServer,
@@ -126,9 +118,6 @@ export async function startServer(
     // Get effective port and host
     const port = serverOptions.port;
     const host = serverOptions.host;
-
-    // Initialize all registered plugins
-    await initializePlugins(serverInstance);
 
     // Determine if using HTTP/2
     const http2Options = serverOptions.http2 || { enabled: true };
