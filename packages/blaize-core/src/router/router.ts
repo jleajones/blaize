@@ -50,7 +50,7 @@ export function createRouter(options: RouterOptions): Router {
   let initializationPromise: Promise<void> | null = null;
   let _watchers: Map<string, ReturnType<typeof watchRoutes>> | null = null;
 
-  const routeDirectories = new Set<string>([routerOptions.routesDir]);
+  const routeDirectories = new Map<string, { prefix?: string }>([[routerOptions.routesDir, {}]]);
 
   /**
    * Apply registry changes to matcher efficiently
@@ -144,8 +144,8 @@ export function createRouter(options: RouterOptions): Router {
       try {
         // Load routes from all directories in parallel
         await Promise.all(
-          Array.from(routeDirectories).map(directory =>
-            loadRoutesFromDirectory(directory, directory)
+          Array.from(routeDirectories.entries()).map(([directory, { prefix }]) =>
+            loadRoutesFromDirectory(directory, directory, prefix)
           )
         );
 
@@ -173,72 +173,9 @@ export function createRouter(options: RouterOptions): Router {
       _watchers = new Map();
     }
 
-    for (const directory of routeDirectories) {
+    for (const [directory, { prefix }] of routeDirectories.entries()) {
       if (!_watchers.has(directory)) {
-        const watcher = watchRoutes(directory, {
-          debounceMs: 16, // ~60fps debouncing
-          ignore: ['node_modules', '.git'],
-
-          onRouteAdded: (filepath: string, addedRoutes: Route[]) => {
-            // Batch process all added routes
-            try {
-              const changes = updateRoutesFromFile(registry, filepath, addedRoutes);
-              applyMatcherChanges(changes);
-            } catch (error) {
-              console.error(`Error adding routes from ${directory}:`, error);
-            }
-          },
-
-          onRouteChanged: withPerformanceTracking(
-            async (filepath: string, changedRoutes: Route[]) => {
-              // console.log(`${changedRoutes.length} route(s) changed in ${directory}`);
-
-              try {
-                console.log(`Processing changes for ${filepath}`);
-                // Process all changed routes in one batch operation
-                const changes = updateRoutesFromFile(registry, filepath, changedRoutes);
-
-                console.log(
-                  `Changes detected: ${changes.added.length} added, ` +
-                    `${changes.changed.length} changed, ${changes.removed.length} removed`
-                );
-
-                // Apply matcher updates efficiently
-                applyMatcherChanges(changes);
-
-                console.log(
-                  `Route changes applied: ${changes.added.length} added, ` +
-                    `${changes.changed.length} changed, ${changes.removed.length} removed`
-                );
-              } catch (error) {
-                console.error(`⚠️ Error updating routes from ${directory}:`, error);
-              }
-            },
-            directory
-          ),
-
-          onRouteRemoved: (filePath: string, removedRoutes: Route[]) => {
-            console.log(`File removed: ${filePath} with ${removedRoutes.length} routes`);
-
-            try {
-              // Remove all routes from this file
-              removedRoutes.forEach(route => {
-                removeRouteFromMatcher(route.path, matcher);
-              });
-
-              // Clear cache for removed file
-              clearFileCache(filePath);
-            } catch (error) {
-              console.error(`⚠️ Error removing routes from ${filePath}:`, error);
-            }
-          },
-
-          onError: (error: Error) => {
-            console.error(`⚠️ Route watcher error for ${directory}:`, error);
-          },
-        });
-
-        _watchers.set(directory, watcher);
+        setupWatcherForNewDirectory(directory, prefix);
       }
     }
   }
@@ -392,7 +329,7 @@ export function createRouter(options: RouterOptions): Router {
         return;
       }
 
-      routeDirectories.add(directory);
+      routeDirectories.set(directory, { prefix: options.prefix });
 
       // If already initialized, load routes immediately
       if (initialized) {

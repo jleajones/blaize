@@ -413,6 +413,61 @@ describe('Router', () => {
     expect(loadInitialRoutesParallel).toHaveBeenNthCalledWith(2, './plugins/auth/routes');
   });
 
+  test('preserves prefix for deferred plugin directories during initialize and watching', async () => {
+    // Arrange
+    const pluginRoute: Route = {
+      path: '/login',
+      POST: {
+        handler: vi.fn(),
+        middleware: [],
+      },
+    };
+    const routeWithPrefix = { ...pluginRoute, path: '/api/v1/login' };
+
+    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockReset();
+    (loadInitialRoutesParallel as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([pluginRoute]);
+    (watchRoutes as ReturnType<typeof vi.fn>).mockReset();
+    (watchRoutes as ReturnType<typeof vi.fn>).mockReturnValue(mockWatcher);
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReset();
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce({ added: [], changed: [], removed: [] })
+      .mockReturnValueOnce({ added: [routeWithPrefix], changed: [], removed: [] });
+
+    const router = createRouter({ routesDir: './routes', watchMode: true });
+    await router.addRouteDirectory('./plugins/auth/routes', { prefix: '/api/v1' });
+
+    // Act
+    await router.initialize();
+
+    // Assert - deferred initialization preserves prefix
+    expect(addRouteToMatcher).toHaveBeenCalledWith(routeWithPrefix, mockMatcher);
+    expect(watchRoutes).toHaveBeenCalledWith('./plugins/auth/routes', expect.any(Object));
+
+    const pluginWatchCall = (watchRoutes as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([directory]) => directory === './plugins/auth/routes'
+    );
+    if (!pluginWatchCall) {
+      throw new Error('watchRoutes should have been called for the deferred plugin directory');
+    }
+
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockClear();
+    (addRouteToMatcher as ReturnType<typeof vi.fn>).mockClear();
+    (updateRoutesFromFile as ReturnType<typeof vi.fn>).mockReturnValue({
+      added: [routeWithPrefix],
+      changed: [],
+      removed: [],
+    });
+
+    pluginWatchCall[1].onRouteAdded('./plugins/auth/routes/login.ts', [pluginRoute]);
+
+    expect(updateRoutesFromFile).toHaveBeenCalledWith(mockRegistry, './plugins/auth/routes/login.ts', [
+      routeWithPrefix,
+    ]);
+    expect(addRouteToMatcher).toHaveBeenCalledWith(routeWithPrefix, mockMatcher);
+  });
+
   test('retries initialization after a failed attempt', async () => {
     // Arrange
     const initializationError = new Error('transient failure');
