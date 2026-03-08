@@ -51,6 +51,7 @@ export function createRouter(options: RouterOptions): Router {
   let _watchers: Map<string, ReturnType<typeof watchRoutes>> | null = null;
 
   const routeDirectories = new Map<string, { prefix?: string }>([[routerOptions.routesDir, {}]]);
+  const pendingRouteDirectories = new Map<string, { prefix?: string }>();
 
   /**
    * Apply registry changes to matcher efficiently
@@ -149,6 +150,17 @@ export function createRouter(options: RouterOptions): Router {
           )
         );
 
+        while (pendingRouteDirectories.size > 0) {
+          const directoriesToLoad = Array.from(pendingRouteDirectories.entries());
+          pendingRouteDirectories.clear();
+
+          await Promise.all(
+            directoriesToLoad.map(([directory, { prefix }]) =>
+              loadRoutesFromDirectory(directory, directory, prefix)
+            )
+          );
+        }
+
         // Set up optimized watching
         if (routerOptions.watchMode) {
           setupOptimizedWatching();
@@ -156,6 +168,7 @@ export function createRouter(options: RouterOptions): Router {
 
         initialized = true;
       } catch (error) {
+        pendingRouteDirectories.clear();
         initializationPromise = null;
         console.error('⚠️ Failed to initialize router:', error);
         throw error;
@@ -332,16 +345,24 @@ export function createRouter(options: RouterOptions): Router {
         return;
       }
 
-      routeDirectories.set(directory, { prefix: options.prefix });
+      const routeDirectoryOptions = { prefix: options.prefix };
+      routeDirectories.set(directory, routeDirectoryOptions);
 
       // If already initialized, load routes immediately
       if (initialized) {
-        await loadRoutesFromDirectory(directory, directory, options.prefix);
+        await loadRoutesFromDirectory(directory, directory, routeDirectoryOptions.prefix);
 
         // Set up watching for this directory if in watch mode
-        if (routerOptions.watchMode) {
-          setupWatcherForNewDirectory(directory, options.prefix);
+        if (routerOptions.watchMode && !_watchers?.has(directory)) {
+          setupWatcherForNewDirectory(directory, routeDirectoryOptions.prefix);
         }
+
+        return;
+      }
+
+      if (initializationPromise) {
+        pendingRouteDirectories.set(directory, routeDirectoryOptions);
+        await initializationPromise;
       }
     },
 
