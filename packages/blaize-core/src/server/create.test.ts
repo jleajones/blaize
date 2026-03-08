@@ -365,6 +365,49 @@ describe('create', () => {
         'start-server',
       ]);
     });
+
+    test('should not re-register plugins already added via server.register before listen', async () => {
+      const callOrder: string[] = [];
+      const optionsPlugin = {
+        register: vi.fn().mockImplementation(async () => {
+          callOrder.push('options-register');
+        }),
+        name: 'options-plugin',
+        version: '1.0.0',
+      };
+      const preListenPlugin = {
+        register: vi.fn().mockImplementation(async () => {
+          callOrder.push('pre-listen-register');
+        }),
+        name: 'pre-listen-plugin',
+        version: '1.0.0',
+      };
+
+      const customServer = create({ plugins: [optionsPlugin] });
+
+      customServer.router.initialize = vi.fn().mockImplementation(async () => {
+        callOrder.push('router');
+      });
+      customServer.pluginManager.initializePlugins = vi.fn().mockImplementation(async () => {
+        callOrder.push('plugin-manager');
+      });
+      vi.mocked(startModule.startServer).mockImplementation(async () => {
+        callOrder.push('start-server');
+      });
+
+      await customServer.register(preListenPlugin);
+      await customServer.listen();
+
+      expect(preListenPlugin.register).toHaveBeenCalledTimes(1);
+      expect(optionsPlugin.register).toHaveBeenCalledTimes(1);
+      expect(callOrder).toEqual([
+        'pre-listen-register',
+        'router',
+        'options-register',
+        'plugin-manager',
+        'start-server',
+      ]);
+    });
   });
 
   describe('server.close', () => {
