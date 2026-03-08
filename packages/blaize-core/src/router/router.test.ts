@@ -251,12 +251,13 @@ describe('Router', () => {
     process.env.NODE_ENV = 'production';
 
     // Act
-    createRouter({ routesDir: './routes', watchMode: false });
+    const router = createRouter({ routesDir: './routes', watchMode: false });
 
-    // Wait for initialization promise to resolve
-    await vi.runAllTimersAsync();
+    // Force initialization before asserting watcher behavior
+    await router.initialize();
 
     // Assert
+    expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
     expect(watchRoutes).not.toHaveBeenCalled();
 
     // Cleanup
