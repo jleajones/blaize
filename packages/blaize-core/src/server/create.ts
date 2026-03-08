@@ -132,7 +132,8 @@ function configureCorrelation(options: ServerOptions): void {
  */
 function createListenMethod(
   serverInstance: UnknownServer,
-  validatedOptions: ServerOptions
+  validatedOptions: ServerOptions,
+  pluginsToRegisterOnListen: Plugin[]
 ): UnknownServer['listen'] {
   return async () => {
     // Configure correlation before starting the server
@@ -141,7 +142,8 @@ function createListenMethod(
     await serverInstance.router.initialize();
 
     // Initialize middleware and plugins
-    await registerPlugins(serverInstance);
+    await registerPlugins(serverInstance, pluginsToRegisterOnListen);
+    pluginsToRegisterOnListen.length = 0;
 
     // Use the functional manager
     await serverInstance.pluginManager.initializePlugins(serverInstance);
@@ -161,9 +163,12 @@ function createListenMethod(
 /**
  * Registers plugins
  */
-async function registerPlugins(serverInstance: UnknownServer): Promise<void> {
-  // Register plugins from options
-  for (const p of serverInstance.plugins) {
+async function registerPlugins(
+  serverInstance: UnknownServer,
+  pluginsToRegister: readonly Plugin[]
+): Promise<void> {
+  // Register only plugins that have not already been registered via server.register()
+  for (const p of pluginsToRegister) {
     await p.register(serverInstance);
   }
 }
@@ -285,6 +290,7 @@ export function create<
   // TODO: create registries to manage middleware and plugins
   const initialMiddleware = Array.isArray(middleware) ? [...middleware] : [];
   const initialPlugins = Array.isArray(plugins) ? [...plugins] : [];
+  const pluginsToRegisterOnListen = [...initialPlugins];
 
   // Initialize core server components
   const contextStorage = new AsyncLocalStorage<Context>();
@@ -334,7 +340,11 @@ export function create<
   };
 
   // Add methods to the server instance
-  serverInstance.listen = createListenMethod(serverInstance, validatedOptions);
+  serverInstance.listen = createListenMethod(
+    serverInstance,
+    validatedOptions,
+    pluginsToRegisterOnListen
+  );
   serverInstance.close = createCloseMethod(serverInstance);
   serverInstance.use = createUseMethod(serverInstance);
   serverInstance.register = createRegisterMethod(serverInstance);
