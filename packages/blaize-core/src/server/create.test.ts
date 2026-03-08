@@ -106,6 +106,19 @@ vi.mock('../tracing/correlation', () => ({
   getCorrelationId: vi.fn(() => 'test-correlation-id'),
 }));
 
+vi.mock('../router/router', () => ({
+  createRouter: vi.fn(() => ({
+    initialize: vi.fn().mockResolvedValue(undefined),
+    handleRequest: vi.fn(),
+    getRoutes: vi.fn().mockReturnValue([]),
+    addRoute: vi.fn(),
+    addRoutes: vi.fn().mockReturnValue({ added: [], removed: [], changed: [] }),
+    addRouteDirectory: vi.fn().mockResolvedValue(undefined),
+    getRouteConflicts: vi.fn().mockReturnValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 // Mock the logger module
 vi.mock('../logger', () => ({
   createLogger: vi.fn(config => {
@@ -301,6 +314,56 @@ describe('create', () => {
       const emitSpy = vi.spyOn(server.events, 'emit');
       await server.listen();
       expect(emitSpy).toHaveBeenCalledWith('started');
+    });
+
+    test('should initialize router before registering plugins and starting the server', async () => {
+      const callOrder: string[] = [];
+      let resolveInitialize!: () => void;
+      const initializePromise = new Promise<void>(resolve => {
+        resolveInitialize = () => {
+          callOrder.push('initialize-resolved');
+          resolve();
+        };
+      });
+      const plugin = {
+        register: vi.fn().mockImplementation(async () => {
+          callOrder.push('register');
+        }),
+        name: 'test-plugin',
+        version: '1.0.0',
+      };
+
+      const customServer = create({ plugins: [plugin] });
+
+      customServer.router.initialize = vi.fn().mockImplementation(() => {
+        callOrder.push('router');
+        return initializePromise;
+      });
+      customServer.pluginManager.initializePlugins = vi.fn().mockImplementation(async () => {
+        callOrder.push('plugin-manager');
+      });
+      vi.mocked(startModule.startServer).mockImplementation(async () => {
+        callOrder.push('start-server');
+      });
+
+      const listenPromise = customServer.listen();
+
+      expect(customServer.router.initialize).toHaveBeenCalledTimes(1);
+      expect(plugin.register).not.toHaveBeenCalled();
+      expect(customServer.pluginManager.initializePlugins).not.toHaveBeenCalled();
+      expect(startModule.startServer).not.toHaveBeenCalled();
+
+      resolveInitialize();
+
+      await listenPromise;
+
+      expect(callOrder).toEqual([
+        'router',
+        'initialize-resolved',
+        'register',
+        'plugin-manager',
+        'start-server',
+      ]);
     });
   });
 
