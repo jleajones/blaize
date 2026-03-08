@@ -230,7 +230,12 @@ describe('Router', () => {
     // Assert
     expect(loadInitialRoutesParallel).toHaveBeenCalledTimes(1);
 
-    resolveRoutes?.(mockRoutes);
+    const finishInitialization = resolveRoutes;
+    expect(finishInitialization).toBeDefined();
+    if (!finishInitialization) {
+      throw new Error('Expected initialize test resolver to be captured');
+    }
+    finishInitialization(mockRoutes);
 
     await expect(Promise.all([firstInitialize, secondInitialize])).resolves.toEqual([
       undefined,
