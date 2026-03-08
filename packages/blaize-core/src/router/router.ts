@@ -156,6 +156,7 @@ export function createRouter(options: RouterOptions): Router {
 
         initialized = true;
       } catch (error) {
+        initializationPromise = null;
         console.error('⚠️ Failed to initialize router:', error);
         throw error;
       }
@@ -304,11 +305,6 @@ export function createRouter(options: RouterOptions): Router {
     _watchers.set(directory, watcher);
     return watcher;
   }
-
-  // Initialize router on creation
-  initialize().catch(error => {
-    console.error('⚠️ Failed to initialize router on creation:', error);
-  });
 
   // Public API
   return {
