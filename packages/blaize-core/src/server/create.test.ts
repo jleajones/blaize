@@ -318,6 +318,13 @@ describe('create', () => {
 
     test('should initialize router before registering plugins and starting the server', async () => {
       const callOrder: string[] = [];
+      let resolveInitialize!: () => void;
+      const initializePromise = new Promise<void>(resolve => {
+        resolveInitialize = () => {
+          callOrder.push('initialize-resolved');
+          resolve();
+        };
+      });
       const plugin = {
         register: vi.fn().mockImplementation(async () => {
           callOrder.push('register');
@@ -328,8 +335,9 @@ describe('create', () => {
 
       const customServer = create({ plugins: [plugin] });
 
-      customServer.router.initialize = vi.fn().mockImplementation(async () => {
+      customServer.router.initialize = vi.fn().mockImplementation(() => {
         callOrder.push('router');
+        return initializePromise;
       });
       customServer.pluginManager.initializePlugins = vi.fn().mockImplementation(async () => {
         callOrder.push('plugin-manager');
@@ -338,9 +346,24 @@ describe('create', () => {
         callOrder.push('start-server');
       });
 
-      await customServer.listen();
+      const listenPromise = customServer.listen();
 
-      expect(callOrder).toEqual(['router', 'register', 'plugin-manager', 'start-server']);
+      expect(customServer.router.initialize).toHaveBeenCalledTimes(1);
+      expect(plugin.register).not.toHaveBeenCalled();
+      expect(customServer.pluginManager.initializePlugins).not.toHaveBeenCalled();
+      expect(startModule.startServer).not.toHaveBeenCalled();
+
+      resolveInitialize();
+
+      await listenPromise;
+
+      expect(callOrder).toEqual([
+        'router',
+        'initialize-resolved',
+        'register',
+        'plugin-manager',
+        'start-server',
+      ]);
     });
   });
 
