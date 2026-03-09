@@ -14,6 +14,12 @@ import { create as createServer } from '../server/create';
 import type { Middleware, Plugin } from '@blaize-types/index';
 
 describe('Type Inference Utilities', () => {
+  vi.mock('../router/router', async () => {
+    const { createMockRouter } = await import('@blaizejs/testing-utils');
+    return {
+      createRouter: vi.fn(() => createMockRouter()),
+    };
+  });
   it('should extract context type from server', () => {
     // Create typed middleware
     const authMiddleware: Middleware<

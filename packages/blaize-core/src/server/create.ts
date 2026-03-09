@@ -137,15 +137,11 @@ function createListenMethod(
   return async () => {
     // Configure correlation before starting the server
     configureCorrelation(validatedOptions);
-    // Initialize middleware and plugins
-    await initializePlugins(serverInstance);
 
-    // Use the functional manager
+    await serverInstance.pluginManager.registerPlugins(serverInstance);
     await serverInstance.pluginManager.initializePlugins(serverInstance);
-
     // Start the server
     await startServer(serverInstance, validatedOptions);
-
     await serverInstance.pluginManager.onServerStart(serverInstance, serverInstance.server);
 
     // Setup signal handlers and emit events
@@ -153,16 +149,6 @@ function createListenMethod(
 
     return serverInstance;
   };
-}
-
-/**
- * Initializes plugins
- */
-async function initializePlugins(serverInstance: UnknownServer): Promise<void> {
-  // Register plugins from options
-  for (const p of serverInstance.plugins) {
-    await p.register(serverInstance);
-  }
 }
 
 /**

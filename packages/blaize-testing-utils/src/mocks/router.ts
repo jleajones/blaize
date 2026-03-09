@@ -19,8 +19,9 @@ import type {
 /**
  * Create a mock router for testing
  */
-export function createMockRouter(): Router {
+export function createMockRouter(overrides: Partial<Router> = {}): Router {
   return {
+    ready: Promise.resolve(),
     handleRequest: vi.fn().mockResolvedValue(undefined),
     getRoutes: vi.fn().mockReturnValue([]),
     addRoute: vi.fn(),
@@ -28,6 +29,7 @@ export function createMockRouter(): Router {
     addRouteDirectory: vi.fn().mockResolvedValue(undefined),
     getRouteConflicts: vi.fn().mockReturnValue([]),
     close: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
   };
 }
 

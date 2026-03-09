@@ -35,6 +35,7 @@ export function createMockPluginLifecycleManager(
   overrides: Partial<PluginLifecycleManager> = {}
 ): PluginLifecycleManager {
   return {
+    registerPlugins: vi.fn().mockResolvedValue(undefined),
     initializePlugins: vi.fn().mockResolvedValue(undefined),
     terminatePlugins: vi.fn().mockResolvedValue(undefined),
     onServerStart: vi.fn().mockResolvedValue(undefined),

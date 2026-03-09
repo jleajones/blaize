@@ -37,6 +37,25 @@ export function createPluginLifecycleManager(
   }
 
   return {
+    async registerPlugins(server: UnknownServer): Promise<void> {
+      logger.debug('[PluginLifecycle] Registering plugins', { count: server.plugins.length });
+
+      for (const plugin of server.plugins) {
+        try {
+          logger.debug('[PluginLifecycle] Registering plugin', { plugin: plugin.name });
+          await plugin.register(server);
+        } catch (error) {
+          // Register failures are always fatal regardless of continueOnError
+          handleError(plugin, 'register', error as Error);
+          throw error; // ← always rethrow
+        }
+      }
+
+      logger.info('[PluginLifecycle] Plugins registered', {
+        count: server.plugins.length,
+        plugins: server.plugins.map(p => p.name),
+      });
+    },
     /**
      * Initialize all plugins
      */
