@@ -302,21 +302,24 @@ export function createRouter(options: RouterOptions): Router {
   }
 
   // Initialize router on creation
-  initialize().catch(error => {
-    console.error('⚠️ Failed to initialize router on creation:', error);
-  });
+  const promise = initialize() as Promise<void>;
+  promise.catch(() => {});
+  const readyPromise = promise!;
 
   // Public API
   return {
+    /**
+     * Resolves when all initial routes are loaded.
+     * Plugins that need routes can await this. The server does NOT await it —
+     * routes load in the background while the server starts normally.
+     */
+    ready: readyPromise,
     /**
      * Handle an incoming request
      */
     async handleRequest(ctx: Context, logger: BlaizeLogger, eventBus: TypedEventBus<EventSchemas>) {
       // Ensure router is initialized
-      if (!initialized) {
-        console.log('🔄 Router not initialized, initializing...');
-        await initialize();
-      }
+      await initializationPromise;
 
       const { method, path } = ctx.request;
       console.log(`\n📥 Handling request: ${method} ${path}`);

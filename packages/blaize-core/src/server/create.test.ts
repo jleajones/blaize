@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import EventEmitter from 'node:events';
 
-import { createMockMiddleware } from '@blaizejs/testing-utils';
+import { createMockMiddleware, createMockPlugin, createMockRouter } from '@blaizejs/testing-utils';
 
 import { create, DEFAULT_OPTIONS } from './create';
 import * as startModule from './start';
@@ -22,7 +22,9 @@ import type {
   Plugin,
   Middleware,
   UnknownServer,
+  Route,
 } from '@blaize-types/index';
+import { createRouter } from '../router/router';
 
 // Mock middleware with specific type contributions
 const authMiddleware: Middleware<
@@ -151,6 +153,13 @@ vi.mock('../middleware/logger/request-logger', () => ({
   })),
 }));
 
+vi.mock('../router/router', async () => {
+  const { createMockRouter } = await import('@blaizejs/testing-utils');
+  return {
+    createRouter: vi.fn(() => createMockRouter()),
+  };
+});
+
 // eslint-disable-next-line import/order
 
 describe('create', () => {
@@ -249,7 +258,18 @@ describe('create', () => {
       await server.register(plugin);
 
       expect(server.plugins).toContain(plugin);
+      expect(plugin.register).not.toHaveBeenCalled();
+    });
+
+    test('should call plugin.register during listen()', async () => {
+      const server = create();
+
+      const plugin = createMockPlugin();
+      await server.register(plugin);
+      await server.listen();
+
       expect(plugin.register).toHaveBeenCalledWith(server);
+      expect(plugin.register).toHaveBeenCalledTimes(1);
     });
 
     test('should throw error when registering invalid plugin', async () => {
@@ -1549,6 +1569,7 @@ describe('create', () => {
       });
     });
   });
+
   describe('EventBus Integration', () => {
     describe('EventBus Creation', () => {
       it('should create EventBus on server initialization', () => {
@@ -1719,6 +1740,65 @@ describe('create', () => {
         expect(server.middleware).toHaveLength(1);
         expect(server.plugins).toHaveLength(1);
       });
+    });
+  });
+
+  describe('plugin router.ready integration', () => {
+    test('plugin that awaits router.ready sees all routes', async () => {
+      let routesSeenByPlugin: Route[] = [];
+
+      const mockRouter = createMockRouter({
+        ready: Promise.resolve(),
+        getRoutes: vi.fn().mockReturnValue([
+          { path: '/users', GET: { handler: vi.fn() } },
+          { path: '/posts', GET: { handler: vi.fn() } },
+        ]),
+      });
+
+      vi.mocked(createRouter).mockReturnValue(mockRouter);
+
+      const plugin = createMockPlugin({
+        name: 'openapi-plugin',
+        register: vi.fn().mockImplementation(async server => {
+          await server.router.ready;
+          routesSeenByPlugin = server.router.getRoutes();
+        }),
+      });
+
+      const server = create({ plugins: [plugin] });
+      await server.listen();
+
+      expect(routesSeenByPlugin).toHaveLength(2);
+      expect(routesSeenByPlugin[0]?.path).toBe('/users');
+    });
+
+    test('plugin that does not await router.ready sees empty routes', async () => {
+      let routesSeenByPlugin: Route[] = [];
+
+      let resolveReady!: () => void;
+      const mockRouter = createMockRouter({
+        ready: new Promise<void>(resolve => {
+          resolveReady = resolve;
+        }),
+        getRoutes: vi.fn().mockReturnValue([]),
+      });
+
+      vi.mocked(createRouter).mockReturnValue(mockRouter);
+
+      const plugin = createMockPlugin({
+        name: 'eager-plugin',
+        register: vi.fn().mockImplementation(async server => {
+          // No await on router.ready
+          routesSeenByPlugin = server.router.getRoutes();
+        }),
+      });
+
+      const server = create({ plugins: [plugin] });
+
+      setTimeout(() => resolveReady(), 100);
+      await server.listen();
+
+      expect(routesSeenByPlugin).toHaveLength(0);
     });
   });
 });

@@ -216,7 +216,6 @@ describe('Router', () => {
   });
 
   test('sets up file watcher in development mode', async () => {
-    const mockLogger = createMockLogger();
     // Arrange
     const originalNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
@@ -228,7 +227,7 @@ describe('Router', () => {
     });
 
     // Force initialization by handling a request
-    await router.handleRequest(mockContext, mockLogger, mockEventBus);
+    await router.ready;
 
     // Assert
     expect(watchRoutes).toHaveBeenCalled();
@@ -688,6 +687,57 @@ describe('Router', () => {
       // Assert
       expect(updateRoutesFromFile).toHaveBeenCalledWith(mockRegistry, 'programmatic', [route1]);
       expect(updateRoutesFromFile).toHaveBeenCalledWith(mockRegistry, 'programmatic', [route2]);
+    });
+  });
+
+  describe('router.ready', () => {
+    test('exposes a ready promise', () => {
+      const router = createRouter({ routesDir: './routes' });
+
+      expect(router.ready).toBeInstanceOf(Promise);
+    });
+
+    test('resolves after routes are loaded', async () => {
+      const router = createRouter({ routesDir: './routes' });
+
+      await vi.runAllTimersAsync();
+      await expect(router.ready).resolves.toBeUndefined();
+
+      expect(loadInitialRoutesParallel).toHaveBeenCalledWith('./routes');
+    });
+
+    test('rejects if route loading fails', async () => {
+      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Failed to load routes')
+      );
+
+      const router = createRouter({ routesDir: './routes' });
+
+      await vi.runAllTimersAsync();
+      await expect(router.ready).rejects.toThrow('Failed to load routes');
+    });
+
+    test('handleRequest waits for ready before processing', async () => {
+      const mockLogger = createMockLogger();
+      let routesLoaded = false;
+
+      (loadInitialRoutesParallel as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        routesLoaded = true;
+        return mockRoutes;
+      });
+
+      const router = createRouter({ routesDir: './routes' });
+
+      // Fire request before routes are loaded
+      const requestPromise = router.handleRequest(mockContext, mockLogger, mockEventBus);
+
+      await vi.runAllTimersAsync();
+      await requestPromise;
+
+      // Routes must have been loaded before the request was processed
+      expect(routesLoaded).toBe(true);
+      expect(mockMatcher.match).toHaveBeenCalled();
     });
   });
 });

@@ -227,6 +227,7 @@ export type PluginFactory<
 > = (options?: Partial<TConfig>) => Plugin<TState, TServices>;
 
 export interface PluginLifecycleManager {
+  registerPlugins(server: Server<any, any>): Promise<void>;
   initializePlugins(server: Server<any, any>): Promise<void>;
   terminatePlugins(server: Server<any, any>): Promise<void>;
   onServerStart(server: Server<any, any>, httpServer: any): Promise<void>;

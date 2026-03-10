@@ -229,6 +229,7 @@ export interface RouterOptions {
  * Router interface
  */
 export interface Router {
+  ready: Promise<void>;
   /** Handle an incoming request */
   handleRequest: (
     ctx: Context,

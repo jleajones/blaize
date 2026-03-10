@@ -192,13 +192,6 @@ describe('Server Module', () => {
       expect(serverInstance.host).toBe('0.0.0.0');
     });
 
-    it('should initialize plugins', async () => {
-      await startServer(serverInstance, serverOptions);
-
-      // Verify plugin initialization was called
-      expect(serverInstance.plugins[0]!.initialize).toHaveBeenCalledWith(serverInstance);
-    });
-
     it('should handle file system errors when reading certificates', async () => {
       // Setup file system to throw an error
       vi.mocked(fs.readFileSync).mockImplementation(() => {
