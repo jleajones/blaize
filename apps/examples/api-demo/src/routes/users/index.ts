@@ -9,6 +9,9 @@ const userSchema = z.object({
   email: z.string(),
   role: z.enum(['admin', 'user']),
   createdAt: z.string(),
+  bio: z.string(),
+  location: z.string(),
+  department: z.string(),
 });
 
 export const getUsers = appRouter.get({
@@ -28,6 +31,9 @@ const createUserBodySchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   email: z.string().email('Invalid email address'),
   role: z.enum(['admin', 'user']).default('user'),
+  bio: z.string().min(1, 'Bio is required').max(500),
+  location: z.string().min(1, 'Location is required').max(100),
+  department: z.string().min(1, 'Department is required').max(100),
 });
 
 export const postUsers = appRouter.post({
