@@ -6,9 +6,6 @@ import { server } from './server';
 Blaize.logger.info('✅ EventBus Redis adapter configured');
 
 try {
-  Blaize.logger.info(path.resolve(__dirname, './routes'));
-  // Create the server instance
-
   // Start the server
   await server.listen();
 
