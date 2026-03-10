@@ -8,6 +8,7 @@ import { logger } from '../logger';
 
 import type { Http2Options, ServerOptions, UnknownServer } from '@blaize-types/server';
 
+const isDevMode = process.env.NODE_ENV === 'development';
 // Extract certificate handling to a separate function
 async function prepareCertificates(
   http2Options: Http2Options
@@ -20,7 +21,7 @@ async function prepareCertificates(
   const { keyFile, certFile } = http2Options;
 
   // If certificates are missing and in development, generate them
-  const isDevMode = process.env.NODE_ENV === 'development';
+
   const certificatesMissing = !keyFile || !certFile;
 
   if (certificatesMissing && isDevMode) {
@@ -88,8 +89,7 @@ function listenOnPort(
     
     🚀 Server: ${url}
     🔥 Hot Reload: Enabled
-    🛠️  Mode: Development
-    
+    🛠️  Mode: ${isDevMode ? 'Development' : 'Production'}    
     Time to build something amazing! 🚀
 
 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
