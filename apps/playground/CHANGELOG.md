@@ -1,5 +1,19 @@
 # @blaizejs/playground
 
+## 0.1.25
+
+### Patch Changes
+
+- Updated dependencies [e937085]
+  - blaizejs@0.10.0
+  - @blaizejs/adapter-redis@3.0.0
+  - @blaizejs/middleware-compression@1.0.0
+  - @blaizejs/middleware-security@5.0.0
+  - @blaizejs/client@0.5.1
+  - @blaizejs/plugin-cache@3.0.0
+  - @blaizejs/plugin-metrics@5.0.0
+  - @blaizejs/plugin-queue@3.0.0
+
 ## 0.1.24
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @blaizejs/adapter-redis
 
+## 3.0.0
+
+### Patch Changes
+
+- Updated dependencies [e937085]
+  - blaizejs@0.10.0
+
 ## 2.0.0
 
 ### Minor Changes
