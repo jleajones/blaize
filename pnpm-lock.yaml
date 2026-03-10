@@ -91,6 +91,34 @@ importers:
         specifier: ^3.1.3
         version: 3.1.3(@types/node@22.15.17)(happy-dom@18.0.1)(jsdom@27.0.0(postcss@8.5.3))(tsx@4.19.4)
 
+  apps/examples/api-demo:
+    dependencies:
+      '@blaizejs/middleware-compression':
+        specifier: workspace:*
+        version: link:../../../middleware/compression
+      '@blaizejs/middleware-security':
+        specifier: workspace:*
+        version: link:../../../middleware/security
+      '@blaizejs/plugin-metrics':
+        specifier: workspace:*
+        version: link:../../../plugins/metrics
+      blaizejs:
+        specifier: workspace:*
+        version: link:../../../packages/blaize-core
+      zod:
+        specifier: ^3.24.4
+        version: 3.24.4
+    devDependencies:
+      '@blaizejs/eslint-config':
+        specifier: workspace:*
+        version: link:../../../configs/eslint
+      '@blaizejs/tsconfig':
+        specifier: workspace:*
+        version: link:../../../configs/tsconfig
+      tsx:
+        specifier: ^4.19.4
+        version: 4.19.4
+
   apps/playground:
     dependencies:
       '@blaizejs/adapter-redis':
@@ -127,9 +155,6 @@ importers:
       '@blaizejs/tsconfig':
         specifier: workspace:*
         version: link:../../configs/tsconfig
-      '@blaizejs/tsup-config':
-        specifier: workspace:*
-        version: link:../../configs/tsup
       tsx:
         specifier: ^4.19.4
         version: 4.19.4

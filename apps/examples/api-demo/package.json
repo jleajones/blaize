@@ -1,0 +1,27 @@
+{
+  "name": "@blaizejs/example-api-demo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "BlaizeJS API demo — deployable to Railway with zero external dependencies",
+  "scripts": {
+    "dev": "NODE_ENV=development tsx --watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "blaizejs": "workspace:*",
+    "@blaizejs/middleware-compression": "workspace:*",
+    "@blaizejs/middleware-security": "workspace:*",
+    "@blaizejs/plugin-metrics": "workspace:*",
+    "zod": "^3.24.4"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@blaizejs/eslint-config": "workspace:*",
+    "@blaizejs/tsconfig": "workspace:*",
+    "tsx": "^4.19.4"
+  }
+}
