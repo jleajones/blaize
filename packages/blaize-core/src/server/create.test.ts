@@ -258,7 +258,18 @@ describe('create', () => {
       await server.register(plugin);
 
       expect(server.plugins).toContain(plugin);
+      expect(plugin.register).not.toHaveBeenCalled();
+    });
+
+    test('should call plugin.register during listen()', async () => {
+      const server = create();
+
+      const plugin = createMockPlugin();
+      await server.register(plugin);
+      await server.listen();
+
       expect(plugin.register).toHaveBeenCalledWith(server);
+      expect(plugin.register).toHaveBeenCalledTimes(1);
     });
 
     test('should throw error when registering invalid plugin', async () => {

@@ -217,13 +217,11 @@ function createRegisterMethod<TState, TServices>(
       for (const p of plugin) {
         validatePlugin(p);
         serverInstance.plugins.push(p);
-        await p.register(serverInstance);
       }
     } else {
       // Handle single plugin
       validatePlugin(plugin);
       serverInstance.plugins.push(plugin);
-      await plugin.register(serverInstance);
     }
     // Return the server instance with accumulated types
     return serverInstance;
