@@ -1,5 +1,12 @@
 # @blaizejs/middleware-security
 
+## 5.0.0
+
+### Patch Changes
+
+- Updated dependencies [e937085]
+  - blaizejs@0.10.0
+
 ## 4.0.0
 
 ### Minor Changes
