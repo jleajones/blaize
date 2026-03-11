@@ -342,7 +342,7 @@ const store = new Map<string, User>([
   ],
 ]);
 
-let counter = 26;
+let counter = store.size + 1;
 
 export const listUsers = (): User[] => Array.from(store.values());
 export const getUser = (id: string): User | undefined => store.get(id);
