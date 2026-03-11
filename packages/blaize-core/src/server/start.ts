@@ -88,8 +88,7 @@ function listenOnPort(
     
     🚀 Server: ${url}
     🔥 Hot Reload: Enabled
-    🛠️  Mode: Development
-    
+    🛠️  Mode: ${process.env.NODE_ENV === 'development' ? 'Development' : 'Production'}    
     Time to build something amazing! 🚀
 
 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
