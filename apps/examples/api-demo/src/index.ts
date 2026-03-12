@@ -3,8 +3,6 @@ import path from 'node:path';
 import { Blaize } from 'blaizejs';
 import { server } from './server';
 
-Blaize.logger.info('✅ EventBus Redis adapter configured');
-
 try {
   // Start the server
   await server.listen();
