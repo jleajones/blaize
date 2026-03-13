@@ -1,5 +1,22 @@
 # @blaizejs/playground
 
+## 0.1.26
+
+### Patch Changes
+
+- 341b992: **🐛 Feature: Railway deployed Demo API**
+
+  - 🛣️ `src/data/users.ts` — new GET /users/large route that returns 1000 generated users plus an uncompressedBytes field so you can see the raw payload size before compression
+
+- Updated dependencies [341b992]
+  - blaizejs@0.10.1
+  - @blaizejs/adapter-redis@3.0.0
+  - @blaizejs/middleware-compression@1.0.0
+  - @blaizejs/middleware-security@5.0.0
+  - @blaizejs/plugin-cache@3.0.0
+  - @blaizejs/plugin-metrics@5.0.0
+  - @blaizejs/plugin-queue@3.0.0
+
 ## 0.1.25
 
 ### Patch Changes
