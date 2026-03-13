@@ -39,7 +39,7 @@ const compressionMiddleware = createCompressionMiddleware();
 // The app receives plain HTTP/1.1, so HTTP/2 must be disabled.
 // PORT is injected by Railway at runtime.
 // ---------------------------------------------------------------------------
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 7480;
+const port = Number(process.env.PORT) || 7485;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // ============================================================================
